@@ -19,7 +19,7 @@ module Rubernetes
       EX_CONFIG = 78
       EX_INTERRUPTED = 130
 
-      COMMANDS = %w[get create apply patch delete watch raw extension].freeze
+      COMMANDS = %w[get create apply render patch delete watch raw extension].freeze
       # Commands that talk to the processes of a cluster on this host, not to
       # its API.
       LOCAL_COMMANDS = %w[console why trace].freeze
@@ -106,7 +106,9 @@ module Rubernetes
         result = dispatch(command, arguments, options)
         return EX_OK if result == :no_output
 
-        write_results(result, options[:output])
+        # What `render` prints is the manifest itself, for another client to
+        # apply: a value that came in through --env belongs in it as it is.
+        write_results(result, options[:output], redact: command != "render")
         EX_OK
       rescue OptionParser::ParseError, Client::UsageError => error
         write_error(error)
@@ -227,6 +229,9 @@ module Rubernetes
 
       def dispatch(command, arguments, options)
         return run_extension(arguments, options) if command == "extension"
+        # What `apply` would send, without a cluster: the manifests a file
+        # declares, ready for any client (`| kubectl apply -f -`).
+        return read_resources(options[:filenames], options) if command == "render"
 
         client = build_client(options)
         case command
@@ -472,18 +477,18 @@ module Rubernetes
         raise Client::ManifestError.new("cannot read request body #{path}: #{error.message}", cause: error), cause: error
       end
 
-      def write_results(result, format)
+      def write_results(result, format, redact: true)
         values = result.is_a?(Array) ? result : [result]
         values.each do |value|
           next if value.nil?
 
-          write_output(value, format)
+          write_output(value, format, redact: redact)
         end
       end
 
-      def write_output(value, format)
+      def write_output(value, format, redact: true)
         rendered = Client::Output.new(format: format).render(value)
-        @stdout.write(redact_sensitive(rendered))
+        @stdout.write(redact ? redact_sensitive(rendered) : rendered)
         @stdout.write("\n") unless rendered.end_with?("\n")
         value
       end
@@ -601,7 +606,7 @@ module Rubernetes
           raise Client::UsageError, "raw requires METHOD PATH" unless arguments.length == 2
         when "get"
           raise Client::UsageError, "get requires RESOURCE or PATH" unless (1..2).cover?(arguments.length)
-        when "create", "apply"
+        when "create", "apply", "render"
           raise Client::UsageError, "#{command} accepts only -f/--filename" unless arguments.empty?
           raise Client::UsageError, "-f/--filename is required" if options[:filenames].empty?
         when "patch"
