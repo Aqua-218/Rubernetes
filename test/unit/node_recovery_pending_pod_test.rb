@@ -66,6 +66,36 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     assert_empty slept.select { |seconds| seconds >= 1 }, slept.inspect
   end
 
+  # The holder of a sandbox died with the previous agent: the runtime has
+  # no sandbox, so no container can be re-created in it.  The Pod must be
+  # killed and synced from scratch (kubelet: pod sandbox changed), not
+  # "restarted" into the void every backoff period.
+  class GoneOnRestartRuntime < GoneContainerRuntime
+    def create_container(sandbox, spec)
+      raise StandardError, "unknown sandbox #{sandbox}" if gone
+
+      super
+    end
+  end
+
+  def test_a_restart_into_a_lost_sandbox_kills_the_pod
+    calls = []
+    runtime = GoneOnRestartRuntime.new
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, volume: NodeLifecycleTest::Volume.new(calls),
+                                                network: NodeLifecycleTest::Network.new(calls),
+                                                sleeper: ->(_seconds) {})
+    object = pod
+    lifecycle.start(object)
+    record = lifecycle.instance_variable_get(:@records).values.first
+    runtime.gone = true
+
+    lifecycle.handle_container_exit(object, container_name: "app", exit_code: 1)
+    lifecycle.send(:resume_backoff_restarts, record, object, now: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 3600)
+
+    assert_includes %w[Removed Stopped], record[:state], record.inspect
+    refute_empty calls.select { |call| Array(call).first == :network_delete }, "the sandbox must be torn down"
+  end
+
   def test_a_pending_pod_cleanup_does_not_keep_the_agent_down
     service = Rubernetes::Bootstrap::AgentService.allocate
     report = {"ready" => true, "errors" => [], "blocked" => ["3229d668-uid"],
