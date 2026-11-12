@@ -1334,6 +1334,7 @@ module Rubernetes
         # A node joining a running cluster starts as nobody's voter: it
         # names the cluster's voters and waits to be taken in.
         raise Error, "#{context}.join must be true or false" if value.key?("join") && ![true, false].include?(value["join"])
+
         member = voters.include?(value["node_id"]) || value["join"] == true
         raise Error, "#{context}.voters must include node_id #{value["node_id"]}" unless member
         raise Error, "#{context}.voters must be unique" unless voters.uniq.length == voters.length
