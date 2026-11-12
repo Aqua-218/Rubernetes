@@ -38,11 +38,16 @@ class SchedulerAsyncBindTest < Minitest::Test
     def patch(*) = raise("no patch")
   end
 
-  class Framework
+  # The real framework, noting what is handed back to its queue.
+  class Framework < Rubernetes::Scheduler::Framework
     attr_reader :enqueued
 
-    def initialize = @enqueued = []
-    def enqueue(pod) = @enqueued << pod
+    def initialize
+      super
+      @enqueued = []
+    end
+
+    def enqueue(pod, **) = @enqueued << pod
   end
 
   def pod
