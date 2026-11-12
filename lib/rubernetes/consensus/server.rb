@@ -179,6 +179,10 @@ module Rubernetes
         @transport.add_peer(node_id, address)
       end
 
+      def remove_peer(node_id)
+        @transport.remove_peer(node_id)
+      end
+
       def stop
         @running = false
         if @apply_thread
