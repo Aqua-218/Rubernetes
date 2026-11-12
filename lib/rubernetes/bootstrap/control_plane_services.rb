@@ -221,24 +221,9 @@ module Rubernetes
         @informer = informer
       end
 
-      def synced?
-        reflector = @informer.respond_to?(:reflector) ? @informer.reflector : nil
-        return true if reflector.nil?
-        return reflector.synced? if reflector.respond_to?(:synced?)
+      def synced? = !@informer.reflector.resource_version.nil?
 
-        !reflector.resource_version.nil?
-      rescue StandardError
-        false
-      end
-
-      def list
-        indexer = @informer.respond_to?(:indexer) ? @informer.indexer : nil
-        return [] unless indexer.respond_to?(:list)
-
-        Array(indexer.list)
-      rescue StandardError
-        []
-      end
+      def list = @informer.indexer.list
 
       # Write-through: an object this process just created/updated/deleted is
       # visible to the next reconcile immediately instead of after the watch
@@ -246,10 +231,10 @@ module Rubernetes
       # ControllerExpectations; without either, a ReplicationController that
       # was re-queued by its own status write created a fresh Pod on every
       # pass (49 Pods for replicas: 2).
+      # The object's own ADDED event may have put it there first.
       def add(object)
-        indexer = @informer.respond_to?(:indexer) ? @informer.indexer : nil
-        indexer.add(object) if indexer.respond_to?(:add)
-      rescue StandardError
+        @informer.indexer.add(object)
+      rescue KeyError
         nil
       end
 
@@ -267,8 +252,6 @@ module Rubernetes
         return @informer.indexer.delete(object) if finalized?(object)
 
         @informer.indexer.refresh(object)
-      rescue StandardError
-        nil
       end
 
       def finalized?(object)
@@ -276,12 +259,7 @@ module Rubernetes
         !metadata["deletionTimestamp"].nil? && Array(metadata["finalizers"]).empty? && metadata["deletionGracePeriodSeconds"].to_i.zero?
       end
 
-      def delete(object)
-        indexer = @informer.respond_to?(:indexer) ? @informer.indexer : nil
-        indexer.delete(object) if indexer.respond_to?(:delete)
-      rescue StandardError
-        nil
-      end
+      def delete(object) = @informer.indexer.delete(object)
     end
 
     class KubernetesStoreAdapter < Controller::StoreAdapter
@@ -1666,22 +1644,17 @@ module Rubernetes
       # schedule_attempts_total / scheduling_attempt_duration_seconds and
       # the preemption series, from one ScheduleResult.
       def record_attempt(result, seconds)
-        outcome = if result.respond_to?(:status) && result.status.to_s == "scheduled" then "scheduled"
-                  elsif result.respond_to?(:unschedulable?) && result.unschedulable? then "unschedulable"
-                  else "error"
-                  end
         # A gated Pod is not attempted; a dropped one (deleted meanwhile) is
         # one upstream never pops.
-        return if (result.respond_to?(:gated?) && result.gated?) || (result.respond_to?(:dropped?) && result.dropped?)
+        return if result.gated? || result.dropped?
 
-        @decisions.record(result, seconds) if result.is_a?(Scheduler::ScheduleResult)
+        outcome = if result.scheduled? then "scheduled"
+                  elsif result.unschedulable? then "unschedulable"
+                  else "error"
+                  end
+        @decisions.record(result, seconds)
         @scheduler_metrics.attempt(outcome, seconds)
-        victims = result.respond_to?(:victims) ? Array(result.victims) : []
-        return if victims.empty?
-
-        @scheduler_metrics.preemption(victims.length)
-      rescue StandardError
-        nil
+        @scheduler_metrics.preemption(result.victims.length) unless result.victims.empty?
       end
 
       # What kube-scheduler's informer factory also watches for its plugins:
@@ -1726,9 +1699,7 @@ module Rubernetes
 
       def stop(reason: "shutdown")
         should_stop = @mutex.synchronize do
-          active = @running || (@thread && @thread.alive?) || [@node_informer, @pod_informer].compact.any? do |informer|
-            informer.respond_to?(:running?) && informer.running?
-          end
+          active = @running || @thread&.alive? || [@node_informer, @pod_informer].compact.any?(&:running?)
           @running = false
           active
         end
@@ -1777,19 +1748,15 @@ module Rubernetes
                                                 feature_gates: @config.fetch("feature_gates", {}),
                                                 pod_group_status: method(:patch_pod_group_status))
         end
-        if @framework.respond_to?(:queue) && @scheduler_metrics.respond_to?(:queue=)
-          @scheduler_metrics.queue = @framework.queue
-          @framework.queue.metrics = @scheduler_metrics if @framework.queue.respond_to?(:metrics=)
-        end
+        @scheduler_metrics.queue = @framework.queue
+        @framework.queue.metrics = @scheduler_metrics
         # DynamicResources writes allocations and reservations to claims.
-        if @client && @framework.respond_to?(:dynamic_resources) && @framework.dynamic_resources&.api.nil?
-          @framework.dynamic_resources.api = Scheduler::DynamicResources::ClientAPI.new(@client)
-        end
+        @framework.dynamic_resources.api = Scheduler::DynamicResources::ClientAPI.new(@client) if @client && @framework.dynamic_resources.api.nil?
         # VolumeBinding writes PV claimRefs and claims' selected-node; with
         # asynchronous binding it is waited for in the binding cycle.
-        if @client && @framework.respond_to?(:volume_binding) && @framework.volume_binding&.api.nil?
+        if @client && @framework.volume_binding.api.nil?
           @framework.volume_binding.api = Scheduler::VolumeBinding::ClientAPI.new(@client)
-          @framework.volume_binding.defer_wait = async_binding? if @framework.volume_binding.respond_to?(:defer_wait=)
+          @framework.volume_binding.defer_wait = async_binding?
         end
         build_elector!
         build_cluster_informers!
@@ -2015,36 +1982,29 @@ module Rubernetes
             break unless started?
 
             begin
-              queue = @framework.respond_to?(:queue) ? @framework.queue : nil
+              queue = @framework.queue
               informers = {"nodes" => @node_informer, "pods" => @pod_informer}
               log(:info, "scheduler.status",
-                  leader: @elector.respond_to?(:leader?) ? @elector.leader? : nil,
+                  leader: @elector.leader?,
                   nodes: @mutex.synchronize { @nodes.length },
                   pods: @mutex.synchronize { @pods.length },
                   loop_alive: @thread&.alive?,
-                  queue_pending: queue.respond_to?(:pending?) ? queue.pending? : nil,
-                  queue_size: queue.respond_to?(:size) ? queue.size : nil,
-                  queue_backoff: queue.respond_to?(:backoff_size) ? queue.backoff_size : nil,
+                  queue_pending: queue.pending?, queue_size: queue.size, queue_backoff: queue.backoff_size,
                   last_error: @last_error && "#{@last_error.class}: #{@last_error.message.to_s[0, 200]}",
-                  last_result: if @last_result.respond_to?(:status)
-                                 {status: @last_result.status.to_s, pod: (@last_result.respond_to?(:pod) && @last_result.pod ? @last_result.pod.name : nil),
-                                  error: (@last_result.respond_to?(:error) && @last_result.error ? @last_result.error.message.to_s[0, 200] : nil)}
+                  # A ScheduleResult, or what a follower noted instead of one.
+                  last_result: if @last_result.is_a?(Scheduler::ScheduleResult)
+                                 {status: @last_result.status.to_s, pod: @last_result.pod.name, error: @last_result.error&.message.to_s[0, 200]}
                                else
                                  @last_result.inspect[0, 120]
                                end,
-                  queue_items: (@framework.respond_to?(:queue) && @framework.queue.respond_to?(:snapshot) ? @framework.queue.snapshot.inspect[0, 300] : nil),
+                  queue_items: queue.snapshot.inspect[0, 300],
                   informers: informers.transform_values do |informer|
                     next nil unless informer
 
-                    reflector = informer.respond_to?(:reflector) ? informer.reflector : nil
-                    {running: informer.respond_to?(:running?) ? informer.running? : nil,
-                     error: informer.respond_to?(:last_error) && informer.last_error ? informer.last_error.message.to_s[0, 160] : nil,
-                     reflector_running: reflector.respond_to?(:running?) ? reflector.running? : nil,
-                     reflector_error: if reflector.respond_to?(:last_error) && reflector.last_error
-                                        reflector.last_error.message.to_s[0,
-                                                                          160]
-                                      end,
-                     resource_version: reflector.respond_to?(:resource_version) ? reflector.resource_version : nil}
+                    reflector = informer.reflector
+                    {running: informer.running?, error: informer.last_error&.message.to_s[0, 160],
+                     reflector_running: reflector.running?, reflector_error: reflector.last_error&.message.to_s[0, 160],
+                     resource_version: reflector.resource_version}
                   end)
             rescue StandardError => error
               log(:warn, "scheduler.status_failed", error: error.message)
@@ -2094,15 +2054,10 @@ module Rubernetes
       end
 
       def retry_unschedulable(reason, event: nil, old_object: nil, new_object: nil, **fields)
-        return unless @framework.respond_to?(:queue)
-
-        queue = @framework.queue
-        promoted = if event && @framework.respond_to?(:requeue_on_event)
+        promoted = if event
                      @framework.requeue_on_event(event, old_object: old_object, new_object: new_object)
-                   elsif event && queue.method(:promote_unschedulable).parameters.any? { |_kind, name| name == :event }
-                     queue.promote_unschedulable(event: event)
                    else
-                     queue.promote_unschedulable
+                     @framework.queue.promote_unschedulable
                    end
         return if promoted.empty?
 
@@ -2112,8 +2067,7 @@ module Rubernetes
       # kube-scheduler's flushUnschedulablePodsLeftover: Pods that nothing
       # moved back are retried periodically so a missed event cannot strand them.
       def flush_unschedulable_if_due
-        now = @clock.respond_to?(:call) ? @clock.call : Time.now
-        now = now.to_f
+        now = @clock.call.to_f
         @last_unschedulable_flush ||= now
         return if now - @last_unschedulable_flush < UNSCHEDULABLE_FLUSH_SECONDS
 
@@ -2147,9 +2101,9 @@ module Rubernetes
         event = typed.node_name.empty? ? "PodDelete" : "assignedPodDelete"
         timed_event(event) do
           @mutex.synchronize { @pods.delete(key) }
-          @framework.forget_nomination(typed) if @framework.respond_to?(:forget_nomination)
+          @framework.forget_nomination(typed)
           retry_unschedulable("pod_deleted", pod: "#{typed.namespace}/#{typed.name}", event: event, old_object: typed, new_object: nil)
-          @framework.queue.delete(typed) if @framework.respond_to?(:queue)
+          @framework.queue.delete(typed)
         end
       end
 
@@ -2159,8 +2113,6 @@ module Rubernetes
       # This backs up Framework#pod_gone?, which only recognises an explicit
       # 404 from the API server.
       def forget_unknown_pod(pod)
-        return unless @framework.respond_to?(:queue)
-
         typed = pod.is_a?(Scheduler::Pod) ? pod : Scheduler::Pod.new(pod)
         key = [typed.namespace, typed.name, typed.uid].freeze
         return if @mutex.synchronize { @pods.key?(key) }
@@ -2206,16 +2158,14 @@ module Rubernetes
               @last_result = result if result
               # A result that is neither a binding nor an unschedulable verdict
               # (a bind error, a plugin failure) used to vanish silently.
-              if result && ((result.respond_to?(:failed?) && result.failed?) || (result.respond_to?(:error) && result.error))
-                dropped = result.respond_to?(:dropped?) && result.dropped?
+              if result && (result.failed? || result.error)
+                dropped = result.dropped?
                 log(dropped ? :info : :warn, dropped ? "scheduler.result_dropped" : "scheduler.result_failed",
-                    pod: result.respond_to?(:pod) && result.pod ? "#{result.pod.namespace}/#{result.pod.name}" : nil,
-                    status: result.respond_to?(:status) ? result.status.to_s : nil,
-                    error: result.respond_to?(:error) && result.error ? "#{result.error.class}: #{result.error.message.to_s[0, 300]}" : nil)
-                forget_unknown_pod(result.pod) if !dropped && result.respond_to?(:pod) && result.pod
+                    pod: "#{result.pod.namespace}/#{result.pod.name}", status: result.status.to_s,
+                    error: result.error && "#{result.error.class}: #{result.error.message.to_s[0, 300]}")
+                forget_unknown_pod(result.pod) unless dropped
               end
-              report_unschedulable(result, nodes.length) if result.respond_to?(:unschedulable?) && result.unschedulable? &&
-                                                            !(result.respond_to?(:gated?) && result.gated?)
+              report_unschedulable(result, nodes.length) if result&.unschedulable? && !result.gated?
             else
               @last_result = {election: election, follower: true}.freeze
             end
@@ -2266,9 +2216,9 @@ module Rubernetes
 
         pod = result.pod
         counts = Hash.new(0)
-        Array(result.filtered.respond_to?(:each_value) ? result.filtered.values : []).each do |entry|
-          reason = entry.is_a?(Hash) ? (entry["reason"] || entry[:reason]) : nil
-          counts[reason.to_s] += 1 unless reason.to_s.empty?
+        result.filtered.each_value do |verdict|
+          reason = verdict["reason"].to_s
+          counts[reason] += 1 unless reason.empty?
         end
         summary = counts.sort_by { |reason, count| [-count, reason] }.map { |reason, count| "#{count} #{reason}" }.join(", ")
         summary = result.reason.to_s if summary.empty?
@@ -2277,7 +2227,7 @@ module Rubernetes
         # updatePod: the condition and the NominatingInfo go in one status
         # write -- a preemptor is nominated to the node its victims are
         # leaving ("" clears an old nomination, nil leaves it alone).
-        nominated = result.respond_to?(:nominated_node) ? result.nominated_node : nil
+        nominated = result.nominated_node
         report = [message, nominated]
         return if @unschedulable_reports&.fetch(key, nil) == report
 
@@ -2520,8 +2470,8 @@ module Rubernetes
         # controller and provisioner completed them -- waited for on a thread
         # of its own, so neither the scheduling loop nor the bind workers
         # stall behind a slow provisioner.
-        volume_binding = @framework.respond_to?(:volume_binding) ? @framework.volume_binding : nil
-        if volume_binding.respond_to?(:pending?) && volume_binding.pending?(pod)
+        volume_binding = @framework.volume_binding
+        if volume_binding.pending?(pod)
           waiter = Thread.new do
             volume_binding.wait_for_bindings(pod, node.name)
             @bind_queue << [pod, node, key, assumed]
@@ -2577,8 +2527,8 @@ module Rubernetes
         log(:warn, "scheduler.bind_failed", pod: "#{pod.namespace}/#{pod.name}", node: node.name,
                                             error: "#{error.class}: #{error.message.to_s[0, 300]}", requeued: requeue)
         if requeue
-          @framework.enqueue(pod) if @framework.respond_to?(:enqueue) && started?
-        elsif gone && @framework.respond_to?(:queue)
+          @framework.enqueue(pod) if started?
+        elsif gone
           @framework.queue.delete(pod)
         end
       end
@@ -2665,9 +2615,9 @@ module Rubernetes
         @extensions&.stop
         @component_server&.stop
         @component_server = nil
-        @node_informer&.stop(join: true) if @node_informer.respond_to?(:stop)
-        @pod_informer&.stop(join: true) if @pod_informer.respond_to?(:stop)
-        @cluster_informers.each_value { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
+        @node_informer&.stop(join: true)
+        @pod_informer&.stop(join: true)
+        @cluster_informers.each_value { |informer| informer.stop(join: true) }
         @elector.release if @elector&.leader?
         @thread&.join if @thread && @thread != Thread.current
         @thread = nil
