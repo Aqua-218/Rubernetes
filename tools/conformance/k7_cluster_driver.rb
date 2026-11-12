@@ -25,8 +25,8 @@ module K7ClusterDriver
   ROOT = File.expand_path("../..", __dir__)
   KUBECTL = File.join(ROOT, "build/tools/kubectl-v1.36.2")
   NOT_ON_THIS_TOPOLOGY = {
-    "single_to_three_node" => "the lane cluster starts with three control nodes and Raft membership changes are " \
-                              "not exposed as an operator command (they are exercised in-process by the M5 fault matrix)",
+    "single_to_three_node" => "the lane cluster starts with three control nodes; growing a running cluster is " \
+                              "`rubectl cluster scale --controls 3` (Cluster::Provisioner#scale), which this lane does not drive",
     "memory_to_raft" => "the lane cluster already runs the Raft datastore; a MemoryStore-to-RaftStore migration " \
                         "needs a MemoryStore cluster to start from and no operator migration command exists yet",
     "release_upgrade" => "0.1.0 is the first release: there is no previous release artifact to upgrade from",
