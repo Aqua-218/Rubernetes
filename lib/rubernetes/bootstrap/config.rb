@@ -3,6 +3,8 @@
 require "psych"
 require "uri"
 
+require_relative "config/value_checks"
+
 module Rubernetes
   module Bootstrap
     class Config
@@ -54,7 +56,7 @@ module Rubernetes
       ].freeze
       CONTROL_PLANE_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds controllers root_ca_file metrics_server serving cluster_signing
                               use_service_account_credentials service_account_private_key_file extensions
-                              enable_hostpath_provisioner].freeze
+                              enable_hostpath_provisioner kube_api_qps kube_api_burst].freeze
       CLUSTER_SIGNING_KEYS = %w[cert_file key_file duration_seconds signers].freeze
       CLUSTER_SIGNING_SIGNERS = %w[kubelet_serving kubelet_client kube_apiserver_client legacy_unknown].freeze
       # ComponentServer: the scheduler's / controller-manager's endpoints.
@@ -63,11 +65,11 @@ module Rubernetes
         enabled port bind_address advertise_address metric_resolution_seconds scrape_timeout_seconds kubelet_scheme kubelet_port
         kubelet_insecure_tls address_type_priority node_selector register tls jitter
       ].freeze
-      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving feature_gates extensions].freeze
+      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving feature_gates extensions kube_api_qps kube_api_burst].freeze
       # Extension objects (rubernetes.io/v1alpha1) are Ruby source evaluated
       # inside the component: off unless the configuration turns them on.
       EXTENSIONS_KEYS = %w[enabled].freeze
-      PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving].freeze
+      PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving kube_api_qps kube_api_burst].freeze
       AGENT_KEYS = %w[
         node_name api_server kubeconfig context runtime_profile
         sandbox_root cgroup_root log_root journal_path runtime_paths runtime
@@ -77,7 +79,7 @@ module Rubernetes
         system_reserved kube_reserved reserved_system_cpus cpu_manager memory_manager topology_manager shutdown
         cgroups_per_qos enforce_node_allocatable system_reserved_cgroup kube_reserved_cgroup cri crash_loop_back_off
         device_plugins pod_resources image_pull_credentials image_credential_provider
-        bootstrap_kubeconfig rotate_certificates server_tls_bootstrap cert_dir
+        bootstrap_kubeconfig rotate_certificates server_tls_bootstrap cert_dir kube_api_qps kube_api_burst
       ].freeze
       # A CRI runtime (containerd, CRI-O) serving RuntimeClass handlers:
       # handlers maps the node's handler name to the CRI runtime handler.
@@ -198,6 +200,8 @@ module Rubernetes
         @data
       end
 
+      include ValueChecks
+
       private
 
       def validate!(data)
@@ -296,6 +300,7 @@ module Rubernetes
       def validate_agent!(process_config)
         begin
           reject_unknown_keys!(process_config, AGENT_KEYS, "rubernetes-agent configuration")
+          validate_api_rate!(process_config, "rubernetes-agent")
         rescue Error => error
           # Keep the M0 diagnostic wording stable for callers that validate all
           # daemon profiles with the original empty-process contract.
@@ -822,6 +827,7 @@ module Rubernetes
 
       def validate_control_plane!(process_config, allowed_keys, process_name, lease: false)
         reject_unknown_keys!(process_config, allowed_keys, "#{process_name} configuration")
+        validate_api_rate!(process_config, process_name)
         validate_api_server!(process_config["api_server"], context: "#{process_name}.api_server") if process_config.key?("api_server")
         %w[kubeconfig context identity].each do |key|
           next unless process_config.key?(key) && !process_config[key].nil?
@@ -886,6 +892,7 @@ module Rubernetes
 
       def validate_proxy!(process_config)
         reject_unknown_keys!(process_config, PROXY_KEYS, "rubernetes-proxy configuration")
+        validate_api_rate!(process_config, "rubernetes-proxy")
         validate_serving!(process_config["serving"], "rubernetes-proxy") if process_config.key?("serving")
         validate_api_server!(process_config["api_server"], context: "rubernetes-proxy.api_server") if process_config.key?("api_server")
         %w[kubeconfig context node_name].each do |key|
@@ -1004,45 +1011,6 @@ module Rubernetes
         end
       rescue URI::InvalidURIError => error
         raise Error.new("#{context} is not a valid URL: #{error.message}"), cause: error
-      end
-
-      def validate_non_empty_string!(value, context)
-        raise Error, "#{context} must be a non-empty String" unless value.is_a?(String) && !value.empty?
-      end
-
-      def validate_absolute_path!(value, context)
-        validate_non_empty_string!(value, context)
-        raise Error, "#{context} must be an absolute path" unless value.start_with?("/")
-        raise Error, "#{context} must not contain NUL" if value.include?("\0")
-      end
-
-      def validate_mapping!(value, context)
-        raise Error, "#{context} must be a mapping" unless value.is_a?(Hash)
-      end
-
-      def validate_positive_number!(value, context)
-        raise Error, "#{context} must be a positive number" unless value.is_a?(Numeric) && value.positive?
-      end
-
-      def validate_positive_integer!(value, context)
-        raise Error, "#{context} must be a positive integer" unless value.is_a?(Integer) && value.positive?
-      end
-
-      def validate_linux_identity!(value, context)
-        return if value.is_a?(Integer) && value.between?(0, 4_294_967_294)
-
-        raise Error, "#{context} must be an integer between 0 and 4294967294"
-      end
-
-      def validate_file_mode!(value, context)
-        valid = if value.is_a?(Integer)
-                  value.between?(0, 0o7777)
-                elsif value.is_a?(String) && value.match?(/\A[0-7]{1,4}\z/)
-                  Integer(value, 8).between?(0, 0o7777)
-                else
-                  false
-                end
-        raise Error, "#{context} must be an octal mode between 0000 and 7777" unless valid
       end
 
       def validate_console!(section)
