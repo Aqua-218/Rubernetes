@@ -232,6 +232,7 @@ module Rubernetes
             @cleanup_retries&.delete(identifier)
           end
           @records.delete(identifier)
+          @restarts.forget_pod(identifier)
           remove_pod_directory(identifier)
           nil
         end
