@@ -18,6 +18,7 @@ require_relative "network/nftables_policy"
 require_relative "network/ebpf_policy"
 require_relative "network/dns"
 require_relative "network/interface"
+require_relative "network/cni"
 require_relative "network/worker"
 
 module Rubernetes
