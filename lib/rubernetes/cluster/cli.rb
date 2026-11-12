@@ -7,7 +7,7 @@ module Rubernetes
   module Cluster
     # `rubectl cluster ...`: a cluster on this host with one command.
     class CLI
-      COMMANDS = %w[up start down delete scale status kubeconfig].freeze
+      COMMANDS = %w[up start down delete scale seed status kubeconfig].freeze
       IP_FAMILIES = {"ipv4" => %w[ipv4], "ipv6" => %w[ipv6], "dual" => %w[ipv4 ipv6]}.freeze
       USAGE = <<~TEXT
         Usage: rubectl cluster COMMAND [options]
@@ -17,6 +17,7 @@ module Rubernetes
           down        stop the cluster's processes; its state stays on disk
           delete      stop the cluster and remove its state, mounts, bridges and firewall rules
           scale       add control nodes to the running cluster (--controls N); the datastore stays available
+          seed        start a raft data directory from an exported in-memory datastore (--state FILE --data-dir DIR --voter ID)
           status      list the cluster's processes
           kubeconfig  print the admin kubeconfig path
 
@@ -81,6 +82,23 @@ module Rubernetes
         end
       end
 
+      # The second half of moving an API server from the in-memory datastore
+      # to raft; the first is `service.export_datastore(path)` at its console.
+      def seed(_cluster, options)
+        missing = %i[state data_dir voter].reject { |key| options[key] }
+        raise Error, "seed needs #{missing.map { |key| "--#{key.to_s.tr("_", "-")}" }.join(", ")}" unless missing.empty?
+
+        require_relative "../consensus"
+
+        state = JSON.parse(File.read(options[:state]), max_nesting: 512)
+        metadata = Consensus::Seed.write(data_directory: options[:data_dir], state: state, voters: [options[:voter]])
+        report({"snapshot" => metadata.path, "revision" => state.fetch("revision")}, options) do
+          @stdout.puts("#{options[:data_dir]} holds revision #{state.fetch("revision")}; start #{options[:voter]} on it with datastore.type: raft")
+        end
+      rescue ArgumentError, JSON::ParserError, KeyError => error
+        raise Error, error.message
+      end
+
       def delete(cluster, options)
         stopped = cluster.delete
         report({"stopped" => stopped, "removed" => cluster.root}, options) { @stdout.puts("cluster #{cluster.cluster_name.inspect} is gone") }
@@ -135,6 +153,9 @@ module Rubernetes
                     "up: admin, components or bootstrap (default: admin)") { |value| options[:identities] = value }
           parser.on("--extensions", "up: let the components load Extension objects (Ruby run inside them)") { options[:extensions] = true }
           parser.on("--no-storage", "up: no default StorageClass and no hostPath provisioner") { options[:storage] = false }
+          parser.on("--state FILE", "seed: the file export_datastore wrote") { |value| options[:state] = value }
+          parser.on("--data-dir DIR", "seed: the new node's datastore.data_dir (must be empty)") { |value| options[:data_dir] = value }
+          parser.on("--voter ID", "seed: the new node's datastore.node_id") { |value| options[:voter] = value }
           parser.on("--force", "up: take over bridges and workloads of another live cluster") { options[:force] = true }
           parser.on("-o", "--output FORMAT", %w[json text], "json or text (default: text)") { |value| options[:json] = value == "json" }
           parser.on("-h", "--help") { options[:help] = true }
