@@ -38,6 +38,7 @@ class NodeProbePersistTest < Minitest::Test
     def liveness_failed?(_id) = false
     def state(_id) = {readiness: {failed: !@ready}}
     def snapshot = {}
+    def restore(_payload) = self
     def evaluate(_id, **_options) = {"startup" => nil, "liveness" => nil, "readiness" => Result.new(@ready)}
   end
 
