@@ -36,6 +36,13 @@ module Rubernetes
     # ownerReferences rather than one resource; filtered by served kinds it
     # was dropped, and nothing was ever garbage collected.
     CONTROLLER_ONLY_KINDS = %w[GarbageCollector].freeze
+    # What minikube and kind call their default class, backed by
+    # kube-controller-manager's own hostPath provisioner.
+    DEFAULT_STORAGE_CLASS = {
+      "apiVersion" => "storage.k8s.io/v1", "kind" => "StorageClass",
+      "metadata" => {"name" => "standard", "annotations" => {"storageclass.kubernetes.io/is-default-class" => "true"}},
+      "provisioner" => "kubernetes.io/host-path", "reclaimPolicy" => "Delete", "volumeBindingMode" => "Immediate"
+    }.freeze
     # Where clusters of earlier bring-ups keep their descriptors.
     KNOWN_CLUSTER_GLOBS = %W[/srv/*/cluster.json /srv/*/*/cluster.json /srv/*/*/*/cluster.json
                              #{DEFAULT_STATE_DIR}/*/cluster.json].freeze
