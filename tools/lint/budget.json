@@ -6,10 +6,10 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 89023,
-    "longest_method": 8249,
-    "respond_to": 2273,
-    "swallowed": 345
+    "lines": 84424,
+    "longest_method": 7996,
+    "respond_to": 2265,
+    "swallowed": 337
   },
   "files": {
     "lib/rubernetes/api/aggregator.rb": {
@@ -200,10 +200,7 @@
       "respond_to": 4
     },
     "lib/rubernetes/controller/builtins.rb": {
-      "lines": 2195,
-      "longest_method": 180,
-      "respond_to": 7,
-      "swallowed": 6
+      "respond_to": 2
     },
     "lib/rubernetes/controller/daemonset_controller.rb": {
       "longest_method": 98,
@@ -229,10 +226,7 @@
       "respond_to": 18
     },
     "lib/rubernetes/controller/infrastructure_storage.rb": {
-      "lines": 2404,
-      "longest_method": 73,
-      "respond_to": 7,
-      "swallowed": 2
+      "respond_to": 4
     },
     "lib/rubernetes/controller/job_controller.rb": {
       "lines": 1501,
