@@ -28,7 +28,8 @@ module K7ClusterDriver
     "single_to_three_node" => "the lane cluster starts with three control nodes; growing a running cluster is " \
                               "`rubectl cluster scale --controls 3` (Cluster::Provisioner#scale), which this lane does not drive",
     "memory_to_raft" => "the lane cluster already runs the Raft datastore; a MemoryStore-to-RaftStore migration " \
-                        "needs a MemoryStore cluster to start from and no operator migration command exists yet",
+                        "needs a MemoryStore cluster to start from (the migration itself is `export_datastore` + " \
+                        "`rubectl cluster seed`, deploy/cluster/README.md)",
     "release_upgrade" => "0.1.0 is the first release: there is no previous release artifact to upgrade from",
     "rollback" => "0.1.0 is the first release: there is no previous release to roll back to"
   }.freeze
