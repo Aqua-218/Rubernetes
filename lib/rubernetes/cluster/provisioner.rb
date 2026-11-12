@@ -30,7 +30,7 @@ module Rubernetes
       # joins the workers through a bootstrap token and the CSR API.
       def initialize(root:, name: File.basename(root), cluster_id: name, controls: 3, workers: 3, ip_families: %w[ipv4],
                      cgroup_root: "/sys/fs/cgroup", identities: :admin, ready_timeout: 180, log_levels: {}, force: false,
-                     extensions: false, descriptor: {})
+                     extensions: false, storage: false, descriptor: {})
         raise ArgumentError, "identities must be one of #{IDENTITY_MODES.join(", ")}" unless IDENTITY_MODES.include?(identities)
         raise ArgumentError, "a cluster needs at least one control node and one worker" unless controls.positive? && workers.positive?
 
@@ -46,6 +46,7 @@ module Rubernetes
         @log_levels = log_levels
         @force = force
         @extensions = extensions
+        @storage = storage
         @descriptor = descriptor
       end
 
@@ -56,6 +57,11 @@ module Rubernetes
       # The configuration section that lets a component load Extension
       # objects -- Ruby source it will evaluate -- or nothing.
       def extensions_section = @extensions ? {"extensions" => {"enabled" => true}} : {}
+
+      # Every "node" of the cluster is this host, which is the one case the
+      # in-tree hostPath provisioner is meant for: with it and a default
+      # StorageClass, a PersistentVolumeClaim just works.
+      def storage_section = @storage ? {"enable_hostpath_provisioner" => true} : {}
       def descriptor_path = File.join(root, "cluster.json")
 
       # Returns the cluster descriptor (also written to cluster.json); raises
@@ -208,6 +214,7 @@ module Rubernetes
         end
         replicas.zip(control_ids) { |replica, id| await!("apiserver #{id} /readyz") { api_ready?(replica.fetch(:kubeconfig)) } }
         apply_coredns_rbac!(kubeconfig) if pki[:identities]
+        apply!(kubeconfig, {"items" => [DEFAULT_STORAGE_CLASS]}, "the default StorageClass") if @storage
         bootstrap_token = tls_bootstrap? ? create_bootstrap_token!(kubeconfig) : nil
 
         scheduler = replicas[1 % replicas.length]
@@ -225,6 +232,9 @@ module Rubernetes
         end
 
         await!("#{worker_ids.length} Ready nodes") { ready_nodes(kubeconfig) >= worker_ids.length }
+        # A Pod cannot be created before its namespace has a ServiceAccount;
+        # "ready" must mean the first `kubectl run` works.
+        await!("the default ServiceAccount") { stored?(kubeconfig, "/api/v1/namespaces/default/serviceaccounts/default") }
         # A component that died after spawning (a proxy whose attach failed, a
         # controller whose loop crashed) must not hide behind Ready nodes.
         raise_on_dead!(processes, "bring-up")
