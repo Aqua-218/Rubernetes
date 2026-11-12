@@ -36,6 +36,8 @@ class KubeletImageEventsTest < Minitest::Test
       end
       {"digest" => DIGEST, "reference" => reference}
     end
+
+    def release(_image) = true
   end
 
   def lifecycle(resolver)
