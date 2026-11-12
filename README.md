@@ -169,7 +169,10 @@ port and file it started.
 
 `scale` changes the datastore's membership through Raft joint consensus. The
 cluster stays usable during the change, and with three control nodes it keeps
-running when one is lost. Removing control nodes is not supported.
+running when one is lost. A smaller `--controls` removes the newest control
+nodes: a leader that is leaving hands the lead to a node that stays, and the
+components that talked to a removed node are pointed at a remaining one and
+restarted.
 
 By default the cluster has a StorageClass named `standard`. A
 PersistentVolumeClaim gets a directory on the host as its volume, the way
