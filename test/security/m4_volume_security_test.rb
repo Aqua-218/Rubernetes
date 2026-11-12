@@ -67,6 +67,13 @@ class M4VolumeSecurityTest < Minitest::Test
   end
 
   class FailingMountLedger
+    # The MountIdentityLedger contract the manager relies on.
+    attr_accessor :live_check
+
+    def remove_target(_path)
+      0
+    end
+
     def register(**_kwargs)
       raise Rubernetes::Volume::MountIdentityError, "simulated mount ledger failure"
     end
