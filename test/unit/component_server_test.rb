@@ -62,10 +62,14 @@ class ComponentServerTest < Minitest::Test
     assert_equal 405, subject.call(request("/healthz", method: "POST"))[0]
   end
 
-  Result = Struct.new(:status, :victims, keyword_init: true) do
-    def unschedulable? = status == :unschedulable
-    def gated? = false
-    def dropped? = status == :dropped
+  # A real result, as the framework hands them to the service.
+  module Result
+    POD = Rubernetes::Scheduler::Pod.new({"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u"},
+                                          "spec" => {"containers" => []}})
+
+    def self.new(status:, victims:)
+      Rubernetes::Scheduler::ScheduleResult.new(status: status, pod: POD, trace: Rubernetes::Scheduler::Trace.new, victims: victims)
+    end
   end
 
   def test_scheduling_attempts_are_counted_by_result
