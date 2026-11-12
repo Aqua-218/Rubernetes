@@ -13,7 +13,9 @@ class NativeReadOnlyRootfsTest < Minitest::Test
   Native = Rubernetes::Runtime::Native
 
   def runtime
-    @runtime ||= Native.allocate
+    # A constructed runtime: a spec without a security context falls back to
+    # the runtime's configured default, which an allocated shell does not have.
+    @runtime ||= Native.new(profile: :pure)
   end
 
   def read_only?(input)
