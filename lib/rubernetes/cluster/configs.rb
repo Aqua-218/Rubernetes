@@ -48,8 +48,12 @@ module Rubernetes
          "authorization" => {"mode" => "Webhook"}}
       end
 
-      def write_apiserver_config(id, ports, pki)
-        peers = control_ids.reject { |peer| peer == id }
+      # voters: who may vote when this node starts with an empty log.  A
+      # node that joins a running cluster names the cluster's voters, not
+      # itself: two empty newcomers that counted each other could elect a
+      # leader with nothing in its log.
+      def write_apiserver_config(id, ports, pki, voters: control_ids)
+        peers = ports.fetch(:raft).keys.reject { |peer| peer == id }
           .to_h { |peer| [peer, "127.0.0.1:#{ports.fetch(:raft).fetch(peer)}"] }
         document = {
           "version" => 1, "logging" => {"level" => "info"},
@@ -95,7 +99,7 @@ module Rubernetes
                 "type" => "raft", "node_id" => id, "cluster_id" => cluster_id,
                 "data_dir" => File.join(root, "data", id), "pki_dir" => File.join(root, "raft-pki", id),
                 "listen_address" => "127.0.0.1", "listen_port" => ports.fetch(:raft).fetch(id),
-                "voters" => control_ids, "peers" => peers
+                "voters" => voters, "peers" => peers
               }
             }
           }
