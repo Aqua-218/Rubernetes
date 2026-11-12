@@ -61,7 +61,7 @@ class NetworkDurableStateDeferredFsyncTest < Minitest::Test
   end
 
   def test_the_assembler_asks_for_the_deferred_barrier
-    source = File.read(File.expand_path("../../lib/rubernetes/bootstrap/assembler.rb", __dir__))
+    source = File.read(File.expand_path("../../lib/rubernetes/bootstrap/assembler/network_builder.rb", __dir__))
 
     assert_match(/fsync: config\.fetch\("fsync", true\) == false \? false : :deferred/, source)
   end
