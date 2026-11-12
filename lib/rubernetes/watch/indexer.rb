@@ -88,6 +88,34 @@ module Rubernetes
         end
       end
 
+      # Bring an entry that is there up to `object`, a version of it that is
+      # not older; never create one.  This is what a writer's own response
+      # may do to the cache: the watch alone says what exists, so a response
+      # that arrives after the object's DELETED event must not put the object
+      # back.  Answers whether the entry was replaced.
+      def refresh(object)
+        value = copy_for_storage(object)
+        key = key_for(value)
+        loop do
+          index_values = build_index_values(value)
+          result = @mutex.synchronize do
+            next nil unless index_values.keys.sort == @indices.keys.sort
+
+            current = @objects[key]
+            next false if current.nil? || Support.version_newer?(Support.resource_version(current), Support.resource_version(value))
+
+            remove_indexes_locked(key)
+            @objects[key] = value
+            invalidate_list_locked
+            @indices.each_key do |name|
+              add_index_values_locked(@indices.fetch(name).fetch(:values), key, index_values.fetch(name))
+            end
+            true
+          end
+          return result unless result.nil?
+        end
+      end
+
       # Replace the cache with one list snapshot.  This is used by relist and
       # intentionally validates duplicate keys before changing any state.
       def replace_all(objects)
