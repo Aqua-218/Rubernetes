@@ -11,10 +11,11 @@ require "rubernetes/bootstrap/control_plane_services"
 class SchedulerServiceDrainsQueueTest < Minitest::Test
   Service = Rubernetes::Bootstrap::SchedulerService
 
-  Result = Struct.new(:status, :pod, :error) do
-    def failed? = false
-    def unschedulable? = false
-    def dropped? = false
+  POD = Rubernetes::Scheduler::Pod.new({"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u"},
+                                        "spec" => {"containers" => []}})
+
+  def scheduled
+    Rubernetes::Scheduler::ScheduleResult.new(status: :scheduled, pod: POD, trace: Rubernetes::Scheduler::Trace.new)
   end
 
   class Elector
@@ -38,6 +39,8 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
     service.instance_variable_set(:@interval, 0.5)
     service.instance_variable_set(:@clock, -> { Time.now.utc })
     service.instance_variable_set(:@logger, nil)
+    service.instance_variable_set(:@decisions, Rubernetes::Scheduler::Decisions.new)
+    service.instance_variable_set(:@scheduler_metrics, Rubernetes::Scheduler::Metrics.new)
     service.instance_variable_set(:@sleeper, lambda { |seconds|
       sleeps << seconds
       service.instance_variable_set(:@running, false)
@@ -47,7 +50,7 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
 
   def test_the_loop_only_sleeps_when_the_queue_is_empty
     sleeps = []
-    results = Array.new(3) { |_index| Result.new(:scheduled, nil, nil) }
+    results = Array.new(3) { scheduled }
     service = build_service(results: results, sleeps: sleeps)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     service.send(:run_loop)
