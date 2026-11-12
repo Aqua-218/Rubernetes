@@ -14,6 +14,7 @@ require "tmpdir"
 require "rubernetes/node/csi_plugins"
 require "rubernetes/node/pod_volumes"
 require "rubernetes/volume"
+require_relative "../support/node_agent_fakes"
 
 class KubeletCSIPluginRegistrationTest < Minitest::Test
   Response = Struct.new(:status)
@@ -626,24 +627,9 @@ end
 class KubeletCSIPluginAgentWiringTest < Minitest::Test
   Node = Rubernetes::Node
 
-  class API
-    attr_reader :client
-
-    def initialize(client) = @client = client
-    def create_or_update_node(node) = node
-    def renew_lease(**) = {}
-  end
-
-  class Lifecycle
-    def admitted_pods = []
-    def pods = {}
-  end
-
-  class Loop
-    def start = nil
-    def stop = nil
-    def running? = false
-  end
+  API = NodeAgentFakes::AdapterAPI
+  Lifecycle = NodeAgentFakes::Lifecycle
+  Loop = NodeAgentFakes::SyncLoop
 
   class Volume
     attr_reader :registry
