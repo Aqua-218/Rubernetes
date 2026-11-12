@@ -253,11 +253,27 @@ module Rubernetes
         nil
       end
 
+      # The response to a write tells the cache about a newer version of an
+      # object the cache holds, and nothing else.  Applied unconditionally it
+      # brought objects back from the dead: removing the last finalizer of a
+      # PersistentVolumeClaim under deletion answers with the claim, the
+      # claim's DELETED event had already emptied the entry, and the claim
+      # then sat in the cache for good -- its volume stayed Bound to it.
+      #
+      # That same response is the object's last state, not a live object:
+      # the API server removes an object the moment it is under deletion
+      # with no finalizer and no grace period left.
       def update(object)
-        indexer = @informer.respond_to?(:indexer) ? @informer.indexer : nil
-        indexer.update(object) if indexer.respond_to?(:update)
+        return @informer.indexer.delete(object) if finalized?(object)
+
+        @informer.indexer.refresh(object)
       rescue StandardError
         nil
+      end
+
+      def finalized?(object)
+        metadata = object["metadata"] || {}
+        !metadata["deletionTimestamp"].nil? && Array(metadata["finalizers"]).empty? && metadata["deletionGracePeriodSeconds"].to_i.zero?
       end
 
       def delete(object)
@@ -949,6 +965,7 @@ module Rubernetes
             gates["MaxUnavailableStatefulSet"] == true
         end
         apply_cluster_signing!(@config["cluster_signing"]) if @config["cluster_signing"]
+        @controller_options[:enable_hostpath_provisioner] = true if @config["enable_hostpath_provisioner"] == true
         apply_service_account_key!(@config["service_account_private_key_file"]) if @config["service_account_private_key_file"]
         injected_provider = @runtime_adapters[:cloud_provider] || @runtime_adapters["cloud_provider"] ||
                             @runtime_adapters[:provider] || @runtime_adapters["provider"]
