@@ -20,10 +20,10 @@ class EvictionDisruptionBudgetTest < Minitest::Test
       @updates = []
     end
 
+    # What StoreAdapter#list answers with.
     def list(resource:, namespace: nil, **)
-      return {"items" => []} unless resource.kind == "PodDisruptionBudget"
-
-      {"items" => @budgets}
+      items = resource.kind == "PodDisruptionBudget" ? @budgets : []
+      Rubernetes::API::MemoryStore::ListResult.new(items: items, resource_version: 0)
     end
 
     def update(resource:, namespace:, name:, object:, **)
@@ -48,6 +48,7 @@ class EvictionDisruptionBudgetTest < Minitest::Test
   def server_for(store)
     server = Server.allocate
     server.instance_variable_set(:@store, store)
+    server.instance_variable_set(:@registry, Rubernetes::API::RegistryAdapter.new(Rubernetes::API::Registry.new))
     server.instance_variable_set(:@clock, -> { Time.at(0).utc })
     server
   end
