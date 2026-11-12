@@ -437,7 +437,7 @@ module Rubernetes
                               end.freeze
         @plugins = @configured_plugins
         @queue = queue || SchedulingQueue.new
-        @queue.hint_strategy = method(:queueing_strategy) if @queue.respond_to?(:hint_strategy=)
+        @queue.hint_strategy = method(:queueing_strategy)
         @reserve_handler = reserve
         @unreserve_handler = unreserve
         @bind_handler = bind
@@ -466,10 +466,10 @@ module Rubernetes
         @cycle = 0
         @opportunistic_batching = opportunistic_batching
         rebuild_batch
-        @queue.metrics = @metrics if @queue.respond_to?(:metrics=)
-        @metrics.queue = @queue if @metrics.respond_to?(:queue=)
-        @volume_binding.metrics = @metrics if @volume_binding.respond_to?(:metrics=)
-        @dynamic_resources.metrics = @metrics if @dynamic_resources.respond_to?(:metrics=)
+        @queue.metrics = @metrics
+        @metrics.queue = @queue
+        @volume_binding.metrics = @metrics
+        @dynamic_resources.metrics = @metrics
         configure_queue_sort!
       end
 
@@ -487,7 +487,7 @@ module Rubernetes
 
       def rebuild_batch
         @batch = (OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name)) if @opportunistic_batching)
-        @batch.metrics = @metrics if @batch.respond_to?(:metrics=)
+        @batch&.metrics = @metrics
       end
 
       # The node this Pod is nominated to, as far as this scheduler knows.
@@ -724,7 +724,7 @@ module Rubernetes
             forget_nomination(typed_pod)
             record_pod_scheduled(typed_pod)
             queue.delete(typed_pod)
-            queue.forget(typed_pod) if queue.respond_to?(:forget)
+            queue.forget(typed_pod)
             ScheduleResult.new(status: :scheduled, pod: bound_pod, node: selected.node,
                                filtered: filtered, scores: breakdowns, victims: victims, trace: trace,
                                reservation: reservation)
@@ -817,10 +817,10 @@ module Rubernetes
       # scheduler_pod_scheduling_attempts / _sli_duration_seconds for a Pod
       # that just bound, from the queue's pop bookkeeping.
       def record_pod_scheduled(pod)
-        attempts = queue.respond_to?(:pop_attempts) ? queue.pop_attempts(pod) : 0
+        attempts = queue.pop_attempts(pod)
         # A Pod scheduled straight from schedule() was never popped: one attempt.
         attempts = 1 if attempts.zero?
-        since = queue.respond_to?(:seconds_since_first_attempt) ? queue.seconds_since_first_attempt(pod) : nil
+        since = queue.seconds_since_first_attempt(pod)
         @metrics.pod_scheduled(attempts, since)
       rescue StandardError
         nil
@@ -842,7 +842,7 @@ module Rubernetes
         requeue_after_failure(item.pod, error) if item
         raise
       ensure
-        queue.done(item.pod) if item && queue.respond_to?(:done)
+        queue.done(item.pod) if item
         record_in_flight_events
       end
 
@@ -870,7 +870,7 @@ module Rubernetes
         existing = normalize_pods(pods, node_objects)
         members = [pod] + existing.select do |candidate|
           candidate.namespace == pod.namespace && candidate.scheduling_group == group_name && candidate.node_name.empty? &&
-            candidate.uid != pod.uid && queue.respond_to?(:pop_specific) && queue.pop_specific(candidate)
+            candidate.uid != pod.uid && queue.pop_specific(candidate)
         end
         members.sort_by! do |member|
           [-member.priority.to_i,
@@ -896,7 +896,7 @@ module Rubernetes
           end
           assumed << result
         end
-        @metrics.pod_group_algorithm(monotonic - algorithm_started) if @metrics.respond_to?(:pod_group_algorithm)
+        @metrics.pod_group_algorithm(monotonic - algorithm_started)
         outcome = if failure.nil? then "scheduled"
                   elsif failure.error then "error"
                   else "unschedulable"
@@ -916,7 +916,7 @@ module Rubernetes
             queue.enqueue_unschedulable(member, reason: reason, plugins: ["GangScheduling"])
           end
         end
-        @metrics.pod_group_attempt(profile, outcome, monotonic - started) if @metrics.respond_to?(:pod_group_attempt)
+        @metrics.pod_group_attempt(profile, outcome, monotonic - started)
         note_pod_group_condition(pod.namespace, group_name, outcome, failure)
         results.first
       end
@@ -932,7 +932,7 @@ module Rubernetes
           forget_nomination(typed_pod)
           record_pod_scheduled(typed_pod)
           queue.delete(typed_pod)
-          queue.forget(typed_pod) if queue.respond_to?(:forget)
+          queue.forget(typed_pod)
           ScheduleResult.new(status: :scheduled, pod: bound_pod, node: node, filtered: result.filtered, scores: result.scores,
                              victims: result.victims, trace: result.trace, reservation: result.reservation)
         rescue StandardError => error
@@ -977,22 +977,13 @@ module Rubernetes
 
       # A cluster event: the unschedulable Pods it may help are moved.
       def requeue_on_event(event, old_object: nil, new_object: nil)
-        moved = if queue.respond_to?(:move_on_event)
-                  queue.move_on_event(event, old_object: old_object,
-                                             new_object: new_object)
-                else
-                  queue.promote_unschedulable
-                end
+        moved = queue.move_on_event(event, old_object: old_object, new_object: new_object)
         record_in_flight_events
         moved
       end
 
       def record_in_flight_events
-        return unless queue.respond_to?(:in_flight_event_counts) && @metrics.respond_to?(:inflight_events)
-
         @metrics.inflight_events(queue.in_flight_event_counts)
-      rescue StandardError
-        nil
       end
       private :record_in_flight_events
 
@@ -1009,8 +1000,6 @@ module Rubernetes
         registered = queue_sort_plugins
         return if registered.empty?
         raise ValidationError, "scheduler must register exactly one queue sort plugin" if registered.length != 1
-        raise ValidationError, "scheduler queue does not support registry-backed queue sorting" unless @queue.respond_to?(:configure_sort)
-
         plugin = registered.first
         comparator = lambda do |left, right|
           typed_left = left.is_a?(Pod) ? left : Pod.new(left)
@@ -1220,7 +1209,7 @@ module Rubernetes
             # the victims' delete events; activating always costs one extra
             # cycle that waits on the terminating victims, and can never
             # strand the Pod.
-            queue.activate(pod) if queue.respond_to?(:activate)
+            queue.activate(pod)
             observe_preemption(outcome, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           end
         end
@@ -1670,19 +1659,11 @@ module Rubernetes
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
         reason = "#{error.class}: #{error.message}"
         if pod_gone?(typed, error)
-          if queue.respond_to?(:drop)
-            queue.drop(typed, reason: reason)
-          else
-            queue.delete(typed)
-          end
+          queue.drop(typed, reason: reason)
           return :dropped
         end
 
-        if queue.respond_to?(:enqueue_backoff)
-          queue.enqueue_backoff(typed, reason: reason)
-        else
-          queue.enqueue(typed, reason: reason)
-        end
+        queue.enqueue_backoff(typed, reason: reason)
         :requeued
       end
 
