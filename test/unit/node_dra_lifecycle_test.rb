@@ -60,6 +60,9 @@ class NodeDRALifecycleTest < Minitest::Test
       @calls << [:unprepare, pod.dig("metadata", "name")]
       true
     end
+
+    # ResourceHealthStatus: no device health to report.
+    def allocated_resources_status(_pod, _container) = []
   end
 
   # A ContainerSpec stand-in: the definition as the runtime spec.
