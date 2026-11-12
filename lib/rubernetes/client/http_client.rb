@@ -11,6 +11,8 @@ require "uri"
 require_relative "../cleanup"
 require_relative "../version"
 require_relative "errors"
+require_relative "rate_limiter"
+require_relative "rest_client_metrics"
 
 module Rubernetes
   module Client
@@ -93,11 +95,14 @@ module Rubernetes
         write_timeout: DEFAULT_WRITE_TIMEOUT,
         user_agent: nil,
         max_retries: DEFAULT_MAX_RETRIES,
+        qps: nil,
+        burst: nil,
         retry_sleeper: ->(seconds) { sleep(seconds) }
       )
         @user_agent = (user_agent || self.class.default_user_agent).to_s
         @max_retries = Integer(max_retries)
         @retry_sleeper = retry_sleeper
+        @rate_limiter = build_rate_limiter(qps, burst)
         @context = context || {
           server: server,
           bearer_token: token,
@@ -157,6 +162,7 @@ module Rubernetes
         begin
           loop do
             retry_attempt = attempts.positive?
+            throttle(normalized_method, uri)
             response = begin
               if @transport
                 call_transport(normalized_method, uri, request_body, request_headers)
@@ -251,6 +257,20 @@ module Rubernetes
 
       # tlsConfigKey: what the TLS transport is keyed by (loadTLSFiles reads
       # the files first); the server is not part of it.
+      # rest.Config QPS/Burst: no limit unless a positive QPS is given (the
+      # API server's priority and fairness is the limit that always applies);
+      # the burst defaults to twice the QPS, at least 10.
+      def build_rate_limiter(qps, burst)
+        return nil if qps.nil? || !Float(qps).positive?
+
+        RateLimiter.new(qps: qps, burst: burst || [(Float(qps) * 2).ceil, 10].max)
+      end
+
+      # One token per attempt, as client-go's tryThrottle.
+      def throttle(method, uri)
+        RestClientMetrics.rate_limiter(method, uri, @rate_limiter ? @rate_limiter.wait : 0.0)
+      end
+
       def tls_cache_key
         read = lambda { |path|
           if path
@@ -1126,109 +1146,5 @@ module Rubernetes
 
     RESTClient = HTTPClient
     REST = HTTPClient
-  end
-end
-
-module Rubernetes
-  module Client
-    # client-go's rest_client metrics (tools/metrics, registered by
-    # component-base/metrics/prometheus/restclient): requests by code, host
-    # and method; latency and body sizes by host and verb.
-    module RestClientMetrics
-      LATENCY_BUCKETS = [0.005, 0.025, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 60.0].freeze
-      SIZE_BUCKETS = [64, 256, 512, 1024, 4096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216].freeze
-
-      module_function
-
-      def registry
-        return nil unless defined?(Rubernetes::Observability::Metrics)
-
-        @registry ||= Rubernetes::Observability::Metrics.global.tap do |metrics|
-          metrics.register("rest_client_requests_total", type: :counter,
-                                                         help: "Number of HTTP requests, partitioned by status code, method, and host.")
-          metrics.register("rest_client_request_duration_seconds", type: :histogram, buckets: LATENCY_BUCKETS,
-                                                                   help: "Request latency in seconds. Broken down by verb, and host.")
-          metrics.register("rest_client_request_size_bytes", type: :histogram, buckets: SIZE_BUCKETS,
-                                                             help: "Request size in bytes. Broken down by verb and host.")
-          metrics.register("rest_client_response_size_bytes", type: :histogram, buckets: SIZE_BUCKETS,
-                                                              help: "Response size in bytes. Broken down by verb and host.")
-          metrics.register("rest_client_request_retries_total", type: :counter,
-                                                                help: "Number of request retries, partitioned by status code, verb, and host.")
-          metrics.register("rest_client_transport_create_calls_total", type: :counter,
-                                                                       help: "Number of calls to get a new transport, partitioned by the result of the " \
-                                                                             "operation hit: obtained from the cache, miss: created and added to the cache, " \
-                                                                             "uncacheable: created and not cached")
-          metrics.register("rest_client_transport_cache_entries", type: :gauge, help: "Number of transport entries in the internal cache.")
-        end
-      end
-
-      # rest_client_dns_resolution_duration_seconds{host}: one name lookup
-      # before a new connection.
-      def dns_resolution(uri, seconds)
-        metrics = registry
-        return unless metrics
-
-        name = "rest_client_dns_resolution_duration_seconds"
-        metrics.register(name, type: :histogram) unless metrics.registered?(name)
-        metrics.observe(name, seconds, {"host" => host_of(uri)})
-      rescue StandardError
-        nil
-      end
-
-      def record(method, uri, code, seconds, request_size, response_size)
-        attempt(method, uri, code, request_size, false)
-        latency(method, uri, seconds, response_size)
-      end
-
-      # One attempt: rest_client_requests_total and the request size, and
-      # rest_client_request_retries_total when it is not the first.
-      def attempt(method, uri, code, request_size, retried)
-        metrics = registry
-        return unless metrics
-
-        host = host_of(uri)
-        verb = method.to_s.upcase
-        metrics.increment("rest_client_requests_total", {"code" => code.to_s, "host" => host, "method" => verb})
-        metrics.increment("rest_client_request_retries_total", {"code" => code.to_s, "host" => host, "verb" => verb}) if retried
-        metrics.observe("rest_client_request_size_bytes", request_size.to_i, {"host" => host, "verb" => verb})
-      rescue StandardError
-        nil
-      end
-
-      # The whole request: rest_client_request_duration_seconds, and the
-      # final response's size.
-      def latency(method, uri, seconds, response_size)
-        metrics = registry
-        return unless metrics
-
-        host = host_of(uri)
-        verb = method.to_s.upcase
-        metrics.observe("rest_client_request_duration_seconds", seconds, {"host" => host, "verb" => verb})
-        metrics.observe("rest_client_response_size_bytes", response_size.to_i, {"host" => host, "verb" => verb}) if response_size
-      rescue StandardError
-        nil
-      end
-
-      def host_of(uri) = uri.respond_to?(:host) && uri.host ? "#{uri.host}:#{uri.port}" : ""
-
-      # tlsTransportCache.get: rest_client_transport_create_calls_total
-      # ("miss" for a new TLS configuration, "hit" for a known one) and
-      # rest_client_transport_cache_entries.
-      def transport_created(key)
-        metrics = registry
-        return unless metrics
-
-        @transport_keys_mutex ||= Mutex.new
-        result, size = @transport_keys_mutex.synchronize do
-          @transport_keys ||= Set.new
-          hit = !@transport_keys.add?(key)
-          [hit ? "hit" : "miss", @transport_keys.size]
-        end
-        metrics.increment("rest_client_transport_create_calls_total", {"result" => result})
-        metrics.set("rest_client_transport_cache_entries", size)
-      rescue StandardError
-        nil
-      end
-    end
   end
 end
