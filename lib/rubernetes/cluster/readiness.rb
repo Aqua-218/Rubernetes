@@ -15,6 +15,15 @@ module Rubernetes
         client&.close
       end
 
+      def stored?(kubeconfig, path)
+        client = api_client(kubeconfig)
+        client.raw("GET", path, raise_for_status: false).status == 200
+      rescue Client::Error, SystemCallError, OpenSSL::SSL::SSLError
+        false
+      ensure
+        client&.close
+      end
+
       # The Node objects of a restarted cluster still say Ready from before
       # the stop; with `since`, only a heartbeat written after it counts.
       def ready_nodes(kubeconfig, since: nil)
