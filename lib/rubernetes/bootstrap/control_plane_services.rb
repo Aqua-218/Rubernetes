@@ -1314,21 +1314,21 @@ module Rubernetes
             break unless started?
 
             begin
-              queue = @manager.respond_to?(:queue) ? @manager.queue : nil
-              total = @manager.respond_to?(:reconciled_total) ? @manager.reconciled_total : nil
+              queue = @manager.queue
+              total = @manager.reconciled_total
               # Queue depth alone cannot tell a busy manager from a stalled
               # one: a manager that is minutes behind shows a short queue
               # whenever the keys arrive slowly.  The wait is the number that
               # says which.
-              waits = queue.respond_to?(:take_wait_stats) ? queue.take_wait_stats : nil
-              timings = @manager.respond_to?(:take_key_time) ? @manager.take_key_time : nil
-              busiest = @manager.respond_to?(:take_controller_time) ? @manager.take_controller_time : nil
-              deliveries = @informers.filter_map { |informer| informer.take_delivery_stats if informer.respond_to?(:take_delivery_stats) }
+              waits = queue.take_wait_stats
+              timings = @manager.take_key_time
+              busiest = @manager.take_controller_time
+              deliveries = @informers.map(&:take_delivery_stats)
               slow_informers = deliveries.select { |stats| stats[:backlog].positive? || stats[:handler_seconds] > 1.0 }
                 .sort_by { |stats| -[stats[:backlog], stats[:handler_seconds]].max }.first(5)
               log(:info, "controller_manager.status",
-                  leader: @manager.respond_to?(:leader?) ? @manager.leader? : nil,
-                  queue_length: queue.respond_to?(:length) ? queue.length : nil,
+                  leader: @manager.leader?,
+                  queue_length: queue.length,
                   reconciled: total && (total - reconciled),
                   dequeued: waits && waits[:count],
                   queue_wait_avg: waits && waits[:average].round(3),
@@ -1421,9 +1421,9 @@ module Rubernetes
         metrics.register("running_managed_controllers", type: :gauge,
                                                         help: "Indicates where instances of a controller are currently running")
         metrics.add_collector do |registry|
-          leader = @manager.respond_to?(:leader?) ? @manager.leader? : false
+          leader = @manager.leader?
           registry.set("leader_election_master_status", leader ? 1 : 0, {"name" => "kube-controller-manager"})
-          controllers = @manager.respond_to?(:controllers) ? @manager.controllers : {}
+          controllers = @manager.controllers
           names = if controllers.respond_to?(:keys)
                     controllers.keys
                   else
@@ -1505,7 +1505,7 @@ module Rubernetes
       end
 
       def running_controller?(name)
-        controllers = @manager.respond_to?(:controllers) ? @manager.controllers : {}
+        controllers = @manager.controllers
         (controllers.respond_to?(:keys) ? controllers.keys.map(&:to_s) : []).include?(name) && @store.respond_to?(:list)
       end
 
@@ -1547,9 +1547,12 @@ module Rubernetes
         @component_server = nil
         @metrics_server&.stop
         @metrics_server = nil
-        @informers.each { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
-        @manager.elector.release if @manager.respond_to?(:elector) && @manager.elector.respond_to?(:release) && @manager.elector.leader?
-        @manager&.stop if @manager.respond_to?(:stop)
+        @informers.each { |informer| informer.stop(join: true) }
+        # A start that failed before the manager existed stops here too.
+        if @manager
+          @manager.elector.release if @manager.elector.leader?
+          @manager.stop
+        end
         @thread&.join if @thread && @thread != Thread.current
         @thread = nil
       rescue StandardError => error
@@ -2661,7 +2664,7 @@ module Rubernetes
         @mutex.synchronize { raise "rubernetes-proxy is already started" if @running }
         begin
           build_runtime!
-          @proxy.metrics = @proxy_metrics if @proxy.respond_to?(:metrics=)
+          @proxy.metrics = @proxy_metrics
           service_source = resource_source_for(Controller::ResourceDescriptor.parse("Service"))
           endpoint_source = resource_source_for(Controller::ResourceDescriptor.parse("EndpointSlice"))
           apply_snapshot(service_source, kind: :service)
@@ -2669,7 +2672,7 @@ module Rubernetes
           # healthCheckNodePort is a node-local socket contract.  Start it
           # only after the initial Service snapshot has populated readiness;
           # TC/nft datapaths deliberately leave these packets local.
-          @proxy.start_health_check_responder if @proxy.respond_to?(:start_health_check_responder)
+          @proxy.start_health_check_responder
           @proxy.sync
           attach_backend_if_requested
           # The server closes each watch after PROXY_WATCH_TIMEOUT_SECONDS and
@@ -2741,17 +2744,15 @@ module Rubernetes
         @status_thread = Thread.new do
           while started?
             begin
-              publishes = @proxy.respond_to?(:publish_stats) ? @proxy.publish_stats(reset: true) : {}
+              publishes = @proxy.publish_stats(reset: true)
               log(:info, "proxy.status",
-                  rules: @proxy.respond_to?(:rules) ? @proxy.rules.length : nil,
-                  services: @proxy.respond_to?(:services) ? @proxy.services.length : nil,
+                  rules: @proxy.rules.length,
+                  services: @proxy.services.length,
                   publishes: publishes[:count], publish_seconds: publishes[:seconds]&.round(3),
                   publish_max: publishes[:max]&.round(3),
                   backend: @proxy.respond_to?(:backend) ? @proxy.backend.class.name.to_s.split("::").last : nil,
                   publish_error: @proxy.respond_to?(:last_publish_error) && @proxy.last_publish_error ? @proxy.last_publish_error.message.to_s[0, 200] : nil,
-                  watches_running: Array(@subscriptions).map do |subscription|
-                    subscription.respond_to?(:running?) ? subscription.running? : nil
-                  end,
+                  watches_running: Array(@subscriptions).map(&:running?),
                   watch_errors: Array(@subscriptions).map do |subscription|
                     subscription.respond_to?(:last_error) && subscription.last_error ? subscription.last_error.message.to_s[0, 200] : nil
                   end)
@@ -2785,7 +2786,7 @@ module Rubernetes
           attach: false,
           clock: @clock
         )
-        @proxy.publish_coalescing_seconds = PROXY_PUBLISH_COALESCE_SECONDS if @proxy.respond_to?(:publish_coalescing_seconds=)
+        @proxy.publish_coalescing_seconds = PROXY_PUBLISH_COALESCE_SECONDS
         # A memory backend programs no kernel datapath, so there are no
         # kernel conntrack entries of its making to reconcile.
         if @proxy.respond_to?(:conntrack_reconciler=) && !backend.is_a?(Proxy::MemoryBackend)
