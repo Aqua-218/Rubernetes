@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/node"
+require_relative "../support/node_agent_fakes"
 require_relative "../support/node_lifecycle_fakes"
 
 # The node side of an eviction: the eviction manager's killPodFunc stops the
@@ -91,29 +92,17 @@ class NodeEvictionLifecycleTest < Minitest::Test
     assert_equal ["app"], @runtime.created, "a Pod the kubelet failed is not restarted"
   end
 
-  class API
-    attr_reader :nodes
+  API = NodeAgentFakes::API
+  Loop = NodeAgentFakes::SyncLoop
+  Lifecycle = NodeAgentFakes::Lifecycle
 
-    def initialize = @nodes = []
-    def register_node(node) = (@nodes << node).last
-    def renew_lease(lease) = lease
-  end
-
-  class Loop
-    def start(**) = true
-    def stop(**) = true
-  end
-
-  class Lifecycle
-    def recover(**) = {"ready" => true, "errors" => [], "blocked" => []}
-    def admitted_pods = []
-    def record(_uid) = nil
-  end
-
+  # What the agent asks of a stats provider beyond the summary: an observer
+  # for its collection times and whether images have a filesystem of their own.
   class Stats
-    attr_accessor :available
+    attr_accessor :available, :metrics_observer
 
     def initialize = @available = 8 * (1024**3)
+    def dedicated_image_fs? = false
 
     def summary
       {"node" => {"memory" => {"availableBytes" => available, "workingSetBytes" => 1024**3, "time" => Time.now.utc.iso8601(6)}},
@@ -167,6 +156,7 @@ class NodeEvictionLifecycleTest < Minitest::Test
 
   class ImageResolver
     def staging_root = nil
+    def pull_records = nil
     def cached_images = []
     def evict_cached_image(*, **) = false
   end
