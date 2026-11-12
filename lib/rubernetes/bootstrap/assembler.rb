@@ -639,6 +639,14 @@ module Rubernetes
         return nil unless options
 
         config = options.to_h
+        # CNI plugins own the whole Pod network: no IPAM, bridge, policy engine
+        # or worker process of ours beside them.
+        if config["plugin"] == "cni"
+          cni = config.fetch("cni", {})
+          return Network::CNI.new(state_dir: "#{config.fetch("state_path")}.cni", logger: logger,
+                                  conf_dir: cni.fetch("conf_dir", Network::CNI::DEFAULT_CONF_DIR),
+                                  bin_dirs: cni.fetch("bin_dirs", Network::CNI::DEFAULT_BIN_DIRS))
+        end
         runtime_profile = process.fetch("runtime_profile", "pure").to_s.downcase.tr("-", "_").to_sym
         native_profile = %i[host_integration kernel_isolation l3].include?(runtime_profile) || config["profile"].to_s == "native"
         adapter = adapters[:network_adapter] || adapters["network_adapter"]
