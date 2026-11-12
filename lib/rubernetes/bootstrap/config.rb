@@ -109,7 +109,10 @@ module Rubernetes
       CONTROL_PLANE_SYNC_KEYS = %w[period_seconds interval_seconds].freeze
       CONTROL_PLANE_LEASE_KEYS = %w[namespace name lease_duration_seconds renew_deadline_seconds retry_period_seconds].freeze
       NETWORK_KEYS = %w[cluster_cidr ipv4_cidr ipv6_cidr node_subnet_prefix ipv4_node_prefix ipv6_node_prefix state_path bridge_name mtu
-                        fsync policy_backend policy_table].freeze
+                        fsync policy_backend policy_table plugin cni].freeze
+      # network.plugin: the built-in bridge, or CNI plugins run by the agent.
+      NETWORK_PLUGINS = %w[bridge cni].freeze
+      NETWORK_CNI_KEYS = %w[conf_dir bin_dirs].freeze
       NETWORK_POLICY_BACKENDS = %w[ebpf nftables disabled].freeze
       VOLUME_KEYS = %w[data_dir root fsync profile csi].freeze
       VOLUME_CSI_KEYS = %w[
@@ -942,6 +945,13 @@ module Rubernetes
         end
 
         validate_non_empty_string!(value["policy_table"], "#{context}.policy_table") if value.key?("policy_table")
+        raise Error, "#{context}.plugin must be one of #{NETWORK_PLUGINS.join(", ")}" if value.key?("plugin") && !NETWORK_PLUGINS.include?(value["plugin"])
+        return unless value.key?("cni")
+
+        validate_mapping!(value["cni"], "#{context}.cni")
+        reject_unknown_keys!(value["cni"], NETWORK_CNI_KEYS, "#{context}.cni")
+        validate_absolute_path!(value["cni"]["conf_dir"], "#{context}.cni.conf_dir") if value["cni"].key?("conf_dir")
+        Array(value["cni"]["bin_dirs"]).each { |directory| validate_absolute_path!(directory, "#{context}.cni.bin_dirs") }
       end
 
       def validate_volume!(value, context)
