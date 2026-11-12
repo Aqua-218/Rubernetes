@@ -53,7 +53,8 @@ module Rubernetes
         max_command_bytes
       ].freeze
       CONTROL_PLANE_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds controllers root_ca_file metrics_server serving cluster_signing
-                              use_service_account_credentials service_account_private_key_file extensions].freeze
+                              use_service_account_credentials service_account_private_key_file extensions
+                              enable_hostpath_provisioner].freeze
       CLUSTER_SIGNING_KEYS = %w[cert_file key_file duration_seconds signers].freeze
       CLUSTER_SIGNING_SIGNERS = %w[kubelet_serving kubelet_client kube_apiserver_client legacy_unknown].freeze
       # ComponentServer: the scheduler's / controller-manager's endpoints.
@@ -228,6 +229,10 @@ module Rubernetes
             if process_config.key?("service_account_private_key_file")
               validate_absolute_path!(process_config["service_account_private_key_file"],
                                       "rubernetes-controller-manager.service_account_private_key_file")
+            end
+            # kube-controller-manager --enable-hostpath-provisioner.
+            if process_config.key?("enable_hostpath_provisioner") && ![true, false].include?(process_config["enable_hostpath_provisioner"])
+              raise Error, "rubernetes-controller-manager.enable_hostpath_provisioner must be true or false"
             end
             if process_config.key?("use_service_account_credentials") && ![true,
                                                                            false].include?(process_config["use_service_account_credentials"])
