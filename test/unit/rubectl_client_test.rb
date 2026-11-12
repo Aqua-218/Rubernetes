@@ -140,7 +140,7 @@ class RubectlClientTest < Minitest::Test
     assert_equal("bearer-token", context.bearer_token)
   end
 
-  def test_kubeconfig_rejects_aliases_and_exec_credentials
+  def test_kubeconfig_rejects_aliases_and_a_missing_exec_plugin
     aliases = <<~YAML
       current-context: local
       common: &common
@@ -158,7 +158,9 @@ class RubectlClientTest < Minitest::Test
     config = Rubernetes::Client::Kubeconfig.from_hash(
       "current-context" => "local",
       "clusters" => [{"name" => "local", "cluster" => {"server" => "https://kube.example.test"}}],
-      "users" => [{"name" => "local", "user" => {"exec" => {"command" => "credential-helper"}}}],
+      "users" => [{"name" => "local",
+                   "user" => {"exec" => {"apiVersion" => "client.authentication.k8s.io/v1", "command" => "no-such-credential-helper",
+                                         "interactiveMode" => "Never"}}}],
       "contexts" => [{"name" => "local", "context" => {"cluster" => "local", "user" => "local"}}]
     )
     assert_raises(Rubernetes::Client::UnsupportedCredentialError) { config.resolve }
