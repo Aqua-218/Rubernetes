@@ -22,16 +22,7 @@ class SchedulerServiceTypedCacheTest < Minitest::Test
     subject
   end
 
-  def framework
-    queue = Object.new
-    queue.define_singleton_method(:promote_unschedulable) { [] }
-    queue.define_singleton_method(:delete) { |_pod| nil }
-    fake = Object.new
-    fake.define_singleton_method(:queue) { queue }
-    fake.define_singleton_method(:respond_to?) { |name, *| %i[queue enqueue].include?(name) }
-    fake.define_singleton_method(:enqueue) { |_pod, **| nil }
-    fake
-  end
+  def framework = Rubernetes::Scheduler::Framework.new
 
   def pod(name, node: "")
     {"apiVersion" => "v1", "kind" => "Pod",
