@@ -189,6 +189,9 @@ module Rubernetes
       # datastore reads them from `pki_dir` and refuses to start without one.
       def issue_raft_identities(cluster_id)
         ca, ca_key = Rubernetes::Consensus::Identity.generate_ca(cluster_id)
+        # Kept, so that control nodes added later can be given an identity
+        # the first ones trust.
+        Rubernetes::Consensus::Identity.write_ca(File.join(root, "raft-pki", "ca"), ca, ca_key)
         control_ids.each do |id|
           bundle = Rubernetes::Consensus::Identity.issue_node(ca, ca_key, cluster_id: cluster_id, node_id: id)
           Rubernetes::Consensus::Identity.write_bundle(File.join(root, "raft-pki", id), bundle)
