@@ -128,7 +128,7 @@ sudo ruby -Ilib exe/rubectl cluster scale --controls 3   # 動かしたままcon
 | `--name NAME`、`--root DIR` | クラスタの名前と置き場所 |
 | `--no-storage` | 既定のStorageClassとhostPathプロビジョナーを入れない |
 
-`scale`は、Raftのjoint consensusでデータストアの構成を変えます。変更の間もクラスタは使い続けられ、3台になったあとは1台を失っても動き続けます。controlノードを減らす操作には対応していません。
+`scale`は、Raftのjoint consensusでデータストアの構成を変えます。変更の間もクラスタは使い続けられ、3台になったあとは1台を失っても動き続けます。`--controls`に今より小さい数を渡すと、新しい順にcontrolノードを外します。外すノードがリーダーなら先に残るノードへ引き継ぎ、そのノードを使っていたコンポーネントは残るノードへ向け直して再起動します。
 
 既定では、`standard`というStorageClassが入ります。PersistentVolumeClaimを作ると、kube-controller-managerの`--enable-hostpath-provisioner`と同じ方式で、ホスト上のディレクトリがボリュームとして割り当てられます。
 
