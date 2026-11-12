@@ -158,6 +158,34 @@ class SecurityAuthenticationTest < Minitest::Test
     assert_nil authenticator.authenticate(context(headers: headers))
   end
 
+  # The authenticator is asked first for every request.  Checking the
+  # certificate's signature each time cost a quarter of a GET, for requests
+  # that carry no front-proxy header and so can only be answered nil.
+  def test_request_header_checks_the_certificate_only_for_front_proxy_requests_and_remembers_it
+    ca, cert = ca_and_client(cn: "front-proxy-client")
+    now = Time.now.utc
+    authenticator = A::RequestHeader.new(ca_certificates: [ca], allowed_names: ["front-proxy-client"], clock: -> { now })
+    store = authenticator.instance_variable_get(:@store)
+    checks = 0
+    verify = store.method(:verify)
+    store.define_singleton_method(:verify) do |*arguments|
+      checks += 1
+      verify.call(*arguments)
+    end
+
+    assert_nil authenticator.authenticate(context(headers: {}, certificate: cert))
+    assert_equal 0, checks, "no user header: nothing to verify"
+
+    3.times { assert_equal "eve", authenticator.authenticate(context(headers: {"x-remote-user" => "eve"}, certificate: cert)).user.name }
+
+    assert_equal 1, checks, "the same certificate is verified once within the window"
+
+    now += 11
+    authenticator.authenticate(context(headers: {"x-remote-user" => "eve"}, certificate: cert))
+
+    assert_equal 2, checks, "and again once the window has passed"
+  end
+
   def test_webhook_token_review_and_caching
     calls = 0
     transport = lambda do |body|
