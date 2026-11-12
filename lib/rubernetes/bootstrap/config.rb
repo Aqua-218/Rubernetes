@@ -45,7 +45,7 @@ module Rubernetes
       AUDIT_WEBHOOK_KEYS = %w[url mode ca_file token token_file timeout_seconds batch_max_size batch_max_wait_seconds].freeze
       FLOW_CONTROL_KEYS = %w[enabled read_seats mutating_seats].freeze
       DATASTORE_KEYS = %w[type node_id cluster_id data_dir pki_dir listen_address listen_port voters peers timing
-                          compaction_interval_seconds].freeze
+                          compaction_interval_seconds join].freeze
       DATASTORE_TYPES = %w[memory raft].freeze
       DATASTORE_TIMING_KEYS = %w[
         election_timeout_min election_timeout_max heartbeat_interval batch_max_entries batch_max_bytes
@@ -1331,7 +1331,11 @@ module Rubernetes
           raise Error,
                 "#{context}.voters must be a non-empty list of node ids"
         end
-        raise Error, "#{context}.voters must include node_id #{value["node_id"]}" unless voters.include?(value["node_id"])
+        # A node joining a running cluster starts as nobody's voter: it
+        # names the cluster's voters and waits to be taken in.
+        raise Error, "#{context}.join must be true or false" if value.key?("join") && ![true, false].include?(value["join"])
+        member = voters.include?(value["node_id"]) || value["join"] == true
+        raise Error, "#{context}.voters must include node_id #{value["node_id"]}" unless member
         raise Error, "#{context}.voters must be unique" unless voters.uniq.length == voters.length
 
         peers = value["peers"] || {}
