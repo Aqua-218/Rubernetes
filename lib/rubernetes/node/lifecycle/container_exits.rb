@@ -97,11 +97,18 @@ module Rubernetes
         def lose_sandbox!(object, record, error)
           event(record, "sandbox.lost", sandbox_id: record[:sandbox_id], message: Helpers.failure_message(error))
           finished_at = Helpers.now(@clock).iso8601(6)
+          policy = Helpers.key(Helpers.key(object || {}, "spec", {}), "restartPolicy", "Always").to_s
+          # The Pod comes back in a new sandbox with the same containers
+          # restarting: their count goes on from here (kubelet numbers a
+          # container the runtime lost from what it knew of it), so it must
+          # outlive this record.
+          record[:restarting_after_sandbox_loss] = policy != "Never"
           record[:containers].each do |entry|
             next unless entry[:started]
 
             @probes.unregister(entry[:id])
             restart_count = entry[:status].is_a?(Hash) ? entry[:status]["restartCount"].to_i : 0
+            @restarts.advance_restart_count(restart_identity(record, entry), to: restart_count + 1) if policy != "Never"
             terminated = {"exitCode" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON, "message" => CONTAINER_STATUS_UNKNOWN_MESSAGE,
                           "finishedAt" => finished_at, "containerID" => entry[:id]}
             terminated["startedAt"] = entry[:started_at] if entry[:started_at]
@@ -112,7 +119,6 @@ module Rubernetes
           # kubelet getPhase: every container stopped under Always (or a failed
           # one under OnFailure) is still a Running Pod -- it is being
           # restarted; only Never ends Failed.
-          policy = Helpers.key(Helpers.key(object || {}, "spec", {}), "restartPolicy", "Always").to_s
           terminate(object || record[:uid], reason: "SandboxLost", terminal_phase: policy == "Never" ? "Failed" : "Running",
                                             message: CONTAINER_STATUS_UNKNOWN_MESSAGE)
           record[:containers].length
