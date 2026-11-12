@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "tmpdir"
 require "rubernetes/node"
+require_relative "../support/node_agent_fakes"
 
 # A Pod whose cleanup raced or was interrupted must not keep the node down.
 # Reproduces the worker-1 sequence of 2026-09-27 09:25 (ledger seq 886-895):
@@ -90,18 +91,8 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
     assert_equal 1, runtime.calls.count { |call| call == [:remove_sandbox, "sandbox-1"] }, "the second waited for the first"
   end
 
-  class API
-    attr_reader :nodes
-
-    def initialize = @nodes = []
-    def register_node(node) = (@nodes << node).last
-    def renew_lease(lease) = lease
-  end
-
-  class Loop
-    def start(**) = true
-    def stop(**) = true
-  end
+  API = NodeAgentFakes::API
+  Loop = NodeAgentFakes::SyncLoop
 
   def test_an_agent_starts_although_one_pod_cannot_be_cleaned_yet
     Dir.mktmpdir("restart-cleanup") do |dir|
@@ -150,7 +141,7 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
   end
 
   def test_runtime_level_errors_still_keep_the_node_down
-    lifecycle = Class.new do
+    lifecycle = Class.new(NodeAgentFakes::Lifecycle) do
       def recover(**) = {"ready" => false, "errors" => ["resource identity mismatch: cgroup:x"], "blocked" => [], "pod_errors" => {}}
     end.new
     agent = Rubernetes::Node::Agent.new(node_name: "worker-1", api: API.new, lifecycle: lifecycle, sync_loop: Loop.new, sleeper: ->(_) {})
