@@ -122,6 +122,24 @@ module Rubernetes
         end
       end
 
+      # Grows the control plane of the running cluster to `controls` nodes:
+      # each new node is an API server and a voter of the raft datastore.
+      # The cluster stays available throughout -- the datastore changes its
+      # membership through joint consensus -- and one control node becoming
+      # three is what makes it survive the loss of one.
+      def scale(controls:)
+        exclusively do
+          raise Error, "no provisioned cluster at #{root}; run `up` first" unless File.file?(descriptor_path)
+
+          descriptor = JSON.parse(File.binread(descriptor_path))
+          current = descriptor.fetch("processes").filter_map { |process| process.fetch("name")[/\Aapiserver-(.+)\z/, 1] }
+          raise Error, "removing control nodes is not supported (the cluster has #{current.length})" if controls < current.length
+
+          added = Array.new(controls - current.length) { |index| "control-#{current.length + index}" }
+          added.empty? ? descriptor : grow(descriptor, current, added)
+        end
+      end
+
       def status
         stored_processes.map do |process|
           process.slice("name", "pid").merge("alive" => owned?(process.fetch("pid"), process.fetch("config")))
@@ -145,6 +163,99 @@ module Rubernetes
         descriptor
       rescue JSON::ParserError, SystemCallError
         {}
+      end
+
+      def grow(descriptor, current, added)
+        authority = Rubernetes::Consensus::Identity.read_ca(File.join(root, "raft-pki", "ca"))
+        template = YAML.safe_load_file(config_path("apiserver-#{current.first}"))
+        datastore = template.dig("processes", "rubernetes-apiserver", "datastore")
+        raise Error, "#{root} does not run the raft datastore" unless datastore["type"] == "raft"
+
+        addresses = current.to_h { |id| [id, raft_address(YAML.safe_load_file(config_path("apiserver-#{id}")))] }
+        added.each { |id| addresses[id] = "127.0.0.1:#{free_port}" }
+        started = added.map do |id|
+          bundle = Rubernetes::Consensus::Identity.issue_node(*authority, cluster_id: datastore.fetch("cluster_id"), node_id: id)
+          Rubernetes::Consensus::Identity.write_bundle(File.join(root, "raft-pki", id), bundle)
+          # An empty newcomer names the running cluster's voters, never itself.
+          config = write_config("apiserver-#{id}", control_node_config(template, id, addresses, voters: current, port: free_port))
+          spawn_process("apiserver-#{id}", "rubernetes-apiserver", config)
+        end
+        # The membership change needs the newcomers' votes to finish: one that
+        # is not there to be reached would leave the datastore half way.
+        added.each { |id| await!("control node #{id}") { listening?(addresses.fetch(id)) || raise_on_dead!(started, "scale") } }
+        reconfigure!(current, addresses, current + added)
+        # From here every node's own configuration describes the cluster as
+        # it is, for the next time the node starts.
+        (current + added).each do |id|
+          document = YAML.safe_load_file(config_path("apiserver-#{id}"))
+          port = document.dig("processes", "rubernetes-apiserver", "port")
+          write_config("apiserver-#{id}", control_node_config(document, id, addresses, voters: current + added, port: port))
+        end
+        pki = {ca: File.join(root, "pki", "ca.crt"), admin: File.join(root, "pki", "admin.crt"), admin_key: File.join(root, "pki", "admin.key")}
+        added.zip(started) do |id, process|
+          port = YAML.safe_load_file(process.fetch("config")).dig("processes", "rubernetes-apiserver", "port")
+          replica = write_kubeconfig("https://127.0.0.1:#{port}", pki, name: "kubeconfig-#{id}")
+          await!("apiserver #{id} /readyz") { api_ready?(replica) }
+        end
+        raise_on_dead!(started, "scale")
+
+        servers, others = descriptor.fetch("processes").partition { |process| process.fetch("executable") == "rubernetes-apiserver" }
+        descriptor["processes"] = servers + started + others
+        descriptor["scaled_at"] = Time.now.utc.iso8601
+        File.write(descriptor_path, JSON.pretty_generate(descriptor))
+        descriptor
+      end
+
+      def config_path(name) = File.join(root, "config", "#{name}.yml")
+
+      def listening?(address)
+        host, port = address.split(":")
+        TCPSocket.new(host, Integer(port)).close
+        true
+      rescue SystemCallError
+        false
+      end
+
+      def raft_address(document)
+        datastore = document.dig("processes", "rubernetes-apiserver", "datastore")
+        "#{datastore.fetch("listen_address")}:#{datastore.fetch("listen_port")}"
+      end
+
+      # The configuration of control node `id`: another node's, with what is
+      # the node's own replaced.
+      def control_node_config(template, id, addresses, voters:, port:)
+        document = Marshal.load(Marshal.dump(template)).except("console")
+        server = document.fetch("processes").fetch("rubernetes-apiserver")
+        server["port"] = port
+        server["datastore"] = server.fetch("datastore").except("join").merge(
+          "node_id" => id, "data_dir" => File.join(root, "data", id), "pki_dir" => File.join(root, "raft-pki", id),
+          "listen_port" => Integer(addresses.fetch(id).split(":").last), "voters" => voters,
+          "peers" => addresses.except(id)
+        )
+        server["datastore"]["join"] = true unless voters.include?(id)
+        document
+      end
+
+      # Asks the datastore's leader, through its console socket, to take the
+      # new nodes in.  Which node leads is found by asking each.
+      def reconfigure!(current, addresses, voters)
+        code = "service.reconfigure_datastore(voters: #{voters.inspect}, peers: #{addresses.except(*current).inspect}); :done"
+        refusals = current.map do |id|
+          answer = console_eval("apiserver-#{id}", code)
+          return true if answer["result"] == ":done"
+
+          "#{id}: #{answer["error"]}"
+        end
+        raise Error, "no control node could change the datastore's membership (#{refusals.join("; ")})"
+      end
+
+      def console_eval(process, code)
+        UNIXSocket.open(File.join(root, "run", "#{process}.sock")) do |socket|
+          socket.puts(JSON.generate("op" => "eval", "code" => code))
+          JSON.parse(socket.gets.to_s)
+        end
+      rescue SystemCallError, JSON::ParserError => error
+        {"error" => "#{error.class}: #{error.message}"}
       end
 
       def stored_processes
