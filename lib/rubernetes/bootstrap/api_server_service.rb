@@ -543,6 +543,20 @@ module Rubernetes
       end
       public :reconfigure_datastore
 
+      # Writes everything the in-memory datastore holds to `path`, for
+      # Consensus::Seed to start a raft datastore from (`rubectl cluster
+      # seed`).  Writes that arrive after this call are not in the file: the
+      # API server is stopped right after it.
+      def export_datastore(path)
+        raise Config::Error, "this API server runs the raft datastore; there is nothing to migrate" if @raft_server
+        raise Config::Error, "this API server's datastore cannot be exported" unless @store.is_a?(Storage::MemoryStore)
+
+        state = @store.export_state
+        File.write(path, JSON.generate(state), perm: 0o600)
+        {"keys" => state.fetch("known_keys").length, "revision" => state.fetch("revision")}
+      end
+      public :export_datastore
+
       def extensions_enabled?
         @config.dig("extensions", "enabled") == true
       end
