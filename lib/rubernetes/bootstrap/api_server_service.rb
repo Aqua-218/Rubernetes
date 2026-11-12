@@ -535,11 +535,13 @@ module Rubernetes
       # `peers` (id => host:port).  Raft does it in two steps (joint
       # consensus), so the cluster keeps a quorum throughout; this returns
       # when the new configuration is committed.  Only the leader can.
-      def reconfigure_datastore(voters:, peers: {})
+      def reconfigure_datastore(voters:, peers: {}, removed: [])
         raise Config::Error, "this API server has no raft datastore" unless @raft_server
 
         peers.each { |id, address| @raft_server.add_peer(id, address) }
-        @raft_server.propose_membership(voters, timeout: 60)
+        membership = @raft_server.propose_membership(voters, timeout: 60)
+        removed.each { |id| @raft_server.remove_peer(id) }
+        membership
       end
       public :reconfigure_datastore
 
