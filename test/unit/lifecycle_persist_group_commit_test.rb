@@ -31,6 +31,8 @@ class LifecyclePersistGroupCommitTest < Minitest::Test
     subject.instance_variable_set(:@persist_completed, 0)
     subject.instance_variable_set(:@records, {})
     subject.instance_variable_set(:@finished, {})
+    subject.instance_variable_set(:@probes, Rubernetes::Node::ProbeManager.new)
+    subject.instance_variable_set(:@restarts, Rubernetes::Node::RestartManager.new)
     subject
   end
 
@@ -69,7 +71,8 @@ class LifecyclePersistRecordCacheTest < Minitest::Test
   def lifecycle(store)
     subject = Rubernetes::Node::Lifecycle.allocate
     {state_store: store, mutex: Monitor.new, persist_mutex: Mutex.new, persist_counter_mutex: Mutex.new,
-     persist_requested: 0, persist_completed: 0, records: {}, finished: {}}.each do |name, value|
+     persist_requested: 0, persist_completed: 0, records: {}, finished: {},
+     probes: Rubernetes::Node::ProbeManager.new, restarts: Rubernetes::Node::RestartManager.new}.each do |name, value|
       subject.instance_variable_set(:"@#{name}", value)
     end
     subject
