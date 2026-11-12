@@ -45,11 +45,12 @@ class ContainerLogStreamsTest < Minitest::Test
   # The runtime's own default has to match, or the node would ask for one
   # stream even when the caller asked for none.
   def test_the_runtime_defaults_to_both_streams
-    parameters = Rubernetes::Runtime::Native.instance_method(:logs).parameters
-    stream = parameters.find { |(kind, name)| kind == :key && name == :stream }
+    logs = Rubernetes::Runtime::Native.instance_method(:logs)
+    stream = logs.parameters.find { |(kind, name)| kind == :key && name == :stream }
 
     refute_nil(stream)
-    source = File.read(File.expand_path("../../lib/rubernetes/runtime/native.rb", __dir__))
+    # Wherever the runtime defines the method (runtime/native/connectors.rb).
+    source = File.read(logs.source_location.first)
 
     assert_match(/def logs\([^)]*stream: :all/, source)
   end
