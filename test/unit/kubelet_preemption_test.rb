@@ -250,7 +250,7 @@ class KubeletPreemptionTest < Minitest::Test
   # The lifecycle: a refused critical Pod evicts and is admitted on the
   # second judgement; a refused ordinary Pod is not.
   class FakeRuntime
-    def create_sandbox(*) = "sb"
+    def run_sandbox(*, **) = "sb"
     def start_container(*) = {"id" => "c"}
     def method_missing(*) = nil
     def respond_to_missing?(*) = false
