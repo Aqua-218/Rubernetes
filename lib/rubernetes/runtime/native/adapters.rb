@@ -150,6 +150,12 @@ module Rubernetes
           @handles = {}
         end
 
+        # Nothing here is cgroup v2: a profile that requires the kernel
+        # controller (L3) is never satisfied by the fake.
+        def available?
+          false
+        end
+
         def create(qos:, pod_id:, container_id:, identity: nil, limits: nil, pod_limits: nil)
           handle = Handle.new(path: "fake/#{qos}/#{pod_id}/#{container_id}", qos: qos, pod_id: pod_id, container_id: container_id,
                               identity: identity || "cgroup:#{pod_id}:#{container_id}")
