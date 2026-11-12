@@ -1000,6 +1000,7 @@ module Rubernetes
         registered = queue_sort_plugins
         return if registered.empty?
         raise ValidationError, "scheduler must register exactly one queue sort plugin" if registered.length != 1
+
         plugin = registered.first
         comparator = lambda do |left, right|
           typed_left = left.is_a?(Pod) ? left : Pod.new(left)
