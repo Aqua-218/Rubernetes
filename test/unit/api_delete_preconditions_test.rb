@@ -119,7 +119,8 @@ class APIDeletePreconditionsTest < Minitest::Test
   end
 
   def request(body:)
-    Struct.new(:body, :query, :headers, :method).new(body.nil? ? nil : JSON.generate(body), {}, {}, "DELETE")
+    Rubernetes::API::Request.new(method: "DELETE", path: "/apis/batch/v1/namespaces/ns/cronjobs/forbid",
+                                 body: body.nil? ? nil : JSON.generate(body))
   end
 
   def server_for(store)
