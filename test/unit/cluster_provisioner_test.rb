@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/cluster/cli"
 require "rubernetes/rubectl"
+require "rubernetes/bootstrap/config"
 require "stringio"
 require "tmpdir"
 
@@ -101,6 +102,45 @@ class ClusterProvisionerTest < Minitest::Test
       assert_equal %w[worker-0 worker-1 worker-2], cluster.worker_ids
       assert_equal %w[ipv4 ipv6], cluster.families
       assert_equal "/sys/fs/cgroup/x", cluster.cgroup_root
+    end
+  end
+
+  # A node that joins a running datastore must not be able to vote itself
+  # into a quorum with another empty newcomer.
+  def test_a_joining_control_node_names_the_clusters_voters_not_itself
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, controls: 1, workers: 1)
+      pki = cluster.send(:issue_pki)
+      template = YAML.safe_load_file(cluster.send(:write_apiserver_config, "control-0", {http: {"control-0" => 26_001}, raft: {"control-0" => 26_002}}, pki))
+      addresses = {"control-0" => "127.0.0.1:26002", "control-1" => "127.0.0.1:26004"}
+      joining = cluster.send(:control_node_config, template, "control-1", addresses, voters: %w[control-0], port: 26_003)
+      settled = cluster.send(:control_node_config, joining, "control-1", addresses, voters: %w[control-0 control-1], port: 26_003)
+      datastore = joining.dig("processes", "rubernetes-apiserver", "datastore")
+
+      assert_equal %w[control-0], datastore.fetch("voters")
+      assert datastore.fetch("join")
+      assert_equal({"control-0" => "127.0.0.1:26002"}, datastore.fetch("peers"))
+      assert_equal ["control-1", 26_004, File.join(root, "data", "control-1")], datastore.values_at("node_id", "listen_port", "data_dir")
+      assert_equal 26_003, joining.dig("processes", "rubernetes-apiserver", "port")
+      refute settled.dig("processes", "rubernetes-apiserver", "datastore").key?("join"), "once a voter, it starts like any other"
+
+      path = cluster.send(:write_config, "apiserver-control-1", joining)
+      loaded = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-apiserver", path: path)
+
+      assert loaded.process.dig("datastore", "join"), "the component accepts the configuration it is given"
+    end
+  end
+
+  def test_scale_needs_a_cluster_and_does_not_remove_control_nodes
+    Dir.mktmpdir do |root|
+      assert_raises(C::Error) { provisioner(root).scale(controls: 3) }
+
+      File.write(File.join(root, "cluster.json"), JSON.generate({"processes" => %w[control-0 control-1 control-2].map do |id|
+        {"name" => "apiserver-#{id}", "executable" => "rubernetes-apiserver", "config" => "/x", "pid" => 1}
+      end}))
+
+      assert_match(/removing control nodes is not supported/, assert_raises(C::Error) { provisioner(root).scale(controls: 1) }.message)
+      assert_equal 3, provisioner(root).scale(controls: 3).fetch("processes").length, "already that size: nothing to do"
     end
   end
 
