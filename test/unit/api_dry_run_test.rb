@@ -11,9 +11,7 @@ class APIDryRunTest < Minitest::Test
   Server = Rubernetes::API::Server
 
   def request(values)
-    Struct.new(:values) do
-      def query_values(name) = values.fetch(name, [])
-    end.new(values)
+    Rubernetes::API::Request.new(method: "POST", path: "/api/v1/namespaces/ns/configmaps", query: values)
   end
 
   def server
