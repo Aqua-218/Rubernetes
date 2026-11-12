@@ -32,6 +32,14 @@ class LifecycleMetadataVolumeRefreshTest < Minitest::Test
     def prepare(_pod, **_options) = {"ids" => [], "mounts" => {}}
     def refresh(*_args, **_options) = true
     def release(*_args, **_options) = true
+    # The rest of the Pod volumes contract: nothing attachable, nothing to
+    # rotate, expand or republish.
+    def attachable_volume_names(_pod) = []
+    def rotate_tokens(*_args, **_options) = []
+    def expand_in_use(*_args) = []
+    def republish_csi(*_args) = []
+    def reconstruction_stats = nil
+    def metrics_observer=(_observer); end
 
     def refresh_contents(pod, _handle, **_options)
       @refreshes << pod.dig("metadata", "labels")
