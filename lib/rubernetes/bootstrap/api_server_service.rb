@@ -531,6 +531,18 @@ module Rubernetes
         object.merge("apiVersion" => object["apiVersion"] || api_version, "kind" => object["kind"] || kind)
       end
 
+      # Makes the datastore's voters `voters`, reaching the new ones at
+      # `peers` (id => host:port).  Raft does it in two steps (joint
+      # consensus), so the cluster keeps a quorum throughout; this returns
+      # when the new configuration is committed.  Only the leader can.
+      def reconfigure_datastore(voters:, peers: {})
+        raise Config::Error, "this API server has no raft datastore" unless @raft_server
+
+        peers.each { |id, address| @raft_server.add_peer(id, address) }
+        @raft_server.propose_membership(voters, timeout: 60)
+      end
+      public :reconfigure_datastore
+
       def extensions_enabled?
         @config.dig("extensions", "enabled") == true
       end
