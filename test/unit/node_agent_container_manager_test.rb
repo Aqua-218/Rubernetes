@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/node"
 require "tmpdir"
+require_relative "../support/node_agent_fakes"
 
 # The agent builds the CPU/memory/topology managers from its configuration:
 # the reservation shrinks the node's allocatable, the static CPU policy
@@ -12,21 +13,9 @@ require "tmpdir"
 class NodeAgentContainerManagerTest < Minitest::Test
   Node = Rubernetes::Node
 
-  class API
-    def create_or_update_node(node) = node
-    def renew_lease(**) = {}
-  end
-
-  class Lifecycle
-    def admitted_pods = []
-    def pods = {}
-  end
-
-  class Loop
-    def start = nil
-    def stop = nil
-    def running? = false
-  end
+  API = NodeAgentFakes::API
+  Lifecycle = NodeAgentFakes::Lifecycle
+  Loop = NodeAgentFakes::SyncLoop
 
   def test_the_managers_are_built_from_the_configuration
     Dir.mktmpdir do |dir|
