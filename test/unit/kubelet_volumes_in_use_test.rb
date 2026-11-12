@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/node"
 require_relative "../support/node_lifecycle_fakes"
+require_relative "../support/node_agent_fakes"
 
 # volumeManager.GetVolumesInUse / MarkVolumesAsReportedInUse and the kubelet's
 # node status sync (v1.36.2): an attachable volume is reported in
@@ -216,29 +217,18 @@ class KubeletVolumesInUseTest < Minitest::Test
 
   # ------------------------------------------------------------ agent
 
-  class API
-    attr_reader :nodes
+  API = NodeAgentFakes::API
+  Loop = NodeAgentFakes::SyncLoop
 
-    def initialize = @nodes = []
-    def register_node(node) = (@nodes << node).last
-    def renew_lease(lease) = lease
-  end
-
-  class Loop
-    def start(**) = true
-    def stop(**) = true
-  end
-
-  class LifecycleStub
+  class LifecycleStub < NodeAgentFakes::Lifecycle
     attr_accessor :in_use, :marked, :observer
 
     def initialize
+      super
       @in_use = []
       @marked = []
     end
 
-    def recover(**) = {"ready" => true, "errors" => [], "blocked" => []}
-    def record(_uid) = nil
     def volumes_in_use = @in_use
     def mark_volumes_reported_in_use(names) = @marked << names
 
