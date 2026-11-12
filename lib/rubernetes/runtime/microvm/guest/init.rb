@@ -5,6 +5,15 @@
 # host side); everything writable lives on tmpfs or the injected
 # workspace.  Failures here are fatal for the VM: the host observes the
 # missing hello and never opens the workload gate.
+#
+# Only ever a VM's init.  Anywhere else it must do nothing: run on a host
+# (a blanket `require` of lib/ once did), it mounted a fresh /proc,
+# /dev/pts, /dev/shm, /run and /tmp over the host's own.
+unless Process.pid == 1
+  abort("#{__FILE__} is the microVM guest's init and only runs as PID 1") if $PROGRAM_NAME == __FILE__
+  return
+end
+
 require "English"
 $LOAD_PATH.unshift("/opt/rubernetes/lib")
 $LOAD_PATH.unshift("/opt/rubernetes/ext")
