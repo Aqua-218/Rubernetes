@@ -186,8 +186,8 @@ module Rubernetes
                          "lease" => {"namespace" => "kube-system", "name" => "kube-controller-manager",
                                      "lease_duration_seconds" => 15, "renew_deadline_seconds" => 10,
                                      "retry_period_seconds" => 2}
-                       }.merge(service_account_credentials ? {"use_service_account_credentials" => true} : {})
-                        .merge(extensions_section).merge(storage_section)}
+                       }.merge(service_account_credentials ? {"use_service_account_credentials" => true} : {},
+                               extensions_section, storage_section)}
                      })
       end
 
