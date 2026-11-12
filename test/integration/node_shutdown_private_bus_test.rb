@@ -4,6 +4,7 @@ require_relative "../test_helper"
 require "rubernetes/node"
 require "tmpdir"
 require_relative "../support/node_lifecycle_fakes"
+require_relative "../support/node_agent_fakes"
 require_relative "../support/private_logind"
 
 # Graceful node shutdown end to end over a private dbus-daemon: the agent's
@@ -36,9 +37,10 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     def last_node = @mutex.synchronize { @nodes.last }
   end
 
-  class Loop
-    def start(**) = true
-    def stop(**) = true
+  # The Pod worker: an eviction the agent enqueues is carried out by the
+  # Pod's next sync, as the real sync loop's worker does.
+  def worker_loop
+    NodeAgentFakes::SyncLoop.new { |pod, action| @lifecycle.reconcile(pod, action: action) }
   end
 
   def setup
@@ -82,7 +84,7 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     pods.each { |entry| @lifecycle.start(entry) }
     pod_root = File.join(@dir, "kubelet", "pods")
     FileUtils.mkdir_p(pod_root)
-    @agent = Node::Agent.new(node_name: "node-s", api: @api, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: ->(_) {},
+    @agent = Node::Agent.new(node_name: "node-s", api: @api, lifecycle: @lifecycle, sync_loop: worker_loop, sleeper: ->(_) {},
                              pod_root: pod_root, capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"}, shutdown: shutdown)
     @agent.start
     # A test sleeper keeps the agent's loops off; the watch is started here.
@@ -231,7 +233,7 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     [{}, {"grace_period" => "0s"}, {"grace_period" => "0s", "grace_period_critical_pods" => "0s"},
      {"grace_period_by_pod_priority" => []}].each do |shutdown|
       SM::Logind.stub(:new, ->(*) { flunk "the shutdown manager contacted logind with #{shutdown.inspect}" }) do
-        agent = Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: ->(_) {},
+        agent = Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: worker_loop, sleeper: ->(_) {},
                                 capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"}, shutdown: shutdown)
 
         assert_nil agent.shutdown_manager, "upstream default shutdownGracePeriod 0 = no manager (#{shutdown.inspect})"
@@ -240,7 +242,7 @@ class NodeShutdownPrivateBusTest < Minitest::Test
       end
     end
 
-    assert_nil Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: lambda { |_|
+    assert_nil Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: worker_loop, sleeper: lambda { |_|
     }).shutdown_manager
     assert_empty @service.inhibitors
     refute_path_exists @conf_dir
@@ -262,7 +264,7 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     errors = []
     pod_root = File.join(@dir, "kubelet", "pods")
     FileUtils.mkdir_p(pod_root)
-    @agent = Node::Agent.new(node_name: "node-s", api: @api, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: ->(_) {},
+    @agent = Node::Agent.new(node_name: "node-s", api: @api, lifecycle: @lifecycle, sync_loop: worker_loop, sleeper: ->(_) {},
                              pod_root: pod_root, capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
                              shutdown: {"grace_period" => "45s", "grace_period_critical_pods" => "15s"},
                              error_handler: ->(error, during) { errors << [error.message, during] })
