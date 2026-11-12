@@ -155,15 +155,7 @@ module Rubernetes
       end
 
       # The work estimator reads the list options off the request.
-      def flow_control_enter(attributes, request)
-        if @flow_control.method(:enter).parameters.any? do |kind, name|
-          kind == :key && name == :request
-        end
-          @flow_control.enter(attributes, request: request)
-        else
-          @flow_control.enter(attributes)
-        end
-      end
+      def flow_control_enter(attributes, request) = @flow_control.enter(attributes, request: request)
 
       def exit(entry, response, response_object: nil, request_object: nil, error: nil)
         return if entry.nil?
