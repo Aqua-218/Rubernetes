@@ -30,11 +30,19 @@ module M5ProbeSupport
      "ruby" => RUBY_DESCRIPTION}
   end
 
+  # A source file that has been split keeps its parts in a directory of the
+  # same name (lib/x.rb + lib/x/*.rb); the parts are evidence sources too.
   def source_files(paths)
-    paths.map do |relative|
+    paths.flat_map { |relative| [relative, *source_parts(relative)] }.uniq.map do |relative|
       path = File.join(ROOT, relative)
       {"path" => relative, "sha256" => Digest::SHA256.file(path).hexdigest, "bytes" => File.size(path)}
     end
+  end
+
+  def source_parts(relative)
+    return [] unless relative.end_with?(".rb")
+
+    Dir.glob(File.join(ROOT, relative.delete_suffix(".rb"), "**", "*.rb")).map { |path| path.delete_prefix("#{ROOT}/") }
   end
 
   def digest(value)
