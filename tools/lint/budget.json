@@ -6,9 +6,9 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 114268,
-    "longest_method": 9323,
-    "respond_to": 2695,
+    "lines": 110998,
+    "longest_method": 9193,
+    "respond_to": 2632,
     "swallowed": 419
   },
   "files": {
@@ -1118,9 +1118,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/volume/manager.rb": {
-      "lines": 3270,
-      "longest_method": 130,
-      "respond_to": 93,
+      "respond_to": 30,
       "swallowed": 1
     },
     "lib/rubernetes/volume/native_device_adapter.rb": {
