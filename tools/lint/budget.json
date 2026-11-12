@@ -6,10 +6,10 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 84424,
-    "longest_method": 7996,
-    "respond_to": 2265,
-    "swallowed": 337
+    "lines": 80670,
+    "longest_method": 7766,
+    "respond_to": 2224,
+    "swallowed": 332
   },
   "files": {
     "lib/rubernetes/api/aggregator.rb": {
@@ -640,12 +640,6 @@
     },
     "lib/rubernetes/platform/linux/mount.rb": {
       "respond_to": 1
-    },
-    "lib/rubernetes/platform/linux/native_adapters.rb": {
-      "lines": 3754,
-      "longest_method": 230,
-      "respond_to": 41,
-      "swallowed": 5
     },
     "lib/rubernetes/platform/linux/openat2.rb": {
       "respond_to": 4
