@@ -6,10 +6,10 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 110998,
-    "longest_method": 9193,
-    "respond_to": 2632,
-    "swallowed": 419
+    "lines": 89023,
+    "longest_method": 8249,
+    "respond_to": 2273,
+    "swallowed": 345
   },
   "files": {
     "lib/rubernetes/api/aggregator.rb": {
@@ -69,10 +69,8 @@
       "respond_to": 1
     },
     "lib/rubernetes/api/server.rb": {
-      "lines": 6128,
-      "longest_method": 141,
-      "respond_to": 146,
-      "swallowed": 32
+      "respond_to": 31,
+      "swallowed": 1
     },
     "lib/rubernetes/api/service_allocator.rb": {
       "longest_method": 63,
@@ -144,9 +142,9 @@
       "respond_to": 2
     },
     "lib/rubernetes/client/http_client.rb": {
-      "lines": 1234,
-      "respond_to": 39,
-      "swallowed": 6
+      "lines": 1150,
+      "respond_to": 38,
+      "swallowed": 2
     },
     "lib/rubernetes/client/kubernetes_client.rb": {
       "lines": 1114,
@@ -506,10 +504,7 @@
       "swallowed": 11
     },
     "lib/rubernetes/node/lifecycle.rb": {
-      "lines": 4627,
-      "longest_method": 147,
-      "respond_to": 123,
-      "swallowed": 21
+      "respond_to": 6
     },
     "lib/rubernetes/node/log_service.rb": {
       "respond_to": 1
@@ -630,7 +625,7 @@
       "respond_to": 4
     },
     "lib/rubernetes/observability/metrics.rb": {
-      "lines": 853,
+      "lines": 850,
       "respond_to": 1,
       "swallowed": 1
     },
@@ -787,10 +782,7 @@
       "respond_to": 14
     },
     "lib/rubernetes/runtime/native.rb": {
-      "lines": 3359,
-      "longest_method": 132,
-      "respond_to": 129,
-      "swallowed": 11
+      "respond_to": 26
     },
     "lib/rubernetes/runtime/native/adapters.rb": {
       "respond_to": 5
@@ -915,12 +907,6 @@
     "lib/rubernetes/schema/definition.rb": {
       "longest_method": 68,
       "respond_to": 3
-    },
-    "lib/rubernetes/schema/kubernetes_validator.rb": {
-      "lines": 5375,
-      "longest_method": 389,
-      "respond_to": 6,
-      "swallowed": 5
     },
     "lib/rubernetes/schema/kubernetes_validator/pod_resize.rb": {
       "longest_method": 62,
@@ -1065,10 +1051,7 @@
       "swallowed": 4
     },
     "lib/rubernetes/storage/memory_store.rb": {
-      "lines": 2399,
-      "longest_method": 135,
-      "respond_to": 21,
-      "swallowed": 2
+      "respond_to": 4
     },
     "lib/rubernetes/transport/headers.rb": {
       "respond_to": 2
