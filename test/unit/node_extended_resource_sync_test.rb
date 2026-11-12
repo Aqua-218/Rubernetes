@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/node"
+require_relative "../support/node_agent_fakes"
 
 # kubelet's MachineInfo status setter carries every resource in the Node's
 # capacity into allocatable on each sync, extended resources it does not
@@ -15,11 +16,12 @@ require "rubernetes/node"
 class NodeExtendedResourceSyncTest < Minitest::Test
   RM = Rubernetes::Node::ResourceManager
 
-  class API
+  class API < NodeAgentFakes::AdapterAPI
     attr_reader :patches
     attr_accessor :node
 
     def initialize(node)
+      super()
       @node = node
       @patches = []
     end
