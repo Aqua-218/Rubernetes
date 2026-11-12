@@ -113,6 +113,10 @@ class NodeLostSandboxTest < Minitest::Test
 
     assert_equal 2, runtime.sandboxes_created, "the Pod is started again on the next sync"
     assert_equal "Running", lifecycle.record("pod-lost")[:state]
+    restarted = container_status(reporter)
+
+    assert_equal 1, restarted["restartCount"], "the same container restarting in a new sandbox is restart 1, not a first start"
+    assert_equal "ContainerStatusUnknown", restarted.dig("lastState", "terminated", "reason")
   end
 
   def test_a_lost_sandbox_ends_a_never_pod_failed
