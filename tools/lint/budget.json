@@ -6,10 +6,10 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 80670,
-    "longest_method": 7766,
-    "respond_to": 2224,
-    "swallowed": 332
+    "lines": 77905,
+    "longest_method": 7071,
+    "respond_to": 2105,
+    "swallowed": 323
   },
   "files": {
     "lib/rubernetes/api/aggregator.rb": {
@@ -104,10 +104,8 @@
       "swallowed": 1
     },
     "lib/rubernetes/bootstrap/assembler.rb": {
-      "lines": 981,
-      "longest_method": 312,
-      "respond_to": 19,
-      "swallowed": 3
+      "respond_to": 7,
+      "swallowed": 1
     },
     "lib/rubernetes/bootstrap/cluster_authentication_trust.rb": {
       "swallowed": 1
@@ -117,7 +115,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/bootstrap/config.rb": {
-      "lines": 1381,
+      "lines": 1349,
       "longest_method": 153
     },
     "lib/rubernetes/bootstrap/control_plane_services.rb": {
@@ -394,10 +392,8 @@
       "swallowed": 1
     },
     "lib/rubernetes/node/agent.rb": {
-      "lines": 1752,
-      "longest_method": 383,
-      "respond_to": 114,
-      "swallowed": 10
+      "respond_to": 7,
+      "swallowed": 3
     },
     "lib/rubernetes/node/api_client_adapter.rb": {
       "respond_to": 11
