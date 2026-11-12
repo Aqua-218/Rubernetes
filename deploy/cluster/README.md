@@ -230,7 +230,7 @@ losing an object, a UID or a resourceVersion:
 
 The node starts from a snapshot at the revision the memory store had and
 goes on from there. For a cluster made by `rubectl cluster up`, further
-control nodes are added with `rubectl cluster scale --controls 3`.
+control nodes are added, or removed, with `rubectl cluster scale --controls N`.
 
 ## Backup
 
