@@ -276,7 +276,7 @@ module Rubernetes
           # survive the rollback: kubelet keeps the backoff across them, and
           # "[sig-node] InitContainer should not start app containers if init
           # containers fail on a RestartAlways pod" waits for restartCount 3.
-          return if start_retry_scheduled?(record[:uid])
+          return if start_retry_scheduled?(record[:uid]) || record[:restarting_after_sandbox_loss]
 
           Array(record[:containers]).each do |entry|
             identifier = entry[:id]
