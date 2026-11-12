@@ -198,6 +198,40 @@ systemctl restart rubernetes-apiserver rubernetes-scheduler rubernetes-controlle
 If the upgrade has already written objects of a version the previous release
 does not serve, restore from the backup taken before the upgrade instead.
 
+## Moving from the in-memory datastore to raft
+
+An API server configured with `datastore: {type: memory}` keeps everything in
+its process. To move such a cluster to the replicated datastore without
+losing an object, a UID or a resourceVersion:
+
+1. Give the API server a console socket (`console: {socket: /run/rubernetes/apiserver.sock}`
+   at the top level of its configuration) if it has none, and restart it.
+2. Stop the writers (controller manager, scheduler, agents), then export the
+   datastore and stop the API server. Writes made after the export are not in
+   the file.
+
+   ```sh
+   echo 'service.export_datastore("/var/lib/rubernetes/state.json")' | \
+     ruby -Ilib exe/rubectl console apiserver --root /var/lib/rubernetes/clusters/NAME
+   ```
+
+3. Turn the file into the data directory of the first raft node. The
+   directory must be empty.
+
+   ```sh
+   ruby -Ilib exe/rubectl cluster seed --state /var/lib/rubernetes/state.json \
+     --data-dir /var/lib/rubernetes/data/control-0 --voter control-0
+   ```
+
+4. Change the configuration to `datastore: {type: raft, node_id: control-0,
+   voters: [control-0], data_dir: ..., pki_dir: ...}` (see Install for the
+   raft identity) and start the API server, then the other components.
+5. Delete the state file; it holds every Secret in clear text.
+
+The node starts from a snapshot at the revision the memory store had and
+goes on from there. For a cluster made by `rubectl cluster up`, further
+control nodes are added with `rubectl cluster scale --controls 3`.
+
 ## Backup
 
 The cluster's entire state is the Raft log and its snapshots. A backup is
