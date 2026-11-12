@@ -12,6 +12,7 @@ require_relative "../test_helper"
 require "rubernetes/api"
 require "rubernetes/bootstrap"
 require "rubernetes/node"
+require_relative "../support/node_agent_fakes"
 
 class M2AgentRecoveryTest < Minitest::Test
   class API
@@ -49,10 +50,11 @@ class M2AgentRecoveryTest < Minitest::Test
     end
   end
 
-  class Loop
+  class Loop < NodeAgentFakes::SyncLoop
     attr_reader :events
 
     def initialize(events)
+      super()
       @events = events
     end
 
@@ -67,10 +69,11 @@ class M2AgentRecoveryTest < Minitest::Test
     end
   end
 
-  class Lifecycle
+  class Lifecycle < NodeAgentFakes::Lifecycle
     attr_reader :events
 
     def initialize(events, report: {"ready" => true, "errors" => [], "blocked" => []})
+      super()
       @events = events
       @report = report
     end
