@@ -494,8 +494,9 @@ recorded as a waiver on older kernels.
 
 ### Networking
 
-The Pod network is the built-in bridge datapath only; external CNI plugins
-are not executed. IPv6-only clusters have no NAT64. There is no cloud
+The Pod network is the built-in bridge datapath by default. With
+`network.plugin: cni` in the agent configuration the agent runs CNI plugins
+instead; that configuration is not covered by the Conformance runs. IPv6-only clusters have no NAT64. There is no cloud
 provider integration, so a LoadBalancer Service stays pending unless
 something external configures it.
 
