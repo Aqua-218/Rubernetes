@@ -114,6 +114,7 @@ kubectl get pods -o wide
 sudo ruby -Ilib exe/rubectl cluster status
 sudo ruby -Ilib exe/rubectl cluster down     # プロセスを止める。状態はディスクに残る
 sudo ruby -Ilib exe/rubectl cluster start    # 同じ状態で起動し直す。ホストの再起動後もこれで戻る
+sudo ruby -Ilib exe/rubectl cluster scale --controls 3   # 動かしたままcontrolノードを3台にする
 ```
 
 `rubectl cluster up`は1台のホスト上にクラスタを作ります。PKI、Raftデータストア、クラスタDNS、kubeconfigも同時に用意します。状態は`/var/lib/rubernetes/clusters/<name>`に置き、起動したプロセス、ポート、ファイルの一覧は同じ場所の`cluster.json`で確認できます。
@@ -125,6 +126,11 @@ sudo ruby -Ilib exe/rubectl cluster start    # 同じ状態で起動し直す。
 | `--ip-family ipv4\|ipv6\|dual` | Podとサービスのアドレスファミリ |
 | `--identities components` | 各コンポーネントにkubeadmと同じidentityを与える |
 | `--name NAME`、`--root DIR` | クラスタの名前と置き場所 |
+| `--no-storage` | 既定のStorageClassとhostPathプロビジョナーを入れない |
+
+`scale`は、Raftのjoint consensusでデータストアの構成を変えます。変更の間もクラスタは使い続けられ、3台になったあとは1台を失っても動き続けます。controlノードを減らす操作には対応していません。
+
+既定では、`standard`というStorageClassが入ります。PersistentVolumeClaimを作ると、kube-controller-managerの`--enable-hostpath-provisioner`と同じ方式で、ホスト上のディレクトリがボリュームとして割り当てられます。
 
 Conformanceの実行に使う`tools/conformance/cluster.rb`も同じコード（`lib/rubernetes/cluster/`）を呼んでいます。違いは構成を3+3に固定することだけです。
 
