@@ -62,4 +62,14 @@ class AgentNodeConfigValidationTest < Minitest::Test
     assert_match(/none cannot be combined/, error_for("node_name: n1\nenforce_node_allocatable: [none, pods]"))
     assert_match(/pods requires cgroups_per_qos/, error_for("node_name: n1\nenforce_node_allocatable: [pods]\ncgroups_per_qos: false"))
   end
+
+  # network.plugin: the built-in bridge, or CNI plugins run by the agent.
+  def test_the_network_plugin_is_bridge_or_cni
+    config = load("network:\n  plugin: cni\n  state_path: /var/lib/x/state.json\n  cni:\n    conf_dir: /etc/cni/net.d\n    bin_dirs: [/opt/cni/bin]")
+
+    assert_equal "cni", config.process.dig("network", "plugin")
+    assert_match(/network.plugin must be one of bridge, cni/, error_for("network:\n  plugin: flannel"))
+    assert_match(/unknown/, error_for("network:\n  cni:\n    plugins: []"))
+    assert_match(/absolute/, error_for("network:\n  cni:\n    conf_dir: net.d"))
+  end
 end
