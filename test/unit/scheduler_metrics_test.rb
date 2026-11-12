@@ -54,7 +54,7 @@ class SchedulerMetricsTest < Minitest::Test
     end
     # Families measuring machinery that does not exist here are declared
     # (so upstream dashboards find the name), never written, and say why.
-    %w[rest_client_exec_plugin_call_total rest_client_rate_limiter_duration_seconds].each do |name|
+    %w[rest_client_exec_plugin_policy_call_total].each do |name|
       assert_includes names, name
       refute_empty metrics.registry.unimplemented_reasons.fetch(name)
       refute_match(/^#{name}\{/, metrics.render, "#{name} never gets a series")
