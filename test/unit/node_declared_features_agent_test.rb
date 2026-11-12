@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/node"
+require_relative "../support/node_agent_fakes"
 
 # The node side of NodeDeclaredFeatures: discovery at start
 # (kubelet_node_declared_features.go), Node.status.declaredFeatures,
@@ -13,24 +14,17 @@ class NodeDeclaredFeaturesAgentTest < Minitest::Test
                 RestartAllContainersOnContainerExits].freeze
   RESTART_ALL = [{"action" => "RestartAllContainers", "exitCodes" => {"operator" => "In", "values" => [42]}}].freeze
 
-  class API
-    attr_reader :nodes
+  API = NodeAgentFakes::API
+  Loop = NodeAgentFakes::SyncLoop
 
-    def initialize = @nodes = []
-    def register_node(node) = (@nodes << node).last
-    def renew_lease(lease) = lease
-  end
-
-  class Loop
-    def start(**) = true
-    def stop(**) = true
-  end
-
-  class Lifecycle
+  class Lifecycle < NodeAgentFakes::Lifecycle
     attr_accessor :pods
 
-    def initialize = @pods = {}
-    def recover(**) = {"ready" => true, "errors" => [], "blocked" => []}
+    def initialize
+      super
+      @pods = {}
+    end
+
     def record(uid) = @pods.key?(uid) ? {pod: @pods[uid]} : nil
   end
 
