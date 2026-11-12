@@ -19,9 +19,15 @@ task default: :test
 desc "RuboCop over the whole tree (.rubocop.yml; historical offenses in .rubocop_todo.yml)"
 task :lint do
   ruby "-e", 'load Gem.bin_path("rubocop", "rubocop")', "--", "--parallel"
+  ruby "tools/lint/budget.rb"
 end
 
 namespace :lint do
+  desc "Size and defensive-code budget of lib/ (tools/lint/budget.rb): may shrink, never grow"
+  task :budget do
+    ruby "tools/lint/budget.rb"
+  end
+
   desc "RuboCop with safe autocorrect"
   task :fix do
     ruby "-e", 'load Gem.bin_path("rubocop", "rubocop")', "--", "--autocorrect"
