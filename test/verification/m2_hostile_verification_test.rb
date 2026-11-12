@@ -9,6 +9,7 @@ require "zlib"
 
 require_relative "../test_helper"
 require "rubernetes/bootstrap"
+require_relative "../support/node_agent_fakes"
 
 # Independent M2 hostile checks.  These tests deliberately stay at the Ruby
 # contract boundary: they do not claim L3 kernel evidence, and they never
@@ -65,15 +66,7 @@ class M2HostileVerificationTest < Minitest::Test
     end
   end
 
-  class NoopLoop
-    def start(**_options)
-      true
-    end
-
-    def stop(**_options)
-      true
-    end
-  end
+  NoopLoop = NodeAgentFakes::SyncLoop
 
   class RestartRuntime
     attr_reader :calls
@@ -361,7 +354,7 @@ class M2HostileVerificationTest < Minitest::Test
     node_agent = Rubernetes::Node::Agent.new(
       node_name: "node-a",
       api: api,
-      lifecycle: Object.new,
+      lifecycle: NodeAgentFakes::Lifecycle.new,
       sync_loop: NoopLoop.new,
       source: api,
       clock: -> { Time.utc(2026, 1, 1) },
