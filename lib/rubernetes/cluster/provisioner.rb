@@ -15,6 +15,7 @@ module Rubernetes
       include Host
       include Configs
       include Readiness
+      include Shrink
 
       # Everything `up` writes directly under the root.  A directory holding
       # anything else is not a cluster directory and is never wiped.
@@ -133,7 +134,7 @@ module Rubernetes
 
           descriptor = JSON.parse(File.binread(descriptor_path))
           current = descriptor.fetch("processes").filter_map { |process| process.fetch("name")[/\Aapiserver-(.+)\z/, 1] }
-          raise Error, "removing control nodes is not supported (the cluster has #{current.length})" if controls < current.length
+          return shrink(descriptor, current, controls) if controls < current.length
 
           added = Array.new(controls - current.length) { |index| "control-#{current.length + index}" }
           added.empty? ? descriptor : grow(descriptor, current, added)
