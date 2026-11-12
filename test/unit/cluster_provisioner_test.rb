@@ -131,7 +131,7 @@ class ClusterProvisionerTest < Minitest::Test
     end
   end
 
-  def test_scale_needs_a_cluster_and_does_not_remove_control_nodes
+  def test_scale_needs_a_cluster_and_keeps_one_control_node
     Dir.mktmpdir do |root|
       assert_raises(C::Error) { provisioner(root).scale(controls: 3) }
 
@@ -139,7 +139,7 @@ class ClusterProvisionerTest < Minitest::Test
         {"name" => "apiserver-#{id}", "executable" => "rubernetes-apiserver", "config" => "/x", "pid" => 1}
       end}))
 
-      assert_match(/removing control nodes is not supported/, assert_raises(C::Error) { provisioner(root).scale(controls: 1) }.message)
+      assert_match(/at least one control node/, assert_raises(C::Error) { provisioner(root).scale(controls: 0) }.message)
       assert_equal 3, provisioner(root).scale(controls: 3).fetch("processes").length, "already that size: nothing to do"
     end
   end
