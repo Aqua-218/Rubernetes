@@ -150,6 +150,7 @@ kubectl get pods -o wide
 sudo ruby -Ilib exe/rubectl cluster status
 sudo ruby -Ilib exe/rubectl cluster down     # stop the processes; the state stays on disk
 sudo ruby -Ilib exe/rubectl cluster start    # start again from that state, also after a host reboot
+sudo ruby -Ilib exe/rubectl cluster scale --controls 3   # grow to 3 control nodes while it runs
 ```
 
 `rubectl cluster up` builds a cluster on one host, together with the PKI,
@@ -164,6 +165,15 @@ port and file it started.
 | `--ip-family ipv4\|ipv6\|dual` | address family of Pods and Services |
 | `--identities components` | give each component the identity kubeadm gives it |
 | `--name NAME`, `--root DIR` | the cluster's name and where it lives |
+| `--no-storage` | no default StorageClass and no hostPath provisioner |
+
+`scale` changes the datastore's membership through Raft joint consensus. The
+cluster stays usable during the change, and with three control nodes it keeps
+running when one is lost. Removing control nodes is not supported.
+
+By default the cluster has a StorageClass named `standard`. A
+PersistentVolumeClaim gets a directory on the host as its volume, the way
+kube-controller-manager's `--enable-hostpath-provisioner` provides one.
 
 `tools/conformance/cluster.rb`, which the Conformance runs use, calls the
 same code (`lib/rubernetes/cluster/`). It only pins the topology to 3+3.
