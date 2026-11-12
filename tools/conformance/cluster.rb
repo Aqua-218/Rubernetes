@@ -136,6 +136,9 @@ module Conformance
         cgroup_root: ENV.fetch("RUBERNETES_M8_CGROUP_ROOT", "/sys/fs/cgroup"),
         identities: IDENTITIES, ready_timeout: Float(ENV.fetch("RUBERNETES_M8_READY_TIMEOUT", "180")),
         log_levels: LOG_LEVELS, force: ENV["RUBERNETES_M8_FORCE_UP"] == "1",
+        # The compatibility corpus (K6) installs charts that claim volumes;
+        # the conformance profile itself has no StorageClass.
+        storage: ENV["RUBERNETES_M8_DEFAULT_STORAGE"] == "1",
         descriptor: {"kind" => "conformance_cluster", "profile" => profile}
       )
     end
