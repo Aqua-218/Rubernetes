@@ -16,7 +16,7 @@ module Rubernetes
           start       restart a provisioned cluster (after a reboot or `down`); nothing is reissued
           down        stop the cluster's processes; its state stays on disk
           delete      stop the cluster and remove its state, mounts, bridges and firewall rules
-          scale       add control nodes to the running cluster (--controls N); the datastore stays available
+          scale       add or remove control nodes of the running cluster (--controls N); the datastore stays available
           seed        start a raft data directory from an exported in-memory datastore (--state FILE --data-dir DIR --voter ID)
           status      list the cluster's processes
           kubeconfig  print the admin kubeconfig path
