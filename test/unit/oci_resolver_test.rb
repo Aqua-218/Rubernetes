@@ -211,6 +211,8 @@ class LifecycleImagePinningTest < Minitest::Test
     def resolve(_reference)
       raise Rubernetes::Image::DigestMismatch, "manifest digest mismatch"
     end
+
+    def release(_image) = true
   end
 
   class RuntimeResolver
