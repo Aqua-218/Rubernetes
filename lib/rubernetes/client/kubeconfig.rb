@@ -5,14 +5,14 @@ require "psych"
 require "uri"
 
 require_relative "errors"
+require_relative "exec_credential"
 
 module Rubernetes
   module Client
     # Safely parses kubeconfig files and resolves one context into transport credentials.
     #
-    # This class deliberately does not execute kubeconfig `exec` plugins. An exec plugin is
-    # arbitrary code with access to credentials, so it must be implemented by an explicitly
-    # sandboxed process before it can be accepted here.
+    # A user entry with `exec` runs that credential plugin (see ExecCredential); what the
+    # entry states itself (token, client certificate) wins over what the plugin returns.
     class Kubeconfig
       MAX_BYTES = 1_048_576
       MAX_TOKEN_FILE_BYTES = 1_048_576
@@ -157,7 +157,7 @@ module Rubernetes
           raise ConfigurationError,
                 "cluster #{cluster_name.inspect} cannot combine certificate authority data with insecure TLS verification"
         end
-        credentials = resolve_credentials(user, context_name)
+        credentials = resolve_credentials(user, context_name, cluster)
         certificate = resolve_certificate_material(cluster, credentials, context_name)
 
         KubeContext.new(
@@ -379,11 +379,21 @@ module Rubernetes
         namespace
       end
 
-      def resolve_credentials(user, context_name)
-        if user.key?("exec")
-          raise UnsupportedCredentialError,
-                "context #{context_name.inspect} uses exec credentials; explicit isolated exec support is required"
-        end
+      def resolve_credentials(user, context_name, cluster)
+        static = resolve_static_credentials(user, context_name)
+        return static unless user.key?("exec")
+
+        plugin = ExecCredential.fetch(user["exec"], cluster: cluster, base_directory: base_directory)
+        validate_bearer_token(plugin.bearer_token, "exec plugin of context #{context_name.inspect}") if plugin.bearer_token
+        has_certificate = static[:client_certificate_file] || static[:client_certificate_data]
+        static.merge(
+          bearer_token: static[:bearer_token] || plugin.bearer_token,
+          client_certificate_data: has_certificate ? static[:client_certificate_data] : plugin.client_certificate_data,
+          client_key_data: has_certificate ? static[:client_key_data] : plugin.client_key_data
+        )
+      end
+
+      def resolve_static_credentials(user, context_name)
         if user.key?("auth-provider")
           raise UnsupportedCredentialError,
                 "context #{context_name.inspect} uses auth-provider credentials; configure a bearer token or client certificate"
@@ -451,10 +461,13 @@ module Rubernetes
         raise ConfigurationError, "kubeconfig #{field} path must not contain control characters" if value.match?(/[\x00-\x1f\x7f]/)
         raise ConfigurationError, "kubeconfig #{field} path traversal is not allowed" if value.split(%r{[/\\]}).include?("..")
 
-        base_directory = @path == "<memory>" ? Dir.pwd : File.dirname(File.expand_path(@path))
         resolved_path = File.expand_path(value, base_directory)
         reject_symlink_components!(resolved_path, field)
         resolved_path
+      end
+
+      def base_directory
+        @path == "<memory>" ? Dir.pwd : File.dirname(File.expand_path(@path))
       end
 
       def read_secret_file(path, field)
