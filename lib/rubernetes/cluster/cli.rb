@@ -7,7 +7,7 @@ module Rubernetes
   module Cluster
     # `rubectl cluster ...`: a cluster on this host with one command.
     class CLI
-      COMMANDS = %w[up start down delete status kubeconfig].freeze
+      COMMANDS = %w[up start down delete scale status kubeconfig].freeze
       IP_FAMILIES = {"ipv4" => %w[ipv4], "ipv6" => %w[ipv6], "dual" => %w[ipv4 ipv6]}.freeze
       USAGE = <<~TEXT
         Usage: rubectl cluster COMMAND [options]
@@ -16,6 +16,7 @@ module Rubernetes
           start       restart a provisioned cluster (after a reboot or `down`); nothing is reissued
           down        stop the cluster's processes; its state stays on disk
           delete      stop the cluster and remove its state, mounts, bridges and firewall rules
+          scale       add control nodes to the running cluster (--controls N); the datastore stays available
           status      list the cluster's processes
           kubeconfig  print the admin kubeconfig path
 
@@ -70,6 +71,14 @@ module Rubernetes
       def down(cluster, options)
         stopped = cluster.down
         report({"stopped" => stopped}, options) { @stdout.puts("stopped #{stopped.length} processes; state kept in #{cluster.root}") }
+      end
+
+      def scale(cluster, options)
+        descriptor = cluster.scale(controls: options[:controls])
+        report(descriptor, options) do
+          servers = descriptor.fetch("processes").count { |process| process.fetch("executable") == "rubernetes-apiserver" }
+          @stdout.puts("cluster #{cluster.cluster_name.inspect} has #{servers} control nodes")
+        end
       end
 
       def delete(cluster, options)
