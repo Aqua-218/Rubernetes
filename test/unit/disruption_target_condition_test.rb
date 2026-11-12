@@ -27,7 +27,7 @@ class DisruptionTargetConditionTest < Minitest::Test
 
     def get(resource:, namespace: nil, name: nil, **) = @pod
 
-    def list(resource:, **) = {"items" => []}
+    def list(resource:, **) = Rubernetes::API::MemoryStore::ListResult.new(items: [], resource_version: 0)
 
     def update(resource:, namespace:, name:, object:, **)
       @updated << object
