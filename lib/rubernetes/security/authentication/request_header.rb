@@ -26,6 +26,8 @@ module Rubernetes
           @group_headers = Array(group_headers)
           @extra_prefixes = Array(extra_header_prefixes).map(&:downcase)
           @clock = clock
+          @verified = {}
+          @verified_mutex = Mutex.new
         end
 
         def name
@@ -36,14 +38,17 @@ module Rubernetes
           certificate = context.client_certificate
           return nil if certificate.nil?
 
-          @store.time = @clock.call
-          return nil unless @store.verify(certificate, context.client_chain)
+          # This authenticator is asked first for every request, and nearly
+          # none of them come from the front proxy.  Without a user name
+          # header the answer is nil whoever sent it, so the certificate --
+          # a signature check per request, a quarter of a GET -- is looked at
+          # only when there is one.
+          username = first_header(context, @username_headers)
+          return nil if username.nil? || username.empty?
+          return nil unless verified?(certificate, context.client_chain)
 
           common_name = certificate.subject.to_a.find { |entry| entry[0] == "CN" }&.fetch(1).to_s
           return nil unless @allowed_names.empty? || @allowed_names.include?(common_name)
-
-          username = first_header(context, @username_headers)
-          return nil if username.nil? || username.empty?
 
           uid = first_header(context, @uid_headers)
           groups = @group_headers.flat_map { |header| context.header_values(header) }.map(&:to_s).reject(&:empty?)
@@ -61,6 +66,26 @@ module Rubernetes
         end
 
         private
+
+        VERIFIED_SECONDS = 10
+        MAX_VERIFIED = 256
+
+        # The front proxy presents the same certificate on every request; its
+        # verification is remembered briefly, and never past its expiry.
+        def verified?(certificate, chain)
+          now = @clock.call
+          key = OpenSSL::Digest::SHA256.digest(certificate.to_der + Array(chain).map(&:to_der).join)
+          known = @verified_mutex.synchronize { @verified[key] }
+          return known.fetch(:valid) if known && known.fetch(:until) > now
+
+          @store.time = now
+          valid = @store.verify(certificate, chain)
+          @verified_mutex.synchronize do
+            @verified.shift while @verified.length >= MAX_VERIFIED
+            @verified[key] = {valid: valid, until: [now + VERIFIED_SECONDS, certificate.not_after].min}
+          end
+          valid
+        end
 
         def first_header(context, names)
           names.each do |header|
