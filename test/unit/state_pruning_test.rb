@@ -62,6 +62,8 @@ class StatePruningTest < Minitest::Test
     def initialize(ids) = @registered = ids.dup
 
     def unregister(id) = @registered.delete(id)
+    def snapshot = {}
+    def restore(_payload) = self
   end
 
   def restart_manager(*keys)
