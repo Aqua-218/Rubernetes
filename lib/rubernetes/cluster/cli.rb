@@ -33,7 +33,7 @@ module Rubernetes
       def run(argv)
         arguments = argv.dup
         options = {name: "default", root: nil, controls: 1, workers: 1, ip_families: %w[ipv4], identities: :admin,
-                   extensions: false, force: false, json: false, help: false}
+                   extensions: false, storage: true, force: false, json: false, help: false}
         parser = option_parser(options)
         parser.parse!(arguments)
         command = arguments.shift
@@ -104,7 +104,8 @@ module Rubernetes
       def provisioner(options)
         Provisioner.new(root: options[:root] || File.join(DEFAULT_STATE_DIR, options[:name]), name: options[:name],
                         controls: options[:controls], workers: options[:workers], ip_families: options[:ip_families],
-                        identities: options[:identities], extensions: options[:extensions], force: options[:force])
+                        identities: options[:identities], extensions: options[:extensions], storage: options[:storage],
+                        force: options[:force])
       end
 
       def usage(parser, io, status)
@@ -124,6 +125,7 @@ module Rubernetes
           parser.on("--identities MODE", Provisioner::IDENTITY_MODES,
                     "up: admin, components or bootstrap (default: admin)") { |value| options[:identities] = value }
           parser.on("--extensions", "up: let the components load Extension objects (Ruby run inside them)") { options[:extensions] = true }
+          parser.on("--no-storage", "up: no default StorageClass and no hostPath provisioner") { options[:storage] = false }
           parser.on("--force", "up: take over bridges and workloads of another live cluster") { options[:force] = true }
           parser.on("-o", "--output FORMAT", %w[json text], "json or text (default: text)") { |value| options[:json] = value == "json" }
           parser.on("-h", "--help") { options[:help] = true }
