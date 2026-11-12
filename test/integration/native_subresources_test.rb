@@ -75,6 +75,8 @@ class NativeSubresourcesTest < Minitest::Test
     def resolve(reference)
       {"reference" => reference, "digest" => "sha256:#{"a" * 64}"}
     end
+
+    def release(_image) = true
   end
 
   def setup
