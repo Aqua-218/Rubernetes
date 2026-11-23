@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pathname"
+
 module Rubernetes
   module Schema
     # PersistentVolume, PersistentVolumeClaim, VolumeAttachment, StorageClass,
@@ -9,82 +11,81 @@ module Rubernetes
 
       SUPPORTED_ACCESS_MODES = %w[ReadOnlyMany ReadWriteMany ReadWriteOnce ReadWriteOncePod].freeze
 
-      def pvc_errors(root, _operation = :create)
-        spec = fetch(root, "spec")
+      def pvc_errors(root, _operation = :create, old: nil, path: ["spec"])
+        spec = fetch(root, "spec") || {}
         return [] unless spec.is_a?(Hash)
 
-        issues = []
-        modes = fetch(spec, "accessModes")
-        if !modes.is_a?(Array) || modes.empty?
-          issues << issue(%w[spec accessModes], :required, "at least 1 access mode is required")
-        else
-          # Only the four supported modes exist (validation.go:2470); an
-          # unrecognised one was accepted and then meant nothing to the
-          # attach/mount path.
-          modes.each_with_index do |mode, index|
-            next if SUPPORTED_ACCESS_MODES.include?(mode.to_s)
-
-            issues << issue(["spec", "accessModes", index.to_s], :unsupported,
-                            "supported values: #{SUPPORTED_ACCESS_MODES.map(&:inspect).join(", ")}")
-          end
+        issues = pvc_access_modes(fetch(spec, "accessModes"), path)
+        selector = fetch(spec, "selector")
+        issues.concat(label_selector_errors(selector, path + ["selector"])) if selector.is_a?(Hash)
+        storage_path = path + %w[resources [storage]]
+        storage = fetch(fetch(fetch(spec, "resources"), "requests"), "storage")
+        if !provided?(storage)
+          issues << issue(storage_path, :required, "")
+        elsif (quantity = limit_quantity(storage)) && !quantity.positive?
+          issues << valued_issue(storage_path, storage, "must be greater than zero")
         end
-        resources = fetch(spec, "resources")
-        requests = resources.is_a?(Hash) ? fetch(resources, "requests") : nil
-        issues << issue(%w[spec resources [storage]], :required, "") unless requests.is_a?(Hash) && provided?(fetch(requests, "storage"))
+        %w[storageClassName volumeAttributesClassName].each do |field|
+          name = fetch(spec, field)
+          issues.concat(invalid_messages(path + [field], dns1123_subdomain_messages(name))) unless blank?(name)
+        end
+        mode = fetch(spec, "volumeMode")
+        issues << issue(path + ["volumeMode"], :unsupported, 'supported values: "Block", "Filesystem"') if mode && !%w[Block Filesystem].include?(mode)
+        issues.concat(pvc_data_source_errors(spec, old, path))
+      end
+
+      def pvc_access_modes(modes, path)
+        field = path + ["accessModes"]
+        return [issue(field, :required, "at least 1 access mode is required")] unless modes.is_a?(Array) && !modes.empty?
+
+        issues = modes.reject { |mode| SUPPORTED_ACCESS_MODES.include?(mode) }.map do |mode|
+          ValidationIssue.new(path: field, code: :unsupported, kubernetes_type: "Unsupported value", value: mode,
+                              message: "supported values: #{SUPPORTED_ACCESS_MODES.map(&:inspect).join(", ")}")
+        end
+        if modes.include?("ReadWriteOncePod") && !(modes & (SUPPORTED_ACCESS_MODES - ["ReadWriteOncePod"])).empty?
+          issues << issue(field, :forbidden, "may not use ReadWriteOncePod with other access modes")
+        end
+        issues
+      end
+
+      def pvc_data_source_errors(spec, old, path)
+        issues = []
         data_source = fetch(spec, "dataSource")
         data_source_ref = fetch(spec, "dataSourceRef")
+        old_spec = fetch(old, "spec")
+        allow_old_group = %w[dataSource dataSourceRef].any? { |field| !fetch(fetch(old_spec, field), "apiGroup").nil? }
         # validateDataSource / validateDataSourceRef: name and kind are
         # required and the core (empty) apiGroup only admits PersistentVolumeClaim.
         {"dataSource" => data_source, "dataSourceRef" => data_source_ref}.each do |name, ref|
           next unless ref.is_a?(Hash)
 
-          required(ref, "name", ["spec", name], issues)
-          required(ref, "kind", ["spec", name], issues)
+          required(ref, "name", [*path, name], issues)
+          required(ref, "kind", [*path, name], issues)
           api_group = fetch(ref, "apiGroup")
           if blank?(api_group) && !blank?(fetch(ref, "kind")) && fetch(ref, "kind").to_s != "PersistentVolumeClaim"
-            issues << issue(["spec", name], :invalid, "must be 'PersistentVolumeClaim' when referencing the default apiGroup")
+            issues << issue([*path, name], :invalid, "must be 'PersistentVolumeClaim' when referencing the default apiGroup")
+          elsif !blank?(api_group) && !allow_old_group
+            issues.concat(invalid_messages([*path, name, "apiGroup"], dns1123_subdomain_messages(api_group)))
           end
         end
-        if data_source_ref.is_a?(Hash) && !blank?(fetch(data_source_ref, "namespace"))
-          issues << issue(%w[spec], :invalid, "may not be specified when dataSourceRef.namespace is specified") if data_source.is_a?(Hash)
+        namespace = fetch(data_source_ref, "namespace")
+        if !blank?(namespace)
+          issues.concat(invalid_messages(path + %w[dataSourceRef namespace], dns1123_label_messages(namespace)))
+          issues << issue(path, :invalid, "may not be specified when dataSourceRef.namespace is specified") if data_source.is_a?(Hash)
         elsif data_source.is_a?(Hash) && data_source_ref.is_a?(Hash)
-          comparable = ->(ref) { %w[apiGroup kind name].map { |key| fetch(ref, key).to_s } }
+          comparable = ->(ref) { %w[apiGroup kind name].map { |key| fetch(ref, key) } }
           unless comparable.call(data_source) == comparable.call(data_source_ref)
-            issues << issue(%w[spec], :invalid,
+            issues << issue(path, :invalid,
                             "must match dataSourceRef")
           end
         end
         issues
       end
 
-      # ValidatePersistentVolumeClaimUpdate: "spec is immutable after creation
-      # except resources.requests and volumeAttributesClassName for bound
-      # claims".  Nothing enforced it, so a client could repoint a bound PVC at
-      # another StorageClass or volume and the API took it.
-      def pvc_update_errors(root, old, operation)
-        return [] unless operation == :update && old.is_a?(Hash)
-
-        bound = fetch(fetch(old, "status"), "phase").to_s == "Bound"
-        # "PVController needs to update PVC.Spec w/ VolumeName": binding an
-        # unbound claim sets volumeName once (old empty), everything else stays.
-        binding = fetch(fetch(old, "spec"), "volumeName").to_s.empty?
-        mask = lambda do |claim|
-          spec = fetch(claim, "spec")
-          next nil unless spec.is_a?(Hash)
-
-          value = deep_copy_value(spec)
-          value.delete("volumeName") if binding
-          if bound
-            requests = value.dig("resources", "requests")
-            requests.delete("storage") if requests.is_a?(Hash)
-            value.delete("volumeAttributesClassName")
-          end
-          value
+      def claim_template_errors(root)
+        Array(fetch(fetch(root, "spec"), "volumeClaimTemplates")).each_with_index.flat_map do |claim, index|
+          pvc_errors(claim, path: ["spec", "volumeClaimTemplates", index.to_s, "spec"])
         end
-        return [] if mask.call(root) == mask.call(old)
-
-        [issue(%w[spec], :forbidden,
-               "spec is immutable after creation except resources.requests and volumeAttributesClassName for bound claims")]
       end
 
       # ValidatePersistentVolumeUpdate: the persistent volume SOURCE is
@@ -97,7 +98,15 @@ module Rubernetes
         quobyte rbd scaleIO storageos vsphereVolume
       ].freeze
 
-      def persistent_volume_update_errors(root, old, operation)
+      PV_NODE_AFFINITY_GA_LABELS = {
+        "failure-domain.beta.kubernetes.io/zone" => "topology.kubernetes.io/zone",
+        "failure-domain.beta.kubernetes.io/region" => "topology.kubernetes.io/region",
+        "beta.kubernetes.io/os" => "kubernetes.io/os",
+        "beta.kubernetes.io/arch" => "kubernetes.io/arch",
+        "beta.kubernetes.io/instance-type" => "node.kubernetes.io/instance-type"
+      }.freeze
+
+      def persistent_volume_update_errors(root, old, operation, mutable_node_affinity: false)
         return [] unless operation == :update && old.is_a?(Hash)
 
         new_spec = fetch(root, "spec")
@@ -116,7 +125,36 @@ module Rubernetes
                           "spec.persistentvolumesource is immutable after creation")
         end
         issues << issue(%w[volumeMode], :invalid, "field is immutable") unless fetch(new_spec, "volumeMode") == fetch(old_spec, "volumeMode")
+        old_affinity = fetch(old_spec, "nodeAffinity")
+        if !mutable_node_affinity && !old_affinity.nil? && !pv_node_affinity_equal?(fetch(new_spec, "nodeAffinity"), old_affinity)
+          issues << issue(%w[nodeAffinity], :invalid, "field is immutable, except for updating from beta label to GA")
+        end
         issues
+      end
+
+      def pv_node_affinity_equal?(current, previous)
+        return true if current == previous
+        return false unless current.is_a?(Hash) && previous.is_a?(Hash)
+
+        current_selector = fetch(current, "required")
+        previous_selector = fetch(previous, "required")
+        return false if current_selector.nil? != previous_selector.nil?
+
+        terms = Array(fetch(current_selector, "nodeSelectorTerms"))
+        old_terms = Array(fetch(previous_selector, "nodeSelectorTerms"))
+        terms.size == old_terms.size && terms.zip(old_terms).all? do |term, old_term|
+          %w[matchExpressions matchFields].all? do |field|
+            requirements = Array(fetch(term, field))
+            old_requirements = Array(fetch(old_term, field))
+            requirements.size == old_requirements.size && requirements.zip(old_requirements).all? do |requirement, old_requirement|
+              key = fetch(requirement, "key")
+              old_key = fetch(old_requirement, "key")
+              (key == old_key || key == PV_NODE_AFFINITY_GA_LABELS.fetch(old_key, old_key)) &&
+                fetch(requirement, "operator") == fetch(old_requirement, "operator") &&
+                Array(fetch(requirement, "values")) == Array(fetch(old_requirement, "values"))
+            end
+          end
+        end
       end
 
       # Every volume source key a PersistentVolume spec may arrive with.
@@ -142,9 +180,12 @@ module Rubernetes
         glusterfs iscsi local nfs nodeAffinity photonPersistentDisk portworxVolume quobyte rbd scaleIO storageos vsphereVolume
       ].freeze
 
-      def volume_errors(root, kind, operation = :create)
+      def volume_errors(root, kind, operation = :create, old: nil)
         issues = []
-        issues.concat(persistent_volume_spec_errors(fetch(root, "spec"), operation)) if kind == "PersistentVolume"
+        if kind == "PersistentVolume"
+          issues.concat(persistent_volume_spec_errors(fetch(root, "spec"), operation))
+          issues.concat(pv_node_selector_errors(root, old) * (operation == :update ? 2 : 1))
+        end
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
           next unless path.last == "volumes" || path.last == "volumeSource" || value.key?("persistentVolumeClaim")
@@ -203,6 +244,11 @@ module Rubernetes
         return issues unless sources.length == 1
 
         single_volume_source_errors(spec, sources.first, issues)
+        host_path = fetch(fetch(spec, "hostPath"), "path")
+        if fetch(spec, "persistentVolumeReclaimPolicy") == "Recycle" && host_path.is_a?(String) && !host_path.include?("\0") &&
+           Pathname.new(host_path).cleanpath.root?
+          issues << issue(%w[spec persistentVolumeReclaimPolicy], :forbidden, "may not be 'recycle' for a hostPath mount of '/'")
+        end
         csi = fetch(spec, "csi")
         secret = csi.is_a?(Hash) ? fetch(csi, "controllerExpandSecretRef") : nil
         if secret.is_a?(Hash)
@@ -228,8 +274,68 @@ module Rubernetes
       end
 
       def node_affinity_without_required?(node_affinity)
-        node_affinity.is_a?(Hash) &&
-          (!node_affinity.key?("required") || !node_affinity["required"].is_a?(Hash) || node_affinity["required"].empty?)
+        node_affinity.is_a?(Hash) && !fetch(node_affinity, "required").is_a?(Hash)
+      end
+
+      def pv_node_selector_errors(root, old)
+        selector = value_at_path(root, %w[spec nodeAffinity required])
+        return [] unless selector.is_a?(Hash)
+
+        path = %w[spec nodeAffinity required nodeSelectorTerms]
+        terms = Array(fetch(selector, "nodeSelectorTerms"))
+        return [issue(path, :required, "must have at least one node selector term")] if terms.empty?
+
+        old_terms = Array(value_at_path(old, path))
+        allow_invalid_labels = old_terms.any? do |term|
+          Array(fetch(term, "matchExpressions")).any? do |requirement|
+            Array(fetch(requirement, "values")).any? { |value| !label_value_messages(value).empty? }
+          end
+        end
+        terms.each_with_index.flat_map do |term, index|
+          term_path = path + [index.to_s]
+          labels = Array(fetch(term, "matchExpressions")).each_with_index.flat_map do |requirement, req_index|
+            pv_node_label_errors(requirement, term_path + ["matchExpressions", req_index.to_s], allow_invalid_labels)
+          end
+          fields = Array(fetch(term, "matchFields")).each_with_index.flat_map do |requirement, req_index|
+            pv_node_field_errors(requirement, term_path + ["matchFields", req_index.to_s])
+          end
+          labels + fields
+        end
+      end
+
+      def pv_node_label_errors(requirement, path, allow_invalid_labels)
+        values = Array(fetch(requirement, "values"))
+        issues = case fetch(requirement, "operator")
+                 when "In", "NotIn"
+                   values.empty? ? [issue(path + ["values"], :required, "must be specified when `operator` is 'In' or 'NotIn'")] : []
+                 when "Exists", "DoesNotExist"
+                   values.empty? ? [] : [issue(path + ["values"], :forbidden, "may not be specified when `operator` is 'Exists' or 'DoesNotExist'")]
+                 when "Lt", "Gt"
+                   values.length == 1 ? [] : [issue(path + ["values"], :required, "must be specified single value when `operator` is 'Lt' or 'Gt'")]
+                 else
+                   [issue(path + ["operator"], :invalid, "not a valid selector operator")]
+                 end
+        issues.concat(invalid_messages(path + ["key"], qualified_name_messages(fetch(requirement, "key"))))
+        unless allow_invalid_labels
+          values.each_with_index { |value, index| issues.concat(invalid_messages(path + ["values", index.to_s], label_value_messages(value))) }
+        end
+        issues
+      end
+
+      def pv_node_field_errors(requirement, path)
+        values = Array(fetch(requirement, "values"))
+        value_message = "must be only one value when `operator` is 'In' or 'NotIn' for node field selector"
+        issues = if %w[In NotIn].include?(fetch(requirement, "operator"))
+                   values.length == 1 ? [] : [issue(path + ["values"], :required, value_message)]
+                 else
+                   [issue(path + ["operator"], :invalid, "not a valid selector operator")]
+                 end
+        if fetch(requirement, "key") == "metadata.name"
+          values.each_with_index { |value, index| issues.concat(invalid_messages(path + ["values", index.to_s], dns1123_subdomain_messages(value))) }
+        else
+          issues << issue(path + ["key"], :invalid, "not a valid field selector key")
+        end
+        issues
       end
 
       # The required fields and formats of the one selected volume source.
@@ -294,12 +400,12 @@ module Rubernetes
         name == "cephfs" ? "cephFS" : name
       end
 
-      def volume_attachment_errors(root)
+      def volume_attachment_errors(root, old = nil, operation = :create)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
-        issues = []
-        required(spec, "attacher", ["spec"], issues)
+        issues = volume_attachment_attacher_errors(spec)
+        issues << issue(%w[spec], :invalid, "field is immutable") if operation == :update && old && spec != fetch(old, "spec")
         issues << issue(%w[spec nodeName], :invalid, DNS1123_SUBDOMAIN_MSG) if blank?(fetch(spec, "nodeName"))
         source = fetch(spec, "source")
         source = {} unless source.is_a?(Hash)
@@ -317,6 +423,16 @@ module Rubernetes
         end
         inline_volume_spec_errors(inline, issues) if inline.is_a?(Hash)
         issues
+      end
+
+      def volume_attachment_attacher_errors(spec)
+        path = %w[spec attacher]
+        attacher = fetch(spec, "attacher").to_s
+        return [issue(path, :required, "")] if attacher.empty?
+
+        errors = []
+        errors << issue(path, :too_long, "may not be more than 63 bytes") if attacher.bytesize > 63
+        errors.concat(invalid_messages(path, dns1123_subdomain_messages(attacher.downcase)))
       end
 
       # VolumeAttachment validates an inline PersistentVolumeSpec with the
@@ -348,7 +464,9 @@ module Rubernetes
         end
       end
 
-      def storage_class_errors(root, operation = :create)
+      STORAGE_CLASS_IMMUTABLE_FIELDS = %w[parameters provisioner reclaimPolicy volumeBindingMode].freeze
+
+      def storage_class_errors(root, operation = :create, old = nil)
         spec = fetch(root, "spec")
         spec = root if spec.nil?
         issues = []
@@ -367,6 +485,15 @@ module Rubernetes
               expressions = fetch(term, "matchLabelExpressions")
               issues << issue(["allowedTopologies", index.to_s, "matchLabelExpressions"], :duplicate, "") if !expressions.is_a?(Array) || expressions.empty?
             end
+          end
+        end
+        if operation == :update && old
+          STORAGE_CLASS_IMMUTABLE_FIELDS.each do |field|
+            value = fetch(spec, field)
+            previous = fetch(old, field)
+            next if value == previous || (field == "parameters" && (value || {}) == (previous || {}))
+
+            issues << issue([field], :invalid, "field is immutable")
           end
         end
 
