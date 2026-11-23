@@ -38,21 +38,26 @@ class M1APIClientRegressionTest < Minitest::Test
     assert_equal "job-bbbbb", response.body.dig("metadata", "name")
   end
 
-  def test_list_limit_zero_is_unbounded_and_remaining_item_count_is_preserved
+  def test_list_limit_zero_is_unbounded_and_only_unfiltered_pages_report_remaining_count
     store = Rubernetes::Storage::MemoryStore.new
     server = Rubernetes::API::Server.new(store: store)
     3.times do |index|
       server.call(method: "POST", path: "/api/v1/namespaces/dev/configmaps",
-                  body: {"metadata" => {"name" => index.to_s}})
+                  body: {"metadata" => {"name" => index.to_s, "labels" => {"fixture" => "true"}}})
     end
 
     page = server.call(method: "GET", path: "/api/v1/namespaces/dev/configmaps",
                        query: {"limit" => "1"})
+    filtered = server.call(method: "GET", path: "/api/v1/namespaces/dev/configmaps",
+                           query: {"limit" => "1", "labelSelector" => "fixture=true"})
     unbounded = server.call(method: "GET", path: "/api/v1/namespaces/dev/configmaps",
                             query: {"limit" => "0", "resourceVersion" => "0",
                                     "resourceVersionMatch" => "NotOlderThan"})
 
     assert_equal 2, page.body.dig("metadata", "remainingItemCount")
+    assert_equal 1, filtered.body.fetch("items").size
+    refute_empty filtered.body.dig("metadata", "continue")
+    refute filtered.body.fetch("metadata").key?("remainingItemCount")
     assert_equal 3, unbounded.body["items"].length
     refute unbounded.body["metadata"].key?("remainingItemCount")
   end
