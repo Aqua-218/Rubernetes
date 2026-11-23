@@ -70,7 +70,6 @@ module Rubernetes
       Applied = Data.define(:index, :term, :command, :result)
 
       ROLES = %i[follower pre_candidate candidate leader].freeze
-      NOOP_COMMAND = {"type" => "noop"}.freeze
       CONFIG_COMMAND_TYPE = "config"
       MAX_REMEMBERED_REQUESTS = 4096
 
@@ -630,7 +629,7 @@ module Rubernetes
         notify_role(previous)
         # A leader must commit an entry from its own term before it can
         # safely advance commitIndex or serve reads (section 5.4.2).
-        append_local([[SecureRandom.uuid, NOOP_COMMAND.dup]])
+        append_local([[SecureRandom.uuid, @state_machine.leadership_command]])
         # A partially completed membership change carried in the log must be
         # finished by the new leader.
         @pending_membership_change = {request_id: SecureRandom.uuid, target: @membership.leave_joint.to_h} if @membership.joint?
@@ -938,7 +937,8 @@ module Rubernetes
 
       def apply_entry(entry)
         command = entry.command
-        return nil if command.nil? || command["type"] == "noop" || command["type"] == CONFIG_COMMAND_TYPE
+        return nil if command.nil? || command["type"] == CONFIG_COMMAND_TYPE
+        return @state_machine.apply_leadership_metadata(command) if command["type"] == "noop"
 
         @state_machine.apply(entry.index, command)
       end
@@ -1103,16 +1103,15 @@ module Rubernetes
       def send_snapshot(peer, now = @clock.call)
         transfer = @snapshot_transfer[peer]
         if transfer.nil?
-          snapshot, _rejected = @snapshot_store.latest(strict: true)
-          if snapshot.nil? || snapshot.index < @log.snapshot_index
+          snapshot = @snapshot_store.latest_for_transfer
+          if snapshot.nil? || snapshot.fetch(:index) < @log.snapshot_index
             # The log was compacted but no matching snapshot exists yet; take
             # one from the current applied state.
             snapshot!(force: true)
-            snapshot, _rejected = @snapshot_store.latest(strict: true)
+            snapshot = @snapshot_store.latest_for_transfer
             raise Error, "no snapshot available for follower #{peer}" if snapshot.nil?
           end
-          bytes = @snapshot_store.read_bytes(snapshot.path)
-          transfer = {bytes: bytes, offset: 0, index: snapshot.index, term: snapshot.term, request_id: nil}
+          transfer = snapshot.merge(offset: 0, request_id: nil)
           @snapshot_transfer[peer] = transfer
         end
         return if transfer[:request_id]
