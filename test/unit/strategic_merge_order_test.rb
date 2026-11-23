@@ -37,4 +37,17 @@ class StrategicMergeOrderTest < Minitest::Test
     assert_equal %w[c a], names(merged)
     refute merged["spec"].key?("$setElementOrder/containers")
   end
+
+  def test_set_element_order_without_changing_list_items
+    original = {"spec" => {"containers" => [{"name" => "a", "image" => "first"}, {"name" => "b", "image" => "second"}]}}
+    patch = {"spec" => {"$setElementOrder/containers" => [{"name" => "b"}, {"name" => "a"}]}}
+
+    merged = Patch.apply_strategic_merge(original, patch)
+    images = merged.dig("spec", "containers").map { |container| container.fetch("image") }
+
+    assert_equal %w[b a], names(merged)
+    assert_equal %w[second first], images
+    assert_equal %w[a b], names(original)
+    refute merged["spec"].key?("$setElementOrder/containers")
+  end
 end
