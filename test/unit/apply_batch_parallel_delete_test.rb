@@ -81,4 +81,70 @@ class ApplyBatchParallelDeleteTest < Minitest::Test
 
     assert_equal %w[delete-0 delete-1 delete-2], results
   end
+
+  def test_updates_finish_before_following_deletes
+    adapter = LatchingAdapter.new(1)
+    operations = batch(:update, 2) + batch(:delete, 2)
+
+    results = adapter.apply_batch(operations)
+
+    assert_equal %i[update update delete delete], adapter.order
+    assert_equal %w[update-0 update-1 delete-0 delete-1], results
+  end
+
+  def test_updates_between_deletes_keep_their_position
+    adapter = LatchingAdapter.new(1)
+    operations = batch(:delete, 1) + batch(:update, 1) + batch(:delete, 1)
+
+    adapter.apply_batch(operations)
+
+    assert_equal %i[delete update delete], adapter.order
+  end
+
+  def test_parallel_failure_waits_for_started_writes_and_stops_the_batch
+    width = Adapter::CREATE_PARALLELISM
+    operations = batch(:delete, width + 1) + batch(:update, 1)
+    started = Queue.new
+    first_worker = Queue.new
+    second_started = Queue.new
+    release_second = Queue.new
+    failure = RuntimeError.new("first delete failed")
+    adapter = Adapter.allocate
+    adapter.define_singleton_method(:apply) do |operation, fence: nil|
+      started << operation.name
+      case operation.name
+      when "delete-0"
+        Thread.current.report_on_exception = false
+        first_worker << Thread.current
+        raise failure
+      when "delete-1"
+        Thread.current.report_on_exception = false
+        second_started << true
+        release_second.pop
+        raise "second delete failed"
+      end
+    end
+
+    applying = Thread.new do
+      adapter.apply_batch(operations)
+    rescue StandardError => error
+      error
+    end
+
+    Timeout.timeout(5) do
+      second_started.pop
+      failed = first_worker.pop
+
+      assert_same failure, assert_raises(RuntimeError) { failed.join }
+      assert_nil applying.join(0.2), "the batch returned while another write was still in flight"
+
+      release_second << true
+
+      assert_same failure, applying.value
+      assert_equal operations.first(width).map(&:name).sort, Array.new(started.size) { started.pop }.sort
+    end
+  ensure
+    release_second << true
+    applying&.join(5)
+  end
 end
