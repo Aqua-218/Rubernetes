@@ -17,6 +17,30 @@ module Rubernetes
 
         Program = Struct.new(:ast, :source)
 
+        class CostLimitExceeded < EvaluationError
+          def initialize(message, aggregate: false)
+            @aggregate = aggregate
+            super(message)
+          end
+
+          def aggregate? = @aggregate
+        end
+
+        class Budget
+          def initialize(limit)
+            @remaining = limit
+            @stopped = false
+          end
+
+          def charge(amount)
+            @remaining -= amount
+            raise CostLimitExceeded.new("total expression cost exceeds the limit", aggregate: true) if @remaining.negative?
+          end
+
+          def stopped? = @stopped
+          def stop! = @stopped = true
+        end
+
         def initialize(cost_limit: DEFAULT_COST_LIMIT, library: Library.new)
           @cost_limit = cost_limit
           @library = library
@@ -28,28 +52,30 @@ module Rubernetes
           @mutex.synchronize { @cache[source] ||= Program.new(Parser.new(source).parse, source) }
         end
 
-        def evaluate(source, variables = {})
-          run(compile(source), variables)
+        def evaluate(source, variables = {}, budget = nil)
+          run(compile(source), variables, budget)
         end
 
-        def run(program, variables)
-          context = Context.new(variables: variables, library: @library, cost_limit: @cost_limit)
+        def run(program, variables, budget = nil)
+          context = Context.new(variables: variables, library: @library, cost_limit: @cost_limit, budget: budget)
           context.evaluate(program.ast)
         end
 
         class Context
           attr_reader :library
 
-          def initialize(variables:, library:, cost_limit:)
+          def initialize(variables:, library:, cost_limit:, budget: nil)
             @scopes = [normalize_variables(variables)]
             @library = library
             @cost_limit = cost_limit
+            @budget = budget
             @cost = 0
           end
 
           def charge(amount = 1)
             @cost += amount
-            raise EvaluationError, "expression cost exceeds the limit (#{@cost_limit})" if @cost > @cost_limit
+            @budget&.charge(amount)
+            raise CostLimitExceeded, "expression cost exceeds the limit (#{@cost_limit})" if @cost > @cost_limit
           end
 
           def lookup(name)
@@ -216,8 +242,10 @@ module Rubernetes
             case operator
             when "&&"
               left = safe(left_node)
+              return false if left == false
+
               right = safe(right_node)
-              return false if left == false || right == false
+              return false if right == false
               raise left if left.is_a?(Exception)
               raise right if right.is_a?(Exception)
               raise TypeMismatch, "&& requires bools" unless left == true && right == true
@@ -225,8 +253,10 @@ module Rubernetes
               true
             when "||"
               left = safe(left_node)
+              return true if left == true
+
               right = safe(right_node)
-              return true if left == true || right == true
+              return true if right == true
               raise left if left.is_a?(Exception)
               raise right if right.is_a?(Exception)
               raise TypeMismatch, "|| requires bools" unless left == false && right == false
@@ -239,6 +269,8 @@ module Rubernetes
 
           def safe(node)
             evaluate(node)
+          rescue CostLimitExceeded
+            raise
           rescue EvaluationError => error
             error
           end
