@@ -13,6 +13,7 @@ require_relative "support"
 require_relative "types"
 require_relative "secondary_support"
 require_relative "registry"
+require_relative "builtin_factory"
 
 module Rubernetes
   module Controller
@@ -29,14 +30,8 @@ module Rubernetes
       NODE = ResourceDescriptor.parse("Node")
       JOB = ResourceDescriptor.parse("Job")
       CSR = ResourceDescriptor.parse("CertificateSigningRequest")
-      PDB = ResourceDescriptor.parse(
-        {"apiVersion" => "policy/v1", "kind" => "PodDisruptionBudget"},
-        resource: "poddisruptionbudgets", scope: :namespaced
-      )
-      PCR = ResourceDescriptor.parse(
-        {"apiVersion" => "certificates.k8s.io/v1beta1", "kind" => "PodCertificateRequest"},
-        resource: "podcertificaterequests", scope: :namespaced
-      )
+      PDB = ResourceDescriptor.parse("PodDisruptionBudget")
+      PCR = ResourceDescriptor.parse("PodCertificateRequest")
 
       BOOTSTRAP_SECRET_TYPE = "bootstrap.kubernetes.io/token"
       BOOTSTRAP_TOKEN_PREFIX = "bootstrap-token-"
@@ -356,10 +351,9 @@ module Rubernetes
         namespace = Support.namespace(object)
         finders = {
           pods: pods || list_for(adapter, POD, namespace: namespace),
-          replica_sets: replica_sets || list_for(adapter, REPLICA_SET, namespace: namespace),
-          deployments: deployments || list_for(adapter, DEPLOYMENT, namespace: namespace),
-          stateful_sets: stateful_sets || list_for(adapter, STATEFUL_SET, namespace: namespace),
-          replication_controllers: replication_controllers || list_for(adapter, REPLICATION_CONTROLLER, namespace: namespace),
+          adapter: adapter,
+          owners: {REPLICA_SET => replica_sets, DEPLOYMENT => deployments, STATEFUL_SET => stateful_sets,
+                   REPLICATION_CONTROLLER => replication_controllers},
           scale_client: scale_client || (adapter && ScaleClient.new(adapter: adapter)),
           rest_mapper: rest_mapper || RESTMapper.new
         }
@@ -463,11 +457,13 @@ module Rubernetes
           end
           next if scales.key?(Support.value(reference, "uid", "").to_s)
 
-          found = nil
-          %i[replication_controller deployment replica_set stateful_set scale_controller].each do |finder|
-            found = send(:"find_#{finder}", reference, Support.namespace(pod), finders)
-            break if found
-          end
+          namespace = Support.namespace(pod)
+          target = workload_owner(reference, namespace, finders)
+          found = if target
+                    [Support.uid(target).to_s, Support.integer(Support.value(Support.spec(target), "replicas", 1), 1)]
+                  else
+                    find_scale_controller(reference, namespace, finders)
+                  end
           raise SyncError, "found no controllers for pod #{Support.name(pod).dump}" unless found
 
           scales[found[0]] = found[1]
@@ -483,57 +479,31 @@ module Rubernetes
         groups.include?(group.to_s)
       end
 
-      def named(list, reference)
-        Array(list).find do |candidate|
-          Support.name(candidate) == Support.value(reference, "name", "").to_s
+      # A Pod counts toward its Deployment through its ReplicaSet. Other
+      # recognized workload owners contribute their own replica count.
+      def workload_owner(reference, namespace, finders)
+        if group_kind?(reference, "ReplicaSet", %w[apps extensions])
+          replica_set = resolve_owner(REPLICA_SET, reference, namespace, finders)
+          owner = owner_controller_reference(replica_set) if replica_set
+          return replica_set unless Support.value(owner, "kind").to_s == "Deployment"
+          return resolve_owner(DEPLOYMENT, owner, namespace, finders) if group_kind?(owner, "Deployment", %w[apps extensions])
+        elsif group_kind?(reference, "StatefulSet", %w[apps])
+          return resolve_owner(STATEFUL_SET, reference, namespace, finders)
+        elsif group_kind?(reference, "ReplicationController", [""])
+          return resolve_owner(REPLICATION_CONTROLLER, reference, namespace, finders)
         end
+        nil
       end
 
-      def replicas_of(object) = Support.integer(Support.value(Support.spec(object), "replicas", 1), 1)
-
-      def find_replica_set(reference, _namespace, finders)
-        return nil unless group_kind?(reference, "ReplicaSet", %w[apps extensions])
-
-        replica_set = named(finders[:replica_sets], reference)
-        return nil unless replica_set && Support.uid(replica_set).to_s == Support.value(reference, "uid", "").to_s
-
-        owner = owner_controller_reference(replica_set)
-        return nil if owner && Support.value(owner, "kind", "").to_s == "Deployment"
-
-        [Support.uid(replica_set).to_s, replicas_of(replica_set)]
-      end
-
-      def find_stateful_set(reference, _namespace, finders)
-        return nil unless group_kind?(reference, "StatefulSet", %w[apps])
-
-        set = named(finders[:stateful_sets], reference)
-        return nil unless set && Support.uid(set).to_s == Support.value(reference, "uid", "").to_s
-
-        [Support.uid(set).to_s, replicas_of(set)]
-      end
-
-      def find_deployment(reference, _namespace, finders)
-        return nil unless group_kind?(reference, "ReplicaSet", %w[apps extensions])
-
-        replica_set = named(finders[:replica_sets], reference)
-        return nil unless replica_set && Support.uid(replica_set).to_s == Support.value(reference, "uid", "").to_s
-
-        owner = owner_controller_reference(replica_set)
-        return nil unless owner && group_kind?(owner, "Deployment", %w[apps extensions])
-
-        deployment = named(finders[:deployments], owner)
-        return nil unless deployment && Support.uid(deployment).to_s == Support.value(owner, "uid", "").to_s
-
-        [Support.uid(deployment).to_s, replicas_of(deployment)]
-      end
-
-      def find_replication_controller(reference, _namespace, finders)
-        return nil unless group_kind?(reference, "ReplicationController", [""])
-
-        controller = named(finders[:replication_controllers], reference)
-        return nil unless controller && Support.uid(controller).to_s == Support.value(reference, "uid", "").to_s
-
-        [Support.uid(controller).to_s, replicas_of(controller)]
+      def resolve_owner(descriptor, reference, namespace, finders)
+        name = Support.value(reference, "name", "").to_s
+        supplied = finders[:owners][descriptor]
+        object = if supplied
+                   Array(supplied).find { |candidate| Support.name(candidate) == name }
+                 else
+                   find_for(finders[:adapter], descriptor, name, namespace: namespace)
+                 end
+        object if object && Support.uid(object).to_s == Support.value(reference, "uid", "").to_s
       end
 
       # getScaleController: any kind with a scale subresource.
@@ -1362,8 +1332,7 @@ module Rubernetes
         return [] if configured.empty?
 
         masks = node_cidr_mask_sizes
-        existing = Array(nodes).flat_map { |candidate| pod_cidrs(candidate) }.map { |value| canonical_cidr(value) }
-        occupied = existing.dup
+        occupied = Array(nodes).flat_map { |candidate| pod_cidrs(candidate) }.map { |value| canonical_cidr(value) }
         unassigned = Array(nodes).reject do |candidate|
           !pod_cidrs(candidate).empty? || !Support.value(Support.metadata(candidate), "deletionTimestamp", nil).nil?
         end
@@ -1373,18 +1342,19 @@ module Rubernetes
         end
         return [] unless position
 
-        configured.filter_map.with_index do |cidr, family_index|
+        configured.map.with_index do |cidr, family_index|
           candidates = subnet_candidates(cidr, mask_for(masks, cidr, family_index))
           label = cidr_label(cidr)
           ControllerMetrics.set("node_ipam_controller_cirdset_max_cidrs", candidates.length, {"clusterCIDR" => label}) if label
           taken = candidates.map { |candidate| occupied.any? { |value| cidr_overlap?(candidate, value) } }
-          available = candidates.each_index.reject { |index| taken[index] }
-          index = available.fetch(position, nil)
-          selected = index && candidates[index]
-          if selected && allocations && label
+          index = candidates.each_index.reject { |candidate_index| taken[candidate_index] }[position]
+          return [] unless index
+
+          selected = candidates.fetch(index)
+          if allocations && label
             allocations << {cluster_cidr: label, tries: taken.first(index).count(true), used: taken.count(true) + 1, max: candidates.length}
           end
-          occupied << selected if selected
+          occupied << selected
           selected
         end
       end
@@ -1483,17 +1453,7 @@ module Rubernetes
     # Registration is deliberately opt-in so the controller manager owner can
     # integrate the batch with the existing registry in one atomic step.
     module SecurityLifecycleRegistration
-      CONTROLLER_NAMES = %w[
-        disruption-controller
-        certificatesigningrequest-signing-controller
-        certificatesigningrequest-approving-controller
-        certificatesigningrequest-cleaner-controller
-        podcertificaterequest-cleaner-controller
-        ttl-controller
-        bootstrap-signer-controller
-        token-cleaner-controller
-        node-ipam-controller
-      ].freeze
+      include BuiltinFactory
 
       WATCHES = {
         "disruption-controller" => [
@@ -1507,8 +1467,8 @@ module Rubernetes
         "certificatesigningrequest-cleaner-controller" => [["CertificateSigningRequest", :all]],
         "podcertificaterequest-cleaner-controller" => [["PodCertificateRequest", :all]],
         "ttl-controller" => [["Job", :all]],
-        "bootstrap-signer-controller" => [["ConfigMap", :all], ["Secret", :label]],
-        "token-cleaner-controller" => [["Secret", :label]],
+        "bootstrap-signer-controller" => [["ConfigMap", :all], ["Secret", :all, :mapped, ->(_token) { "kube-public/cluster-info" }]],
+        "token-cleaner-controller" => [["Secret", :all, :self]],
         "node-ipam-controller" => [["Node", :all]]
       }.freeze
 
@@ -1523,23 +1483,16 @@ module Rubernetes
         "token-cleaner-controller" => TokenCleanerController,
         "node-ipam-controller" => NodeIPAMController
       }.freeze
+      CONTROLLER_NAMES = IMPLEMENTATIONS.keys.freeze
 
-      METADATA = CONTROLLER_NAMES.each_with_object({}) do |controller_name, result|
-        entry = BuiltinControllerCorpus.fetch(controller_name)
-        result[controller_name] = entry.to_h
-      end.freeze
+      METADATA = CONTROLLER_NAMES.to_h { |name| [name, BuiltinControllerCorpus.fetch(name).to_h] }.freeze
+
+      module_function :entries, :register!, :usable_descriptor
+      alias register register!
 
       module_function
 
-      def entries
-        CONTROLLER_NAMES.map do |name|
-          BuiltinControllerCorpus.fetch(name) || raise(ValidationError, "missing pinned corpus entry #{name.inspect}")
-        end
-      end
-
-      def names
-        CONTROLLER_NAMES
-      end
+      def names = CONTROLLER_NAMES
 
       def implementation(name)
         IMPLEMENTATIONS.fetch(name.to_s)
@@ -1556,33 +1509,17 @@ module Rubernetes
         entries.map do |entry|
           implementation = IMPLEMENTATIONS.fetch(entry.name)
           definition_descriptor = usable_descriptor(descriptor_for(entry.kind), registry)
-          watch_specs = WATCHES.fetch(entry.name).each_with_index.map do |(kind, relationship, route), index|
+          watch_specs = WATCHES.fetch(entry.name).each_with_index.map do |(kind, relationship, route, queue_key), index|
             descriptor = usable_descriptor(descriptor_for(kind), registry)
             WatchSpec.new(resource: descriptor, via: relationship,
                           index_name: "security/#{entry.name}/#{index}",
                           predicate: watch_predicate(relationship, entry.name, kind),
-                          queue_key: ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") },
+                          queue_key: queue_key || ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") },
                           scope: descriptor.scope, route: route || :fan_out)
           end
-          definition = nil
-          mutex = Mutex.new
-          instance = nil
-          reconcile = lambda do |resource, context = nil|
-            context = {} unless context.is_a?(Hash)
-            controller = context[:controller] || context["controller"]
-            controller ||= mutex.synchronize { instance ||= implementation.new(definition: definition) }
-            options = context[:options] || context["options"] || {}
-            options = options.dup if options.is_a?(Hash)
-            options[:store] = context[:store] || context["store"] if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
-            controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
+          entry.build_controller(implementation, kind: definition_descriptor, watches: watch_specs) do |definition|
+            implementation.new(definition: definition)
           end
-          definition = ControllerDefinition.new(
-            name: entry.name, kind: definition_descriptor, owns: [], watches: watch_specs,
-            reconcile_block: reconcile, feature_gates: entry.feature_gates,
-            startup_conditions: entry.startup_conditions, sync_targets: entry.sync_targets,
-            status_fields: entry.status_fields, events: entry.events, implementation: implementation
-          )
-          definition
         end.freeze
       end
 
@@ -1593,36 +1530,7 @@ module Rubernetes
           raise(ValidationError, "missing security lifecycle controller #{name.inspect}")
       end
 
-      def register!(registry)
-        definitions(registry: registry).each { |definition| registry.register(definition) }
-        registry
-      end
-
-      alias register register!
-
-      def descriptor_for(kind)
-        case kind.to_s
-        when "PodDisruptionBudget"
-          SecurityLifecycleSupport::PDB
-        when "PodCertificateRequest"
-          SecurityLifecycleSupport::PCR
-        else
-          ResourceDescriptor.parse(kind)
-        end
-      end
-
-      def usable_descriptor(descriptor, registry)
-        return descriptor unless registry
-
-        registry.validate_descriptor!(descriptor)
-        descriptor
-      rescue UnknownGVKError
-        # The current registry may predate policy/v1 or certificates/v1beta1
-        # descriptors.  The pinned corpus still validates kind ownership, so a
-        # kind-only descriptor keeps registration atomic until schema integration
-        # adds those GVKs.
-        ResourceDescriptor.parse(descriptor.kind)
-      end
+      def descriptor_for(kind) = ResourceDescriptor.parse(kind)
 
       def watch_predicate(relationship, controller_name = nil, kind = nil)
         if controller_name.to_s == "bootstrap-signer-controller"
