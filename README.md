@@ -148,7 +148,7 @@ needed only for the `microvm` RuntimeClass.
 ```sh
 git clone https://github.com/Aqua-218/Rubernetes.git && cd Rubernetes
 bundle install
-rake abi:compile                    # builds the C extension under build/
+rake compile                        # builds the C extension under build/
 
 # Create a cluster: 1 control node and 1 worker, usable in about ten seconds
 sudo ruby -Ilib exe/rubectl cluster up
@@ -493,7 +493,7 @@ rubectl apply -f nightly.rb --allow-code
 
 ```sh
 bundle install
-rake abi:compile                 # once, and again after changing ext/
+rake compile                     # once, and again after changing ext/
 rake test:parallel               # whole suite, one process per file, about 6 min; JOBS=n sets the width
 rake test                        # serial run, about 1 h; the evidence gates use this one
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
