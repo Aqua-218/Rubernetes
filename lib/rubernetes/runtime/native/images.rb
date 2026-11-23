@@ -10,6 +10,21 @@ module Rubernetes
       module Images
         private
 
+        # Keep raw layer bytes out of JSON and bind retries to the actual payload.
+        # The prefix distinguishes new receipts from the old all-JSON digest.
+        def sandbox_config_digest(input)
+          return digest(input) unless input["image_bytes"]
+
+          payload_digest = Digest::SHA256.hexdigest(String(input.fetch("image_bytes")))
+          "image-v2:#{digest([input.except("image_bytes"), payload_digest])}"
+        end
+
+        def legacy_image_intent?(recorded, input)
+          input["image_bytes"] && recorded.to_s.match?(/\A[0-9a-f]{64}\z/) && recorded == digest(input)
+        rescue JSON::GeneratorError
+          false
+        end
+
         # Resolve direct runtime callers as well as the Node lifecycle path. The
         # latter supplies `resolved_images`; direct callers with an image must
         # inject the same resolver explicitly, otherwise the runtime fails before
