@@ -283,7 +283,7 @@ module Rubernetes
         return UserInfo.from_h(request.identity) if request.identity
         return UserInfo.anonymous unless @authenticator
 
-        context = Authentication::RequestContext.new(headers: request.headers, client_certificate: request.client_certificate,
+        context = Authentication::RequestContext.new(headers: request.authentication_headers, client_certificate: request.client_certificate,
                                                      client_chain: request.client_chain, remote_address: request.remote_address, path: request.path)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = "error"
@@ -386,36 +386,41 @@ module Rubernetes
       # requests get verb/group/version/resource/subresource/namespace/name,
       # everything else is a non-resource path.
       def build_attributes(user, request, route)
-        if route.respond_to?(:resource_route?) && route.resource_route? && route.resource
-          resource = route.resource
-          watch = %w[true 1].include?(request.query_value("watch").to_s) if request.respond_to?(:query_value)
-          verb = Authorization::Attributes.verb_for(method: request.method, collection: route.collection, watch: watch == true,
-                                                    name_present: !route.name.to_s.empty?)
-          Authorization::Attributes.new(user: user, verb: verb, path: request.path,
-                                        namespace: route.namespace, api_group: resource.respond_to?(:group) ? resource.group : route.group,
-                                        api_version: resource.respond_to?(:version) ? resource.version : route.version,
-                                        resource: resource.respond_to?(:resource) ? resource.resource : route.resource.to_s,
-                                        subresource: route.subresource, name: selector_name(verb, route.name, request),
-                                        resource_request: true,
-                                        field_selector: request.query_value("fieldSelector"), label_selector: request.query_value("labelSelector"))
-        elsif (info = api_path_request_info(request))
-          # RequestInfoFactory classifies ANY path under /api or /apis as a
-          # resource request from its shape alone, whether or not this server
-          # serves the resource itself: an aggregated API's flunders are
-          # authorized as "create flunders in wardle.example.com", not as a
-          # non-resource path (which a resource-only ClusterRole never grants
-          # and the Aggregator conformance spec then reads as forbidden).
-          Authorization::Attributes.new(user: user, verb: info[:verb], path: request.path,
-                                        namespace: info[:namespace], api_group: info[:group], api_version: info[:version],
-                                        resource: info[:resource], subresource: info[:subresource],
-                                        name: selector_name(info[:verb], info[:name], request),
-                                        resource_request: true,
-                                        field_selector: request.respond_to?(:query_value) ? request.query_value("fieldSelector") : nil,
-                                        label_selector: request.respond_to?(:query_value) ? request.query_value("labelSelector") : nil)
-        else
-          Authorization::Attributes.new(user: user, verb: Authorization::Attributes.non_resource_verb(request.method), path: request.path,
-                                        resource_request: false)
+        info = if route.respond_to?(:resource_route?) && route.resource_route? && route.resource
+                 resource_request_info(request, route)
+               else
+                 # Aggregated resources are authorized by their URL even when
+                 # the local discovery registry has no resource for the path.
+                 api_path_request_info(request)
+               end
+        unless info
+          return Authorization::Attributes.new(user: user, verb: Authorization::Attributes.non_resource_verb(request.method), path: request.path,
+                                               resource_request: false)
         end
+
+        name = info[:name]
+        unless info[:legacy_watch]
+          name = selector_name(info[:verb], name, request)
+          if request.respond_to?(:query_value)
+            field_selector = request.query_value("fieldSelector")
+            label_selector = request.query_value("labelSelector")
+          end
+        end
+        Authorization::Attributes.new(user: user, verb: info[:verb], path: request.path,
+                                      namespace: info[:namespace], api_group: info[:group], api_version: info[:version],
+                                      resource: info[:resource], subresource: info[:subresource], name: name, resource_request: true,
+                                      field_selector: field_selector, label_selector: label_selector)
+      end
+
+      def resource_request_info(request, route)
+        resource = route.resource
+        legacy_watch = route.operation == :watch
+        verb = Authorization::Attributes.verb_for(method: request.method, collection: route.collection, watch: route.watch_request?(request),
+                                                  name_present: !route.name.to_s.empty?)
+        {verb: legacy_watch ? "watch" : verb, legacy_watch: legacy_watch, name: route.name, namespace: route.namespace,
+         group: resource.respond_to?(:group) ? resource.group : route.group,
+         version: resource.respond_to?(:version) ? resource.version : route.version,
+         resource: resource.respond_to?(:resource) ? resource.resource : resource.to_s, subresource: route.subresource}
       end
 
       # RequestInfoFactory: a list, watch or deletecollection whose field
@@ -456,6 +461,8 @@ module Rubernetes
         else
           return nil
         end
+        legacy_watch = rest.first == "watch"
+        rest = rest.drop(1) if legacy_watch
         namespace = nil
         if rest.first == "namespaces"
           return nil if rest.length < 3
@@ -468,9 +475,11 @@ module Rubernetes
         subresource = rest[2]
         return nil if resource.nil?
 
-        watch = request.respond_to?(:query_value) && %w[true 1].include?(request.query_value("watch").to_s)
+        value = request.query_value("watch") if request.respond_to?(:query_value)
+        watch = name.nil? && !value.nil? && !%w[0 false].include?(value.to_s.downcase)
         verb = Authorization::Attributes.verb_for(method: request.method, collection: name.nil?, watch: watch, name_present: !name.nil?)
-        {group: group, version: version, namespace: namespace, resource: resource, name: name, subresource: subresource, verb: verb}
+        {group: group, version: version, namespace: namespace, resource: resource, name: name, subresource: subresource,
+         verb: legacy_watch ? "watch" : verb, legacy_watch: legacy_watch}
       end
     end
   end
