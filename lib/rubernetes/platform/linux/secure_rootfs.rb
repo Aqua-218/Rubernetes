@@ -100,12 +100,12 @@ module Rubernetes
 
         attr_reader :root
 
-        def initialize(root:, openat2: nil, race_hook: nil)
+        def initialize(root:, openat2: nil, race_hook: nil, root_io: nil)
           raise Unsupported, "secure rootfs mutations require Linux" unless RUBY_PLATFORM.include?("linux")
 
           @root = File.expand_path(String(root)).freeze
           @race_hook = race_hook
-          @root_io = File.open(@root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+          @root_io = root_io ? root_io.dup : File.open(@root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
           @resolver = openat2 || Openat2.new(root: @root, root_fd: @root_io.fileno, strict: true)
           probe_openat2!
           @closed = false
@@ -245,15 +245,15 @@ module Rubernetes
           raise Error.new("cannot create rootfs hardlink #{relative.inspect}: #{error.message}", cause: error), cause: error
         end
 
-        def remove(relative, expected_identity: nil)
+        # Keep an ownership marker in place until this directory's other
+        # entries have been removed. Descendants use their ordinary order.
+        def remove(relative, expected_identity: nil, last_child: nil)
           ensure_open!
           raise UnsafePath, "refusing to remove the secure root itself" if relative.to_s.empty?
 
           parent_relative, name = split_parent(relative)
           with_parent(parent_relative, operation: :remove) do |parent|
-            raise UnsafePath, "rootfs entry identity changed before removal" if expected_identity && identity_at(parent.fd, name, relative) != expected_identity
-
-            remove_at(parent.fd, name, relative)
+            remove_at(parent.fd, name, relative, expected_identity: expected_identity, last_child: last_child)
           end
         rescue Linux::Error => error
           return false if error.errno == Errno::ENOENT::Errno
@@ -418,7 +418,13 @@ module Rubernetes
           nil
         end
 
-        def remove_at(parent_fd, name, relative)
+        def remove_children(stream, directory, relative, last_child)
+          children = stream.each_child
+          children = children.sort_by { |child| child == last_child ? 1 : 0 } if last_child
+          children.each { |child| remove_at(directory, child, join_relative(relative, child)) }
+        end
+
+        def remove_at(parent_fd, name, relative, expected_identity: nil, last_child: nil)
           target = nil
           directory = nil
           stream = nil
@@ -427,6 +433,8 @@ module Rubernetes
                                  operation: "openat", resource_id: "rootfs:remove-target:#{relative}")
             target_stat = stat_handle(Directory.new(fd: target, relative: relative, owned: false))
             target_identity = [target_stat.dev, target_stat.ino, target_stat.mode].freeze
+            raise UnsafePath, "rootfs entry identity changed before removal" if expected_identity && target_identity != expected_identity
+
             unless target_stat.directory?
               @race_hook&.call(operation: :remove_before_unlink, relative: relative.to_s, fd: target)
               raise UnsafePath, "rootfs entry identity changed before unlink" if identity_at(parent_fd, name, relative) != target_identity
@@ -453,9 +461,7 @@ module Rubernetes
               verified.close
             end
             stream = Dir.for_fd(directory)
-            stream.each_child do |child|
-              remove_at(directory, child, join_relative(relative, child))
-            end
+            remove_children(stream, directory, relative, last_child)
             @race_hook&.call(operation: :remove_before_rmdir, relative: relative.to_s, fd: directory)
             raise UnsafePath, "rootfs directory identity changed before rmdir" if identity_at(parent_fd, name, relative) != directory_identity
 
