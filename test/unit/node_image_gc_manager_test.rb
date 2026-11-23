@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/node"
 require "rubernetes/image/resolver"
+require "rubernetes/runtime/native"
 require "tmpdir"
 
 # pkg/kubelet/images/image_gc_manager.go over the resolver's unpacked-image
@@ -79,6 +80,16 @@ class NodeImageGCManagerTest < Minitest::Test
     assert_empty subject.garbage_collect
   end
 
+  def test_keeps_mounted_rootfs_and_images_used_as_volumes
+    resolver = Resolver.new(key("old-tag") => [Image.new("/running"), 1.0], key("volume") => [Image.new("/volume"), 1.0],
+                            key("unused") => [Image.new("/unused"), 1.0])
+    @pods = [{"spec" => {"volumes" => [{"image" => {"reference" => "registry.example/volume:1"}}]}}]
+    subject = manager(resolver, {"/running" => GI, "/volume" => GI, "/unused" => GI}, min_age: 0,
+                                                                                      used_roots: -> { ["/running"] })
+
+    assert_equal [key("unused")], subject.delete_unused_images
+  end
+
   def test_insufficient_space_raises_and_records_free_disk_space_failed
     resolver = Resolver.new(key("a") => [Image.new("/a"), 1.0])
     subject = manager(resolver, {"/a" => GI})
@@ -130,6 +141,18 @@ class NodeImageGCManagerTest < Minitest::Test
     assert_equal [key("stale")], subject.garbage_collect
   end
 
+  def test_maximum_age_evicts_never_used_images_on_the_first_detection_after_the_grace_period
+    @fs = {"capacityBytes" => 100 * GI, "availableBytes" => 90 * GI}
+    resolver = Resolver.new({})
+    subject = manager(resolver, {}, max_age: 60)
+
+    subject.garbage_collect
+    @now += 61
+    resolver.entries[key("never-used")] = [Image.new("/never-used"), nil]
+
+    assert_equal [key("never-used")], subject.garbage_collect
+  end
+
   def test_delete_unused_images_honours_the_minimum_age
     resolver = Resolver.new(key("a") => [Image.new("/a"), 1.0], key("b") => [Image.new("/b"), 2.0])
     subject = manager(resolver, {"/a" => GI, "/b" => GI})
@@ -144,6 +167,42 @@ class NodeImageGCManagerTest < Minitest::Test
     assert_raises(ArgumentError) { manager(Resolver.new({}), {}, high_threshold_percent: 101) }
     error = assert_raises(ArgumentError) { manager(Resolver.new({}), {}, high_threshold_percent: 50, low_threshold_percent: 60) }
     assert_equal "LowThresholdPercent 60 can not be higher than HighThresholdPercent 50", error.message
+  end
+
+  def test_agent_gc_reclaims_recovered_stages_after_the_last_durable_owner_leaves
+    Dir.mktmpdir("recovered-image-gc-") do |root|
+      staging = File.join(root, "stages")
+      resolver = Rubernetes::Image::Resolver.new(staging_root: staging, puller: Object.new)
+      pod_root, runtime_root, locked_root = Array.new(3) { fixture_rootfs(staging) }
+      lease = Rubernetes::Image::StagingLease.acquire(File.dirname(locked_root))
+      [pod_root, runtime_root].each { |path| Rubernetes::Image::StagingLease.acquire(File.dirname(path)).close }
+      runtime = image_ledger_runtime(root, runtime_root)
+      lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime)
+      pods = [pod_root]
+      lifecycle.stub(:image_roots_in_use, -> { pods }) do
+        stats = Struct.new(:image_fs_stats, :metrics_observer).new({"capacityBytes" => 100, "availableBytes" => 95})
+        agent = Rubernetes::Node::Agent.new(node_name: "n", api: Object.new, runtime: runtime, lifecycle: lifecycle,
+                                            stats_provider: stats, image_resolver: resolver)
+        gc = agent.image_gc_manager
+
+        assert_empty gc.garbage_collect
+        [pod_root, runtime_root, locked_root].each { |path| assert_path_exists File.join(path, "payload") }
+
+        pods.clear
+
+        assert_empty gc.delete_unused_images
+        refute_path_exists File.dirname(pod_root)
+        assert_path_exists File.join(runtime_root, "payload")
+
+        runtime.ledger.release(operation_id: "runtime-op", kind: "workspace", id: "rootfs", identity: "id", force: true)
+
+        assert_empty gc.garbage_collect
+        refute_path_exists File.dirname(runtime_root)
+        assert_path_exists File.join(locked_root, "payload")
+      end
+    ensure
+      lease&.close
+    end
   end
 
   # The real resolver: cached_images reports what it handed out and when;
@@ -162,5 +221,22 @@ class NodeImageGCManagerTest < Minitest::Test
     assert_empty resolver.cached_images
   ensure
     FileUtils.rm_rf(resolved.rootfs) if resolved
+  end
+
+  private
+
+  def fixture_rootfs(staging)
+    File.join(Dir.mktmpdir("rubernetes-image-", staging), "rootfs").tap do |path|
+      Dir.mkdir(path)
+      File.binwrite(File.join(path, "payload"), "x" * (128 * 1024))
+    end
+  end
+
+  def image_ledger_runtime(root, image_root)
+    journal = Rubernetes::Runtime::RollbackJournal.new(File.join(root, "journal.jsonl"), fsync: false)
+    runtime = Rubernetes::Runtime::Native.new(journal: journal)
+    runtime.ledger.begin_operation(operation_id: "runtime-op", owner: "sandbox", config_digest: "digest")
+    runtime.ledger.claim(operation_id: "runtime-op", kind: "workspace", id: "rootfs", identity: "id", metadata: {"lowerdirs" => [image_root]})
+    runtime
   end
 end
