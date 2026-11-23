@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/controller"
+require "rubernetes/storage/memory_store"
 require "digest"
 
 # The attach-detach controller for CSI volumes (pkg/controller/volume/
@@ -9,6 +10,14 @@ require "digest"
 # creates, when it detaches, and the Pod events it records.
 class AttachDetachControllerUpstreamTest < Minitest::Test
   ADC = Rubernetes::Controller::PersistentVolumeAttachDetachController
+  CONTROLLER = Rubernetes::Controller
+  ATTACH_DETACH = "persistent-volume-attach-detach-controller"
+  AWS_DRIVER = "ebs.csi.aws.com"
+
+  class Events
+    def on(&callback) = @callback = callback
+    def emit(resource, type) = @callback.call(resource, nil, type)
+  end
 
   def node(name, managed: true, in_use: [])
     annotations = managed ? {"volumes.kubernetes.io/controller-managed-attach-detach" => "true"} : {}
@@ -145,5 +154,107 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
                claims: [claim, claim.merge("metadata" => {"name" => "c1", "namespace" => "elsewhere"})])
 
     assert_equal [:create], volume_operations(rwx).map(&:action), "an RWX volume attaches to the second node"
+  end
+
+  def test_migrated_inline_volume_attaches_on_pod_event_and_detaches_after_removal
+    store = Rubernetes::Storage::MemoryStore.new
+    adapter = CONTROLLER::StoreAdapter.new(store)
+    adapter.create(node("n1"))
+    consumer = adapter.create(inline_pod)
+    manager, events = attach_manager(store)
+
+    events.emit(consumer, :add)
+
+    assert_equal 1, manager.step.fetch(:reconciled)
+    attached = adapter.list(ADC::VOLUME_ATTACHMENT).fetch(0)
+
+    assert_equal "csi-#{Digest::SHA256.hexdigest("vol-123#{AWS_DRIVER}n1")}", attached.dig("metadata", "name")
+    assert_equal AWS_DRIVER, attached.dig("spec", "attacher")
+    assert_equal({"accessModes" => ["ReadWriteOnce"], "volumeMode" => "Filesystem",
+                  "csi" => {"driver" => AWS_DRIVER, "volumeHandle" => "vol-123", "volumeAttributes" => {"partition" => "0"}}},
+                 attached.dig("spec", "source", "inlineVolumeSpec"))
+
+    attached = adapter.update(attached.merge("status" => {"attached" => true}))
+    events.emit(attached, :update)
+    manager.step
+    report = adapter.find(ADC::NODE, name: "n1").dig("status", "volumesAttached")
+
+    assert_equal [{"name" => "kubernetes.io/csi/#{AWS_DRIVER}^vol-123", "devicePath" => ""}], report
+    adapter.delete(consumer)
+    events.emit(consumer, :delete)
+    manager.step
+
+    assert_empty adapter.list(ADC::VOLUME_ATTACHMENT)
+    assert_nil adapter.find(ADC::NODE, name: "n1").dig("status", "volumesAttached")
+  end
+
+  def test_restart_detaches_inline_attachment_without_a_pod_or_node
+    store = Rubernetes::Storage::MemoryStore.new
+    adapter = CONTROLLER::StoreAdapter.new(store)
+    missing = node("n1")
+    result = ADC.new.plan(missing, pods: [inline_pod], nodes: [missing])
+    attached = adapter.create(result.creates.fetch(0).object)
+    manager, events = attach_manager(store)
+
+    events.emit(attached, :add)
+    manager.step
+
+    assert_empty adapter.list(ADC::VOLUME_ATTACHMENT)
+  end
+
+  def test_legacy_pv_and_inline_references_deduplicate_the_same_driver_volume
+    nodes = [node("n1")]
+    volume = pv
+    volume["spec"].delete("csi")
+    volume["spec"]["awsElasticBlockStore"] = {"volumeID" => "aws://us-west-2a/vol-123"}
+    result = ADC.new.plan(nodes.first, pods: [pod("persistent", "n1")], claims: [claim], volumes: [volume], nodes: nodes)
+    attached = result.creates.fetch(0).object
+
+    assert_equal({"persistentVolumeName" => "pv1"}, attached.dig("spec", "source"))
+    assert_equal AWS_DRIVER, attached.dig("spec", "attacher")
+    attached = attached.merge("status" => {"attached" => true})
+    consumers = [inline_pod, pod("persistent", "n1")]
+    result = ADC.new.plan(nodes.first, pods: consumers, claims: [claim], volumes: [volume], nodes: nodes, attachments: [attached])
+
+    assert_empty volume_operations(result)
+    duplicate = attached.merge("metadata" => {"name" => "stale-alias"})
+    counts = ADC.state_counts(pods: consumers, claims: [claim], volumes: [volume], nodes: nodes,
+                              attachments: [attached, duplicate], drivers: [])
+
+    assert_equal({["n1", "kubernetes.io/csi:#{AWS_DRIVER}"] => 2}, counts.fetch(:in_use))
+    assert_equal({["kubernetes.io/csi:#{AWS_DRIVER}", "desired_state_of_world"] => 1,
+                  ["kubernetes.io/csi:#{AWS_DRIVER}", "actual_state_of_world"] => 1}, counts.fetch(:totals))
+  end
+
+  def test_exclusive_attach_is_reserved_while_other_nodes_see_an_older_snapshot
+    controller = ADC.new
+    nodes = [node("n1"), node("n2")]
+    late = inline_pod
+    late["spec"]["nodeName"] = "n2"
+    first = controller.plan(nodes.last, pods: [late], nodes: nodes).creates.fetch(0)
+    consumers = [inline_pod, late]
+
+    assert_empty controller.plan(nodes.first, pods: consumers, nodes: nodes).creates
+    first.notify(false)
+
+    assert_equal 1, controller.plan(nodes.first, pods: consumers, nodes: nodes).creates.length
+  end
+
+  private
+
+  def inline_pod
+    consumer = pod("migrated", "n1")
+    consumer["spec"]["volumes"] = [{"name" => "v", "awsElasticBlockStore" => {"volumeID" => "vol-123"}}]
+    consumer
+  end
+
+  def attach_manager(store)
+    registry = CONTROLLER::ControllerRegistry.new(require_corpus: false)
+    definition = CONTROLLER::InfrastructureStorageControllerFactory.definition(ATTACH_DETACH, registry: registry)
+    manager = CONTROLLER::Manager.new(store: store, identity: ATTACH_DETACH, registry: registry)
+    events = Events.new
+    manager.register_definition(definition)
+    manager.register_informer(ATTACH_DETACH, events)
+    [manager, events]
   end
 end
