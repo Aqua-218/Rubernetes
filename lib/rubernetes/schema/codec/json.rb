@@ -42,7 +42,6 @@ module Rubernetes
 
         def dump(object, canonical: false, max_bytes: Codec::DEFAULT_MAX_BYTES, max_depth: Codec::DEFAULT_MAX_DEPTH)
           normalized = Codec.normalize_value(object, max_depth: max_depth)
-          Codec.validate_depth!(normalized, max_depth)
           output = if canonical
                      canonical_encode(normalized, max_depth: max_depth)
                    else
@@ -86,17 +85,16 @@ module Rubernetes
           when Hash
             detect_stack_cycle!(value, stack)
             begin
-              entries = value.map do |key, child|
-                normalized_key = Codec.normalize_key(key)
-                validate_utf8!(normalized_key)
-                [normalized_key, child]
-              end
-              duplicate_keys = entries.group_by(&:first).select { |_key, pair| pair.length > 1 }.keys
-              raise Codec::DuplicateKeyError, "object contains duplicate key #{duplicate_keys.first.inspect}" unless duplicate_keys.empty?
+              entries = {}
+              value.each do |key, child|
+                name = Codec.normalize_key(key)
+                validate_utf8!(name)
+                raise Codec::DuplicateKeyError, "object contains duplicate key #{name.inspect}" if entries.key?(name)
 
-              entries.sort_by! { |key, _child| key.encode(Encoding::UTF_8).bytes }
-              body = entries.map do |key, child|
-                "#{::JSON.generate(key)}:#{canonical_encode(child, max_depth: max_depth, depth: depth + 1, stack: stack)}"
+                entries[name] = child
+              end
+              body = entries.keys.sort.map do |key|
+                "#{::JSON.generate(key)}:#{canonical_encode(entries.fetch(key), max_depth: max_depth, depth: depth + 1, stack: stack)}"
               end.join(",")
               "{#{body}}"
             ensure
