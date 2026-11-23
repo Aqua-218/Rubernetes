@@ -10,6 +10,7 @@ module Rubernetes
     module RestClientMetrics
       LATENCY_BUCKETS = [0.005, 0.025, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 60.0].freeze
       SIZE_BUCKETS = [64, 256, 512, 1024, 4096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216].freeze
+      CERT_ROTATION_BUCKETS = [600, 1800, 3600, 14_400, 86_400, 604_800, 2_592_000, 7_776_000, 15_552_000, 31_104_000, 124_416_000].freeze
 
       module_function
 
@@ -43,6 +44,9 @@ module Rubernetes
                                                                         "the auth exec plugin. The value is in seconds until certificate expiry (negative " \
                                                                         "if already expired). If auth exec plugins are unused or manage no TLS " \
                                                                         "certificates, the value will be +INF.")
+          metrics.register_exec_plugin_ttl
+          metrics.register("rest_client_exec_plugin_certificate_rotation_age", type: :histogram, buckets: CERT_ROTATION_BUCKETS, labels: [])
+          metrics.register("rest_client_exec_plugin_policy_call_total", type: :counter, labels: %w[allowed denied])
           metrics.register("rest_client_transport_cache_entries", type: :gauge, help: "Number of transport entries in the internal cache.")
         end
       end
@@ -98,9 +102,12 @@ module Rubernetes
         registry&.increment("rest_client_exec_plugin_call_total", {"call_status" => status, "code" => code.to_s})
       end
 
-      # Seconds until the plugin's client certificate expires; +INF without one.
-      def exec_plugin_ttl(seconds)
-        registry&.set("rest_client_exec_plugin_ttl_seconds", seconds)
+      def exec_plugin_rotation_age(seconds)
+        registry&.observe("rest_client_exec_plugin_certificate_rotation_age", seconds)
+      end
+
+      def exec_plugin_policy(allowed)
+        registry&.increment("rest_client_exec_plugin_policy_call_total", {"allowed" => allowed.to_s, "denied" => (!allowed).to_s})
       end
 
       def host_of(uri) = uri.host ? "#{uri.host}:#{uri.port}" : ""
@@ -125,7 +132,6 @@ module Rubernetes
   end
 end
 
-Rubernetes::Client::ExecCredential.observer = lambda do |status, code, ttl|
-  Rubernetes::Client::RestClientMetrics.exec_plugin_call(status, code)
-  Rubernetes::Client::RestClientMetrics.exec_plugin_ttl(ttl) if ttl
-end
+Rubernetes::Client::ExecCredential.observer = Rubernetes::Client::RestClientMetrics.method(:exec_plugin_call)
+Rubernetes::Client::ExecCredential.policy_observer = Rubernetes::Client::RestClientMetrics.method(:exec_plugin_policy)
+Rubernetes::Client::ExecCredential.rotation_observer = Rubernetes::Client::RestClientMetrics.method(:exec_plugin_rotation_age)
