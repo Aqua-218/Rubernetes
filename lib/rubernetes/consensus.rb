@@ -1,25 +1,31 @@
 # frozen_string_literal: true
 
-require_relative "consensus/errors"
-require_relative "consensus/crc32c"
-require_relative "consensus/canonical"
-require_relative "consensus/wal"
-require_relative "consensus/log"
-require_relative "consensus/snapshot"
-require_relative "consensus/membership"
-require_relative "consensus/messages"
-require_relative "consensus/storage"
-require_relative "consensus/state_machine"
-require_relative "consensus/node"
+require_relative "support/autoload"
 
 module Rubernetes
   module Consensus
+    files = {
+      "backup" => %i[Backup],
+      "canonical" => %i[Canonical],
+      "crc32c" => %i[CRC32C],
+      "errors" => %i[AppliedThroughSnapshot CorruptionError DiskFull DurabilityError Error FrameTooLarge FsyncFailed InvalidCommand
+                     MembershipError NotLeader NotReady PeerIdentityMismatch ProposalDropped ProtocolError RecoveryRequired ShortWrite SnapshotCorruption
+                     StorageFailed Timeout TornWAL TransportError WALCorruption],
+      "identity" => %i[Identity],
+      "log" => %i[Log],
+      "membership" => %i[Membership],
+      "messages" => %i[Messages],
+      "node" => %i[Node],
+      "operation_journal" => %i[OperationJournal],
+      "raft_store" => %i[RaftStore],
+      "seed" => %i[Seed],
+      "server" => %i[Server],
+      "snapshot" => %i[SnapshotStore],
+      "state_machine" => %i[KVStateMachine],
+      "storage" => %i[Storage],
+      "transport" => %i[Transport],
+      "wal" => %i[WAL]
+    }
+    Autoload.register(self, File.join(__dir__, "consensus"), files)
   end
 end
-require_relative "consensus/identity"
-require_relative "consensus/transport"
-require_relative "consensus/server"
-require_relative "consensus/raft_store"
-require_relative "consensus/seed"
-require_relative "consensus/operation_journal"
-require_relative "consensus/backup"
