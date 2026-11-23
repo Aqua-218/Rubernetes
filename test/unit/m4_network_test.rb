@@ -99,6 +99,20 @@ class M4NetworkTest < Minitest::Test
     assert_equal "released", ipam.lease(operation_id: "add:sandbox-a").state
   end
 
+  def test_the_host_end_of_a_pod_veth_is_created_with_a_stable_address_of_its_own
+    topology = Rubernetes::Network::Topology.new(adapter: RecordingAdapter.new)
+    address = lambda do |sandbox|
+      plan = topology.desired({"sandbox_id" => sandbox}, {"ips" => ["10.244.0.9/24"]})
+      plan.operations.find { |operation| operation.action == "link_add" }.parameters.fetch("address")
+    end
+
+    first = address.call("sandbox-one")
+
+    assert_match(/\A02(:[0-9a-f]{2}){5}\z/, first, "locally administered, so udev leaves it alone")
+    assert_equal first, address.call("sandbox-one")
+    refute_equal first, address.call("sandbox-two")
+  end
+
   def test_topology_requires_an_explicit_address_prefix
     topology = Rubernetes::Network::Topology.new(adapter: RecordingAdapter.new)
 
