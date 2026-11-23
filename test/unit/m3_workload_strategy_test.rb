@@ -110,6 +110,29 @@ class M3WorkloadStrategyTest < Minitest::Test
 
     assert_equal 2, result.deletes.length
     assert_equal(%w[node-a node-b], result.deletes.map { |operation| operation.object.dig("spec", "nodeName") })
+    main_writes = result.operations.select { |operation| operation.resource.kind == "DaemonSet" && operation.action == :update }
+
+    assert_empty main_writes
+  end
+
+  def test_daemonset_labels_existing_pods_with_the_current_revision_using_patch
+    daemon = daemon_set(image: "example/agent:1", strategy: {"type" => "OnDelete"})
+    target = node("node-a")
+    controller = Controller::DaemonSetController.new
+    initial = controller.plan(daemon, pods: [], nodes: [target], revisions: [], now: NOW)
+    revision = initial.creates.find { |item| item.resource.kind == "ControllerRevision" }.object
+    duplicate = Support.deep_copy(revision)
+    duplicate["metadata"]["name"] = "old-revision"
+    duplicate["metadata"]["labels"][REVISION_LABEL] = "old-hash"
+    duplicate["revision"] = 0
+    pod = daemon_pod(daemon, target, hash: "old-hash", ready: true)
+
+    settled = controller.plan(daemon, pods: [pod], nodes: [target], revisions: [revision, duplicate], now: NOW)
+    relabel = settled.operations.find { |operation| operation.resource.kind == "Pod" && operation.action == :patch }
+
+    refute_nil relabel
+    assert_equal revision.dig("metadata", "labels", REVISION_LABEL), relabel.patch.dig("metadata", "labels", REVISION_LABEL)
+    assert_equal pod.dig("metadata", "uid"), relabel.patch.dig("metadata", "uid")
   end
 
   def test_daemonset_rolling_update_with_max_surge_creates_before_deleting
@@ -237,6 +260,19 @@ class M3WorkloadStrategyTest < Minitest::Test
     assert_equal([{"apiVersion" => "batch/v1", "kind" => "Job", "name" => created.dig("metadata", "name"), "namespace" => "default"}],
                  replace.status.fetch("active").map { |reference| reference.reject { |key, _| key == "uid" } })
     assert_in_delta 300.1, replace.requeue_after, 0.001, "next schedule in five minutes plus the upstream jitter"
+  end
+
+  def test_cronjob_crosses_the_daylight_saving_transition_in_the_selected_zone
+    cron = cron_job
+    cron["spec"].merge!("schedule" => "30 1 * * *", "timeZone" => "America/New_York")
+    cron["metadata"]["creationTimestamp"] = "2026-11-01T05:00:00Z"
+    controller = Controller::CronJobController.new
+    first = controller.plan(cron, jobs: [], now: Time.utc(2026, 11, 1, 5, 30))
+    second = controller.plan(cron.merge("status" => first.status), jobs: [], now: Time.utc(2026, 11, 1, 6, 30))
+    annotation = "batch.kubernetes.io/cronjob-scheduled-timestamp"
+
+    assert_equal "2026-11-01T01:30:00-04:00", first.creates.first.object.dig("metadata", "annotations", annotation)
+    assert_equal "2026-11-01T01:30:00-05:00", second.creates.first.object.dig("metadata", "annotations", annotation)
   end
 
   private
