@@ -8,26 +8,35 @@
 # never refreshed from the network to make a check pass.
 
 require "digest"
+require "fileutils"
 require "json"
 require "open3"
 
 require_relative "lock"
+require_relative "k0_kubeconfig"
+require_relative "k0_e2e_images"
+require_relative "../../lib/rubernetes/image"
 
 module Conformance
   module K0
     L = Conformance::Lock
     ROOT = L::ROOT
+    Image = Rubernetes::Image
+    GIT_ENV = %w[GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+                 GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT].to_h { |key| [key, nil] }.freeze
 
     module_function
 
     def run(source_root:, platform: "linux/amd64", kubeconfig: nil, oracle_kubeconfig: nil)
-      cases = []
-      cases << source_identity(source_root)
-      cases << source_cleanliness(source_root)
-      cases << conformance_definition(source_root)
-      cases << runner_artifacts(platform)
-      cases << image_manifests(platform)
-      cases << kubeconfig_isolation(kubeconfig, oracle_kubeconfig)
+      identity = source_identity(source_root)
+      cleanliness = source_cleanliness(source_root)
+      cases = [identity, cleanliness, conformance_definition(source_root), runner_artifacts(platform), image_manifests(platform),
+               kubeconfig_isolation(kubeconfig, oracle_kubeconfig)]
+      cases << if identity["passed"] && cleanliness["passed"]
+                 E2EImages.verify(source_root, platform)
+               else
+                 {"id" => "upstream_image_inventory", "passed" => false, "error" => "source checkout did not pass preflight"}
+               end
       {
         "lane" => "K0",
         "passed" => cases.all? { |entry| entry.fetch("passed") },
@@ -36,43 +45,54 @@ module Conformance
       }
     end
 
-    # 1. The tag object and the peeled commit both match the lock.
+    # 1. The annotated tag and the checked-out commit both match the lock.
     def source_identity(source_root)
-      expected_commit = L.source_commit
-      expected_tag = L.tag_object
-      observed_commit = git(source_root, "rev-parse", "v1.36.2^{commit}")
-      observed_tag = git(source_root, "rev-parse", "v1.36.2")
-      # A source tree exported without .git still has to prove its identity, so
-      # fall back to the recorded commit marker the export carries.
-      if observed_commit.nil?
-        marker = File.join(source_root, ".rubernetes-source-commit")
-        observed_commit = File.file?(marker) ? File.read(marker).strip : nil
-        observed_tag = nil
-      end
+      source = L.kubernetes.fetch("source")
+      tag = "refs/tags/#{source.fetch("tag")}"
+      worktree = git_worktree?(source_root)
+      observed_head = git(source_root, "rev-parse", "--verify", "HEAD^{commit}") if worktree
+      observed_commit = git(source_root, "rev-parse", "--verify", "#{tag}^{commit}") if worktree
+      observed_tag = git(source_root, "rev-parse", "--verify", "#{tag}^{tag}") if worktree
       {
         "id" => "source_identity",
-        "passed" => observed_commit == expected_commit &&
-          (observed_tag.nil? || observed_tag == expected_tag),
-        "expected_commit" => expected_commit,
+        "passed" => worktree && observed_head == L.source_commit && observed_commit == L.source_commit && observed_tag == L.tag_object,
+        "expected_commit" => L.source_commit,
+        "observed_head" => observed_head,
         "observed_commit" => observed_commit,
-        "expected_tag_object" => expected_tag,
-        "observed_tag_object" => observed_tag
-      }
+        "expected_tag_object" => L.tag_object,
+        "observed_tag_object" => observed_tag,
+        "error" => ("source root is not a Git worktree" unless worktree)
+      }.compact
     end
 
     # 2. No tracked or untracked patch, and no unpinned submodule or vendor tree.
     def source_cleanliness(source_root)
-      status = git(source_root, "status", "--porcelain")
-      submodules = git(source_root, "submodule", "status")
-      dirty = status.nil? ? [] : status.split("\n").reject(&:empty?)
-      unpinned = submodules.nil? ? [] : submodules.split("\n").select { |line| line.start_with?("+", "-", "U") }
+      unless git_worktree?(source_root)
+        return {"id" => "source_cleanliness", "passed" => false, "git_available" => false, "error" => "source root is not a Git worktree"}
+      end
+
+      status = git(source_root, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
+      submodules = git(source_root, "submodule", "status", "--recursive")
+      tracked = git(source_root, "ls-files", "-v", "-z")
+      vendor = git(source_root, "ls-tree", "HEAD", "vendor")
+      vendor_extras = git(source_root, "ls-files", "--others", "-z", "--", "vendor/")
+      verified = [status, submodules, tracked, vendor, vendor_extras].all?
+      dirty = status.to_s.split("\0")
+      unpinned = submodules.to_s.lines(chomp: true).select { |line| line.start_with?("+", "-", "U") }
+      hidden = tracked.to_s.split("\0").grep(/\A(?:S|[a-z]) /)
+      vendor_tracked = vendor.to_s.match?(/\A040000 tree [0-9a-f]+\tvendor\z/)
+      extras = vendor_extras.to_s.split("\0")
       {
         "id" => "source_cleanliness",
-        "passed" => dirty.empty? && unpinned.empty?,
-        "git_available" => !status.nil?,
+        "passed" => verified && dirty.empty? && unpinned.empty? && hidden.empty? && vendor_tracked && extras.empty?,
+        "git_available" => true,
+        "git_checks_complete" => verified,
         "dirty_entries" => dirty.first(20),
         "dirty_count" => dirty.length,
-        "unpinned_submodules" => unpinned.first(20)
+        "unpinned_submodules" => unpinned.first(20),
+        "hidden_tracked_entries" => hidden.first(20),
+        "vendor_tracked" => vendor_tracked,
+        "untracked_vendor_entries" => extras.first(20)
       }
     end
 
@@ -108,11 +128,15 @@ module Conformance
         "distinct_testname_count" => testnames.uniq.length,
         "shared_testnames" => testnames.tally.select { |_name, count| count > 1 }.keys.sort
       }
+    rescue Psych::Exception, SystemCallError
+      {"id" => "conformance_definition", "passed" => false, "error" => "cannot read the locked conformance definition"}
     end
 
     # 4. Runner archives match their locked checksums.
     def runner_artifacts(platform)
       entries = %w[hydrophone sonobuoy].map do |name|
+        next {"runner" => name, "matches" => false, "error" => "platform is not pinned"} unless L.runner(name).fetch("artifacts").key?(platform)
+
         artifact = L.runner_artifact(name, platform)
         path = File.join(ROOT, "build/tools/conformance", "#{name}.tar.gz")
         observed = File.file?(path) ? L.digest_file(path) : nil
@@ -132,69 +156,88 @@ module Conformance
       }
     end
 
-    # 5. The image index really carries the target platform; never fall back.
-    def image_manifests(platform)
-      expected = L.platform_digest(platform)
-      index = L.conformance_image_digest
-      support = L.support_images.transform_values do |image|
-        {
-          "index_digest" => image.fetch("index_digest"),
-          "platform_digest" => image.fetch("platforms")[platform],
-          "resolves" => !image.fetch("platforms")[platform].nil?
-        }
-      end
+    # 4–5. Validate the bytes at each locked index and platform digest.
+    def image_manifests(platform, registry_client: Image::RegistryClient.method(:new))
+      required = {"conformance" => L.kubernetes.fetch("conformance_image"), "sonobuoy" => L.runner("sonobuoy").fetch("image")}
+      required.merge!(L.support_images)
+      pending = required.transform_values { |lock| Thread.new { registry_manifest(lock, platform, registry_client) } }
+      observed = pending.transform_values(&:value)
       {
         "id" => "image_manifests",
-        "passed" => !expected.nil? && !index.nil? && support.values.all? { |entry| entry.fetch("resolves") },
+        "passed" => observed.values.all? { |entry| entry.fetch("matches") },
         "platform" => platform,
-        "conformance_index_digest" => index,
-        "conformance_platform_digest" => expected,
-        "support_images" => support
+        "images" => observed
       }
     end
 
-    # 6. The test KUBECONFIG must name only the Rubernetes cluster and must not
-    #    share credentials with the Kubernetes oracle cluster.
+    def registry_manifest(lock, platform, registry_client)
+      reference = L.reference_by_digest(lock)
+      expected_index = lock.fetch("index_digest")
+      expected_manifest = lock.fetch("platforms")[platform]
+      record = {
+        "reference" => reference, "tagged_reference" => lock.fetch("reference"), "matches" => false,
+        "expected_index_digest" => expected_index, "expected_platform_digest" => expected_manifest
+      }
+      return record.merge("error" => "platform is not pinned") if expected_manifest.nil?
+
+      os, architecture, variant = platform.split("/")
+      image = Image::Reference.parse(reference)
+      manifest = registry_client.call(image).manifest(image, os: os, architecture: architecture, variant: variant)
+      index = manifest.index_digest&.to_s
+      child = manifest.digest.to_s
+      record.merge("observed_index_digest" => index, "observed_platform_digest" => child,
+                   "matches" => index == expected_index && child == expected_manifest)
+    rescue Image::Error => error
+      record.merge("error" => error.message)
+    end
+
     def kubeconfig_isolation(kubeconfig, oracle_kubeconfig)
-      return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "no kubeconfig given"} unless kubeconfig
-      return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "kubeconfig #{kubeconfig} is missing"} unless File.file?(kubeconfig)
-
-      require "yaml"
-      document = YAML.safe_load_file(kubeconfig, aliases: true) || {}
-      clusters = Array(document["clusters"]).map { |entry| entry["name"] }
-      servers = Array(document["clusters"]).map { |entry| entry.dig("cluster", "server") }
-      secrets = credential_material(document)
-      oracle_secrets = if oracle_kubeconfig && File.file?(oracle_kubeconfig)
-                         credential_material(YAML.safe_load_file(oracle_kubeconfig, aliases: true) || {})
-                       else
-                         []
-                       end
-      shared = secrets & oracle_secrets
-      {
-        "id" => "kubeconfig_isolation",
-        "passed" => !clusters.empty? && shared.empty?,
-        "clusters" => clusters,
-        "servers" => servers,
-        "shared_credential_count" => shared.length
-      }
+      Kubeconfigs.verify(kubeconfig, oracle_kubeconfig)
     end
 
-    def credential_material(document)
-      Array(document["users"]).flat_map do |entry|
-        user = entry["user"] || {}
-        %w[client-certificate-data client-key-data token password].filter_map do |key|
-          value = user[key]
-          Digest::SHA256.hexdigest(value.to_s) unless value.nil? || value.to_s.empty?
-        end
+    # 7. Bind the exact preflight inputs to this run before any cluster lane.
+    def record_inputs(directory, check, run_id:, profile:)
+      cases = check.fetch("cases").to_h { |entry| [entry.fetch("id"), entry] }
+      resolved = {
+        "runId" => run_id, "platform" => check.fetch("platform"),
+        "locked" => cases.fetch("image_manifests").fetch("images"),
+        "upstream" => cases.fetch("upstream_image_inventory").fetch("images", {})
+      }
+      images = write_once(directory, "resolved-images.json", resolved)
+      manifest = {
+        "schemaVersion" => 1, "runId" => run_id, "profile" => profile,
+        "sourceCommit" => cases.fetch("source_identity")["observed_head"],
+        "expectedSourceCommit" => L.source_commit, "clusterId" => cases.fetch("kubeconfig_isolation")["cluster_id"],
+        "clusterIdentitySource" => "kubeconfig", "resolvedImages" => images, "passed" => check.fetch("passed")
+      }
+      {"input_manifest" => write_once(directory, "inputs.json", manifest), "resolved_images" => images}
+    end
+
+    def write_once(directory, name, value)
+      FileUtils.mkdir_p(directory)
+      path = File.join(directory, name)
+      File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o444) do |file|
+        file.write("#{JSON.pretty_generate(value)}\n")
+        file.flush
+        file.fsync
       end
+      {"path" => path.delete_prefix("#{ROOT}/"), "sha256" => L.digest_file(path)}
+    end
+
+    def git_worktree?(root)
+      top = git(root, "rev-parse", "--show-toplevel")
+      !top.nil? && File.realpath(top) == File.realpath(root)
+    rescue SystemCallError
+      false
     end
 
     def git(root, *)
-      return nil unless File.directory?(File.join(root, ".git"))
+      return nil unless File.directory?(root)
 
-      out, _err, status = Open3.capture3("git", "-C", root, *)
-      status.success? ? out.strip : nil
-    rescue Errno::ENOENT
+      command = ["git", "--no-optional-locks", "-C", root, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
+      out, _err, status = Open3.capture3(GIT_ENV, *command, *, binmode: true)
+      out.force_encoding(Encoding::UTF_8).scrub.chomp if status.success?
+    rescue SystemCallError
       nil
     end
   end
