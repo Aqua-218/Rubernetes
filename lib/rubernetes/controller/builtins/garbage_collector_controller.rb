@@ -14,8 +14,8 @@ module Rubernetes
         end
 
         def plan(resource = nil, store: nil, objects: nil, deleted: [], propagation_policy: :background, **_options)
-          expedite_sweeps! if resource.is_a?(Hash) && foreground_owner?(resource)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          expedite_sweeps! if resource.is_a?(Hash) && deletion_finalizer(resource)
+          adapter = store || @adapter
           objects ||= adapter ? adapter.all : []
           objects = Array(objects)
           objects << resource if resource && !objects.include?(resource)
@@ -26,17 +26,21 @@ module Rubernetes
         # re-read an owner, so "I did not see it" can never be mistaken for "it
         # is gone".  An adapter that cannot say -- an in-memory store holding
         # the whole corpus -- keeps the unrestricted planner.
-        def collector(adapter)
+        def collector(adapter, custom: [])
           return @gc unless AdapterCapability.declares_kinds?(adapter)
 
+          custom_signatures = custom.map { |descriptor| [descriptor.gvk, descriptor.resource, descriptor.scope] }
           @collector_mutex.synchronize do
-            unless @collector && @collector_adapter.equal?(adapter)
+            unless @collector && @collector_adapter.equal?(adapter) && @collector_custom == custom_signatures
               @collector_adapter = adapter
+              @collector_custom = custom_signatures
+              resolve = descriptor_lookup(custom)
               @collector = GarbageCollector.new(
                 store: adapter, event_sink: @event_sink,
                 known_kinds: adapter.resource_descriptors,
-                owner_lookup: owner_lookup_for(adapter),
-                dependent_lookup: dependent_lookup_for(adapter)
+                owner_lookup: owner_lookup_for(adapter, custom: custom),
+                dependent_lookup: dependent_lookup_for(adapter, resolve: resolve),
+                descriptor_lookup: resolve
               )
             end
             @collector
@@ -45,11 +49,11 @@ module Rubernetes
 
         # The live copy of a dependent the sweep is about to collect, nil if it
         # is gone, or the swept copy itself when this adapter cannot read live.
-        def dependent_lookup_for(adapter)
+        def dependent_lookup_for(adapter, resolve: descriptor_lookup([]))
           lambda do |object|
             next object unless AdapterCapability.live_reads?(adapter)
 
-            descriptor = ResourceDescriptor.parse(object)
+            descriptor = resolve.call(object)
             scope = descriptor.cluster_scoped? ? nil : Support.namespace(object)
             adapter.find_live(descriptor, name: Support.name(object), namespace: scope)
           end
@@ -60,18 +64,16 @@ module Rubernetes
         # the adapter already knows are looked up: guessing a plural resource
         # path for an unknown kind would turn a 404 on the path itself into a
         # verdict of "owner deleted".
-        def owner_lookup_for(adapter)
-          by_kind = {}
-          Array(adapter.resource_descriptors).each do |descriptor|
-            by_kind["#{descriptor.api_version}/#{descriptor.kind}"] ||= descriptor
-            by_kind[descriptor.kind.to_s] ||= descriptor
-          end
+        def owner_lookup_for(adapter, custom: [])
+          by_kind = (custom + Array(adapter.resource_descriptors)).to_h { |descriptor| [[descriptor.group, descriptor.kind], descriptor] }
           lambda do |reference, namespace|
             kind = Support.ref_value(reference, "kind", "").to_s
             api_version = Support.ref_value(reference, "apiVersion", "").to_s
-            descriptor = by_kind["#{api_version}/#{kind}"] || by_kind[kind]
+            group, _version = ResourceDescriptor.split_api_version(api_version)
+            descriptor = by_kind[[group, kind]]
             name = Support.ref_value(reference, "name", "").to_s
             next nil if descriptor.nil? || name.empty?
+            next nil if descriptor.namespaced? && namespace.to_s.empty?
 
             scope = descriptor.cluster_scoped? ? nil : namespace
             object = if AdapterCapability.live_reads?(adapter)
@@ -84,6 +86,11 @@ module Rubernetes
             uid = Support.ref_value(reference, "uid", "").to_s
             Support.uid(object).to_s == uid
           end
+        end
+
+        def descriptor_lookup(custom)
+          by_kind = custom.to_h { |descriptor| [[descriptor.api_version, descriptor.kind], descriptor] }
+          ->(object) { by_kind[[Support.api_version(object), Support.kind(object)]] || ResourceDescriptor.parse(object) }
         end
 
         alias reconcile plan
@@ -113,22 +120,24 @@ module Rubernetes
         def plan_orphans(_key, store: nil)
           return nil unless sweep_due?
 
-          adapter = store || (self.store && StoreAdapter.new(self.store))
-          objects = begin
-            adapter ? adapter.all : []
+          adapter = store || @adapter
+          objects, custom = begin
+            collections = adapter.is_a?(StoreAdapter) ? adapter.custom_resource_collections : {}
+            [(adapter ? adapter.all : []) + collections.values.flatten(1), collections.keys]
           rescue StandardError
             # GarbageCollector.Sync: the resources could not be read.
             ControllerMetrics.increment("garbagecollector_controller_resources_sync_error_total")
             raise
           end
-          result = collector(adapter).plan(Array(objects), deleted: [])
-          result = with_foreground_operations(result, Array(objects), live: dependent_lookup_for(adapter))
+          result = collector(adapter, custom: custom).plan(Array(objects), deleted: [])
+          resolve = descriptor_lookup(custom)
+          result = with_gc_finalizer_operations(result, Array(objects), live: dependent_lookup_for(adapter, resolve: resolve), resolve: resolve)
           # An owner still waiting on dependents needs the next pass soon: the
           # foreground protocol takes three (delete or release the
           # dependents, see them gone, drop the finalizer), and ten seconds
           # apart that was half a minute per foreground delete where the
           # kube-controller-manager reacts to each watch event.
-          expedite_sweeps! if Array(objects).any? { |object| foreground_owner?(object) }
+          expedite_sweeps! if Array(objects).any? { |object| deletion_finalizer(object) }
           # kube-controller-manager logs every collection; a sweep that finds
           # nothing is the only evidence the sweep ran at all.
           log_sweep(objects.length, result)
@@ -149,13 +158,11 @@ module Rubernetes
         EXPEDITE_WINDOW_SECONDS = 15.0
 
         def expedite_sweeps!
-          @sweep_mutex ||= Mutex.new
           @sweep_mutex.synchronize { @expedite_until = Process.clock_gettime(Process::CLOCK_MONOTONIC) + EXPEDITE_WINDOW_SECONDS }
         end
 
         def sweep_due?
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          @sweep_mutex ||= Mutex.new
           @sweep_mutex.synchronize do
             interval = @expedite_until && now < @expedite_until ? FOREGROUND_SWEEP_SECONDS : SWEEP_INTERVAL_SECONDS
             return false if @last_sweep_at && (now - @last_sweep_at) < interval
