@@ -1,9 +1,24 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "psych"
 require "uri"
+require "ipaddr"
 
 require_relative "config/value_checks"
+require_relative "config/security_validation"
+require_relative "config/static_pod_source"
+require_relative "config/proxy_validation"
+require_relative "config/cri_validation"
+require_relative "config/kubelet_component_config"
+require_relative "config/node_registration"
+require_relative "node_ipam_settings"
+require_relative "../network/load_balancer_pool"
+require_relative "../network/nat64_prefix"
+require_relative "../runtime/memory_qos"
+require_relative "../node/kubelet_healthz"
+require_relative "../storage/memory_store"
 
 module Rubernetes
   module Bootstrap
@@ -28,6 +43,7 @@ module Rubernetes
       MAX_BYTES = 1_048_576
       APISERVER_KEYS = %w[bind_address port max_body_bytes watch_history_limit datastore tls security runtime_config
                           service_cluster_ip_range node_port_range advertise_address proxy_client kubelet_client
+                          peer_ca_file peer_advertise_ip peer_advertise_port
                           encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file
                           extensions].freeze
       TLS_KEYS = %w[cert_file key_file].freeze
@@ -35,7 +51,7 @@ module Rubernetes
       AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous
                                config_file].freeze
       SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds signing_endpoint
-                                allow_signing_with_non_oidc_keys].freeze
+                                allow_signing_with_non_oidc_keys extend_expiration].freeze
       REQUEST_HEADER_KEYS = %w[ca_file allowed_names username_headers group_headers extra_header_prefixes uid_headers].freeze
       AUTHENTICATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authenticated_ttl
                                        cache_unauthenticated_ttl].freeze
@@ -47,7 +63,7 @@ module Rubernetes
       AUDIT_WEBHOOK_KEYS = %w[url mode ca_file token token_file timeout_seconds batch_max_size batch_max_wait_seconds].freeze
       FLOW_CONTROL_KEYS = %w[enabled read_seats mutating_seats].freeze
       DATASTORE_KEYS = %w[type node_id cluster_id data_dir pki_dir listen_address listen_port voters peers timing
-                          compaction_interval_seconds join].freeze
+                          compaction_interval_seconds history_retention_policy join].freeze
       DATASTORE_TYPES = %w[memory raft].freeze
       DATASTORE_TIMING_KEYS = %w[
         election_timeout_min election_timeout_max heartbeat_interval batch_max_entries batch_max_bytes
@@ -56,7 +72,9 @@ module Rubernetes
       ].freeze
       CONTROL_PLANE_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds controllers root_ca_file metrics_server serving cluster_signing
                               use_service_account_credentials service_account_private_key_file extensions
-                              enable_hostpath_provisioner kube_api_qps kube_api_burst].freeze
+                              enable_hostpath_provisioner hostpath_provisioner_root load_balancer_pool default_routed_load_balancer
+                              cloud_controller_manager kube_api_qps
+                              kube_api_burst feature_gates terminated_pod_gc_threshold node_ipam].freeze
       CLUSTER_SIGNING_KEYS = %w[cert_file key_file duration_seconds signers].freeze
       CLUSTER_SIGNING_SIGNERS = %w[kubelet_serving kubelet_client kube_apiserver_client legacy_unknown].freeze
       # ComponentServer: the scheduler's / controller-manager's endpoints.
@@ -69,22 +87,26 @@ module Rubernetes
       # Extension objects (rubernetes.io/v1alpha1) are Ruby source evaluated
       # inside the component: off unless the configuration turns them on.
       EXTENSIONS_KEYS = %w[enabled].freeze
-      PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving kube_api_qps kube_api_burst].freeze
+      PROXY_KEYS = %w[api_server kubeconfig context node_name node_addresses backend attach sync serving kube_api_qps kube_api_burst].freeze
       AGENT_KEYS = %w[
-        node_name api_server kubeconfig context runtime_profile
-        sandbox_root cgroup_root log_root journal_path runtime_paths runtime
-        static_pod_path sync lease privileged l3 network volume microvm runtime_classes
-        streaming addresses dns pod_root cluster_domain seccomp_root resolv_conf max_pods
-        allowed_unsafe_sysctls feature_gates eviction image_gc dra
+        node_name api_server kubeconfig context runtime_profile cloud_provider provider_id register_node register_with_taints
+        sandbox_root cgroup_root log_root journal_path runtime_paths runtime kubelet_cgroups runtime_cgroups system_cgroups
+        static_pod_path file_check_frequency_seconds static_pod_url static_pod_url_header http_check_frequency_seconds
+        sync lease privileged l3 network volume microvm runtime_classes
+        streaming addresses dns pod_root cluster_domain seccomp_root resolv_conf max_pods healthz_port healthz_bind_address read_only_port
+        pods_per_core node_status_max_images volume_stats_agg_period_seconds cpu_cfs_quota cpu_cfs_quota_period_seconds
+        allowed_unsafe_sysctls feature_gates eviction image image_gc serialize_image_pulls max_parallel_image_pulls dra
         system_reserved kube_reserved reserved_system_cpus cpu_manager memory_manager topology_manager shutdown
-        cgroups_per_qos enforce_node_allocatable system_reserved_cgroup kube_reserved_cgroup cri crash_loop_back_off
-        device_plugins pod_resources image_pull_credentials image_credential_provider
+        memory_throttling_factor memory_reservation_policy single_process_oom_kill protect_kernel_defaults
+        cgroups_per_qos enforce_node_allocatable system_reserved_cgroup kube_reserved_cgroup qos_reserved cri crash_loop_back_off
+        device_plugins pod_resources pods_api_directory pod_logs_dir pod_pids_limit image_pull_credentials image_credential_provider
+        container_log_max_size container_log_max_files
         bootstrap_kubeconfig rotate_certificates server_tls_bootstrap cert_dir kube_api_qps kube_api_burst
       ].freeze
       # A CRI runtime (containerd, CRI-O) serving RuntimeClass handlers:
       # handlers maps the node's handler name to the CRI runtime handler.
-      AGENT_CRI_KEYS = %w[enabled endpoint handlers log_root cgroup_parent timeout_seconds
-                          container_log_max_size container_log_max_files].freeze
+      AGENT_CRI_KEYS = %w[enabled endpoint handlers default_handler log_root cgroup_parent timeout_seconds
+                          container_log_max_size container_log_max_files container_log_max_workers container_log_monitor_interval_seconds].freeze
       # kubelet shutdownGracePeriod / shutdownGracePeriodCriticalPods /
       # shutdownGracePeriodByPodPriority.
       AGENT_SHUTDOWN_KEYS = %w[grace_period grace_period_critical_pods grace_period_by_pod_priority].freeze
@@ -102,16 +124,18 @@ module Rubernetes
       # evictionMaxPodGracePeriod.
       AGENT_EVICTION_KEYS = %w[enabled hard soft soft_grace_period minimum_reclaim pressure_transition_period
                                max_pod_grace_period_seconds].freeze
-      AGENT_DNS_KEYS = %w[enabled port bind_addresses upstreams cluster_domain resolv_conf positive_ttl negative_ttl kubeconfig hosts].freeze
+      AGENT_DNS_KEYS = %w[enabled port bind_addresses cluster_dns upstreams cluster_domain resolv_conf positive_ttl negative_ttl kubeconfig hosts
+                          nat64_prefix].freeze
       AGENT_MICROVM_KEYS = %w[enabled data_dir chroot_base netns_root run_root parent_cgroup vcpu_count mem_size_mib use_base_snapshot
                               artifacts_lock workspace_mib].freeze
-      AGENT_RUNTIME_PATH_KEYS = %w[sandbox_root cgroup_root log_root journal_path].freeze
-      AGENT_SYNC_KEYS = %w[period_seconds watch_timeout_seconds resync_period watch_timeout].freeze
+      AGENT_RUNTIME_PATH_KEYS = %w[sandbox_root cgroup_root log_root journal_path userns_allocation_path].freeze
+      AGENT_SYNC_KEYS = %w[period_seconds watch_timeout_seconds resync_period watch_timeout
+                           node_status_update_frequency_seconds node_status_report_frequency_seconds].freeze
       AGENT_LEASE_KEYS = %w[namespace duration_seconds renew_fraction].freeze
       CONTROL_PLANE_SYNC_KEYS = %w[period_seconds interval_seconds].freeze
       CONTROL_PLANE_LEASE_KEYS = %w[namespace name lease_duration_seconds renew_deadline_seconds retry_period_seconds].freeze
       NETWORK_KEYS = %w[cluster_cidr ipv4_cidr ipv6_cidr node_subnet_prefix ipv4_node_prefix ipv6_node_prefix state_path bridge_name mtu
-                        fsync policy_backend policy_table plugin cni].freeze
+                        fsync policy_backend policy_table policy_kubeconfig plugin cni].freeze
       # network.plugin: the built-in bridge, or CNI plugins run by the agent.
       NETWORK_PLUGINS = %w[bridge cni].freeze
       NETWORK_CNI_KEYS = %w[conf_dir bin_dirs].freeze
@@ -122,15 +146,15 @@ module Rubernetes
       ].freeze
       VOLUME_CSI_IDENTITY_KEYS = %w[name vendor_version vendorVersion].freeze
       VOLUME_PROFILES = %w[native test fake_io].freeze
+      GATE_DEPENDENCIES = {
+        "ClusterTrustBundleProjection" => {"ClusterTrustBundle" => false},
+        "DRAResourcePoolStatus" => {"DynamicResourceAllocation" => true},
+        "DRAWorkloadResourceClaims" => {"DynamicResourceAllocation" => true, "GenericWorkload" => false},
+        "PodCertificateRequest" => {"AuthorizeNodeWithSelectors" => true},
+        "WorkloadWithJob" => {"GenericWorkload" => false}
+      }.freeze
 
-      attr_reader :process_name
-
-      def self.load(process_name:, path: nil)
-        validate_process_name!(process_name)
-        defaults = read_yaml(DEFAULT_PATH)
-        overrides = path ? read_yaml(File.expand_path(path)) : {}
-        new(process_name: process_name, data: deep_merge(defaults, overrides))
-      end
+      attr_reader :process_name, :kubelet_read_only_fields
 
       def self.validate_process_name!(process_name)
         return if PROCESS_NAMES.include?(process_name)
@@ -177,8 +201,9 @@ module Rubernetes
       end
       private_class_method :deep_merge
 
-      def initialize(process_name:, data:)
+      def initialize(process_name:, data:, kubelet_read_only_fields: [])
         @process_name = process_name.dup.freeze
+        @kubelet_read_only_fields = deep_freeze(kubelet_read_only_fields)
         validate!(data)
         @data = deep_freeze(data)
         freeze
@@ -200,6 +225,10 @@ module Rubernetes
         @data
       end
 
+      include SecurityValidation
+      include StaticPodSource
+      include ProxyValidation
+      include CRIValidation
       include ValueChecks
 
       private
@@ -233,26 +262,24 @@ module Rubernetes
             validate_control_plane!(process_config, CONTROL_PLANE_KEYS, name, lease: true)
             validate_metrics_server!(process_config["metrics_server"]) if process_config.key?("metrics_server")
             validate_cluster_signing!(process_config["cluster_signing"]) if process_config.key?("cluster_signing")
+            validate_load_balancer!(process_config)
+            validate_node_ipam!(process_config["node_ipam"]) if process_config.key?("node_ipam")
+            threshold = process_config.fetch("terminated_pod_gc_threshold", 0)
+            unless threshold.is_a?(Integer) && threshold.between?(-(2**31), (2**31) - 1)
+              raise Error, "rubernetes-controller-manager.terminated_pod_gc_threshold must be a signed 32-bit integer"
+            end
+
             if process_config.key?("service_account_private_key_file")
               validate_absolute_path!(process_config["service_account_private_key_file"],
                                       "rubernetes-controller-manager.service_account_private_key_file")
             end
-            # kube-controller-manager --enable-hostpath-provisioner.
-            if process_config.key?("enable_hostpath_provisioner") && ![true, false].include?(process_config["enable_hostpath_provisioner"])
-              raise Error, "rubernetes-controller-manager.enable_hostpath_provisioner must be true or false"
-            end
+            validate_hostpath_provisioner!(process_config)
             if process_config.key?("use_service_account_credentials") && ![true,
                                                                            false].include?(process_config["use_service_account_credentials"])
               raise Error, "rubernetes-controller-manager.use_service_account_credentials must be true or false"
             end
           elsif name == "rubernetes-scheduler"
             validate_control_plane!(process_config, SCHEDULER_KEYS, name, lease: true)
-            if process_config.key?("feature_gates")
-              validate_mapping!(process_config["feature_gates"], "rubernetes-scheduler.feature_gates")
-              process_config["feature_gates"].each do |gate, enabled|
-                raise Error, "rubernetes-scheduler.feature_gates.#{gate} must be true or false" unless [true, false].include?(enabled)
-              end
-            end
           elsif name == "rubernetes-proxy"
             validate_proxy!(process_config)
           else
@@ -300,13 +327,23 @@ module Rubernetes
       def validate_agent!(process_config)
         begin
           reject_unknown_keys!(process_config, AGENT_KEYS, "rubernetes-agent configuration")
-          validate_api_rate!(process_config, "rubernetes-agent")
+          validate_agent_api_rate!(process_config)
         rescue Error => error
           # Keep the M0 diagnostic wording stable for callers that validate all
           # daemon profiles with the original empty-process contract.
           raise Error, "M0 process configuration must be empty for unknown fields: #{error.message}"
         end
         validate_non_empty_string!(process_config.fetch("node_name"), "rubernetes-agent.node_name")
+        NodeRegistration.validate_flag!(process_config["register_node"], "rubernetes-agent.register_node") if process_config.key?("register_node")
+        if process_config.key?("register_with_taints")
+          NodeRegistration.validate_taints!(process_config["register_with_taints"], "rubernetes-agent.register_with_taints")
+        end
+        if process_config.key?("cloud_provider") && process_config["cloud_provider"] != "external"
+          raise Error, "rubernetes-agent.cloud_provider must be external"
+        end
+
+        validate_non_empty_string!(process_config["provider_id"], "rubernetes-agent.provider_id") if process_config.key?("provider_id")
+        validate_absolute_path!(process_config["pods_api_directory"], "rubernetes-agent.pods_api_directory") if process_config.key?("pods_api_directory")
         validate_api_server!(process_config.fetch("api_server")) if process_config.key?("api_server")
         %w[kubeconfig context].each do |key|
           if process_config.key?(key) && !process_config[key].nil?
@@ -314,19 +351,8 @@ module Rubernetes
                                        "rubernetes-agent.#{key}")
           end
         end
-        # --bootstrap-kubeconfig / --rotate-certificates / --cert-dir.
-        %w[bootstrap_kubeconfig cert_dir].each do |key|
-          validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key)
-        end
-        if process_config.key?("bootstrap_kubeconfig") && !process_config.key?("kubeconfig")
-          raise Error, "rubernetes-agent.bootstrap_kubeconfig requires kubeconfig (the file the bootstrap writes)"
-        end
-        if process_config.key?("server_tls_bootstrap") && ![true, false].include?(process_config["server_tls_bootstrap"])
-          raise Error, "rubernetes-agent.server_tls_bootstrap must be true or false"
-        end
-        if process_config.key?("rotate_certificates") && ![true, false].include?(process_config["rotate_certificates"])
-          raise Error, "rubernetes-agent.rotate_certificates must be true or false"
-        end
+        validate_agent_certificates!(process_config)
+        validate_agent_listener_ports!(process_config)
 
         # kubelet --feature-gates: overrides of the pinned v1.36.2 defaults.
         if process_config.key?("feature_gates")
@@ -335,8 +361,10 @@ module Rubernetes
           gates.each do |gate, enabled|
             raise Error, "rubernetes-agent.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled)
           end
+          validate_feature_gate_dependencies!(gates, "rubernetes-agent.feature_gates")
         end
         validate_eviction!(process_config["eviction"]) if process_config.key?("eviction")
+        validate_image_staging!(process_config["image"]) if process_config.key?("image")
         validate_image_gc!(process_config["image_gc"]) if process_config.key?("image_gc")
         validate_dra!(process_config["dra"]) if process_config.key?("dra")
         %w[system_reserved kube_reserved].each do |key|
@@ -344,14 +372,20 @@ module Rubernetes
         end
         validate_cpu_set!(process_config["reserved_system_cpus"], "reserved_system_cpus") if process_config.key?("reserved_system_cpus")
         validate_node_allocatable_enforcement!(process_config)
+        validate_qos_reserved!(process_config["qos_reserved"]) if process_config.key?("qos_reserved")
+        validate_memory_qos!(process_config)
+        if process_config.key?("protect_kernel_defaults") && ![true, false].include?(process_config["protect_kernel_defaults"])
+          raise Error, "rubernetes-agent.protect_kernel_defaults must be a boolean"
+        end
+
         validate_cpu_manager!(process_config["cpu_manager"]) if process_config.key?("cpu_manager")
         validate_memory_manager!(process_config["memory_manager"]) if process_config.key?("memory_manager")
         validate_topology_manager!(process_config["topology_manager"]) if process_config.key?("topology_manager")
         validate_shutdown!(process_config["shutdown"]) if process_config.key?("shutdown")
         validate_microvm!(process_config["microvm"]) if process_config.key?("microvm")
         validate_runtime_classes!(process_config["runtime_classes"]) if process_config.key?("runtime_classes")
-        validate_agent_cri!(process_config["cri"]) if process_config.key?("cri")
-        validate_crash_loop_back_off!(process_config["crash_loop_back_off"]) if process_config.key?("crash_loop_back_off")
+        validate_agent_runtime_limits!(process_config)
+        validate_crash_loop_back_off!(process_config) if process_config.key?("crash_loop_back_off")
         validate_image_pull_credentials!(process_config) if process_config.key?("image_pull_credentials")
         if process_config.key?("image_credential_provider")
           section = process_config["image_credential_provider"]
@@ -381,7 +415,7 @@ module Rubernetes
           raise Error, "rubernetes-agent.runtime_profile must be one of pure, fake_io, host_integration, kernel_isolation, l3"
         end
 
-        %w[sandbox_root cgroup_root log_root journal_path].each do |key|
+        %w[sandbox_root cgroup_root log_root journal_path kubelet_cgroups runtime_cgroups system_cgroups].each do |key|
           validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key)
         end
         %w[runtime_paths runtime].each do |container_key|
@@ -394,17 +428,12 @@ module Rubernetes
             validate_absolute_path!(paths[key], "rubernetes-agent.#{container_key}.#{key}") if paths.key?(key)
           end
         end
-        if process_config.key?("static_pod_path") && !process_config["static_pod_path"].nil?
-          validate_absolute_path!(process_config["static_pod_path"],
-                                  "rubernetes-agent.static_pod_path")
-        end
+        validate_static_pod_source!(process_config)
 
         sync = process_config.fetch("sync", {})
         validate_mapping!(sync, "rubernetes-agent.sync")
         reject_unknown_keys!(sync, AGENT_SYNC_KEYS, "rubernetes-agent.sync")
-        %w[period_seconds watch_timeout_seconds resync_period watch_timeout].each do |key|
-          validate_positive_number!(sync[key], "rubernetes-agent.sync.#{key}") if sync.key?(key)
-        end
+        sync.each { |key, value| validate_positive_number!(value, "rubernetes-agent.sync.#{key}") }
 
         lease = process_config.fetch("lease", {})
         validate_mapping!(lease, "rubernetes-agent.lease")
@@ -427,24 +456,54 @@ module Rubernetes
 
         validate_network!(process_config["network"], "rubernetes-agent.network") if process_config.key?("network")
         validate_volume!(process_config["volume"], "rubernetes-agent.volume") if process_config.key?("volume")
-        %w[pod_root seccomp_root resolv_conf].each do |key|
+        %w[pod_root seccomp_root].each do |key|
           validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key) && !process_config[key].nil?
         end
-        if process_config.key?("cluster_domain")
-          validate_non_empty_string!(process_config["cluster_domain"],
-                                     "rubernetes-agent.cluster_domain")
+        validate_agent_resolver!(process_config, "rubernetes-agent")
+        validate_agent_node_limits!(process_config)
+        if process_config.key?("volume_stats_agg_period_seconds")
+          seconds = process_config["volume_stats_agg_period_seconds"]
+          unless seconds.is_a?(Numeric) && seconds.finite? && seconds.real?
+            raise Error, "rubernetes-agent.volume_stats_agg_period_seconds must be a finite number"
+          end
         end
-        validate_positive_integer!(process_config["max_pods"], "rubernetes-agent.max_pods") if process_config.key?("max_pods")
-        validate_agent_dns!(process_config["dns"]) if process_config.key?("dns")
+        validate_agent_dns!(process_config["dns"], profile: normalized_profile) if process_config.key?("dns")
       end
 
-      def validate_agent_dns!(section)
+      def validate_agent_listener_ports!(config)
+        %w[healthz_port read_only_port].each do |field|
+          next unless config.key?(field)
+
+          port = config.fetch(field)
+          raise Error, "rubernetes-agent.#{field} must be between 0 and 65535" unless port.is_a?(Integer) && port.between?(0, 65_535)
+        end
+        return unless config.key?("healthz_bind_address") && !Node::KubeletHealthz.loopback_address?(config["healthz_bind_address"])
+
+        raise Error, "rubernetes-agent.healthz_bind_address must be a loopback IP address"
+      end
+
+      def validate_agent_certificates!(process_config)
+        %w[bootstrap_kubeconfig cert_dir].each do |key|
+          validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key)
+        end
+        if process_config.key?("bootstrap_kubeconfig") && !process_config.key?("kubeconfig")
+          raise Error, "rubernetes-agent.bootstrap_kubeconfig requires kubeconfig (the file the bootstrap writes)"
+        end
+
+        %w[server_tls_bootstrap rotate_certificates].each do |key|
+          next unless process_config.key?(key) && ![true, false].include?(process_config[key])
+
+          raise Error, "rubernetes-agent.#{key} must be true or false"
+        end
+      end
+
+      def validate_agent_dns!(section, profile:)
         validate_mapping!(section, "rubernetes-agent.dns")
         reject_unknown_keys!(section, AGENT_DNS_KEYS, "rubernetes-agent.dns")
         raise Error, "rubernetes-agent.dns.enabled must be true or false" if section.key?("enabled") && ![true, false].include?(section["enabled"])
 
         validate_positive_integer!(section["port"], "rubernetes-agent.dns.port") if section.key?("port")
-        %w[bind_addresses upstreams].each do |key|
+        %w[bind_addresses cluster_dns upstreams].each do |key|
           next unless section.key?(key)
           next if section[key].is_a?(Array) && section[key].all? do |value|
             value.is_a?(String) && !value.empty?
@@ -453,7 +512,7 @@ module Rubernetes
           raise Error,
                 "rubernetes-agent.dns.#{key} must be a list of addresses"
         end
-        validate_non_empty_string!(section["cluster_domain"], "rubernetes-agent.dns.cluster_domain") if section.key?("cluster_domain")
+        validate_agent_resolver!(section, "rubernetes-agent.dns")
         if section.key?("hosts")
           hosts = section["hosts"]
           valid = hosts.is_a?(Hash) && hosts.all? do |name, addresses|
@@ -462,15 +521,17 @@ module Rubernetes
           end
           raise Error, "rubernetes-agent.dns.hosts must map names (or *.suffix) to one or more addresses" unless valid
         end
-        validate_absolute_path!(section["resolv_conf"], "rubernetes-agent.dns.resolv_conf") if section.key?("resolv_conf")
         validate_absolute_path!(section["kubeconfig"], "rubernetes-agent.dns.kubeconfig") if section.key?("kubeconfig")
         %w[positive_ttl negative_ttl].each do |key|
           validate_positive_integer!(section[key], "rubernetes-agent.dns.#{key}") if section.key?(key) && section[key] != 0
         end
-      end
+        return unless section.key?("nat64_prefix")
 
-      # MicroVM backend section (spec/node/runtime.md 5.8.11): every path is
-      # absolute, the machine shape is positive, and unknown keys are rejected.
+        validate_nat64_prefix!(section["nat64_prefix"])
+        return unless section["enabled"] == false || !%w[host_integration kernel_isolation l3].include?(profile)
+
+        raise Error, "rubernetes-agent.dns.nat64_prefix requires enabled DNS and a native runtime profile"
+      end
 
       def validate_dra!(value)
         validate_mapping!(value, "rubernetes-agent.dra")
@@ -558,6 +619,30 @@ module Rubernetes
       def validate_string_map!(value, name)
         validate_mapping!(value, name)
         value.each { |key, entry| raise Error, "#{name}.#{key} must be a string" unless entry.is_a?(String) }
+      end
+
+      def validate_qos_reserved!(value)
+        require_relative "../node/qos_cgroup_manager"
+        validate_mapping!(value, "rubernetes-agent.qos_reserved")
+        Node::QOSCgroupManager.parse_reserved_memory(value)
+      rescue Node::QOSCgroupManager::Error => error
+        raise Error, "rubernetes-agent.qos_reserved #{error.message}"
+      end
+
+      def validate_memory_qos!(process)
+        if process.key?("memory_throttling_factor")
+          factor = process["memory_throttling_factor"]
+          unless factor.is_a?(Numeric) && factor.positive? && factor <= 1
+            raise Error, "rubernetes-agent.memory_throttling_factor must be greater than zero and at most one"
+          end
+        end
+        policy = process.fetch("memory_reservation_policy", "None")
+        unless Runtime::MemoryQoS::RESERVATION_POLICIES.include?(policy)
+          raise Error, "rubernetes-agent.memory_reservation_policy must be None or TieredReservation"
+        end
+        return unless policy == Runtime::MemoryQoS::TIERED_RESERVATION && process.dig("feature_gates", "MemoryQoS") != true
+
+        raise Error, "rubernetes-agent.memory_reservation_policy TieredReservation requires MemoryQoS"
       end
 
       # kubelet cpuManagerPolicy / cpuManagerPolicyOptions / cpuManagerReconcilePeriod.
@@ -649,6 +734,13 @@ module Rubernetes
         validate_string_map!(value["options"], "#{name}.options") if value.key?("options")
       end
 
+      def validate_image_staging!(section)
+        context = "rubernetes-agent.image"
+        validate_mapping!(section, context)
+        reject_unknown_keys!(section, %w[staging_root public_blob_source], context)
+        section.each { |key, value| validate_absolute_path!(value, "#{context}.#{key}") }
+      end
+
       def validate_image_gc!(value)
         validate_mapping!(value, "rubernetes-agent.image_gc")
 
@@ -701,6 +793,7 @@ module Rubernetes
         raise Error, "rubernetes-agent.eviction: #{error.message}"
       end
 
+      # MicroVM backend section (spec/node/runtime.md 5.8.11).
       def validate_microvm!(section)
         raise Error, "rubernetes-agent.microvm must be an object" unless section.is_a?(Hash)
 
@@ -732,8 +825,6 @@ module Rubernetes
         raise Error, "rubernetes-agent.microvm.use_base_snapshot must be true or false"
       end
 
-      # kubelet crashLoopBackOff (KubeletCrashLoopBackOffMax, Beta, on):
-      # maxContainerRestartPeriod, 1s..300s.
       # kubelet imagePullCredentialsVerificationPolicy and
       # preloadedImagesVerificationAllowlist (KubeletEnsureSecretPulledImages).
       def validate_image_pull_credentials!(process_config)
@@ -769,51 +860,22 @@ module Rubernetes
         raise Error, "#{context}: invalid image pattern in preloaded_images_verification_allowlist: #{error.message}"
       end
 
-      def validate_crash_loop_back_off!(section)
+      # kubelet validates maxContainerRestartPeriod after truncating to
+      # whole milliseconds, from 1000 through 300000 inclusive.
+      def validate_crash_loop_back_off!(process)
+        section = process["crash_loop_back_off"]
         raise Error, "rubernetes-agent.crash_loop_back_off must be a mapping" unless section.is_a?(Hash)
 
         reject_unknown_keys!(section, %w[max_container_restart_period_seconds], "rubernetes-agent.crash_loop_back_off")
         value = section["max_container_restart_period_seconds"]
-        return if value.nil? || (value.is_a?(Numeric) && value >= 1 && value <= 300)
+        return if value.nil?
+
+        if process.dig("feature_gates", "KubeletCrashLoopBackOffMax") == false
+          raise Error, "rubernetes-agent.crash_loop_back_off.max_container_restart_period_seconds requires KubeletCrashLoopBackOffMax"
+        end
+        return if value.is_a?(Numeric) && value >= 1 && value < 300.001
 
         raise Error, "rubernetes-agent.crash_loop_back_off.max_container_restart_period_seconds must be between 1 and 300"
-      end
-
-      def validate_agent_cri!(section)
-        validate_mapping!(section, "rubernetes-agent.cri")
-        reject_unknown_keys!(section, AGENT_CRI_KEYS, "rubernetes-agent.cri")
-        raise Error, "rubernetes-agent.cri.enabled must be a boolean" if section.key?("enabled") && ![true,
-                                                                                                      false].include?(section["enabled"])
-
-        %w[endpoint log_root cgroup_parent].each do |key|
-          next unless section.key?(key)
-          next if section[key].is_a?(String) && section[key].delete_prefix("unix://").start_with?("/")
-
-          raise Error, "rubernetes-agent.cri.#{key} must be an absolute path"
-        end
-        raise Error, "rubernetes-agent.cri.endpoint is required when cri is enabled" if section["enabled"] == true && !section.key?("endpoint")
-
-        handlers = section.fetch("handlers", {})
-        unless handlers.is_a?(Hash) && handlers.all? { |name, handler| name.is_a?(String) && !name.empty? && handler.is_a?(String) }
-          raise Error, "rubernetes-agent.cri.handlers must map handler names to CRI runtime handlers"
-        end
-        raise Error, "rubernetes-agent.cri.handlers cannot take over the rubernetes-native handler" if handlers.key?("rubernetes-native")
-        if section.key?("container_log_max_files") && !(section["container_log_max_files"].is_a?(Integer) && section["container_log_max_files"] >= 2)
-          raise Error, "rubernetes-agent.cri.container_log_max_files must be an integer of at least 2"
-        end
-
-        if section.key?("container_log_max_size")
-          begin
-            require_relative "../resource_helpers"
-            Rubernetes::ResourceHelpers::Quantity.from_json(section["container_log_max_size"].to_s)
-          rescue StandardError
-            raise Error, "rubernetes-agent.cri.container_log_max_size must be a quantity"
-          end
-        end
-        return unless section.key?("timeout_seconds")
-        return if section["timeout_seconds"].is_a?(Numeric) && section["timeout_seconds"].positive?
-
-        raise Error, "rubernetes-agent.cri.timeout_seconds must be a positive number"
       end
 
       def validate_runtime_classes!(section)
@@ -827,6 +889,14 @@ module Rubernetes
 
       def validate_control_plane!(process_config, allowed_keys, process_name, lease: false)
         reject_unknown_keys!(process_config, allowed_keys, "#{process_name} configuration")
+        if process_config.key?("feature_gates")
+          gates = process_config["feature_gates"]
+          validate_mapping!(gates, "#{process_name}.feature_gates")
+          gates.each do |gate, enabled|
+            raise Error, "#{process_name}.feature_gates.#{gate} must be true or false" unless [true, false].include?(enabled)
+          end
+          validate_feature_gate_dependencies!(gates, "#{process_name}.feature_gates")
+        end
         validate_api_rate!(process_config, process_name)
         validate_api_server!(process_config["api_server"], context: "#{process_name}.api_server") if process_config.key?("api_server")
         %w[kubeconfig context identity].each do |key|
@@ -840,6 +910,59 @@ module Rubernetes
         validate_controllers!(process_config["controllers"], process_name) if process_config.key?("controllers")
         validate_serving!(process_config["serving"], process_name) if process_config.key?("serving")
         validate_extensions!(process_config["extensions"], process_name) if process_config.key?("extensions")
+      end
+
+      def validate_hostpath_provisioner!(process_config)
+        context = "rubernetes-controller-manager"
+        if process_config.key?("enable_hostpath_provisioner") && ![true, false].include?(process_config["enable_hostpath_provisioner"])
+          raise Error, "#{context}.enable_hostpath_provisioner must be true or false"
+        end
+        return unless process_config.key?("hostpath_provisioner_root")
+
+        path = process_config["hostpath_provisioner_root"]
+        validate_absolute_path!(path, "#{context}.hostpath_provisioner_root")
+        raise Error, "#{context}.hostpath_provisioner_root must be a dedicated directory" if File.expand_path(path) == "/"
+      end
+
+      def validate_node_ipam!(section)
+        NodeIPAMSettings.new(section)
+      rescue ArgumentError => error
+        raise Error, "rubernetes-controller-manager.node_ipam #{error.message}"
+      end
+
+      def validate_feature_gate_dependencies!(gates, context)
+        GATE_DEPENDENCIES.each do |gate, dependencies|
+          next unless gates[gate] == true
+
+          dependencies.each do |dependency, default_enabled|
+            next if gates.fetch(dependency, default_enabled) == true
+
+            raise Error, "#{context}.#{gate} requires #{dependency}"
+          end
+        end
+      end
+
+      def validate_load_balancer!(process_config)
+        context = "rubernetes-controller-manager"
+        cloud_manager = process_config["cloud_controller_manager"]
+        raise Error, "#{context}.cloud_controller_manager must be external" if process_config.key?("cloud_controller_manager") && cloud_manager != "external"
+
+        default_routed = process_config.fetch("default_routed_load_balancer", false)
+        raise Error, "#{context}.default_routed_load_balancer must be true or false" unless [true, false].include?(default_routed)
+        raise Error, "#{context}.default_routed_load_balancer requires load_balancer_pool" if default_routed && !process_config.key?("load_balancer_pool")
+
+        if default_routed && cloud_manager == "external"
+          raise Error, "#{context}.default_routed_load_balancer conflicts with cloud_controller_manager: external"
+        end
+        return unless process_config.key?("load_balancer_pool")
+
+        Network::LoadBalancerPool.new(process_config["load_balancer_pool"])
+        controllers = Array(process_config["controllers"])
+        if !controllers.empty? && !controllers.include?("service-lb-controller")
+          raise Error, "rubernetes-controller-manager.load_balancer_pool requires service-lb-controller"
+        end
+      rescue ArgumentError => error
+        raise Error, "rubernetes-controller-manager: #{error.message}"
       end
 
       def validate_cluster_signing!(section)
@@ -877,10 +1000,10 @@ module Rubernetes
         end
       end
 
-      def validate_serving!(section, process_name)
+      def validate_serving!(section, process_name, keys: SERVING_KEYS)
         raise Error, "#{process_name}.serving must be a mapping" unless section.is_a?(Hash)
 
-        reject_unknown_keys!(section, SERVING_KEYS, "#{process_name}.serving")
+        reject_unknown_keys!(section, keys, "#{process_name}.serving")
         raise Error, "#{process_name}.serving.enabled must be true or false" if section.key?("enabled") && ![true, false].include?(section["enabled"])
 
         validate_non_empty_string!(section["bind_address"], "#{process_name}.serving.bind_address") if section.key?("bind_address")
@@ -888,25 +1011,6 @@ module Rubernetes
         return unless section["enabled"] == true && !(port.is_a?(Integer) && port.between?(1, 65_535))
 
         raise Error, "#{process_name}.serving.port must be an integer between 1 and 65535"
-      end
-
-      def validate_proxy!(process_config)
-        reject_unknown_keys!(process_config, PROXY_KEYS, "rubernetes-proxy configuration")
-        validate_api_rate!(process_config, "rubernetes-proxy")
-        validate_serving!(process_config["serving"], "rubernetes-proxy") if process_config.key?("serving")
-        validate_api_server!(process_config["api_server"], context: "rubernetes-proxy.api_server") if process_config.key?("api_server")
-        %w[kubeconfig context node_name].each do |key|
-          next unless process_config.key?(key) && !process_config[key].nil?
-
-          validate_non_empty_string!(process_config[key], "rubernetes-proxy.#{key}")
-        end
-        if process_config.key?("backend") && !%w[auto ebpf bpf nftables nft iptables
-                                                 memory].include?(process_config["backend"].to_s.downcase)
-          raise Error, "rubernetes-proxy.backend must be one of auto, ebpf, bpf, nftables, nft, iptables, or memory"
-        end
-        raise Error, "rubernetes-proxy.attach must be true or false" if process_config.key?("attach") && ![true, false].include?(process_config["attach"])
-
-        validate_sync!(process_config["sync"], "rubernetes-proxy") if process_config.key?("sync")
       end
 
       def validate_sync!(value, process_name)
@@ -944,7 +1048,7 @@ module Rubernetes
       def validate_network!(value, context)
         validate_mapping!(value, context)
         reject_unknown_keys!(value, NETWORK_KEYS, context)
-        validate_absolute_path!(value["state_path"], "#{context}.state_path") if value.key?("state_path")
+        value.slice("state_path", "policy_kubeconfig").each { |name, path| validate_absolute_path!(path, "#{context}.#{name}") }
         validate_positive_integer!(value["mtu"], "#{context}.mtu") if value.key?("mtu")
         raise Error, "#{context}.fsync must be true or false" if value.key?("fsync") && ![true, false].include?(value["fsync"])
         if value.key?("policy_backend") && !NETWORK_POLICY_BACKENDS.include?(value["policy_backend"].to_s.downcase)
@@ -1072,16 +1176,22 @@ module Rubernetes
           raise Error, "rubernetes-apiserver.max_body_bytes must be between 1 and 16777216"
         end
 
+        validate_datastore!(process_config["datastore"]) if process_config.key?("datastore")
         history_limit = process_config["watch_history_limit"]
-        unless history_limit.is_a?(Integer) && history_limit.between?(1, 1_000_000)
+        policy = process_config.fetch("datastore", {}).fetch("history_retention_policy", Storage::MemoryStore::DEFAULT_HISTORY_POLICY)
+        if policy == Storage::MemoryStore::LONGER_HISTORY_POLICY
+          unless history_limit.nil? || (history_limit.is_a?(Integer) && history_limit.between?(0, 1_000_000))
+            raise Error, "rubernetes-apiserver.watch_history_limit must be null or between 0 and 1000000"
+          end
+        elsif !history_limit.is_a?(Integer) || !history_limit.between?(1, 1_000_000)
           raise Error, "rubernetes-apiserver.watch_history_limit must be between 1 and 1000000"
         end
 
-        validate_datastore!(process_config["datastore"]) if process_config.key?("datastore")
         validate_tls!(process_config["tls"]) if process_config.key?("tls")
         validate_tls!(process_config["proxy_client"], "rubernetes-apiserver.proxy_client") if process_config.key?("proxy_client")
         validate_kubelet_client!(process_config["kubelet_client"]) if process_config.key?("kubelet_client")
         validate_security!(process_config["security"]) if process_config.key?("security")
+        validate_peer_proxy!(process_config)
         return unless process_config.key?("runtime_config")
 
         validate_mapping!(process_config["runtime_config"], "rubernetes-apiserver.runtime_config")
@@ -1092,6 +1202,35 @@ module Rubernetes
                   "rubernetes-apiserver.runtime_config key #{key.inspect} must be api/all or group/version"
           end
         end
+      end
+
+      def validate_peer_proxy!(config)
+        gates = config.dig("security", "feature_gates") || {}
+        enabled = gates.fetch("UnknownVersionInteroperabilityProxy", true)
+        raise Error, "UnknownVersionInteroperabilityProxy requires APIServerIdentity" if enabled && gates["APIServerIdentity"] == false
+
+        flags = %w[peer_ca_file peer_advertise_ip peer_advertise_port]
+        return if flags.none? { |flag| config.key?(flag) }
+        raise Error, "peer proxy configuration requires UnknownVersionInteroperabilityProxy" unless enabled
+
+        if config.key?("peer_advertise_ip")
+          address = config["peer_advertise_ip"]
+          unless address.is_a?(String) && !address.include?("/") && IPAddr.new(address).to_i.positive?
+            raise Error, "rubernetes-apiserver.peer_advertise_ip must be an IP address"
+          end
+        end
+        if config.key?("peer_advertise_port")
+          port = config["peer_advertise_port"]
+          raise Error, "rubernetes-apiserver.peer_advertise_port must be between 1 and 65535" unless port.is_a?(Integer) && port.between?(1, 65_535)
+        end
+        return unless config.key?("peer_ca_file")
+
+        validate_absolute_path!(config["peer_ca_file"], "rubernetes-apiserver.peer_ca_file")
+        unless config["tls"] && config["proxy_client"] && config.dig("security", "authentication", "request_header")
+          raise Error, "rubernetes-apiserver.peer_ca_file requires serving TLS, proxy_client, and request_header authentication"
+        end
+      rescue IPAddr::InvalidAddressError
+        raise Error, "rubernetes-apiserver.peer_advertise_ip must be an IP address"
       end
 
       # --kubelet-client-certificate / --kubelet-client-key and
@@ -1113,160 +1252,6 @@ module Rubernetes
       # security: authentication / authorization / admission / audit /
       # flow_control / feature_gates.  Every file is an absolute path; modes
       # must be in the v1.36.2 authorization-mode corpus.
-      def validate_security!(value)
-        context = "rubernetes-apiserver.security"
-        validate_mapping!(value, context)
-        reject_unknown_keys!(value, SECURITY_KEYS, context)
-        if value.key?("authentication")
-          authn = value["authentication"]
-          validate_mapping!(authn, "#{context}.authentication")
-          reject_unknown_keys!(authn, AUTHENTICATION_KEYS, "#{context}.authentication")
-          if authn.key?("config_file")
-            # --authentication-config is mutually exclusive with the flag-style
-            # JWT (--oidc-*) and --anonymous-auth settings.
-            validate_absolute_path!(authn["config_file"], "#{context}.authentication.config_file")
-            %w[jwt anonymous].each do |key|
-              if authn.key?(key)
-                raise Error,
-                      "#{context}.authentication.#{key} cannot be combined with config_file (the AuthenticationConfiguration file owns it)"
-              end
-            end
-          end
-          %w[client_ca_file token_file].each do |key|
-            validate_absolute_path!(authn[key], "#{context}.authentication.#{key}") if authn.key?(key)
-          end
-          if authn.key?("service_account")
-            sa = authn["service_account"]
-            validate_mapping!(sa, "#{context}.authentication.service_account")
-            reject_unknown_keys!(sa, SERVICE_ACCOUNT_KEYS, "#{context}.authentication.service_account")
-            validate_non_empty_string!(sa["issuer"], "#{context}.authentication.service_account.issuer")
-            if sa.key?("signing_endpoint")
-              # --service-account-signing-endpoint: the external signer owns the keys.
-              validate_absolute_path!(sa["signing_endpoint"], "#{context}.authentication.service_account.signing_endpoint")
-              %w[signing_key_file key_files].each do |key|
-                raise Error, "#{context}.authentication.service_account.#{key} cannot be combined with signing_endpoint" if sa.key?(key)
-              end
-              if sa.key?("allow_signing_with_non_oidc_keys") && ![true, false].include?(sa["allow_signing_with_non_oidc_keys"])
-                raise Error, "#{context}.authentication.service_account.allow_signing_with_non_oidc_keys must be true or false"
-              end
-            else
-              validate_absolute_path!(sa["signing_key_file"], "#{context}.authentication.service_account.signing_key_file")
-            end
-            Array(sa["key_files"]).each { |path| validate_absolute_path!(path, "#{context}.authentication.service_account.key_files[]") }
-            if sa.key?("api_audiences") && !(sa["api_audiences"].is_a?(Array) && !sa["api_audiences"].empty?)
-              raise Error,
-                    "#{context}.authentication.service_account.api_audiences must be a non-empty list"
-            end
-          end
-          if authn.key?("bootstrap_tokens") && ![true, false].include?(authn["bootstrap_tokens"])
-            raise Error, "#{context}.authentication.bootstrap_tokens must be a boolean"
-          end
-
-          if authn.key?("request_header")
-            rh = authn["request_header"]
-            validate_mapping!(rh, "#{context}.authentication.request_header")
-            reject_unknown_keys!(rh, REQUEST_HEADER_KEYS, "#{context}.authentication.request_header")
-            validate_absolute_path!(rh["ca_file"], "#{context}.authentication.request_header.ca_file")
-          end
-          if authn.key?("jwt")
-            raise Error, "#{context}.authentication.jwt must be a list of JWT authenticator configurations" unless authn["jwt"].is_a?(Array)
-
-            authn["jwt"].each { |entry| validate_mapping!(entry, "#{context}.authentication.jwt[]") }
-          end
-          if authn.key?("webhook")
-            hook = authn["webhook"]
-            validate_mapping!(hook, "#{context}.authentication.webhook")
-            reject_unknown_keys!(hook, AUTHENTICATION_WEBHOOK_KEYS, "#{context}.authentication.webhook")
-            validate_non_empty_string!(hook["url"], "#{context}.authentication.webhook.url")
-          end
-          if authn.key?("anonymous")
-            anon = authn["anonymous"]
-            validate_mapping!(anon, "#{context}.authentication.anonymous")
-            raise Error, "#{context}.authentication.anonymous.enabled must be a boolean" unless [true, false].include?(anon["enabled"])
-          end
-        end
-        if value.key?("authorization")
-          authz = value["authorization"]
-          validate_mapping!(authz, "#{context}.authorization")
-          reject_unknown_keys!(authz, AUTHORIZATION_KEYS, "#{context}.authorization")
-          if authz.key?("config_file")
-            # --authorization-config is mutually exclusive with --authorization-mode and --authorization-webhook-*.
-            validate_absolute_path!(authz["config_file"], "#{context}.authorization.config_file")
-            %w[modes webhook abac_policy_file].each do |key|
-              if authz.key?(key)
-                raise Error,
-                      "#{context}.authorization.#{key} cannot be combined with config_file (the AuthorizationConfiguration file owns it)"
-              end
-            end
-          else
-            modes = authz["modes"]
-            raise Error, "#{context}.authorization.modes must be a non-empty list" unless modes.is_a?(Array) && !modes.empty?
-
-            unknown = modes - %w[AlwaysAllow AlwaysDeny ABAC Webhook RBAC Node]
-            raise Error, "#{context}.authorization.modes contains unknown modes #{unknown.join(", ")}" unless unknown.empty?
-            raise Error, "#{context}.authorization.modes must be unique" unless modes.uniq.length == modes.length
-
-            validate_absolute_path!(authz["abac_policy_file"], "#{context}.authorization.abac_policy_file") if modes.include?("ABAC")
-            if modes.include?("Webhook")
-              hook = authz["webhook"]
-              validate_mapping!(hook, "#{context}.authorization.webhook")
-              reject_unknown_keys!(hook, AUTHORIZATION_WEBHOOK_KEYS, "#{context}.authorization.webhook")
-              validate_non_empty_string!(hook["url"], "#{context}.authorization.webhook.url")
-            end
-          end
-        end
-        if value.key?("admission")
-          admission = value["admission"]
-          validate_mapping!(admission, "#{context}.admission")
-          reject_unknown_keys!(admission, ADMISSION_KEYS, "#{context}.admission")
-          %w[enable disable].each do |key|
-            next unless admission.key?(key)
-            next if admission[key].is_a?(Array) && admission[key].all?(String)
-
-            raise Error,
-                  "#{context}.admission.#{key} must be a list of plugin names"
-          end
-          validate_mapping!(admission["config"], "#{context}.admission.config") if admission.key?("config")
-        end
-        if value.key?("audit")
-          audit = value["audit"]
-          validate_mapping!(audit, "#{context}.audit")
-          reject_unknown_keys!(audit, AUDIT_KEYS, "#{context}.audit")
-          validate_absolute_path!(audit["policy_file"], "#{context}.audit.policy_file")
-          validate_absolute_path!(audit["log_path"], "#{context}.audit.log_path") if audit.key?("log_path")
-          validate_positive_integer!(audit["max_queue"], "#{context}.audit.max_queue") if audit.key?("max_queue")
-          if audit.key?("webhook")
-            webhook = audit["webhook"]
-            validate_mapping!(webhook, "#{context}.audit.webhook")
-            reject_unknown_keys!(webhook, AUDIT_WEBHOOK_KEYS, "#{context}.audit.webhook")
-            validate_non_empty_string!(webhook["url"], "#{context}.audit.webhook.url")
-            if webhook.key?("mode") && !%w[batch blocking blocking-strict].include?(webhook["mode"].to_s)
-              raise Error, "#{context}.audit.webhook.mode must be batch, blocking or blocking-strict"
-            end
-
-            validate_absolute_path!(webhook["ca_file"], "#{context}.audit.webhook.ca_file") if webhook.key?("ca_file")
-            validate_absolute_path!(webhook["token_file"], "#{context}.audit.webhook.token_file") if webhook.key?("token_file")
-          end
-        end
-        if value.key?("flow_control")
-          apf = value["flow_control"]
-          validate_mapping!(apf, "#{context}.flow_control")
-          reject_unknown_keys!(apf, FLOW_CONTROL_KEYS, "#{context}.flow_control")
-          raise Error, "#{context}.flow_control.enabled must be a boolean" if apf.key?("enabled") && ![true, false].include?(apf["enabled"])
-
-          %w[read_seats mutating_seats].each do |key|
-            validate_positive_integer!(apf[key], "#{context}.flow_control.#{key}") if apf.key?(key)
-          end
-        end
-        return unless value.key?("feature_gates")
-
-        gates = value["feature_gates"]
-        validate_mapping!(gates, "#{context}.feature_gates")
-        gates.each do |gate, enabled|
-          raise Error, "#{context}.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled)
-        end
-      end
-
       # datastore: {type: memory} (default) or {type: raft, node_id:, cluster_id:,
       # data_dir:, pki_dir:, listen_address:, listen_port:, voters: [...],
       # peers: {id => "host:port"}}.  Raft parameters are fixed by the
@@ -1276,6 +1261,7 @@ module Rubernetes
         context = "rubernetes-apiserver.datastore"
         validate_mapping!(value, context)
         reject_unknown_keys!(value, DATASTORE_KEYS, context)
+        validate_datastore_retention!(value, context)
         type = value["type"] || "memory"
         raise Error, "#{context}.type must be one of #{DATASTORE_TYPES.join(", ")}" unless DATASTORE_TYPES.include?(type)
         return if type == "memory"
@@ -1327,23 +1313,27 @@ module Rubernetes
         timing.each { |key, number| validate_positive_number!(number, "#{context}.timing.#{key}") }
       end
 
+      def validate_datastore_retention!(datastore, context)
+        policy = datastore.fetch("history_retention_policy", Storage::MemoryStore::DEFAULT_HISTORY_POLICY)
+        policies = Storage::MemoryStore::DEFAULT_HISTORY_SECONDS_BY_POLICY.keys
+        raise Error, "#{context}.history_retention_policy must be one of #{policies.join(", ")}" unless policies.include?(policy)
+        return unless policy == Storage::MemoryStore::LONGER_HISTORY_POLICY
+
+        seconds = datastore["compaction_interval_seconds"]
+        return if seconds.nil?
+
+        duration = Float(seconds, exception: false)
+        return if duration&.finite? && !duration.negative?
+
+        raise Error, "#{context}.compaction_interval_seconds must be null or a finite non-negative number"
+      end
+
       def reject_unknown_keys!(mapping, allowed, context)
         unknown = mapping.keys - allowed
         raise Error, "unknown #{context} keys: #{unknown.sort.join(", ")}" unless unknown.empty?
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
     end
   end
 end
