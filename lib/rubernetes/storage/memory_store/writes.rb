@@ -4,7 +4,7 @@ module Rubernetes
   module Storage
     # create, update and delete: preconditions, the optimistic retry loop and the commit.
     class MemoryStore
-      def create(key, object, request_uid: nil, request_id: nil, **options)
+      def create(key, object, request_uid: nil, request_id: nil, related_versions: nil, **options)
         request_uid ||= request_id || options.delete(:uid)
         body = options.delete(:body)
         object_keyword = options.delete(:object)
@@ -15,16 +15,15 @@ module Rubernetes
 
         normalized_key = normalize_key(key)
         candidate = normalize_object(object)
+        fingerprint = request_fingerprint(:create, normalized_key, candidate, nil, related_versions)
 
         @monitor.synchronize do
-          fingerprint = request_fingerprint(:create, normalized_key, candidate, nil)
-          replay = replay_request(request_uid, fingerprint, :create, normalized_key)
-          return replay unless replay.equal?(NO_REPLAY)
-          raise AlreadyExists, normalized_key if @objects.key?(normalized_key) && !@objects[normalized_key].nil?
+          commit_request(request_uid, fingerprint, :create, normalized_key) do
+            raise AlreadyExists, normalized_key if @live_versions.key?(normalized_key)
 
-          committed = commit_locked(:added, normalized_key, candidate)
-          remember_request(request_uid, fingerprint, :create, normalized_key, committed)
-          immutable_response(committed)
+            check_related_versions!(normalized_key, related_versions)
+            commit_locked(:added, normalized_key, candidate)
+          end
         end
       end
 
@@ -35,6 +34,7 @@ module Rubernetes
         resource_version: nil,
         request_uid: nil,
         request_id: nil,
+        related_versions: nil,
         max_retries: @max_update_retries,
         **options,
         &block
@@ -50,16 +50,10 @@ module Rubernetes
         raise ArgumentError, "unknown guaranteed_update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "guaranteed_update requires a block" unless block
 
-        expected = normalize_precondition(
-          if prec.nil?
-            precondition.nil? ? resource_version : precondition
-          else
-            prec
-          end
-        )
+        expected = write_precondition(prec, precondition, resource_version)
         normalized_key = normalize_key(key)
         retries = validate_positive_limit(max_retries, "max_retries", allow_zero: true)
-        request_uid = normalize_request_uid(request_uid) unless request_uid.nil?
+        request_uid = -normalize_request_uid(request_uid) unless request_uid.nil?
         replay_expected = replay_precondition == :same ? expected : normalize_precondition(replay_precondition)
         with_request_lock(request_uid) do
           guaranteed_update_with_retry(
@@ -69,6 +63,7 @@ module Rubernetes
             retries,
             allow_nil_result,
             replay_expected,
+            related_versions: related_versions,
             &block
           )
         end
@@ -86,6 +81,7 @@ module Rubernetes
         resource_version: nil,
         request_uid: nil,
         request_id: nil,
+        related_versions: nil,
         **options
       )
         request_uid ||= request_id || options.delete(:uid)
@@ -97,50 +93,70 @@ module Rubernetes
         raise ArgumentError, "unknown update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "update requires an API object Hash" unless object.is_a?(Hash)
 
-        expected = normalize_precondition(
-          if prec.nil?
-            precondition.nil? ? resource_version : precondition
-          else
-            prec
-          end
-        )
+        expected = write_precondition(prec, precondition, resource_version)
         candidate = normalize_object(object)
-        guaranteed_update(key, prec: expected, request_uid: request_uid) { |_current| candidate }
+        commit_replacement(key, expected, expected, request_uid, related_versions) { candidate }
       end
 
       alias replace update
 
-      def delete(key, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil, **options)
+      # A replicated command already contains the final object. Compare the
+      # observed version for this attempt, but deduplicate by the original
+      # client precondition. A replay never needs to decode its payload.
+      def apply_update(key, prec:, replay_precondition:, request_uid:, related_versions:)
+        commit_replacement(key, normalize_precondition(prec), normalize_precondition(replay_precondition),
+                           request_uid, related_versions) { normalize_object(yield) }
+      end
+
+      def delete(key, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil, delete_corrupt: false,
+                 related_versions: nil, **options)
         request_uid ||= request_id || options.delete(:uid)
         discard_options(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown delete options: #{options.keys.join(", ")}" unless options.empty?
 
-        expected = normalize_precondition(
-          if prec.nil?
-            precondition.nil? ? resource_version : precondition
-          else
-            prec
-          end
-        )
+        expected = write_precondition(prec, precondition, resource_version)
         normalized_key = normalize_key(key)
 
         @monitor.synchronize do
-          fingerprint = request_fingerprint(:delete, normalized_key, nil, expected)
-          replay = replay_request(request_uid, fingerprint, :delete, normalized_key)
-          return replay unless replay.equal?(NO_REPLAY)
+          fingerprint = request_fingerprint(:delete, normalized_key, nil, expected, related_versions) unless request_uid.nil?
+          commit_request(request_uid, fingerprint, :delete, normalized_key) do
+            current = current_object(normalized_key)
+            raise NotFound, normalized_key if current.nil?
 
-          current = @objects[normalized_key]
-          raise NotFound, normalized_key if current.nil?
+            check_precondition!(normalized_key, current, expected)
+            check_related_versions!(normalized_key, related_versions)
+            unreadable = current.is_a?(CBORRecord::Unreadable)
+            if unreadable && !delete_corrupt
+              raise CorruptObject.new(normalized_key, resource_version: object_revision(current))
+            elsif delete_corrupt && !unreadable
+              raise Conflict.new(normalized_key, "record is readable")
+            end
 
-          check_precondition!(normalized_key, current, expected)
-
-          committed = commit_locked(:deleted, normalized_key, current)
-          remember_request(request_uid, fingerprint, :delete, normalized_key, committed)
-          immutable_response(committed)
+            commit_locked(:deleted, normalized_key, current)
+          end
         end
       end
 
       private
+
+      def commit_replacement(key, expected, replay_expected, request_uid, related_versions)
+        key = normalize_key(key)
+        uid = -normalize_request_uid(request_uid) unless request_uid.nil?
+        fingerprint = request_fingerprint(:guaranteed_update, key, nil, replay_expected, related_versions) if uid
+        with_request_lock(uid) do
+          @monitor.synchronize do
+            commit_request(uid, fingerprint, :guaranteed_update, key) do
+              current = current_object(key)
+              raise NotFound, key unless current
+
+              check_precondition!(key, current, expected)
+              candidate = yield
+              check_related_versions!(key, related_versions)
+              commit_locked(:modified, key, candidate)
+            end
+          end
+        end
+      end
 
       def normalize_key(key)
         normalized = String(key)
@@ -154,8 +170,7 @@ module Rubernetes
       def normalize_object(object)
         raise ArgumentError, "API object must be a Hash" unless object.is_a?(Hash)
 
-        copy = MemoryStoreSupport.deep_dup(object)
-        validate_string_keys!(copy)
+        copy = MemoryStoreSupport.deep_dup(object, check_keys: true)
         metadata = copy["metadata"]
         if metadata.nil?
           copy["metadata"] = {}
@@ -163,28 +178,6 @@ module Rubernetes
           raise ArgumentError, "API object metadata must be a Hash"
         end
         copy
-      end
-
-      def validate_string_keys!(value, seen = nil)
-        return unless value.is_a?(Hash) || value.is_a?(Array)
-
-        seen ||= {}.compare_by_identity
-        raise ArgumentError, "API object must not contain cycles" if seen.key?(value)
-
-        seen[value] = true
-        begin
-          if value.is_a?(Hash)
-            value.each do |key, child|
-              raise ArgumentError, "API object Hash keys must be Strings" unless key.is_a?(String)
-
-              validate_string_keys!(child, seen)
-            end
-          else
-            value.each { |child| validate_string_keys!(child, seen) }
-          end
-        ensure
-          seen.delete(value)
-        end
       end
 
       # The object committed is normalize_object's private copy in the create
@@ -198,8 +191,9 @@ module Rubernetes
         MemoryStoreSupport.deep_freeze(copy)
       end
 
-      def immutable_response(object)
-        MemoryStoreSupport.immutable_copy(object)
+      def write_precondition(prec, precondition, resource_version)
+        prec = precondition if prec.nil?
+        normalize_precondition(prec.nil? ? resource_version : prec)
       end
 
       def normalize_precondition(value)
@@ -250,22 +244,33 @@ module Rubernetes
         )
       end
 
+      # Invoked under the commit lock. A nil version checks that the related
+      # key is absent, so another writer can't insert it before this commit.
+      def check_related_versions!(key, versions)
+        versions&.each do |related, expected|
+          current = current_object(related)&.dig("metadata", "resourceVersion")
+          next if current == expected
+
+          raise Conflict.new(key, "related key #{related} changed")
+        end
+      end
+
       def guaranteed_update_with_retry(key, expected, request_uid, retries, allow_nil_result,
-                                       replay_expected = expected, &)
-        fingerprint = request_fingerprint(:guaranteed_update, key, nil, replay_expected)
-        @monitor.synchronize do
-          replay = replay_request(request_uid, fingerprint, :guaranteed_update, key)
+                                       replay_expected, related_versions:, &)
+        if request_uid
+          fingerprint = request_fingerprint(:guaranteed_update, key, nil, replay_expected, related_versions)
+          replay = @monitor.synchronize { replay_request(request_uid, fingerprint, :guaranteed_update, key) }
           return replay unless replay.equal?(NO_REPLAY)
         end
 
         attempt = 0
         loop do
           current, observed_revision = @monitor.synchronize do
-            current_object = @objects[key]
-            raise NotFound, key if current_object.nil?
+            observed = current_object(key)
+            raise NotFound, key unless observed
 
-            check_precondition!(key, current_object, expected)
-            [MemoryStoreSupport.deep_dup(current_object), object_revision(current_object)]
+            check_precondition!(key, observed, expected)
+            [MemoryStoreSupport.deep_dup(observed), object_revision(observed)]
           end
 
           candidate = yield(current)
@@ -274,21 +279,20 @@ module Rubernetes
 
           candidate = normalize_object(candidate)
 
-          committed = @monitor.synchronize do
-            latest = @objects[key]
-            latest_revision = latest && object_revision(latest)
-            if latest.nil? || latest_revision != observed_revision
-              nil
-            else
-              check_precondition!(key, latest, expected)
-              commit_locked(:modified, key, candidate)
-            end
-          end
+          @monitor.synchronize do
+            # A create or delete can claim this UID while the update block runs.
+            replay = replay_request(request_uid, fingerprint, :guaranteed_update, key)
+            return replay unless replay.equal?(NO_REPLAY)
 
-          unless committed.nil?
-            @monitor.synchronize do
+            latest = current_object(key)
+            latest_revision = latest && object_revision(latest)
+            if latest && latest_revision == observed_revision
+              check_precondition!(key, latest, expected)
+              check_related_versions!(key, related_versions)
+
+              committed = commit_locked(:modified, key, candidate)
               remember_request(request_uid, fingerprint, :guaranteed_update, key, committed)
-              return immutable_response(committed)
+              return committed
             end
           end
 
@@ -305,15 +309,22 @@ module Rubernetes
       end
 
       def commit_locked(type, key, object)
+        ensure_writes_enabled!
+
         @revision += 1
         timestamp = clock_value
-        old_object = @objects[key]
+        old_object = current_object(key)
         committed_object = stamp_object(object, @revision)
-        @sorted_keys = nil unless @known_keys.key?(key)
-        @known_keys[key] = true
-        @resource_revisions[resource_bucket(key)] = @revision
-        @objects[key] = type == :deleted ? nil : committed_object
-        @versions[key] << [@revision, type == :deleted ? nil : committed_object]
+        bucket = resource_bucket(key)
+        @resource_revisions[bucket] = @revision if bucket
+        if type == :deleted
+          entries = @deleted_versions[key] = @live_versions.delete(key)
+          entries << [@revision, nil]
+        else
+          entries = @live_versions[key] ||= @deleted_versions.delete(key) || []
+          @sorted_keys = nil if entries.empty?
+          entries << [@revision, committed_object]
+        end
         mutation = Mutation.new(
           type: type,
           key: key,
@@ -327,29 +338,36 @@ module Rubernetes
         )
         @history << mutation
         # One size estimate for every watcher rather than a JSON encoding each.
-        bytesize = @watchers.empty? ? nil : JSON.generate(committed_object || {}).bytesize + 64
+        bytesize = nil
         terminated = 0
-        @watchers.delete_if do |_watcher_id, watcher|
+        @watchers.delete_if do |watcher, _|
+          next false unless watcher.closed? || key.start_with?(watcher.prefix)
+
+          bytesize ||= JSON.generate(committed_object).bytesize + 64
           delivered = watcher.enqueue(mutation, bytesize: bytesize)
           # A watcher whose buffer is full is closed rather than waited for
           # (cacheWatcher.add's closeFunc).
           terminated += 1 if !delivered && watcher.overflowed?
+          record_sharded_watch(watcher, -1) if watcher.closed?
           watcher.closed?
         end
         record_commit(key, terminated) if @metrics
-        # etcd auto-compaction: once per retention window every key's old
-        # versions go, not only the key just written.  Pruning only the
-        # written key left every version of every object that stopped
-        # changing -- deleted Pods above all -- resident for ever, and a
-        # conformance run grew each replica past 2 GB.
+        # The compatibility policy periodically prunes all key histories and
+        # request results. The longer-window policy prunes expired keys and
+        # requests incrementally as the compaction boundary advances.
         target = compaction_target_locked(now: timestamp)
-        if @history_seconds && (@last_full_compaction_at.nil? || timestamp - @last_full_compaction_at >= @history_seconds)
+        if !@retain_longer_window && @history_seconds &&
+           (@last_full_compaction_at.nil? || timestamp - @last_full_compaction_at >= @history_seconds)
           @last_full_compaction_at = timestamp
           compact_locked!(target, prune_all_versions: true)
         else
-          compact_locked!(target, key_to_prune: key)
+          compact_locked!(target)
         end
         mutation.object
+      end
+
+      def ensure_writes_enabled!
+        raise Unavailable, "datastore writes are paused for migration" if @write_pause
       end
     end
   end
