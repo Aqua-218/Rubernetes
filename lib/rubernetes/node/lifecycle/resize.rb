@@ -17,6 +17,13 @@ module Rubernetes
           end
         end
 
+        def resize_while_initializing(record, desired)
+          return if @resize_feature_gates["InPlacePodVerticalScalingInitContainers"] == false
+          return unless PodResize.resources_changed?(record[:pod], desired) && resize_only_change?(record[:pod], desired)
+
+          resize_pod(record, desired)
+        end
+
         # InPlacePodVerticalScaling: the only difference between the running
         # Pod and the desired one is container resources.
         def resize_only_change?(current, desired)
@@ -42,6 +49,12 @@ module Rubernetes
         # PodResizeInProgress while it runs and, on failure (a memory limit
         # below current usage), until the next attempt.
         def resize_pod(record, pod)
+          @allocation_mutex.synchronize { resize_pod_with_allocation(record, pod) }
+        end
+
+        # The next admission must see the new allocation after actuation has
+        # recorded it. Pod workers may otherwise all spend the same capacity.
+        def resize_pod_with_allocation(record, pod)
           timing = {}
           object = normalize_pod(pod)
           allocated = record[:pod]
@@ -103,9 +116,17 @@ module Rubernetes
         # True when the resize waits for that reason.
         def defer_refused_resize(record, object, generation)
           decision = resize_admission(record, object)
-          return false if decision.nil? || Helpers.success_result?(decision)
+          return false if decision.nil?
 
-          message = value_reports?(decision, :message) ? decision.message.to_s : Helpers.key(decision, "message", "").to_s
+          if Helpers.success_result?(decision)
+            earlier = earlier_pending_resize(record, object)
+            return false unless earlier
+
+            schedule_wakeup(earlier[:uid], 0)
+            message = "Waiting for an earlier Pod resize"
+          else
+            message = value_reports?(decision, :message) ? decision.message.to_s : Helpers.key(decision, "message", "").to_s
+          end
           previous = record[:resize_pending]
           record[:resize_pending] = {"type" => "PodResizePending", "reason" => "Deferred", "message" => message,
                                      "observedGeneration" => generation,
@@ -115,6 +136,51 @@ module Rubernetes
           end
           update_status(object, record)
           true
+        end
+
+        # allocation manager sortPendingResizes: decreases, then Pod priority,
+        # Guaranteed QoS, and time spent deferred. An earlier request that
+        # still cannot fit leaves room for this one to use.
+        def earlier_pending_resize(record, object)
+          key = resize_order(record, object)
+          contenders = @mutex.synchronize do
+            @records.values.select do |candidate|
+              !candidate.equal?(record) && candidate.dig(:resize_pending, "reason") == "Deferred"
+            end
+          end
+          candidates = contenders.filter_map do |candidate|
+            desired = pending_resize_target(candidate)
+            next unless desired
+
+            candidate_key = resize_order(candidate, desired)
+            [candidate_key, candidate, desired] if (candidate_key <=> key).negative?
+          end
+          candidates.sort_by(&:first).each do |_, candidate, desired|
+            return candidate if Helpers.success_result?(resize_admission(candidate, desired))
+          end
+          nil
+        end
+
+        def pending_resize_target(candidate)
+          return if candidate[:config_removed] || !%w[Running WorkloadStopped].include?(candidate[:state])
+
+          desired = @desired_pod_lookup ? @desired_pod_lookup.call(candidate[:uid]) : candidate[:resize_requested]
+          return unless desired && !deletion_requested?(desired) && PodResize.resources_changed?(candidate[:pod], desired)
+          return unless resize_only_change?(candidate[:pod], desired)
+
+          desired
+        end
+
+        def resize_order(record, desired)
+          pod_level = @resize_feature_gates.fetch("PodLevelResources", true)
+          before = ResourceHelpers.pod_requests(record[:pod], skip_pod_level: !pod_level)
+          after = ResourceHelpers.pod_requests(desired, skip_pod_level: !pod_level)
+          increases = ResourceHelpers::QOS_RESOURCES.any? do |name|
+            (after[name]&.value || 0) > (before[name]&.value || 0)
+          end
+          guaranteed = ResourceHelpers.qos_class(desired, pod_level_resources: pod_level) == "Guaranteed"
+          since = record.dig(:resize_pending, "lastTransitionTime")
+          [increases ? 1 : 0, -desired.dig("spec", "priority").to_i, guaranteed ? 0 : 1, since || "9999", record[:uid]]
         end
 
         # doPodResizeAction: PodResizeInProgress while the cgroups are
@@ -159,7 +225,8 @@ module Rubernetes
           # policies cannot be read the resize goes on to admission.
           best_effort do
             PodResize.infeasible(allocated, desired, cpu_policy: @container_manager.cpu_manager_policy,
-                                                     memory_policy: @container_manager.memory_manager_policy)
+                                                     memory_policy: @container_manager.memory_manager_policy,
+                                                     feature_gates: @resize_feature_gates)
           end
         end
 
@@ -217,6 +284,7 @@ module Rubernetes
         def resize_containers(record, pod)
           object = normalize_pod(pod)
           spec = Helpers.key(object, "spec", {})
+          generation = pod_generation(object)
           %w[containers initContainers].each do |field|
             Array(Helpers.key(spec, field, [])).each do |definition|
               name = Helpers.key(definition, "name", "").to_s
@@ -224,21 +292,18 @@ module Rubernetes
               next if entry.nil?
 
               resources = Helpers.deep_copy(Helpers.key(definition, "resources", {}) || {})
-              next if Helpers.deep_copy(Helpers.key(entry[:spec], "resources", {}) || {}) == resources
+              already_restarted = generation && entry[:resize_restart_generation] == generation
+              restart_needed = entry[:started] && !already_restarted &&
+                               resize_requires_restart?(definition, entry, resources, current_pod: record[:pod], desired_pod: object)
+              next if !restart_needed && (Helpers.key(entry[:spec], "resources", {}) || {}) == resources
 
-              # container.resizePolicy: a resource whose policy is
-              # RestartContainer cannot be changed in place -- the container is
-              # restarted with the new value instead (types.go: "resize the
-              # container in-place" vs "RestartContainer").  The field was
-              # validated by the API server and read by nobody, so a container
-              # that asked to be restarted for a memory change was silently
-              # resized in place.
-              restart_needed = resize_requires_restart?(definition, entry, resources)
               applied = nil
-              if restart_needed && entry[:started]
+              if restart_needed
                 event(record, "container.resize_restart", name: name, container_id: entry[:id])
-                entry[:spec] = Helpers.immutable(Helpers.deep_copy(entry[:spec]).merge("resources" => resources))
-                restart_container(object, record, entry, reason: "ResizeRestart")
+                updated_spec = Helpers.immutable(Helpers.deep_copy(entry[:spec]).merge("resources" => resources))
+                raise LifecycleError, "container #{name.inspect} is already restarting" unless restart_with_container_spec(object, record, entry, updated_spec)
+
+                entry[:resize_restart_generation] = generation
                 next
               end
               if entry[:started] && runtime_supports?(:update_container_resources)
@@ -256,28 +321,38 @@ module Rubernetes
 
         # Which resources changed, and does any of them carry
         # resizePolicy: RestartContainer?
-        def resize_requires_restart?(definition, entry, desired_resources)
+        def resize_requires_restart?(definition, entry, desired_resources, current_pod: nil, desired_pod: nil)
           policies = Array(Helpers.key(definition, "resizePolicy", [])).to_h do |rule|
             [Helpers.key(rule, "resourceName", "").to_s, Helpers.key(rule, "restartPolicy", "").to_s]
           end
           return false if policies.empty?
 
-          current = Helpers.deep_copy(Helpers.key(entry[:spec], "resources", {}) || {})
-          changed_resource_names(current, desired_resources).any? do |name|
+          current_pod = desired_pod = nil if @resize_feature_gates&.fetch("InPlacePodLevelResourcesVerticalScaling", true) == false
+          current = Helpers.key(entry[:spec], "resources", {}) || {}
+          changed_resource_names(current, desired_resources, current_pod: current_pod, desired_pod: desired_pod).any? do |name|
             policies[name].to_s == "RestartContainer"
           end
         end
 
-        def changed_resource_names(current, desired)
-          names = []
-          %w[requests limits].each do |section|
-            before = Helpers.key(current, section, {}) || {}
-            after = Helpers.key(desired, section, {}) || {}
-            (before.keys | after.keys).each do |key|
-              names << key.to_s if before[key].to_s != after[key].to_s
-            end
+        def changed_resource_names(current, desired, current_pod: nil, desired_pod: nil)
+          %w[requests limits].flat_map do |section|
+            before = container_resize_resource_values(current, current_pod, section)
+            after = container_resize_resource_values(desired, desired_pod, section)
+            (before.keys | after.keys).reject { |name| before.fetch(name, 0) == after.fetch(name, 0) }
+          end.uniq
+        end
+
+        # kubeutil.GetLimits uses Pod CPU and memory limits for a container
+        # only when that container's corresponding limit is unset or zero.
+        def container_resize_resource_values(resources, pod, section)
+          own = ResourceHelpers.resource_list(Helpers.key(resources, section, {})).transform_values(&:value)
+          return own unless pod && section == "limits"
+
+          inherited = ResourceHelpers.resource_list(ResourceHelpers.pod_resources(pod)&.dig("limits"))
+          ResourceHelpers::QOS_RESOURCES.each do |name|
+            own[name] = inherited[name].value if own.fetch(name, 0).zero? && inherited[name]
           end
-          names.uniq
+          own
         end
       end
     end
