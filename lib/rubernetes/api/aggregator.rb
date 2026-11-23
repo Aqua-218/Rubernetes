@@ -8,6 +8,7 @@ require "openssl"
 require "uri"
 
 require_relative "response"
+require_relative "aggregator/openapi"
 
 module Rubernetes
   module API
@@ -19,6 +20,8 @@ module Rubernetes
     # is fetched from the backend and merged into /apis.  Availability is
     # reported through the APIService status Available condition.
     class Aggregator
+      include OpenAPI
+
       GROUP = "apiregistration.k8s.io"
       RESOURCE = "apiservices"
       MAX_BODY_BYTES = 3 * 1024 * 1024
@@ -29,17 +32,6 @@ module Rubernetes
       # (handler_discovery) -- are made as system:kube-aggregator in
       # system:masters, through the front-proxy client certificate.
       AGGREGATOR_IDENTITY = {"X-Remote-User" => "system:kube-aggregator", "X-Remote-Group" => "system:masters"}.freeze
-
-      # Net::HTTP writes a repeated field as one comma-joined line, so two
-      # groups reached the backend as the single group "a, b" and lost
-      # system:masters.  client-go sends one line per value; so do we.
-      module RepeatedHeaderLines
-        def each_capitalized
-          return enum_for(__method__) unless block_given?
-
-          @header.each { |key, values| values.each { |value| yield capitalize(key), value } }
-        end
-      end
 
       Backend = Struct.new(:name, :group, :version, :priority, :service_namespace, :service_name, :port, :ca_bundle, :insecure,
                            keyword_init: true)
@@ -52,13 +44,18 @@ module Rubernetes
         @clock = clock
         @backends = {}
         @availability = {}
+        @openapi_paths = {}
+        @converted_openapi = {}
         @mutex = Mutex.new
       end
 
       # kube-aggregator's proxy handler answers "service unavailable" for an
       # APIService whose Available condition is false (plain text, 503).
       def mark_available(name, available)
-        @mutex.synchronize { @availability[name] = available }
+        @mutex.synchronize do
+          forget_openapi(@backends[name]) unless available
+          @availability[name] = available
+        end
       end
 
       def available_backend?(backend)
@@ -82,13 +79,19 @@ module Rubernetes
         @mutex.synchronize do
           if service.nil? || apiservice.dig("metadata", "deletionTimestamp")
             # Local APIServices (no service) describe built-in groups; nothing to proxy.
-            @backends.delete(name)
+            forget_openapi(@backends.delete(name))
+            @availability.delete(name)
             return nil
           end
-          @backends[name] = Backend.new(name: name, group: spec["group"].to_s, version: spec["version"].to_s,
-                                        priority: [spec["groupPriorityMinimum"].to_i, spec["versionPriority"].to_i],
-                                        service_namespace: service["namespace"], service_name: service["name"], port: service["port"] || 443,
-                                        ca_bundle: spec["caBundle"], insecure: spec["insecureSkipTLSVerify"] == true)
+          backend = Backend.new(name: name, group: spec["group"].to_s, version: spec["version"].to_s,
+                                priority: [spec["groupPriorityMinimum"].to_i, spec["versionPriority"].to_i],
+                                service_namespace: service["namespace"], service_name: service["name"], port: service["port"] || 443,
+                                ca_bundle: spec["caBundle"], insecure: spec["insecureSkipTLSVerify"] == true)
+          return @backends[name] if @backends[name] == backend
+
+          forget_openapi(@backends[name])
+          @availability.delete(name)
+          @backends[name] = backend
         end
       end
 
@@ -98,7 +101,7 @@ module Rubernetes
 
       def remove(name)
         @mutex.synchronize do
-          @backends.delete(name)
+          forget_openapi(@backends.delete(name))
           @availability.delete(name)
         end
       end
@@ -143,7 +146,7 @@ module Rubernetes
           return Response.new(status: 405, body: Status.failure(message: "method not allowed", code: 405, reason: "MethodNotAllowed"))
         end
         target = query ? "#{path}?#{query}" : path
-        outbound = klass.new(target).extend(RepeatedHeaderLines)
+        outbound = klass.new(target).extend(Request::RepeatedHeaderLines)
         forwarded_headers(request).each do |name, value|
           if value.is_a?(Array)
             outbound.delete(name)
@@ -204,9 +207,7 @@ module Rubernetes
       # kube-aggregator's x509 and discovery metrics, on the process-wide
       # registry (the apiserver's /metrics merges it): a backend serving
       # certificate without SANs or signed with SHA-1, counted per proxied
-      # request; and every aggregated discovery document built.  The peer
-      # aggregated discovery counters are for the peer proxy, which does not
-      # exist here.
+      # request; and every aggregated APIService discovery document built.
       def shared_metrics
         return nil unless defined?(Rubernetes::Observability::Metrics)
 
@@ -416,11 +417,7 @@ module Rubernetes
             http.verify_mode = OpenSSL::SSL::VERIFY_NONE
           else
             http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-            if backend.ca_bundle
-              store = OpenSSL::X509::Store.new
-              OpenSSL::X509::Certificate.load(backend.ca_bundle.unpack1("m0")).each { |certificate| store.add_cert(certificate) }
-              http.cert_store = store
-            end
+            http.cert_store = Security::Egress.kubernetes_cert_store(backend.ca_bundle) unless backend.ca_bundle.to_s.empty?
           end
           http.cert = @client_certificate if @client_certificate
           http.key = @client_key if @client_key
