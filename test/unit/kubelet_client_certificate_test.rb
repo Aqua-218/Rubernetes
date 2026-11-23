@@ -122,6 +122,58 @@ class KubeletClientCertificateTest < Minitest::Test
     end
   end
 
+  def test_only_the_bootstrapped_client_loads_and_reloads_its_rotating_pair
+    Dir.mktmpdir do |directory|
+      store = manager(directory)
+      kubeconfig = File.join(directory, "kubelet.conf")
+      server = "https://127.0.0.1:6443"
+      store.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: server)
+
+      client_type = Rubernetes::Client::KubernetesClient
+      assert_raises(Rubernetes::Client::ConfigurationError) { client_type.from_kubeconfig(path: kubeconfig) }
+
+      client = client_type.from_kubeconfig(path: kubeconfig, client_certificate_store: store)
+      first = configure_tls(client, server)
+
+      assert_equal store.current_certificate.serial, first.cert.serial
+      assert first.cert.check_private_key(first.key)
+
+      @time += 1
+      rotated = store.rotate!(@signer)
+      client.rest_client.reset_connections!
+      replacement = configure_tls(client, server)
+
+      refute_equal first.cert.serial, replacement.cert.serial
+      assert_equal rotated.serial, replacement.cert.serial
+      assert replacement.cert.check_private_key(replacement.key)
+
+      restarted = manager(directory)
+      restarted.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: server)
+      restarted_client = client_type.from_kubeconfig(path: kubeconfig, client_certificate_store: restarted)
+
+      assert_equal rotated.serial, configure_tls(restarted_client, server).cert.serial
+      assert_equal 2, @signer.requests.length
+    end
+  end
+
+  def test_bootstrap_replaces_an_incomplete_pair_from_disk
+    Dir.mktmpdir do |directory|
+      store = manager(directory)
+      kubeconfig = File.join(directory, "kubelet.conf")
+      server = "https://127.0.0.1:6443"
+      store.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: server)
+      original = store.current_certificate
+      File.write(File.realpath(store.current_path), original.to_pem)
+
+      reloaded = manager(directory)
+      reloaded.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: server)
+
+      refute_nil reloaded.current_certificate
+      refute_equal original.serial, reloaded.current_certificate.serial
+      assert_equal 2, @signer.requests.length
+    end
+  end
+
   def test_a_foreign_certificate_forces_a_new_request
     Dir.mktmpdir do |directory|
       other = Manager.new(node_name: "worker-1", cert_dir: File.join(directory, "pki"), clock: @now, random: @random, sleeper: ->(_) {})
@@ -158,5 +210,12 @@ class KubeletClientCertificateTest < Minitest::Test
     assert_equal 0, client.connection_generation
     assert_equal [], client.reset_connections!
     assert_equal 1, client.connection_generation
+  end
+
+  private
+
+  def configure_tls(client, server)
+    uri = URI(server)
+    client.rest_client.send(:configure_http, Net::HTTP.new(uri.host, uri.port, nil), uri)
   end
 end
