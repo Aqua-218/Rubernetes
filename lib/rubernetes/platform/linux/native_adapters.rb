@@ -83,10 +83,10 @@ module Rubernetes
       module NativeAdapters
         module_function
 
-        def for_profile(profile:, sandbox_root:, cgroup_root:, architecture: nil, landlock_roots: [])
-          namespace = NamespaceAdapter.new
+        def for_profile(profile:, sandbox_root:, cgroup_root:, architecture: nil, landlock_roots: [], kubelet_layout: nil)
+          namespace = NamespaceAdapter.new(supervisor_cgroup_root: cgroup_root)
           filesystem = OverlayFilesystemAdapter.new(root: sandbox_root, namespace_adapter: namespace)
-          cgroup = CgroupAdapter.new(root: cgroup_root)
+          cgroup = CgroupAdapter.new(root: cgroup_root, kubelet_layout: kubelet_layout)
           security = SecurityAdapter.new(landlock_roots: landlock_roots)
           process = ProcessGateAdapter.new(namespace_adapter: namespace)
           streams = NamespaceConnector.new(process_adapter: process, cgroup_adapter: cgroup, namespace_adapter: namespace)
