@@ -352,7 +352,7 @@ module Rubernetes
           schema = resolve_schema(gvk)
           return [false, nil] if schema.nil?
 
-          decl = schema_decl_type(schema, true)
+          decl = SchemaTypes.schema_decl_type(schema, true)
           [true, decl&.assign_name("#{gvk[2]}#{@type_name_suffix.call}")]
         end
 
@@ -418,79 +418,84 @@ module Rubernetes
           nil
         end
 
-        def schema_type(schema)
-          type = schema["type"]
-          type.is_a?(Array) ? type.first.to_s : type.to_s
-        end
+        # SchemaDeclType is shared by admission policy and CRD rules.
+        module SchemaTypes
+          module_function
 
-        def extension?(schema, key) = schema[key] == true
-
-        def int_or_string?(schema) = schema["format"] == "int-or-string" || extension?(schema, "x-kubernetes-int-or-string")
-
-        # SchemaDeclType.
-        def schema_decl_type(schema, resource_root)
-          return nil unless schema.is_a?(Hash)
-          return DeclType.new(:simple, "dyn", nil, nil, nil, C::DYN) if int_or_string?(schema)
-
-          schema = with_type_and_object_meta(schema) if resource_root
-          case schema_type(schema)
-          when "array"
-            items = schema["items"]
-            return nil unless items.is_a?(Hash)
-
-            elem = schema_decl_type(items, extension?(items, "x-kubernetes-embedded-resource"))
-            elem && DeclType.new(:list, "list", nil, nil, elem, nil)
-          when "object"
-            additional = schema["additionalProperties"]
-            if additional.is_a?(Hash)
-              elem = schema_decl_type(additional, extension?(additional, "x-kubernetes-embedded-resource"))
-              return elem && DeclType.new(:map, "map", nil, DeclType.new(:simple, "string", nil, nil, nil, C::STRING), elem, nil)
-            end
-            fields = {}
-            (schema["properties"] || {}).each do |name, property|
-              type = schema_decl_type(property, property.is_a?(Hash) && extension?(property, "x-kubernetes-embedded-resource"))
-              next if type.nil?
-
-              escaped = escape(name)
-              fields[escaped] = type if escaped
-            end
-            DeclType.new(:object, "object", fields, nil, nil, nil)
-          when "string"
-            DeclType.new(:simple, "string", nil, nil, nil, STRING_FORMATS.fetch(schema["format"].to_s, C::STRING))
-          else
-            simple = SIMPLE[schema_type(schema)]
-            simple && DeclType.new(:simple, schema_type(schema), nil, nil, nil, simple)
-          end
-        end
-
-        def with_type_and_object_meta(schema)
-          properties = schema["properties"]
-          if properties.is_a?(Hash) && string_typed?(properties["kind"]) && string_typed?(properties["apiVersion"]) &&
-             properties["metadata"].is_a?(Hash) && schema_type(properties["metadata"]) == "object" &&
-             properties.dig("metadata", "properties").is_a?(Hash) &&
-             string_typed?(properties.dig("metadata", "properties", "name")) &&
-             string_typed?(properties.dig("metadata", "properties", "generateName"))
-            return schema
+          def schema_type(schema)
+            type = schema["type"]
+            type.is_a?(Array) ? type.first.to_s : type.to_s
           end
 
-          string = {"type" => "string"}
-          schema.merge("properties" => (properties || {}).merge(
-            "kind" => string, "apiVersion" => string,
-            "metadata" => {"type" => "object", "properties" => {"name" => string, "generateName" => string}}
-          ))
-        end
+          def extension?(schema, key) = schema[key] == true
 
-        def string_typed?(schema) = schema.is_a?(Hash) && Array(schema["type"]).include?("string")
+          def int_or_string?(schema) = schema["format"] == "int-or-string" || extension?(schema, "x-kubernetes-int-or-string")
 
-        # apiservercel.Escape.
-        def escape(name)
-          return nil if name.empty? || name[0].match?(/[0-9]/)
-          return "__#{name}__" if CEL_RESERVED.include?(name)
-          return nil unless name.match?(%r{\A[A-Za-z0-9_./-]*\z})
-          return name unless name.match?(%r{[/.-]|__})
+          # SchemaDeclType.
+          def schema_decl_type(schema, resource_root)
+            return nil unless schema.is_a?(Hash)
+            return DeclType.new(:simple, "dyn", nil, nil, nil, C::DYN) if int_or_string?(schema)
 
-          name.gsub(%r{__|[-./]}) do |match|
-            {"__" => "__underscores__", "." => "__dot__", "-" => "__dash__", "/" => "__slash__"}.fetch(match)
+            schema = with_type_and_object_meta(schema) if resource_root
+            case schema_type(schema)
+            when "array"
+              items = schema["items"]
+              return nil unless items.is_a?(Hash)
+
+              elem = schema_decl_type(items, extension?(items, "x-kubernetes-embedded-resource"))
+              elem && DeclType.new(:list, "list", nil, nil, elem, nil)
+            when "object"
+              additional = schema["additionalProperties"]
+              if additional.is_a?(Hash)
+                elem = schema_decl_type(additional, extension?(additional, "x-kubernetes-embedded-resource"))
+                return elem && DeclType.new(:map, "map", nil, DeclType.new(:simple, "string", nil, nil, nil, C::STRING), elem, nil)
+              end
+              fields = {}
+              (schema["properties"] || {}).each do |name, property|
+                type = schema_decl_type(property, property.is_a?(Hash) && extension?(property, "x-kubernetes-embedded-resource"))
+                next if type.nil?
+
+                escaped = escape(name)
+                fields[escaped] = type if escaped
+              end
+              DeclType.new(:object, "object", fields, nil, nil, nil)
+            when "string"
+              DeclType.new(:simple, "string", nil, nil, nil, STRING_FORMATS.fetch(schema["format"].to_s, C::STRING))
+            else
+              simple = SIMPLE[schema_type(schema)]
+              simple && DeclType.new(:simple, schema_type(schema), nil, nil, nil, simple)
+            end
+          end
+
+          def with_type_and_object_meta(schema)
+            properties = schema["properties"]
+            if properties.is_a?(Hash) && string_typed?(properties["kind"]) && string_typed?(properties["apiVersion"]) &&
+               properties["metadata"].is_a?(Hash) && schema_type(properties["metadata"]) == "object" &&
+               properties.dig("metadata", "properties").is_a?(Hash) &&
+               string_typed?(properties.dig("metadata", "properties", "name")) &&
+               string_typed?(properties.dig("metadata", "properties", "generateName"))
+              return schema
+            end
+
+            string = {"type" => "string"}
+            schema.merge("properties" => (properties || {}).merge(
+              "kind" => string, "apiVersion" => string,
+              "metadata" => {"type" => "object", "properties" => {"name" => string, "generateName" => string}}
+            ))
+          end
+
+          def string_typed?(schema) = schema.is_a?(Hash) && Array(schema["type"]).include?("string")
+
+          # apiservercel.Escape.
+          def escape(name)
+            return nil if name.empty? || name[0].match?(/[0-9]/)
+            return "__#{name}__" if CEL_RESERVED.include?(name)
+            return nil unless name.match?(%r{\A[A-Za-z0-9_./-]*\z})
+            return name unless name.match?(%r{[/.-]|__})
+
+            name.gsub(%r{__|[-./]}) do |match|
+              {"__" => "__underscores__", "." => "__dot__", "-" => "__dash__", "/" => "__slash__"}.fetch(match)
+            end
           end
         end
       end
