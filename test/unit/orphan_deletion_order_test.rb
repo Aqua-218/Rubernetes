@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/api"
+require "rubernetes/controller"
 
 # An orphaning delete has to mark the owner as being deleted BEFORE it
 # releases the dependents.  A controller that sees a released Pod matching its
@@ -47,8 +48,8 @@ class OrphanDeletionOrderTest < Minitest::Test
     @store.writes&.clear
   end
 
-  def call(method, path, body = nil, query: nil)
-    @server.call(method: method, path: path, body: body, query: query, headers: {})
+  def call(method, path, body = nil, query: nil, headers: {})
+    @server.call(method: method, path: path, body: body, query: query, headers: headers)
   end
 
   def orphan_delete
@@ -76,26 +77,33 @@ class OrphanDeletionOrderTest < Minitest::Test
     adapter = @server.instance_variable_get(:@store)
     original = adapter.method(:delete)
     adapter.define_singleton_method(:delete) do |resource:, namespace:, name:, **options|
-      if resource.kind == "ConfigMap" && name == "owner"
+      if resource.kind == "Pod" && name == "p0"
         original.call(resource: resource, namespace: namespace, name: name)
-        raise Rubernetes::API::MemoryStore::NotFound, "configmaps \"owner\" not found"
+        raise Rubernetes::API::MemoryStore::NotFound, "pods \"p0\" not found"
       end
       original.call(resource: resource, namespace: namespace, name: name, **options)
     end
 
-    response = orphan_delete
+    response = call("DELETE", "/api/v1/namespaces/dev/pods/p0", {"gracePeriodSeconds" => 0})
 
     assert_includes [200, 202], response.status, response.body.inspect
-    assert_equal 404, call("GET", "/api/v1/namespaces/dev/configmaps/owner").status
+    assert_equal 404, call("GET", "/api/v1/namespaces/dev/pods/p0").status
   end
 
   def test_the_dependents_outlive_their_owner
-    orphan_delete
+    marked = orphan_delete.body
 
     pods = call("GET", "/api/v1/namespaces/dev/pods").body.fetch("items")
 
     assert_equal %w[p0 p1], pods.map { |pod| pod.dig("metadata", "name") }.sort
     assert(pods.all? { |pod| Array(pod.dig("metadata", "ownerReferences")).empty? })
+    assert_equal ["orphan"], marked.dig("metadata", "finalizers")
+    collector = Rubernetes::Controller::GarbageCollectorController.new
+    operations = collector.gc_finalizer_operations([marked, *pods], Time.now.utc + 10)
+
+    assert_equal [:json_patch], operations.map(&:action)
+    assert_equal 200, call("PATCH", "/api/v1/namespaces/dev/configmaps/owner", operations.first.patch,
+                           headers: {"Content-Type" => "application/json-patch+json"}).status
     assert_equal 404, call("GET", "/api/v1/namespaces/dev/configmaps/owner").status
   end
 end
