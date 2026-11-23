@@ -184,6 +184,25 @@ class M4ProxyTest < Minitest::Test
     assert_predicate diff.updated, :any?
   end
 
+  def test_service_port_update_replaces_the_routes_for_new_connections
+    @proxy.apply_service(@service)
+    @proxy.apply_endpoint_slice(@slice)
+    packet = {"sourceIP" => "198.51.100.8", "sourcePort" => 10_001,
+              "destinationIP" => "10.96.0.10", "destinationPort" => 80, "protocol" => "TCP"}
+
+    assert_predicate @proxy.route(packet), :success?
+
+    @service["spec"]["ports"].first.merge!("port" => 81, "nodePort" => 30_081)
+    @proxy.apply_service(@service)
+
+    assert_nil @proxy.route(packet.merge("sourcePort" => 10_002))
+    assert_predicate @proxy.route(packet.merge("destinationPort" => 81, "sourcePort" => 10_003)), :success?
+
+    @proxy.delete_service("apps/web")
+
+    assert_nil @proxy.route(packet.merge("destinationPort" => 81, "sourcePort" => 10_004))
+  end
+
   def test_client_ip_affinity_and_conntrack_keep_same_backend
     @proxy.apply_service(@service)
     @proxy.apply_endpoint_slice(@slice)
@@ -194,6 +213,19 @@ class M4ProxyTest < Minitest::Test
 
     assert_predicate first, :success?
     assert_equal first.endpoint.identity, second.endpoint.identity
+  end
+
+  def test_client_ip_affinity_expiry_allows_a_new_endpoint_and_preserves_established_flows
+    @service["spec"]["internalTrafficPolicy"] = "Cluster"
+    @proxy.apply_service(@service)
+    @proxy.apply_endpoint_slice(@slice)
+    packet = {"sourceIP" => "198.51.100.8", "sourcePort" => 10_001,
+              "destinationIP" => "10.96.0.10", "destinationPort" => 80, "protocol" => "TCP"}
+
+    assert_equal "10.1.0.2", @proxy.route(packet, now: 100).address
+    assert_equal "10.1.0.2", @proxy.route(packet.merge("sourcePort" => 10_005), now: 150).address
+    assert_equal "10.1.0.2", @proxy.route(packet, now: 210).address
+    assert_equal "10.1.0.1", @proxy.route(packet.merge("sourcePort" => 10_006), now: 210).address
   end
 
   def test_local_policy_falls_back_to_terminating_only_when_no_healthy_local_endpoint
@@ -358,7 +390,7 @@ class M4ProxyTest < Minitest::Test
     assert_equal "db.example.test", route.hostname
   end
 
-  def test_publish_not_ready_addresses_routes_unready_non_terminating_endpoints
+  def test_slice_readiness_controls_routing_for_services_that_publish_unready_addresses
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "published"},
       "spec" => {"clusterIP" => "10.96.0.30", "publishNotReadyAddresses" => true,
@@ -373,8 +405,12 @@ class M4ProxyTest < Minitest::Test
     @proxy.apply_service(service)
     @proxy.apply_endpoint_slice(slice)
 
-    route = @proxy.route({"sourceIP" => "198.51.100.1", "sourcePort" => 1,
-                          "destinationIP" => "10.96.0.30", "destinationPort" => 80})
+    packet = {"sourceIP" => "198.51.100.1", "sourcePort" => 1, "destinationIP" => "10.96.0.30", "destinationPort" => 80}
+
+    assert_nil @proxy.route(packet), "custom slices keep control of their own readiness"
+    slice.fetch("endpoints").first["conditions"] = {"ready" => true, "serving" => false, "terminating" => true}
+    @proxy.apply_endpoint_slice(slice)
+    route = @proxy.route(packet)
 
     assert_predicate route, :success?
     assert_equal "10.1.0.20", route.address
@@ -449,33 +485,54 @@ class M4ProxyTest < Minitest::Test
     probe.close
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "health-responder"},
-      "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.90", "externalTrafficPolicy" => "Local",
+      "spec" => {"type" => "NodePort", "clusterIPs" => ["10.96.0.90", "fd00::90"], "externalTrafficPolicy" => "Local",
                  "healthCheckNodePort" => health_port,
                  "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30_080, "protocol" => "TCP"}]}
     )
     slice = {
       "metadata" => {"name" => "health-responder-1", "labels" => {"kubernetes.io/service-name" => "health-responder"}},
-      "addressType" => "IPv4", "ports" => [{"port" => 8080, "protocol" => "TCP"}],
+      "addressType" => "IPv4", "ports" => [{"port" => 8080, "protocol" => "TCP"}, {"port" => 8081, "protocol" => "TCP"}],
       "endpoints" => [{"addresses" => ["10.1.0.90"], "nodeName" => "node-a",
                        "conditions" => {"ready" => true, "serving" => true}}]
     }
     proxy = Rubernetes::Proxy::Proxy.new(local_node: "node-a", backend: :nftables)
     proxy.apply_service(service)
     proxy.apply_endpoint_slice(slice)
-    responder = proxy.start_health_check_responder(bind_address: "127.0.0.1")
+    responder = proxy.start_health_check_responder
 
     assert_includes responder.ports, health_port
 
-    request = lambda do
-      socket = TCPSocket.new("127.0.0.1", health_port)
-      socket.write("GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+    request = lambda do |address = "127.0.0.1", method = "GET"|
+      socket = TCPSocket.new(address, health_port)
+      socket.write("#{method} /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
       socket.close_write
       Timeout.timeout(3) { socket.read }
     ensure
       socket&.close
     end
 
-    assert_match(%r{\AHTTP/1\.1 200 OK\r\n}, request.call)
+    headers, body = request.call.split("\r\n\r\n", 2)
+
+    assert_match(%r{\AHTTP/1\.1 200 OK\r\n}, headers)
+    assert_includes headers, "X-Load-Balancing-Endpoint-Weight: 1"
+    assert_equal({"service" => {"namespace" => "default", "name" => "health-responder"},
+                  "localEndpoints" => 1, "serviceProxyHealthy" => true}, JSON.parse(body))
+    assert_equal "", request.call("127.0.0.1", "HEAD").split("\r\n\r\n", 2).last
+    ipv6 = request.call("::1")
+
+    assert_match(%r{\AHTTP/1\.1 503 Service Unavailable\r\n}, ipv6)
+    assert_includes ipv6, "X-Load-Balancing-Endpoint-Weight: 0"
+    now = 0.0
+    metrics = Rubernetes::Proxy::Metrics.new(clock: -> { now })
+    proxy.metrics = metrics
+    metrics.synced(0.01)
+    metrics.sync_queued
+    now = 120.0
+    headers, body = request.call.split("\r\n\r\n", 2)
+
+    assert_match(%r{\AHTTP/1\.1 503 Service Unavailable\r\n}, headers)
+    assert_includes headers, "X-Load-Balancing-Endpoint-Weight: 1"
+    assert_equal false, JSON.parse(body).fetch("serviceProxyHealthy")
 
     unhealthy = Marshal.load(Marshal.dump(slice))
     unhealthy["endpoints"][0]["conditions"] = {"ready" => false, "serving" => false}
@@ -484,6 +541,31 @@ class M4ProxyTest < Minitest::Test
     assert_match(%r{\AHTTP/1\.1 503 Service Unavailable\r\n}, request.call)
   ensure
     proxy&.stop_health_check_responder
+  end
+
+  def test_one_occupied_health_port_does_not_close_other_services_listeners
+    occupied = TCPServer.new("127.0.0.1", 0)
+    available = TCPServer.new("127.0.0.1", 0)
+    blocked_port = occupied.local_address.ip_port
+    working_port = available.local_address.ip_port
+    available.close
+    record = Struct.new(:key, :health_check_node_port)
+    proxy = Struct.new(:services).new([record.new("ns/working", working_port), record.new("ns/blocked", blocked_port)])
+    failures = []
+    responder = Rubernetes::Proxy::HealthCheckResponder.new(proxy: proxy, bind_address: "127.0.0.1") { |*details| failures << details }
+    responder.start
+
+    assert_equal [working_port], responder.ports
+    assert_equal ["ns/blocked", "127.0.0.1", blocked_port], failures.first.take(3)
+    assert_instance_of Errno::EADDRINUSE, failures.first.last
+    occupied.close
+    responder.refresh
+
+    assert_equal [working_port, blocked_port].sort, responder.ports
+  ensure
+    responder&.close
+    occupied&.close
+    available&.close
   end
 
   def test_node_port_update_releases_removed_port_and_type_change_releases_all
