@@ -7,6 +7,7 @@ require "fiddle"
 
 require_relative "errors"
 require_relative "support"
+require_relative "netlink/link_update"
 
 module Rubernetes
   module Network
@@ -14,6 +15,8 @@ module Rubernetes
     # tests and unprivileged controllers can inject a recording adapter, while
     # the default adapter opens AF_NETLINK/NETLINK_ROUTE and checks every ACK.
     class Netlink
+      include LinkUpdate
+
       # A network namespace operation may never reopen a caller supplied
       # pathname.  The runtime proves the holder generation with pidfd and
       # /proc start time, then this lease opens the namespace once and keeps
@@ -151,6 +154,7 @@ module Rubernetes
       NLM_F_MULTI = 0x02
       NLM_F_ACK = 0x04
       NLM_F_ECHO = 0x08
+      NLM_F_DUMP_INTR = 0x10
       NLM_F_REPLACE = 0x100
       NLM_F_EXCL = 0x200
       NLM_F_CREATE = 0x400
@@ -183,6 +187,8 @@ module Rubernetes
       IFLA_IFNAME = 3
       IFLA_MTU = 4
       IFLA_MASTER = 10
+      IFLA_PROTINFO = 12
+      IFLA_BRPORT_MODE = 4
       IFLA_LINKINFO = 18
       IFLA_NET_NS_FD = 28
       IFLA_NEW_IFINDEX = 37
@@ -451,6 +457,9 @@ module Rubernetes
         unless messages.any? { |message| message.type == NLMSG_DONE }
           raise NetlinkError.new("netlink dump did not terminate with NLMSG_DONE", operation: operation, sequence: sequence)
         end
+        if messages.any? { |message| message.flags.to_i.anybits?(NLM_F_DUMP_INTR) }
+          raise NetlinkError.new("kernel interrupted netlink dump", operation: operation, sequence: sequence)
+        end
 
         messages.reject { |message| [NLMSG_DONE, NLMSG_NOOP, NLMSG_ERROR].include?(message.type) }.freeze
       end
@@ -587,54 +596,6 @@ module Rubernetes
         raise NetlinkError.new("failed to observe link state: #{error.message}",
                                errno: error.respond_to?(:errno) ? error.errno : Errno::ENODEV::Errno,
                                operation: "link_state")
-      end
-
-      def link_set(name: nil, index: nil, mtu: nil, up: nil, master: nil, namespace: nil, namespace_fd: nil,
-                   operation: nil, move_namespace: nil, **attributes)
-        validate_namespace_target!(namespace_fd || namespace)
-        validate_namespace_target!(move_namespace)
-        unless kernel_adapter?
-          return legacy_link_set(name: name, index: index, mtu: mtu, up: up, master: master, namespace: namespace,
-                                 namespace_fd: namespace_fd, operation: operation, attributes: attributes)
-        end
-
-        namespace_target = namespace_fd || namespace
-        if namespace_target && move_namespace.nil?
-          begin
-            return with_network_namespace(namespace_target, operation: operation) do
-              link_set(name: name, index: index, mtu: mtu, up: up, master: master, operation: operation, **attributes)
-            end
-          rescue NetlinkError => error
-            # A veth peer may still be in the caller namespace when the
-            # caller asks us to move it.  The target-scoped lookup correctly
-            # fails with ENODEV in that case; retry the RTM_SETLINK against
-            # the source namespace while retaining IFLA_NET_NS_FD.  Any
-            # permission/protocol error remains fail-closed.
-            raise unless [Errno::ENODEV::Errno, Errno::ENOENT::Errno].include?(error.errno)
-
-            move_namespace = namespace_target
-          end
-        end
-
-        link_index = link_index(name || index, "link")
-        flags = if up.nil?
-                  0
-                else
-                  (Support.bool(up) ? IFF_UP : 0)
-                end
-        change = up.nil? ? 0 : IFF_CHANGE_UP
-        payload = ifinfomsg(index: link_index, flags: flags, change: change)
-        link_attributes = []
-        link_attributes << attribute(IFLA_MTU, uint32(mtu, "MTU")) if mtu
-        clear_master = Support.bool(Support.fetch(attributes, "clear_master", default: false))
-        if master || clear_master
-          link_attributes << attribute(IFLA_MASTER,
-                                       master ? link_index(master, "master") : uint32(0, "master index"))
-        end
-        namespace_value = move_namespace || namespace_fd || namespace
-        link_attributes << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(namespace_value), "network namespace FD")) if namespace_value
-        link_attributes.concat(encode_link_extra_attributes(attributes))
-        request(type: RTM_SETLINK, payload: payload, attributes: link_attributes, operation: operation)
       end
 
       def address_add(address:, prefix: nil, index: nil, name: nil, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
@@ -1103,8 +1064,8 @@ module Rubernetes
       end
 
       # Linux UAPI: struct ifinfomsg (16 bytes).
-      def ifinfomsg(index:, flags: 0, change: 0)
-        [AF_UNSPEC, 0, 0, Support.integer(index, "link index", min: 0),
+      def ifinfomsg(index:, flags: 0, change: 0, family: AF_UNSPEC)
+        [family, 0, 0, Support.integer(index, "link index", min: 0),
          Support.integer(flags, "link flags", min: 0, max: 0xffff_ffff),
          Support.integer(change, "link change mask", min: 0, max: 0xffff_ffff)].pack("CCS<l<L<L<")
       end
