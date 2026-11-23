@@ -21,18 +21,20 @@ class BootstrapProcessServicesTest < Minitest::Test
   end
 
   class API
-    attr_reader :patches, :applied, :updated
+    attr_reader :patches, :applied, :updated, :update_subresources, :list_queries
 
     def initialize(objects = {})
       @objects = objects
       @leases = {}
       @patches = []
+      @list_queries = []
     end
 
     # Mirrors Client::KubernetesClient#get: a name makes it a point lookup,
     # no name makes it a list.  The adapter uses the point lookup, so a fake
     # that only lists sends every controller down the list path.
     def get(resource, name = nil, namespace: nil, api_version: nil, query: nil, **_options)
+      @list_queries << [resource, query] if name.nil?
       # `:all` means every namespace, the way the real client renders a
       # cluster-wide path; treating it as a namespace *name* filtered
       # everything out and made the source look empty.
@@ -66,8 +68,9 @@ class BootstrapProcessServicesTest < Minitest::Test
     end
 
     # Mirrors Client::KubernetesClient#update: a PUT of the whole object.
-    def update(object, namespace: nil, **_options)
+    def update(object, namespace: nil, subresource: nil, **_options)
       (@updated ||= []) << deep_copy(object)
+      (@update_subresources ||= []) << subresource
       value = deep_copy(object)
       value["metadata"]["namespace"] ||= namespace if namespace
       value["metadata"]["resourceVersion"] = (value.dig("metadata", "resourceVersion").to_i + 1).to_s
@@ -167,7 +170,11 @@ class BootstrapProcessServicesTest < Minitest::Test
     service.start
 
     assert_predicate(service, :ready?)
-    assert_equal(registry.size, service.manager.controllers.size)
+    disabled_by_default = %w[
+      node-ipam-controller podgroup-protection-controller resourcepoolstatusrequest-controller storageversion-garbage-collector-controller
+    ]
+
+    assert_equal(registry.names - disabled_by_default, service.manager.controllers.keys.sort)
     refute_empty(service.informers)
     assert(@logger.events.any? { |event| event[1] == "process.ready" })
   ensure
@@ -192,6 +199,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     assert_predicate(service, :ready?)
     assert_instance_of(Rubernetes::Controller::LeaseElector, service.elector)
     assert_predicate(service.elector, :leader?)
+    assert_includes client.list_queries, ["pods", {"fieldSelector" => "status.phase!=Succeeded,status.phase!=Failed"}]
     assert_equal("pods", client.patches.fetch(0).fetch(0))
     assert_equal("node-a", client.patches.fetch(0).fetch(1).fetch("spec").fetch("nodeName"))
   ensure
@@ -368,6 +376,45 @@ class BootstrapProcessServicesTest < Minitest::Test
     assert_equal(["n"], deleted.map { |object| object.dig("metadata", "name") })
   end
 
+  def test_job_controller_patches_only_owned_pod_metadata_with_preconditions
+    controller = Rubernetes::Controller
+    descriptor = controller::ResourceDescriptor.parse("Pod")
+    pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {
+      "name" => "task", "namespace" => "ns", "uid" => "pod-uid", "resourceVersion" => "3",
+      "finalizers" => ["batch.kubernetes.io/job-tracking", "example.org/hold"]
+    }, "spec" => {"nodeName" => "worker"}, "status" => {"phase" => "Succeeded"}}
+    client = API.new("pods" => [pod])
+    adapter = Rubernetes::Bootstrap::KubernetesStoreAdapter.new(client: client, resource_descriptors: [descriptor])
+    candidate = controller::Support.deep_copy(pod)
+    candidate["metadata"]["finalizers"].delete("batch.kubernetes.io/job-tracking")
+
+    updated = controller::Support.with_controller("job-controller") do
+      adapter.update(candidate, descriptor: descriptor, existing: pod)
+    end
+
+    assert_nil client.updated
+    assert_equal ["pods", {"metadata" => {"uid" => "pod-uid", "resourceVersion" => "3", "finalizers" => ["example.org/hold"]}},
+                  {type: :merge, namespace: "ns", api_version: "v1", name: "task"}], client.patches.fetch(0)
+    assert_equal pod["status"], updated["status"]
+  end
+
+  def test_namespace_finalization_follows_status_update_at_the_new_version
+    controller = Rubernetes::Controller
+    descriptor = controller::ResourceDescriptor.parse("Namespace")
+    namespace = {"apiVersion" => "v1", "kind" => "Namespace",
+                 "metadata" => {"name" => "retiring", "uid" => "ns", "resourceVersion" => "3", "deletionTimestamp" => "2026-01-01T00:00:00Z"},
+                 "spec" => {"finalizers" => ["kubernetes", "example.org/hold"]}, "status" => {"phase" => "Terminating"}}
+    client = API.new("namespaces" => [namespace])
+    adapter = Rubernetes::Bootstrap::KubernetesStoreAdapter.new(client: client, resource_descriptors: [descriptor])
+
+    controller::NamespaceController.new.reconcile(namespace, store: adapter, objects: [])
+    versions = client.updated.map { |object| object.dig("metadata", "resourceVersion") }
+
+    assert_equal %w[status finalize], client.update_subresources
+    assert_equal %w[3 4], versions
+    assert_equal ["example.org/hold"], client.updated.last.dig("spec", "finalizers")
+  end
+
   def test_remote_status_write_distinguishes_absent_and_empty_status
     descriptor = Rubernetes::Controller::ResourceDescriptor.parse("CronJob")
     cron_job = {
@@ -417,11 +464,47 @@ class BootstrapProcessServicesTest < Minitest::Test
     service.start
 
     assert_predicate(service, :ready?)
+    assert_includes client.list_queries, ["services", {"labelSelector" => "!service.kubernetes.io/service-proxy-name",
+                                                       "fieldSelector" => "spec.clusterIP!=None"}]
+    assert_includes client.list_queries, ["endpointslices", {"labelSelector" => "!service.kubernetes.io/headless"}]
     assert_equal(["default/web"], service.proxy.services.map(&:key))
     assert_equal(2, service.subscriptions.length)
     assert_predicate(service.proxy.backend, :ready?)
   ensure
     service&.stop(reason: "test")
+  end
+
+  def test_proxy_publishes_a_warning_when_a_service_health_port_is_occupied
+    occupied = TCPServer.new("127.0.0.1", 0)
+    port = occupied.local_address.ip_port
+    load_balancer = {
+      "apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default"},
+      "spec" => {"type" => "LoadBalancer", "externalTrafficPolicy" => "Local", "clusterIP" => "10.0.0.1",
+                 "ports" => [{"port" => 80}], "healthCheckNodePort" => port}
+    }
+    client = API.new("services" => [load_balancer])
+    proxy = Rubernetes::Proxy::Proxy.new(local_node: "node-a", backend: Rubernetes::Proxy::MemoryBackend.new,
+                                         node_port_allocator: Rubernetes::Proxy::NodePortAllocator.new(range: [1, 65_535]))
+    service = Rubernetes::Bootstrap::ProxyService.new(config: {}, logger: @logger, client: client, proxy: proxy)
+
+    service.start
+    event = Timeout.timeout(3) do
+      loop do
+        record = client.get("events", namespace: "default").fetch("items").first
+        break record if record
+
+        sleep(0.01)
+      end
+    end
+
+    assert_predicate service, :ready?
+    assert_equal %w[Warning FailedToStartServiceHealthcheck Listen kube-proxy node-a],
+                 event.values_at("type", "reason", "action", "reportingComponent", "reportingInstance")
+    assert_equal %w[Service default web], event.fetch("involvedObject").values_at("kind", "namespace", "name")
+    assert_includes event.fetch("message"), port.to_s
+  ensure
+    service&.stop(reason: "test")
+    occupied&.close
   end
 
   def test_assembler_routes_control_plane_processes_to_concrete_services
