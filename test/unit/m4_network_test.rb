@@ -62,6 +62,29 @@ class M4NetworkTest < Minitest::Test
     assert_equal "ipv4:#{ip}", mismatch.first.fetch("resource")
   end
 
+  def test_reclaimed_operation_cannot_read_or_change_a_reallocated_ip
+    ipam = Rubernetes::Network::IPAM.new(ipv4_cidr: "10.244.0.0/30", ipv4_node_prefix: 30)
+    original = {node: "node-a", pod_uid: "pod-a", sandbox_id: "sandbox-a"}
+    old = ipam.reserve(**original)
+
+    assert_equal ["ipv4:#{old.ip}"], ipam.recover(observer: -> { [] }).reclaimed
+    current = ipam.reserve(node: "node-a", pod_uid: "pod-b", sandbox_id: "sandbox-b")
+
+    assert_equal old.ip, current.ip
+    assert_nil ipam.lease(operation_id: old.operation_id)
+    assert_raises(Rubernetes::Network::LeaseStateError) { ipam.reserve(**original) }
+    assert_raises(Rubernetes::Network::LeaseStateError) { ipam.commit(old) }
+    assert_raises(Rubernetes::Network::LeaseStateError) do
+      ipam.bind_kernel_identity(operation_id: old.operation_id, resources: [], require_complete: false)
+    end
+
+    assert_empty ipam.release(old, stopped: true)
+    assert_equal current.to_h, ipam.reserve(node: "node-a", pod_uid: "pod-b", sandbox_id: "sandbox-b").to_h
+    assert_raises(Rubernetes::Network::LeaseUnavailable) do
+      ipam.reserve(node: "node-a", pod_uid: "pod-c", sandbox_id: "sandbox-c")
+    end
+  end
+
   def test_network_add_delete_is_transactional_and_owned
     adapter = RecordingAdapter.new
     ipam = Rubernetes::Network::IPAM.new(ipv4_cidr: "10.244.0.0/16", ipv4_node_prefix: 24)
@@ -113,6 +136,21 @@ class M4NetworkTest < Minitest::Test
   ensure
     lease&.close
     IO.for_fd(pidfd).close if pidfd
+  end
+
+  def test_rollback_after_namespace_loss_only_removes_host_resources
+    adapter = RecordingAdapter.new
+    topology = Rubernetes::Network::Topology.new(adapter: adapter)
+    plan = topology.desired({"sandbox_id" => "sandbox-a"},
+                            {"ips" => ["10.244.0.9/24"], "namespace_fd" => 31})
+    host_link = plan.operations.find { |operation| operation.parameters["peer"] == "eth0" }
+
+    topology.rollback(plan, namespace_gone: true)
+
+    inverses = adapter.operations.map(&:first)
+
+    assert(inverses.any? { |operation| operation.action == "link_delete" && operation.resource == host_link.resource })
+    assert(inverses.none? { |operation| operation.parameters.key?("namespace_fd") })
   end
 
   def test_node_sysctls_are_exactly_owned_reference_counted_and_rolled_back
@@ -449,6 +487,58 @@ class M4NetworkTest < Minitest::Test
       )
 
       assert_empty observer.resources_for(operation)
+      assert_equal [:dad_failed, entry], observer.ipv6_address_observation(operation)
+    end
+  end
+
+  def test_ipv6_dad_readback_rejects_a_ready_replacement_of_a_tentative_address
+    observer = Rubernetes::Network::NativeObserver.new(netlink: Rubernetes::Network::Netlink.new(adapter: RecordingAdapter.new))
+    operation = Rubernetes::Network::Operation.new(
+      action: "address_add", resource: "address:pod:2001:db8::9/64", identity: "planned",
+      parameters: {"address" => "2001:db8::9", "prefix" => 64, "interface" => "eth0"}
+    )
+    observations = [[:tentative, {"identity" => "address:netns=1:ifindex=2:address=2001:db8::9/64"}],
+                    [:ready, {"identity" => "address:netns=1:ifindex=3:address=2001:db8::9/64"}]]
+
+    observer.stub(:ipv6_address_observation, ->(_operation) { observations.shift }) do
+      error = assert_raises(Rubernetes::Network::OwnershipError) do
+        observer.wait_for_ipv6_address(operation, started: Process.clock_gettime(Process::CLOCK_MONOTONIC), timeout: 1.0, interval: 0.001, adaptive: false)
+      end
+
+      assert_match(/IPv6 address identity changed/, error.message)
+    end
+  end
+
+  def test_ipv6_dad_window_accounts_for_delayed_kernel_probe_dispatch
+    observer = Rubernetes::Network::NativeObserver.new(netlink: Rubernetes::Network::Netlink.new(adapter: RecordingAdapter.new))
+    settings = {"/proc/sys/net/ipv6/conf/eth0/dad_transmits" => "4",
+                "/proc/sys/net/ipv6/conf/eth0/router_solicitation_delay" => "1",
+                "/proc/sys/net/ipv6/neigh/eth0/retrans_time_ms" => "1000"}
+
+    File.stub(:read, ->(path) { settings.fetch(path) }) do
+      assert_in_delta 6.0, observer.ipv6_dad_window({"parameters" => {}}, interface: "eth0")
+    end
+  end
+
+  def test_an_ipv6_address_that_disappears_loses_its_dad_wait_window
+    observer = Rubernetes::Network::NativeObserver.new(netlink: Rubernetes::Network::Netlink.new(adapter: RecordingAdapter.new))
+    operation = Rubernetes::Network::Operation.new(
+      action: "address_add", resource: "address:pod:2001:db8::9/64", identity: "planned",
+      parameters: {"address" => "2001:db8::9", "prefix" => 64, "interface" => "eth0"}
+    )
+    tentative = {"identity" => "address:netns=1:ifindex=2:address=2001:db8::9/64", "metadata" => {"ifname" => "eth0"}}
+    observations = [[:tentative, tentative], [:missing, nil]]
+
+    observer.stub(:ipv6_dad_window, 4.0) do
+      observer.stub(:ipv6_address_observation, ->(_operation) { observations.shift || [:missing, nil] }) do
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        error = assert_raises(Rubernetes::Network::OwnershipError) do
+          observer.wait_for_ipv6_address(operation, started: started, timeout: 0.05, interval: 0.005, adaptive: true)
+        end
+
+        assert_match(/IPv6 address was absent/, error.message)
+        assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.5
+      end
     end
   end
 
@@ -466,7 +556,7 @@ class M4NetworkTest < Minitest::Test
     engine = Rubernetes::Network::PolicyEngine.new(adapter: adapter)
     engine.apply(policy)
     source = {namespace: "apps", labels: {app: "client"}}
-    destination = {namespace: "apps", labels: {app: "web"}, ports: [{name: "metrics", port: 9899}]}
+    destination = {namespace: "apps", labels: {app: "web"}, ports: [{name: "metrics", port: 9899, protocol: "SCTP"}]}
 
     assert engine.allowed?(source: source, destination: destination, direction: "ingress", protocol: "SCTP", port: 9899)
     refute engine.allowed?(source: {namespace: "apps", labels: {app: "other"}}, destination: destination,
