@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
+require_relative "../taint_toleration"
+
 module Rubernetes
   module Scheduler
     # SchedulerQueueingHints: each plugin registers the cluster events that
@@ -75,25 +79,11 @@ module Rubernetes
       end
 
       # v1helper.TolerationsTolerateTaint for NoSchedule/NoExecute taints.
-      def self.tolerates?(toleration, taint)
-        return false unless toleration.is_a?(Hash) && taint.is_a?(Hash)
-
-        effect = value(toleration, "effect").to_s
-        return false unless effect.empty? || effect == value(taint, "effect").to_s
-
-        operator = value(toleration, "operator").to_s
-        key = value(toleration, "key").to_s
-        return true if key.empty? && operator == "Exists"
-        return false unless key == value(taint, "key").to_s
-
-        operator == "Exists" || ((operator.empty? || operator == "Equal") && value(toleration, "value").to_s == value(taint, "value").to_s)
-      end
-
-      def self.untolerated_taint?(node, pod)
+      def self.untolerated_taint?(node, pod, comparisons)
         taints(node).any? do |taint|
           next false unless %w[NoSchedule NoExecute].include?(value(taint, "effect").to_s)
 
-          tolerations(pod).none? { |toleration| tolerates?(toleration, taint) }
+          tolerations(pod).none? { |entry| ::Rubernetes::TaintToleration.matches?(entry, taint, comparisons: comparisons) }
         end
       end
 
@@ -119,14 +109,11 @@ module Rubernetes
         values = Array(value(requirement, "values")).map(&:to_s)
         present = labels.key?(key)
         actual = labels[key].to_s
-        case value(requirement, "operator").to_s
-        when "In" then present && values.include?(actual)
-        when "NotIn" then !present || !values.include?(actual)
-        when "Exists" then present
-        when "DoesNotExist" then !present
+        operator = value(requirement, "operator").to_s
+        case operator
         when "Gt" then present && actual.match?(/\A-?\d+\z/) && actual.to_i > values.first.to_i
         when "Lt" then present && actual.match?(/\A-?\d+\z/) && actual.to_i < values.first.to_i
-        else false
+        else LabelRequirement.matches?(operator, actual, values, present: present)
         end
       end
 
@@ -226,12 +213,12 @@ module Rubernetes
         next SKIP unless uid(pod) == uid(new_pod)
 
         taint = {"key" => "node.kubernetes.io/unschedulable", "effect" => "NoSchedule"}
-        tolerations(new_pod).any? { |toleration| tolerates?(toleration, taint) } ? QUEUE : SKIP
+        tolerations(new_pod).any? { |entry| ::Rubernetes::TaintToleration.matches?(entry, taint) } ? QUEUE : SKIP
       end
 
-      TAINT_NODE_CHANGE = lambda do |pod, old_node, new_node|
-        was_untolerated = old_node.nil? || untolerated_taint?(old_node, pod)
-        was_untolerated && !untolerated_taint?(new_node, pod) ? QUEUE : SKIP
+      TAINT_NODE_CHANGE = lambda do |pod, old_node, new_node, comparisons = false|
+        was_untolerated = old_node.nil? || untolerated_taint?(old_node, pod, comparisons)
+        was_untolerated && !untolerated_taint?(new_node, pod, comparisons) ? QUEUE : SKIP
       end
 
       SAME_POD = ->(pod, _old, new_pod) { uid(pod) == uid(new_pod) ? QUEUE : SKIP }
@@ -488,12 +475,14 @@ module Rubernetes
                                node(%w[Add UpdateNodeLabel UpdateNodeTaint], AFFINITY_NODE_CHANGE)],
         "DynamicResources" => [node(%w[Add UpdateNodeLabel UpdateNodeTaint UpdateNodeAllocatable]),
                                Registration.new(resource: "ResourceClaim", actions: %w[Add Update], hint: CLAIM_CHANGE),
+                               Registration.new(resource: "PodGroup", actions: %w[Add Update], hint: OWN_POD_GROUP_ADDED),
                                *pod_registration(%w[UpdatePodGeneratedResourceClaim], GENERATED_CLAIM),
                                Registration.new(resource: "DeviceClass", actions: %w[Add Update], hint: nil),
                                Registration.new(resource: "ResourceSlice", actions: %w[Add Update], hint: nil)],
         "SchedulingGates" => pod_registration(%w[UpdatePodSchedulingGatesEliminated], SAME_POD),
-        "GangScheduling" => [*pod_registration(%w[Add], SAME_GANG_POD_ADDED),
-                             Registration.new(resource: "PodGroup", actions: %w[Add], hint: OWN_POD_GROUP_ADDED)],
+        "GangScheduling" => [*pod_registration(%w[Add], SAME_GANG_POD_ADDED), *pod_registration(%w[Delete], nil),
+                             node(%w[Add UpdateNodeLabel UpdateNodeTaint UpdateNodeAllocatable]),
+                             Registration.new(resource: "PodGroup", actions: %w[Add Update], hint: OWN_POD_GROUP_ADDED)],
         "NodeDeclaredFeatures" => [node(%w[Add UpdateNodeDeclaredFeature])],
         "DefaultPreemption" => pod_registration(%w[Delete], nil)
       }.freeze
@@ -503,7 +492,7 @@ module Rubernetes
 
       # isPodWorthRequeuing: :skip, :after_backoff or :immediately.
       # +observer+ (optional): ->(plugin, event, hint_label, seconds).
-      def self.strategy(pod, rejecting_plugins, event, old_object, new_object, pending_plugins: [], observer: nil)
+      def self.strategy(pod, rejecting_plugins, event, old_object, new_object, pending_plugins: [], observer: nil, taint_comparisons: false)
         plugins = Array(rejecting_plugins).map(&:to_s).uniq
         return :after_backoff if plugins.empty?
 
@@ -521,7 +510,11 @@ module Rubernetes
             if registration.hint
               started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               begin
-                hint = registration.hint.call(pod, old_object, new_object)
+                hint = if registration.hint.equal?(TAINT_NODE_CHANGE)
+                         TAINT_NODE_CHANGE.call(pod, old_object, new_object, taint_comparisons)
+                       else
+                         registration.hint.call(pod, old_object, new_object)
+                       end
                 label = hint == QUEUE ? "Queue" : "QueueSkip"
               rescue StandardError
                 hint = QUEUE
