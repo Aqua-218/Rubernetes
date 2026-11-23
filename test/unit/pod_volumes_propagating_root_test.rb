@@ -28,6 +28,28 @@ class PodVolumesPropagatingRootTest < Minitest::Test
     end
   end
 
+  def test_explicit_host_path_can_open_paths_in_the_trusted_proc_mount
+    skip "requires a Linux proc mount" unless Mount.new.mountinfo_entry("/proc")
+
+    begin
+      openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
+      security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
+      handle = security.validate_host_path!("/proc")
+      version = security.validate_host_path!("/proc/version")
+
+      assert_predicate handle.stat, :directory?
+      assert_predicate version.stat, :file?
+      assert_equal "proc/version", version.path
+      assert_raises(Rubernetes::Volume::PathSecurityError) { security.open("/proc") }
+      assert_raises(Rubernetes::Volume::PathSecurityError) { security.open("/proc/sys") }
+      assert_raises(Rubernetes::Volume::PathSecurityError) { security.validate_host_path!("/proc/self/status") }
+    ensure
+      version&.close
+      handle&.close
+      openat2&.close
+    end
+  end
+
   def test_real_mounts_make_the_root_a_shared_self_bind_once
     skip "bind mounts need root" unless Process.uid.zero?
 
