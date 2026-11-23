@@ -145,6 +145,10 @@ stateDiagram-v2
 
 ### レイヤの展開
 
+Linux のネイティブワーカーでは、`rubernetes-agent.image.staging_root` に絶対パスを指定して、展開したイメージの配置先を選べる。省略時はランタイムジャーナルのパスに `.images` を付けたディレクトリを使う。複数のワーカーが専用のイメージ用ファイルシステムを共有する場合は、ワーカーごとにディレクトリを分ける。
+
+Linux の `rubernetes-agent.image.public_blob_source` は、管理者が取得・検証した公開 OCI blob をワーカー間で共有するための任意の絶対パス。`sources.json` に、許可するリポジトリとプラットフォームマニフェストのダイジェストを含む参照の配列を置き、各 blob を `blobs/sha256/<digest>` に配置する。展開先と一時作業領域から分離し、読み取り専用で配置する。ワーカーは上流でマニフェストを解決し、匿名の HEAD でそのリポジトリの blob を照合してから、サイズとダイジェストを検証して読み込む。認証情報を使うプル、ローカルで未取得の blob、上流の確認ができない blob には通常のプルを使う。
+
 レイヤは、圧縮されたストリームと展開後の両方で上限を検査する。次の上限を超えたイメージは拒否する。
 
 | 項目 | 上限 |
@@ -193,6 +197,8 @@ holderの中で行ったマウントは、ホストには伝播しない。
 
 割り当てはサンドボックスのidentityに結び付ける。全プロセスの停止を確認するまで、再利用してはならない。
 
+同じホスト上で複数のエージェントを動かす場合は、各エージェントの`runtime_paths.userns_allocation_path`に同じローカルパスを指定する。
+
 ### holder
 
 holderはRuby製のsandbox initとする。PID 1として、シグナルの処理とzombieの回収を行う。
@@ -227,7 +233,9 @@ subPathは、kubeletのmakeMountsと同じく、そのコンテナの起動時�
 | 配置 | `cpuset.cpus`、`cpuset.mems` |
 | pressure | `cpu.pressure`、`memory.pressure`、`io.pressure` |
 
-階層は`/sys/fs/cgroup/rubernetes/<qos>/<pod-uid>/<container-id>`とする。
+Linux の Native ノードで `cgroups_per_qos` を有効にすると、委譲済みの `cgroup_root` に `kubepods` を作る。Guaranteed Pod は `kubepods/pod<UID>`、Burstable と BestEffort Pod はそれぞれ `kubepods/burstable/pod<UID>` と `kubepods/besteffort/pod<UID>` に配置する。UID には API オブジェクトの値を使い、Sandbox の世代とコンテナはその下の子 cgroup で識別する。Pod の cgroup はイメージ取得前に作成する。
+
+アップグレード時は保存済みの cgroup パスとカーネル識別子を照合して Sandbox を復旧する。`rubernetes/<qos>/<sandbox-id>` 配下の既存 Sandbox は、終了まで同じ cgroup と制限を使う。新しい階層は新規 Sandbox に適用する。ゲスト内の Native ランタイムは従来の階層を使う。
 
 QoS class、requests、limits、Pod overhead、initコンテナとsidecarのリソースの意味論は、v1.36.2と同じ式で反映する。limitsが指定されていない場合、該当するcontrollerにはハードリミットを設定しない。
 
