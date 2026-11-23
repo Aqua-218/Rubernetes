@@ -66,6 +66,12 @@ PATCH  {base}/{resource}/{name}/{subresource}                 patch subresource
 
 namespaceに属するリソースでは、`{base}`は`.../namespaces/{namespace}`になる。すべてのnamespaceを対象にしたlistとwatchは、group/versionの直下で受け付ける。
 
+### CBOR
+
+`security.feature_gates.CBORServingAndStorage`を`true`にすると、リソースのリクエストとレスポンスに`application/cbor`を使える。watchは`Accept: application/cbor`を受け付け、各イベントを連結した`application/cbor-seq`を返す。ゲートのデフォルトは`false`。
+
+Raftデータストアでは、ゲートが有効なときのカスタムリソース書き込みを、自己記述タグ付きのCBORとしてログとスナップショットに保存する。ゲートを無効にして再起動した後も、既存のJSONとCBORのレコードは両方読み出せる。
+
 ### PATCH
 
 PATCHは次の形式をすべて実装する。
@@ -76,7 +82,25 @@ PATCHは次の形式をすべて実装する。
 | `application/merge-patch+json` | RFC 7386のJSON Merge Patch |
 | `application/strategic-merge-patch+json` | スキーマのpatch strategyを使うStrategic Merge Patch |
 | `application/apply-patch+yaml` | Server-Side Apply |
-| `application/apply-patch+cbor` | CBORによるapply。対応するfeature gateが無効なときは、upstreamと同じように拒否する |
+| `application/apply-patch+cbor` | CBORによるServer-Side Apply。ゲートが無効な場合は415を返す |
+
+### 読み出せないレコードの削除
+
+`security.feature_gates.AllowUnsafeMalformedObjectDeletion`が有効なとき、名前を指定したDELETEで`ignoreStoreReadErrorWithClusterBreakingPotential: true`を指定できる。通常の`delete`と`unsafe-delete-ignore-read-errors`の両方を許可された利用者が、復号またはデコードできないレコードを削除できる。削除処理はレコードのリビジョンを照合する。コレクションの削除やPodのevictionには指定できない。ゲートのデフォルトは`false`。
+
+Raftでは、ログまたはスナップショットの検証が通った場合に、内部のCBORレコードのデコードエラーを個別に扱う。
+
+### ストレージバージョンの公開
+
+`runtime_config.internal.apiserver.k8s.io/v1alpha1`を有効にすると、`StorageVersion` APIを利用できる。`security.feature_gates.StorageVersionAPI`も有効にすると、APIサーバーは自身の`APIServerIdentity` Lease作成後に組み込みリソースの保存バージョンを報告する。報告が完了するまで対象リソースへの書き込みは503を返す。各APIサーバーの報告は同じ`StorageVersion`オブジェクトに記録される。
+
+複数バージョンで提供する組み込みリソースは、どちらの形式で書き込んでも同じ保存先を使う。古い形式の保存先だけにオブジェクトや保持期間内の削除履歴がある場合は、その場所を引き継ぐ。オブジェクトの UID と `resourceVersion` は維持される。保存先がすでに分裂している場合は 409 を返す。運用者は両方の記録を確認してから統合する必要がある。
+
+保存先を独自に変更した旧バイナリは、新しいサーバーが記録した保存先を参照しない。そのようなノードを更新するときは、旧プロセスからの書き込みを止めてから新しいプロセスに切り替える。標準構成では served version の切り替えだけで保存先が変わることはない。
+
+協調リーダー選出を使うには、APIサーバーの`security.feature_gates.CoordinatedLeaderElection`と`runtime_config.coordination.k8s.io/v1beta1`を有効にする。APIサーバーは`kube-system`の`leader-election-controller` Leaseで担当を選出し、`LeaseCandidate`の応答を確認して対象Leaseを更新する。`OldestEmulationVersion`ではエミュレーションバージョン、バイナリバージョン、作成時刻の順に古い候補を優先する。外部の選出方式ではLeaseの`holderIdentity`を外部コントローラーが設定する。
+
+コントローラーマネージャーは`feature_gates`で`StorageVersionAPI`と`APIServerIdentity`が有効なとき、LeaseがなくなったAPIサーバーの報告を削除する。
 
 ### クエリパラメータ
 
