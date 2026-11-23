@@ -2,8 +2,10 @@
 
 require "fileutils"
 require "ipaddr"
+require "tempfile"
 
 require_relative "status"
+require_relative "pod_dns"
 require_relative "pod_hostname"
 
 module Rubernetes
@@ -14,11 +16,8 @@ module Rubernetes
     class PodFiles
       class Error < StandardError; end
 
-      DNS_POLICIES = %w[ClusterFirst ClusterFirstWithHostNet Default None].freeze
-      # kubelet: resolv.conf limits (pkg/kubelet/network/dns)
-      MAX_SEARCH_DOMAINS = 32
-      MAX_SEARCH_CHARS = 2048
-      MAX_NAMESERVERS = 3
+      include PodDNS
+
       MANAGED_HEADER = "# Kubernetes-managed hosts file.\n"
 
       def initialize(cluster_dns: [], cluster_domain: "cluster.local", resolv_conf: "/etc/resolv.conf",
@@ -33,7 +32,7 @@ module Rubernetes
 
       # Writes the files under `directory` and returns {container path =>
       # host path} for the container mounts.
-      def write(pod, directory:, pod_ips: [], host_network: false, hostname: nil)
+      def write(pod, directory:, pod_ips: [], host_network: false, hostname: nil, dns_config: nil)
         object = Helpers.string_keys(pod)
         FileUtils.mkdir_p(directory)
         files = {}
@@ -44,7 +43,8 @@ module Rubernetes
         atomic_write(hostname_path, "#{hostname || PodHostname.kernel_hostname(object, cluster_domain: @cluster_domain)}\n")
         files["/etc/hostname"] = hostname_path
         resolv_path = File.join(directory, "resolv.conf")
-        atomic_write(resolv_path, resolv_conf_content(object, host_network: host_network))
+        config = dns_config || self.dns_config(object, host_network: host_network)
+        atomic_write(resolv_path, format_resolv_conf(config))
         files["/etc/resolv.conf"] = resolv_path
         files
       end
@@ -96,111 +96,6 @@ module Rubernetes
         content
       end
 
-      # pkg/kubelet/network/dns.GetPodDNS
-      def resolv_conf_content(pod, host_network:)
-        spec = Helpers.key(pod, "spec", {})
-        policy = Helpers.key(spec, "dnsPolicy", "ClusterFirst").to_s
-        raise Error, "unsupported dnsPolicy #{policy.inspect}" unless DNS_POLICIES.include?(policy)
-
-        namespace = Helpers.key(Helpers.key(pod, "metadata", {}), "namespace", "default").to_s
-        effective = policy
-        effective = "Default" if policy == "ClusterFirst" && host_network
-        nameservers, searches, options = case effective
-                                         when "None" then [[], [], []]
-                                         when "Default" then host_dns
-                                         else cluster_dns_config(namespace)
-                                         end
-        config = Helpers.key(spec, "dnsConfig", nil)
-        if config
-          nameservers += Array(Helpers.key(config, "nameservers", [])).map(&:to_s)
-          searches += Array(Helpers.key(config, "searches", [])).map(&:to_s)
-          Array(Helpers.key(config, "options", [])).each do |option|
-            item = Helpers.string_keys(option)
-            name = Helpers.key(item, "name", "").to_s
-            next if name.empty?
-
-            value = Helpers.key(item, "value", nil)
-            options.reject! { |existing| existing.split(":").first == name }
-            options << (value.nil? ? name : "#{name}:#{value}")
-          end
-        end
-        nameservers = nameservers.uniq
-        searches = searches.uniq
-        raise Error, "dnsPolicy None requires dnsConfig.nameservers" if nameservers.empty? && effective == "None"
-
-        format_resolv_conf(nameservers, searches, options)
-      end
-
-      def cluster_dns_config(namespace)
-        if @cluster_dns.empty?
-          raise Error,
-                "dnsPolicy ClusterFirst requires the node's cluster DNS address (rubernetes-agent.dns.cluster_dns)"
-        end
-
-        host_nameservers, host_searches, host_options = host_dns
-        searches = ["#{namespace}.svc.#{@cluster_domain}", "svc.#{@cluster_domain}", @cluster_domain]
-        searches += host_searches.reject { |domain| searches.include?(domain) }
-        options = ["ndots:5"] + host_options.reject { |option| option.start_with?("ndots") }
-        _ = host_nameservers
-        [@cluster_dns.dup, searches, options]
-      end
-
-      RESOLVED_UPSTREAM_FILE = "/run/systemd/resolve/resolv.conf"
-
-      # kubelet: with a systemd-resolved stub (127.0.0.53) in /etc/resolv.conf
-      # the real upstream file is the one Pods must inherit.
-      def host_dns
-        source = @resolv_conf
-        if File.file?(source)
-          servers = File.foreach(source).filter_map do |line|
-            f = line.sub(/[#;].*/, "").split
-            f[1] if f.first == "nameserver"
-          end
-          source = RESOLVED_UPSTREAM_FILE if !servers.empty? && servers.all? do |server|
-            server.start_with?("127.") || server == "::1"
-          end && File.file?(RESOLVED_UPSTREAM_FILE)
-        end
-        return [[], [], []] unless File.file?(source)
-
-        nameservers = []
-        searches = []
-        options = []
-        File.foreach(source) do |line|
-          fields = line.sub(/[#;].*/, "").split
-          next if fields.empty?
-
-          case fields.first
-          when "nameserver" then nameservers << fields[1] if fields[1]
-          when "search" then searches = fields[1..]
-          when "domain" then searches = [fields[1]] if searches.empty? && fields[1]
-          when "options" then options += fields[1..]
-          end
-        end
-        # 127.0.0.53-style local stub resolvers are unreachable from a Pod
-        # network namespace; kubelet expects --resolv-conf to point at a
-        # reachable file and so do we, but a loopback-only host file would
-        # otherwise produce a Pod that can resolve nothing.
-        [nameservers, searches, options]
-      rescue SystemCallError
-        [[], [], []]
-      end
-
-      def format_resolv_conf(nameservers, searches, options)
-        lines = nameservers.first(MAX_NAMESERVERS).map { |server| "nameserver #{server}" }
-        trimmed = []
-        total = 0
-        searches.each do |domain|
-          break if trimmed.length >= MAX_SEARCH_DOMAINS
-          break if total + domain.length + 1 > MAX_SEARCH_CHARS
-
-          trimmed << domain
-          total += domain.length + 1
-        end
-        lines << "search #{trimmed.join(" ")}" unless trimmed.empty?
-        lines << "options #{options.join(" ")}" unless options.empty?
-        "#{lines.join("\n")}\n"
-      end
-
       def pod_hostname(pod) = PodHostname.generate(pod, cluster_domain: @cluster_domain).first
 
       # `<subdomain>.<namespace>.svc.<cluster domain>` when spec.subdomain is
@@ -210,12 +105,12 @@ module Rubernetes
       private
 
       def atomic_write(path, content)
-        temporary = "#{path}.tmp-#{Process.pid}"
-        File.open(temporary, File::WRONLY | File::CREAT | File::TRUNC, 0o644) do |file|
+        Tempfile.create(".#{File.basename(path)}", File.dirname(path)) do |file|
           file.write(content)
+          file.chmod(0o644)
           file.flush
+          File.rename(file.path, path)
         end
-        File.rename(temporary, path)
       rescue SystemCallError => error
         raise Error, "failed to write #{path}: #{error.message}"
       end
