@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "date"
+require "time"
+
 module Rubernetes
   module API
     class Server
@@ -9,19 +12,73 @@ module Rubernetes
         private
 
         def openapi_response(request, route)
+          if route.path.start_with?("/openapi/v3/apis/")
+            remote = @aggregator&.openapi_response(request)
+            return remote if remote
+          end
+
+          if route.path.start_with?("/openapi/v3/")
+            index = @openapi.document_for("/openapi/v3")
+            key = route.path.delete_prefix("/openapi/v3/")
+            return openapi_not_found unless index && served_openapi_v3_index(index).fetch("paths").key?(key)
+          end
+
           document = @openapi.document_for(route.path)
-          raise Status::NotFound.new("OpenAPI document was not found") if document.nil?
+          return openapi_not_found if document.nil?
 
-          document = served_openapi_v3_index(document) if route.path == "/openapi/v3"
+          if route.path == "/openapi/v3"
+            document = served_openapi_v3_index(document)
+            paths = @aggregator&.openapi_paths
+            document = document.merge("paths" => document.fetch("paths").merge(paths)) unless paths.nil? || paths.empty?
+          end
 
-          protobuf = route.path == "/openapi/v2" && OpenAPIV2Protobuf.accepts?(request.header("accept"))
-          content_type = protobuf ? OpenAPIV2Protobuf::RESPONSE_CONTENT_TYPE : "application/json"
-          bytes, etag = openapi_encoded(route.path, document, protobuf)
-          headers = {"content-type" => content_type, "cache-control" => "no-cache, private", "etag" => %("#{etag}")}
+          format, content_type = openapi_format(route.path, request.header("accept"))
+          bytes, etag = openapi_encoded(route.path, document, :json)
+          headers = {"cache-control" => "no-cache, private", "etag" => %("#{etag}")}
+          vary = openapi_vary(route.path)
+          headers["vary"] = vary if vary
+          if route.path.start_with?("/openapi/v3/") && !(hash = request.query_value("hash").to_s).empty?
+            if hash != etag
+              headers["location"] = "#{route.path}?hash=#{etag}"
+              headers["content-type"] = content_type
+              return Response.new(status: 301, headers: headers, body: "")
+            end
+            headers["cache-control"] = "public, immutable"
+            headers["expires"] = (Time.now.utc.to_datetime >> 12).to_time.httpdate
+          end
           return Response.new(status: 304, headers: headers, body: "") if etag_matches?(request.header("if-none-match"), etag)
-          return Response.new(status: 200, headers: headers, body: bytes) if protobuf
 
-          Response.new(status: 200, headers: headers, body: document, encoded_body: bytes)
+          headers["content-type"] = content_type
+          if format == :json
+            Response.new(status: 200, headers: headers, body: document, encoded_body: bytes)
+          else
+            encoded, = openapi_encoded(route.path, document, format, etag: etag)
+            Response.new(status: 200, headers: headers, body: encoded)
+          end
+        rescue Status::NotAcceptable
+          Response.new(status: 406, headers: {"vary" => openapi_vary(route.path)}, body: "")
+        end
+
+        def openapi_not_found
+          Response.new(status: 404, headers: {"cache-control" => "no-cache, private"}, body: "")
+        end
+
+        def openapi_vary(path)
+          return "Accept-Encoding, Accept" if path == "/openapi/v2"
+          return "Accept" if path.start_with?("/openapi/v3/")
+
+          nil
+        end
+
+        def openapi_format(path, accept)
+          if path.start_with?("/openapi/v3/")
+            content_type = OpenAPIV3Protobuf.negotiate(accept)
+            return [:v3_protobuf, content_type] if content_type == OpenAPIV3Protobuf::CONTENT_TYPE
+          elsif path == "/openapi/v2"
+            content_type = OpenAPIV2Protobuf.negotiate(accept)
+            return [:v2_protobuf, content_type] if content_type == OpenAPIV2Protobuf::CONTENT_TYPE
+          end
+          [:json, "application/json"]
         end
 
         # The generated index lists every group/version the schema corpus
@@ -61,15 +118,25 @@ module Rubernetes
         # re-parsed -- the whole 3 MB swagger document.  The encoding of one
         # document object is kept: the repository hands out the same object
         # until a definition is published or withdrawn.
-        def openapi_encoded(path, document, protobuf)
-          key = [path.to_s, protobuf]
+        def openapi_encoded(path, document, format, etag: nil)
+          return @openapi.encoded_group(path, document, format) { encode_openapi_document(document, format, etag) } if path.start_with?("/openapi/v3/")
+
+          key = [path.to_s, format]
           cached = @openapi_encoded_mutex.synchronize { @openapi_encoded[key] }
           return cached.last if cached && cached.first.equal?(document)
 
-          bytes = protobuf ? OpenAPIV2Protobuf.encode(document) : JSON.generate(document)
-          encoded = [bytes, Digest::SHA512.hexdigest(bytes).upcase]
+          encoded = encode_openapi_document(document, format, etag)
           @openapi_encoded_mutex.synchronize { @openapi_encoded[key] = [document, encoded] }
           encoded
+        end
+
+        def encode_openapi_document(document, format, etag)
+          bytes = case format
+                  when :v3_protobuf then OpenAPIV3Protobuf.encode(document)
+                  when :v2_protobuf then OpenAPIV2Protobuf.encode(document)
+                  else JSON.generate(document)
+                  end
+          [bytes, etag || Digest::SHA512.hexdigest(bytes).upcase]
         end
 
         def etag_matches?(header, etag)
