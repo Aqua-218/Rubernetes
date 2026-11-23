@@ -4,7 +4,7 @@ module Rubernetes
   module Node
     # kubelet nodestatus.Images: the node's images for node.status.images
     # (what the scheduler's ImageLocality scores), largest first, at most
-    # nodeStatusMaxImages (50), each with its digests then tags, at most
+    # nodeStatusMaxImages (50 by default), each with its digests then tags, at most
     # MaxNamesPerImageInNodeStatus (5) names.  Read from the node's own image
     # store and from every CRI runtime it uses; the list is refreshed at most
     # every +refresh+ seconds, as kubelet's image cache is.
@@ -12,9 +12,10 @@ module Rubernetes
       MAX_IMAGES = 50
       MAX_NAMES = 5
 
-      def initialize(resolver: nil, cri_clients: [], refresh: 30, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+      def initialize(resolver: nil, cri_clients: [], max_images: MAX_IMAGES, refresh: 30, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
         @resolver = resolver
         @cri_clients = cri_clients
+        @max_images = max_images
         @refresh = refresh
         @clock = clock
         @mutex = Mutex.new
@@ -23,6 +24,8 @@ module Rubernetes
       end
 
       def images
+        return [] if @max_images.zero?
+
         @mutex.synchronize do
           return @cached if @cached && @clock.call - @at < @refresh
 
@@ -39,7 +42,9 @@ module Rubernetes
         merged = entries.group_by { |names, _size| names.first }.map do |_first, group|
           [group.flat_map(&:first).uniq, group.map(&:last).max]
         end
-        merged.sort_by { |names, size| [-size, names.first.to_s] }.first(MAX_IMAGES).map do |names, size|
+        sorted = merged.sort_by { |names, size| [-size, names.first.to_s] }
+        sorted = sorted.first(@max_images) unless @max_images == -1
+        sorted.map do |names, size|
           {"names" => names.first(MAX_NAMES), "sizeBytes" => size}
         end
       rescue StandardError
@@ -49,7 +54,7 @@ module Rubernetes
       def native_images
         return [] unless @resolver.respond_to?(:cached_images)
 
-        Array(@resolver.cached_images).filter_map do |_key, image, _last|
+        Array(@resolver.cached_images).filter_map do |_key, image, _last, _used, aliases|
           reference = image.respond_to?(:reference) ? image.reference : nil
           next if reference.nil?
 
@@ -57,7 +62,11 @@ module Rubernetes
           repository = "#{reference.registry}/#{reference.repository}"
           names = []
           names << "#{repository}@#{digest}" if digest
-          names << "#{repository}:#{reference.tag}" if reference.respond_to?(:tag) && reference.tag
+          if aliases
+            names.concat(aliases.reject { |name| name.include?("@") })
+          elsif reference.respond_to?(:tag) && reference.tag
+            names << "#{repository}:#{reference.tag}"
+          end
           manifest = image.respond_to?(:manifest) ? image.manifest : nil
           size = manifest.respond_to?(:layers) ? Array(manifest.layers).sum { |layer| layer.size.to_i } : 0
           size += manifest.config.size.to_i if manifest.respond_to?(:config) && manifest.config.respond_to?(:size)
