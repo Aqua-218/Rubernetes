@@ -6,9 +6,11 @@ require "tmpdir"
 
 require_relative "manifest"
 require_relative "puller"
+require_relative "pull_limiter"
 require_relative "pull_records"
 require_relative "reference"
 require_relative "registry_client"
+require_relative "staging_lease"
 require_relative "strict_json"
 require_relative "../platform/linux/secure_rootfs"
 
@@ -20,7 +22,7 @@ module Rubernetes
     class Resolver
       ResolvedImage = Data.define(
         :reference, :digest, :manifest, :rootfs, :stage_token, :config,
-        :entrypoint, :cmd, :env, :working_dir, :os, :architecture
+        :entrypoint, :cmd, :env, :working_dir, :os, :architecture, :cache_key, :claim_token
       ) do
         def command
           (Array(entrypoint) + Array(cmd)).freeze
@@ -48,7 +50,7 @@ module Rubernetes
         # The token is intentionally not part of the public image document.
         # Resolver#release validates object identity against its private
         # registry before any staging path can be removed.
-        private :stage_token
+        private :stage_token, :cache_key, :claim_token
 
         # The raw manifest bytes are what the pinned digest covers; the
         # runtime's verifier re-hashes them rather than trusting the digest.
@@ -68,10 +70,12 @@ module Rubernetes
 
       # +pull_records+: KubeletEnsureSecretPulledImages (on by default, with
       # the NeverVerifyPreloadedImages policy); nil turns the check off.
-      def initialize(puller: nil, puller_factory: nil, platform: nil, staging_root: nil, pull_records: PullRecords.new)
+      def initialize(puller: nil, puller_factory: nil, platform: nil, staging_root: nil, pull_records: PullRecords.new,
+                     public_blob_source: nil, pull_limiter: PullLimiter.new(nil))
         raise ArgumentError, "puller and puller_factory are mutually exclusive" if puller && puller_factory
 
         @puller = puller
+        @pull_limiter = pull_limiter
         @puller_factory = puller_factory || lambda do |reference, credentials = nil|
           options = {}
           if credentials
@@ -79,7 +83,7 @@ module Rubernetes
             options[:username] = value[:username] || value["username"] if value[:username] || value["username"]
             options[:password] = value[:password] || value["password"] if value[:password] || value["password"]
           end
-          Puller.new(registry_client: RegistryClient.new(reference, **options))
+          Puller.new(registry_client: RegistryClient.new(reference, **options), public_blob_source: public_blob_source)
         end
         @platform = Platform.coerce(platform || Platform.current)
         @staging_root = staging_root && File.expand_path(String(staging_root))
@@ -102,10 +106,14 @@ module Rubernetes
         # lowerdir, so sharing one between containers is what upstream does
         # too; each container still gets its own workspace (upper).
         @image_cache = {}
+        # Mutable references point at a repository/platform/digest entry.
+        # Moving a tag leaves the previous rootfs available to its users.
+        @image_aliases = {}
         # Monotonic time each cached image was last handed out: the image
         # garbage collector's lastUsed, and what keeps an image that a Pod is
         # starting from right now out of its reach.
         @image_last_used = {}
+        @image_claims = {}
         @image_cache_mutex = Mutex.new
         # Pulls in progress, by cache key: Pods started together on a node
         # (a DaemonSet, a ReplicaSet's first batch, a DNS spec's queriers)
@@ -117,47 +125,21 @@ module Rubernetes
 
       attr_reader :platform, :staging_root, :pull_records
 
-      # Dir.mktmpdir embeds the creating pid, which is the only durable link
-      # between a staging directory and its owner.
-      STAGE_NAME = /\Arubernetes-image-\d{8}-(\d+)-[A-Za-z0-9_]+\z/
-
-      # An agent that dies with pods running leaves its staging directories
-      # behind, and its state directory -- the only record of them -- goes with
-      # the cluster.  Nothing then refers to gigabytes of extracted rootfs, so
-      # a node that restarts often fills its disk and every later image pull
-      # fails with ENOSPC.  Reclaim on startup: a directory whose creating pid
-      # is gone can no longer be released by anyone.  A pid that still exists
-      # is left alone, so a reused pid only ever costs a missed reclaim.
-      def self.reclaim_abandoned_stages(staging_root: nil, logger: nil)
+      # Stages without a lease marker were created by an earlier resolver.
+      # Their PID alone cannot prove their owner is gone.
+      def self.reclaim_abandoned_stages(staging_root: nil, logger: nil, protected_roots: [])
         parent = staging_root ? File.expand_path(String(staging_root)) : Dir.tmpdir
-        reclaimed = 0
-        Dir.children(parent).each do |name|
-          match = STAGE_NAME.match(name)
-          next unless match
-          next if Integer(match[1]) == Process.pid || process_alive?(Integer(match[1]))
-
-          stat = File.lstat(File.join(parent, name))
-          next unless stat.directory? && !stat.symlink?
-
-          filesystem = ::Rubernetes::Platform::Linux::SecureRootfs.new(root: parent)
-          filesystem.remove(name, expected_identity: [stat.dev, stat.ino, stat.mode])
-          reclaimed += 1
-        rescue SystemCallError, StoreError, ::Rubernetes::Platform::Linux::SecureRootfs::Error
-          next
-        end
+        reclaimed = StagingLease.reclaim(parent, protected_roots: protected_roots)
         logger&.call(:info, "image.stages_reclaimed", count: reclaimed) if reclaimed.positive?
         reclaimed
-      rescue SystemCallError
-        0
       end
 
-      def self.process_alive?(pid)
-        Process.kill(0, pid)
-        true
-      rescue Errno::ESRCH
-        false
-      rescue Errno::EPERM
-        true
+      # After recovery, a running sandbox may use an unpack from a previous
+      # resolver. That stage needs collection after the last sandbox exits.
+      def reclaim_unused_stages(protected_roots)
+        return 0 unless staging_root
+
+        self.class.reclaim_abandoned_stages(staging_root: staging_root, protected_roots: protected_roots)
       end
 
       # Pulls and verifies one image. A tag is resolved exactly once by the
@@ -180,18 +162,30 @@ module Rubernetes
       # hears (:present, bool), whether the image was on the node already,
       # and (:required) when policy Never refuses an image the Pod may not
       # use as it is.
+      # A caller passing +retain+ holds a cache claim until calling #release.
       def resolve(reference, platform: nil, rootfs: nil, credentials: nil, pull_policy: nil, pull_secret: nil, pod_credentials: nil,
-                  on_pull: nil, **_context)
+                  on_pull: nil, retain: false, **_context)
+        loop do
+          image = resolve_image(reference, platform, rootfs, credentials, pull_policy, pull_secret, pod_credentials, on_pull)
+          return image unless retain && image.__send__(:cache_key)
+
+          claimed = claim_image(image)
+          return claimed if claimed
+          # GC evicted the stage before the claim was established. Resolve
+          # again rather than hand out a rootfs whose removal already began.
+        end
+      end
+
+      def resolve_image(reference, platform, rootfs, credentials, pull_policy, pull_secret, pod_credentials, on_pull)
         image_reference = Reference.parse(reference)
         target = Platform.coerce(platform || @platform)
         owned_stage = rootfs.nil?
-        # A caller-supplied rootfs owns its own destination, and "Always" asks
-        # for a fresh pull; everything else may reuse an already unpacked
-        # image, which is the IfNotPresent/Never behaviour.
-        cache_key = cacheable_key(image_reference, target, owned_stage, pull_policy)
+        # A caller-supplied rootfs owns its own destination.
+        cache_key = image_key(image_reference, target) if owned_stage
         policy = pull_policy.to_s
+        always = policy.casecmp?("Always")
         if cache_key
-          cached = cached_image(cache_key)
+          cached = cached_image(cache_key, touch: !always)
           on_pull&.call(:present, !cached.nil?)
           # imagePullPolicy Never: only an image already here, never a pull.
           if policy.casecmp("Never").zero?
@@ -207,19 +201,26 @@ module Rubernetes
           end
           # imagePullPolicy Always: the registry is asked every time, with the
           # Pod's credentials; an unchanged digest reuses the unpacked image.
-          return pulling(on_pull) { always_pull(cached, image_reference, target, credentials, pull_secret) } if cached && policy.casecmp("Always").zero?
+          return pulling(on_pull) { refresh_image(image_reference, target, credentials, pull_secret) } if cached && always
           return accessible(cached, image_reference, target, credentials, pull_secret, pod_credentials, on_pull) if cached
 
-          image = pulling(on_pull) do
-            join_or_lead(cache_key) do
+          return pulling(on_pull) do
+            led_pull = false
+            image = join_or_lead(cache_key) do
+              led_pull = true
               pull_and_resolve(image_reference, target, owned_stage, rootfs, credentials, cache_key, pull_secret)
             end
+            if always && !led_pull
+              refresh_image(image_reference, target, credentials, pull_secret)
+            else
+              accessible(image, image_reference, target, credentials, pull_secret, pod_credentials)
+            end
           end
-          return accessible(image, image_reference, target, credentials, pull_secret, pod_credentials, nil)
         end
         on_pull&.call(:present, false)
         pulling(on_pull) { pull_and_resolve(image_reference, target, owned_stage, rootfs, credentials, nil, pull_secret) }
       end
+      private :resolve_image
 
       def pulling(on_pull)
         return yield if on_pull.nil?
@@ -239,6 +240,7 @@ module Rubernetes
       # blobs.
       def image_size(image)
         manifest = image.respond_to?(:manifest) ? image.manifest : nil
+        return manifest.layers.sum(&:size) + manifest.config.size if manifest.is_a?(Manifest)
         return 0 unless manifest.is_a?(Hash)
 
         blobs = Array(manifest["layers"]) + [manifest["config"]].compact
@@ -253,45 +255,45 @@ module Rubernetes
       # since a pull can fail for a reason that is theirs alone -- a
       # credential, a deadline).
       def join_or_lead(cache_key)
-        flight, leader = @image_cache_mutex.synchronize do
-          existing = @inflight[cache_key]
-          next [existing, false] if existing
+        @image_cache_mutex.synchronize do
+          loop do
+            cached = cached_image_locked(cache_key)
+            return cached if cached
 
-          @inflight[cache_key] = {mutex: Mutex.new, condition: ConditionVariable.new, done: false}
-          [@inflight[cache_key], true]
-        end
-        unless leader
-          flight[:mutex].synchronize { flight[:condition].wait(flight[:mutex]) until flight[:done] }
-          cached = cached_image(cache_key)
-          return cached if cached
+            flight = @inflight[cache_key]
+            break unless flight
 
-          return yield
+            flight.wait(@image_cache_mutex)
+          end
+          @inflight[cache_key] = ConditionVariable.new
         end
         begin
           yield
         ensure
-          @image_cache_mutex.synchronize { @inflight.delete(cache_key) }
-          flight[:mutex].synchronize do
-            flight[:done] = true
-            flight[:condition].broadcast
-          end
+          @image_cache_mutex.synchronize { @inflight.delete(cache_key).broadcast }
         end
       end
       private :join_or_lead
 
-      def pull_and_resolve(image_reference, target, owned_stage, rootfs, credentials, cache_key, pull_secret = nil)
-        @pull_records&.record_intent(image_reference.to_s)
+      def pull_and_resolve(image_reference, target, owned_stage, rootfs, credentials, cache_key, pull_secret = nil,
+                           puller: nil, requested_reference: image_reference, expected_digest: nil)
+        observed_at = image_clock
+        @pull_records&.record_intent(requested_reference.to_s)
         destination, stage_token = owned_stage ? allocate_staging_root : [File.expand_path(String(rootfs)), nil]
-        puller = @puller || build_puller(image_reference, credentials)
-        image = puller.pull(image_reference, platform: target, rootfs: destination, unpack: true)
+        puller ||= @puller || build_puller(image_reference, credentials)
+        image = @pull_limiter.synchronize { puller.pull(image_reference, platform: target, rootfs: destination, unpack: true) }
+        digest = Digest.parse(image.digest)
+        raise DigestMismatch, "resolved image digest does not match the verified manifest" if expected_digest && expected_digest != digest
+
         config = normalize_config(image)
         image_platform = validate_platform!(config, target)
         runtime_config = config.fetch("config", {})
         raise ManifestError, "image config field must be a JSON object" unless runtime_config.is_a?(Hash)
 
+        digest_key = image_key(requested_reference.with_digest(digest), target) if cache_key
         resolved = ResolvedImage.new(
           reference: Reference.parse(image.reference),
-          digest: Digest.parse(image.digest),
+          digest: digest,
           manifest: image.manifest,
           rootfs: File.expand_path(String(image.rootfs || destination)),
           stage_token: stage_token,
@@ -301,16 +303,21 @@ module Rubernetes
           env: normalize_env(runtime_config["Env"]),
           working_dir: normalize_working_dir(runtime_config["WorkingDir"]),
           os: image_platform.os,
-          architecture: image_platform.architecture
+          architecture: image_platform.architecture,
+          cache_key: digest_key,
+          claim_token: nil
         ).freeze
         # An image with neither Entrypoint nor Cmd is a valid image (cilium's
         # operator-generic, distroless bases run with the Pod's `command`);
         # the error belongs to container creation, when the Pod gives no
         # command either (ContainerSpec#build_command, as the CRI runtime's
         # "no command specified").  Refusing it here was an ErrImagePull.
-        store_image(cache_key, resolved) if cache_key
-        record_pull(image_reference, resolved.digest, pull_secret)
-        resolved
+        record_pull(requested_reference, digest, pull_secret)
+        return resolved unless cache_key
+
+        stored = store_image(cache_key, resolved, digest_key: digest_key, observed_at: observed_at)
+        release_stage(stage_token) unless stored.equal?(resolved)
+        stored
       rescue StandardError
         release_stage(stage_token) if defined?(stage_token) && stage_token
         raise
@@ -326,36 +333,35 @@ module Rubernetes
         repository = repository_key(image_reference)
         pod_credentials ||= default_pod_credentials(pull_secret)
         return image unless @pull_records.must_attempt_pull?(repository, image.digest.to_s, pod_credentials)
-        return pulling(on_pull) { prove_access(image, image_reference, target, credentials, pull_secret) } if on_pull
 
-        prove_access(image, image_reference, target, credentials, pull_secret)
+        pulling(on_pull) { refresh_image(image_reference, target, credentials, pull_secret) }
       end
       private :accessible
 
-      def prove_access(image, image_reference, target, credentials, pull_secret)
+      def refresh_image(image_reference, target, credentials, pull_secret)
         puller = @puller || build_puller(image_reference, credentials)
-        if puller.respond_to?(:resolve_digest)
-          digest = puller.resolve_digest(image_reference, platform: target)
-          if digest.to_s == image.digest.to_s
-            record_pull(image_reference, image.digest, pull_secret)
-            return image
-          end
-        end
-        pull_and_resolve(image_reference, target, true, nil, credentials, nil, pull_secret)
-      end
-      private :prove_access
+        return pull_and_resolve(image_reference, target, true, nil, credentials, nil, pull_secret, puller: puller) unless puller.respond_to?(:resolve_digest)
 
-      def always_pull(cached, image_reference, target, credentials, pull_secret)
-        puller = @puller || build_puller(image_reference, credentials)
-        if puller.respond_to?(:resolve_digest) && puller.resolve_digest(image_reference, platform: target).to_s == cached.digest.to_s
-          record_pull(image_reference, cached.digest, pull_secret)
-          return cached
+        observed_at = image_clock
+        digest = @pull_limiter.synchronize { Digest.parse(puller.resolve_digest(image_reference, platform: target)) }
+        pinned = image_reference.with_digest(digest)
+        digest_key = image_key(pinned, target)
+        # Each caller verifies access with its own credentials before it can
+        # share the result. Fetch by digest so retagging during the pull can't
+        # substitute a different image for the verified one.
+        unpacked = false
+        image = join_or_lead(digest_key) do
+          unpacked = true
+          pull_and_resolve(pinned, target, true, nil, credentials, digest_key, pull_secret,
+                           puller: puller, requested_reference: image_reference, expected_digest: digest)
         end
-        # A new digest (or no way to ask for just the digest): a pull of its
-        # own, released with the Pod; the cached image stays for its users.
-        pull_and_resolve(image_reference, target, true, nil, credentials, nil, pull_secret)
+        record_pull(image_reference, digest, pull_secret) unless unpacked
+        @image_cache_mutex.synchronize do
+          store_alias(image_key(image_reference, target), digest_key, observed_at) if @image_cache[digest_key].equal?(image)
+        end
+        image
       end
-      private :always_pull
+      private :refresh_image
 
       # The pull's own credential, when the caller gave no Pod credentials.
       def default_pod_credentials(pull_secret)
@@ -410,6 +416,9 @@ module Rubernetes
       # running container, "rootfs path must be a regular directory" for the
       # next Pod.  A cached stage stays until the cache itself lets it go.
       def release(image)
+        claim = image.__send__(:claim_token) if image.is_a?(ResolvedImage)
+        return release_claim(image.__send__(:cache_key), claim) if claim
+
         token = image.respond_to?(:stage_token, true) ? image.__send__(:stage_token) : nil
         return true if token.nil?
         return true if cached_stage?(token)
@@ -418,10 +427,17 @@ module Rubernetes
       end
 
       # Image garbage collection (node/image_gc_manager.rb): the cached,
-      # unpacked images as [key, image, last used (monotonic seconds)].
+      # unpacked images as [key, image, last used (monotonic seconds),
+      # explicit in-use status (supplied by CRI), local reference aliases].
       def cached_images
         @image_cache_mutex.synchronize do
-          @image_cache.map { |key, entry| [key, entry, @image_last_used[key]] }
+          aliases = @image_aliases.each_with_object({}) do |(key, (digest_key, _observed_at)), references|
+            (references[digest_key] ||= []) << key.split("|", 2).first
+          end
+          @image_cache.map do |key, entry|
+            used = true if @image_claims.key?(key)
+            [key, entry, @image_last_used[key], used, aliases.fetch(key, [])]
+          end
         end
       end
 
@@ -429,55 +445,67 @@ module Rubernetes
       # handed out after +unused_since+ (monotonic), which means a Pod is
       # starting from it and the collector's view is stale.
       def evict_cached_image(key, unused_since: nil)
-        entry = @image_cache_mutex.synchronize do
-          last = @image_last_used[key]
-          next nil if unused_since && last && last > unused_since
+        entry = nil
+        removed = false
+        begin
+          @image_cache_mutex.synchronize do
+            last = @image_last_used[key]
+            next if @image_claims.key?(key) || (unused_since && last && last > unused_since)
 
-          @image_last_used.delete(key)
-          @image_cache.delete(key).tap do |removed|
-            # PruneUnknownRecords: the image is gone from the node.
-            if removed.respond_to?(:digest) && @pull_records &&
-               @image_cache.each_value.none? { |other| other.respond_to?(:digest) && other.digest.to_s == removed.digest.to_s }
-              @pull_records.forget(removed.digest.to_s)
-            end
+            entry = delete_image_locked(key)
+            forget_unused_pull_record(entry)
+          end
+        ensure
+          if entry
+            token = entry.__send__(:stage_token)
+            removed = token.nil? || release_stage(token)
           end
         end
-        return false unless entry
-
-        token = entry.__send__(:stage_token)
-        token ? release_stage(token) : true
+        removed
       end
 
       private
 
+      def forget_unused_pull_record(entry)
+        return unless entry.respond_to?(:digest) && @pull_records
+        return if @image_cache.each_value.any? { |other| other.respond_to?(:digest) && other.digest.to_s == entry.digest.to_s }
+
+        @pull_records.forget(entry.digest.to_s)
+      end
+
       def image_clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      # Only an image we unpacked into a stage we own can be handed to the next
-      # caller: the rootfs has to outlive this resolve, which a caller-supplied
-      # destination does not guarantee.
-      def cacheable_key(image_reference, target, owned_stage, _pull_policy)
-        return nil unless owned_stage
-
-        [image_reference.to_s, target.os.to_s, target.architecture.to_s].join("|")
+      def image_key(reference, target)
+        reference = reference.with_digest(reference.digest) if reference.digest? && reference.tag
+        "#{reference}|#{JSON.generate([target.os, target.architecture, target.variant])}"
       end
 
       # A cached entry is only good while its unpacked rootfs is still there;
       # an out-of-band reclaim must not turn into a container that cannot start.
-      def cached_image(key)
-        entry = @image_cache_mutex.synchronize { @image_cache[key] }
+      def cached_image(key, touch: true)
+        @image_cache_mutex.synchronize { cached_image_locked(key, touch: touch) }
+      end
+
+      def cached_image_locked(key, touch: true)
+        key = @image_aliases[key]&.first || key
+        entry = @image_cache[key]
         return nil unless entry
 
-        root = entry.rootfs.to_s
-        if !root.empty? && File.directory?(root)
-          @image_cache_mutex.synchronize { @image_last_used[key] = image_clock }
+        if File.directory?(entry.rootfs.to_s)
+          @image_last_used[key] = image_clock if touch
           return entry
         end
 
-        @image_cache_mutex.synchronize do
-          @image_cache.delete(key)
-          @image_last_used.delete(key)
-        end
+        delete_image_locked(key)
+        detach_stage(entry.__send__(:stage_token))&.fetch(:lock)&.close
         nil
+      end
+
+      def delete_image_locked(key)
+        @image_last_used.delete(key)
+        @image_claims.delete(key)
+        @image_aliases.delete_if { |_alias_key, (digest_key, _observed_at)| digest_key == key }
+        @image_cache.delete(key)
       end
 
       def cached_stage?(token)
@@ -486,20 +514,56 @@ module Rubernetes
         end
       end
 
-      def store_image(key, resolved)
+      def claim_image(image)
+        key = image.__send__(:cache_key)
         @image_cache_mutex.synchronize do
-          @image_last_used[key] = image_clock
-          @image_cache[key] ||= resolved
+          return nil unless @image_cache[key].equal?(image)
+
+          token = Object.new.freeze
+          claimed = image.with(claim_token: token)
+          (@image_claims[key] ||= {})[token] = true
+          claimed
         end
+      end
+
+      def release_claim(key, token)
+        @image_cache_mutex.synchronize do
+          claims = @image_claims[key]
+          if claims
+            claims.delete(token)
+            @image_claims.delete(key) if claims.empty?
+          end
+        end
+        true
+      end
+
+      def store_image(key, resolved, digest_key: key, observed_at: image_clock)
+        @image_cache_mutex.synchronize do
+          cached = cached_image_locked(digest_key)
+          @image_last_used[digest_key] = image_clock
+          store_alias(key, digest_key, observed_at)
+          cached || (@image_cache[digest_key] = resolved)
+        end
+      end
+
+      def store_alias(key, digest_key, observed_at)
+        return if key == digest_key
+
+        previous = @image_aliases[key]
+        return if previous && previous.last > observed_at
+
+        @image_aliases[key] = [digest_key, observed_at]
       end
 
       def allocate_staging_root
         parent = @staging_root || Dir.tmpdir
         stage = Dir.mktmpdir("rubernetes-image-", parent)
         token = Object.new.freeze
+        lock = StagingLease.acquire(stage)
         stat = File.lstat(stage)
         entry = {
           token: token,
+          lock: lock,
           parent: File.dirname(stage).freeze,
           basename: File.basename(stage).freeze,
           identity: [stat.dev, stat.ino, stat.mode].freeze
@@ -507,6 +571,7 @@ module Rubernetes
         @stage_registry_mutex.synchronize { @stage_registry[token.__id__] = entry }
         [File.join(stage, "rootfs"), token]
       rescue SystemCallError => error
+        lock&.close
         # The lease is not registered until its descriptor identity is known;
         # leave an uncertain allocation for an out-of-band janitor instead of
         # deleting a pathname that may have been replaced during setup.
@@ -586,31 +651,36 @@ module Rubernetes
       end
 
       def release_stage(token)
-        entry = @stage_registry_mutex.synchronize do
-          candidate = @stage_registry[token.__id__]
-          candidate if candidate && candidate.fetch(:token).equal?(token)
-        end
+        entry = detach_stage(token)
         return false unless entry
 
-        begin
-          secure_remove_stage(entry)
-        rescue StoreError, SystemCallError, ::Rubernetes::Platform::Linux::SecureRootfs::Error
-          # Keep the registry entry for a later ownership-ledger retry. A
-          # failed identity check or unavailable secure backend must never turn
-          # into a best-effort deletion of an arbitrary pathname.
-          return false
-        end
-        @stage_registry_mutex.synchronize { @stage_registry.delete(token.__id__) }
+        secure_remove_stage(entry)
         true
+      rescue StoreError, SystemCallError, ::Rubernetes::Platform::Linux::SecureRootfs::Error
+        # Keep partially removed stages out of the cache and let a later
+        # pass retry after dropping this owner's lease.
+        false
+      ensure
+        entry&.fetch(:lock)&.close
+      end
+
+      def detach_stage(token)
+        return unless token
+
+        @stage_registry_mutex.synchronize do
+          candidate = @stage_registry[token.__id__]
+          @stage_registry.delete(token.__id__) if candidate && candidate.fetch(:token).equal?(token)
+        end
       end
 
       def secure_remove_stage(entry)
         filesystem = ::Rubernetes::Platform::Linux::SecureRootfs.new(root: entry.fetch(:parent))
         begin
           current = filesystem.identity(entry.fetch(:basename))
+          return unless current
           raise StoreError, "image staging identity changed" unless current == entry.fetch(:identity)
 
-          filesystem.remove(entry.fetch(:basename), expected_identity: entry.fetch(:identity))
+          filesystem.remove(entry.fetch(:basename), expected_identity: entry.fetch(:identity), last_child: StagingLease::LOCK_NAME)
         ensure
           filesystem.close
         end
