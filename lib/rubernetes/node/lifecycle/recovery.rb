@@ -44,6 +44,43 @@ module Rubernetes
 
         private
 
+        MISSING_INIT_STATUS_MESSAGE =
+          "Unable to get init container status from container runtime; the node's durable record shows that it exited successfully"
+
+        # A CRI runtime may have already removed a completed init container
+        # when the agent returns. Report the inventory gap without discarding
+        # the previously observed exit details or starting that init again.
+        def refresh_recovered_init_statuses(record)
+          return unless record[:recover_init_status]
+
+          sandbox = record[:sandbox_id]
+          candidates = record[:containers].select { |entry| completed_init_without_message?(entry) }
+          if candidates.empty? || !sandbox || !runtime_supports?(:sandbox_container_ids)
+            record.delete(:recover_init_status)
+            return
+          end
+
+          present = best_effort(:unavailable) { @runtime.sandbox_container_ids(sandbox) }
+          return if present == :unavailable
+
+          record.delete(:recover_init_status)
+          return if present.nil?
+          return unless record[:containers].any? { |entry| entry[:category] == "app" && present.include?(entry[:id]) }
+
+          candidates.each do |entry|
+            next if present.include?(entry[:id])
+
+            terminated = entry[:status].fetch("terminated").merge("message" => MISSING_INIT_STATUS_MESSAGE)
+            entry[:status] = entry[:status].merge("terminated" => terminated)
+          end
+        end
+
+        def completed_init_without_message?(entry)
+          terminated = entry[:status]["terminated"]
+          entry[:category] == "init" && !entry[:id].to_s.empty? && terminated &&
+            terminated["exitCode"] == 0 && terminated["message"].to_s.empty?
+        end
+
         # What keeps the node from coming up: the runtime's own errors,
         # resources whose identity no longer matches, and orphans it could
         # not clean.
@@ -96,7 +133,9 @@ module Rubernetes
 
         def pending_records
           @mutex.synchronize do
-            @records.values.select { |record| %w[RollingBack CleanupPending StateUnknown].include?(record[:state]) }
+            @records.values.select do |record|
+              record[:pending_terminal_phase] || %w[RollingBack CleanupPending StateUnknown].include?(record[:state])
+            end
           end
         end
 
