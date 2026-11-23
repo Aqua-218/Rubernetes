@@ -36,16 +36,18 @@ class NodeEventSinkAsyncTest < Minitest::Test
     gate = Queue.new
     client = Client.new(gate: gate)
     sink = Sink.new(client: client)
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    sink.record_event(event("a"))
+    producer = Thread.new { sink.record_event(event("a")) }
 
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.05, "record must not wait for the write"
+    assert producer.join(5), "record must return while the API write is blocked"
+    assert_predicate client.created, :empty?
     assert_equal 1, sink.pending
     gate << :go
 
     assert sink.flush(timeout: 2.0)
     assert_equal "a", client.created.pop(timeout: 1)
     assert_equal 0, sink.pending
+  ensure
+    gate&.close
   end
 
   def test_events_are_written_in_order
