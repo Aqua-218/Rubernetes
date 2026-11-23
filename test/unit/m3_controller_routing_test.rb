@@ -110,6 +110,37 @@ class M3ControllerRoutingTest < Minitest::Test
     manager&.stop
   end
 
+  def test_garbage_collector_watches_route_to_its_sweep_without_a_persisted_root_kind
+    definition = Controller.default_registry.fetch("garbage-collector-controller")
+    _store, _adapter, manager, informer = runtime(definition)
+    informer.emit(object("Pod", "seeded", uid: "pod-uid"))
+    key = Controller::WatchRouting::GARBAGE_COLLECTOR_SWEEP_KEY
+
+    assert manager.queue.queued?(key)
+    assert_equal [definition.name], manager.send(:orphan_controllers_for_key, key).map(&:name)
+  ensure
+    manager&.stop
+  end
+
+  def test_garbage_collector_runs_its_first_sweep_without_informer_events
+    definition = Controller.default_registry.fetch("garbage-collector-controller")
+    _store, adapter, manager, _informer = runtime(definition, adapted: true)
+    owner = object("Pod", "orphan-owner", uid: "owner-uid")
+    owner.fetch("metadata").merge!("deletionTimestamp" => Time.now.utc.iso8601, "finalizers" => ["orphan"])
+    child = object("Deployment", "child", uid: "child-uid")
+    child.fetch("metadata")["ownerReferences"] = [owner_reference(owner)]
+    adapter.create(owner)
+    adapter.create(child)
+
+    manager.step
+    retained = adapter.find(Controller::ResourceDescriptor.parse("Deployment"), namespace: "default", name: "child")
+
+    assert retained
+    assert_empty Controller::Support.owner_references(retained)
+  ensure
+    manager&.stop
+  end
+
   def test_owner_reference_routing_requires_matching_owner_uid_and_gvk
     deployment_descriptor = Controller::ResourceDescriptor.parse("Deployment")
     pod_descriptor = Controller::ResourceDescriptor.parse("Pod")
@@ -142,16 +173,17 @@ class M3ControllerRoutingTest < Minitest::Test
 
   private
 
-  def runtime(definition)
+  def runtime(definition, adapted: false)
     store = Store.new(history_revisions: nil, history_seconds: nil)
     adapter = Controller::StoreAdapter.new(store)
+    manager_store = adapted ? adapter : store
     registry = Controller::ControllerRegistry.new(require_corpus: false)
     registry.register(definition)
     manager = Controller::Manager.new(
-      store: store, identity: "routing-#{Process.pid}-#{object_id}", registry: registry,
+      store: manager_store, identity: "routing-#{Process.pid}-#{object_id}", registry: registry,
       lease: {lease_duration_seconds: 10, renew_deadline_seconds: 6, retry_period_seconds: 1}
     )
-    manager.register_definition(definition, store: store)
+    manager.register_definition(definition, store: manager_store)
     informer = ManualInformer.new
     manager.register_informer(definition.name, informer)
     [store, adapter, manager, informer]
