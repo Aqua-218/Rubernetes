@@ -50,4 +50,47 @@ class ServiceAllocatorMetricsTest < Minitest::Test
     assert_includes text, "kube_apiserver_nodeport_allocator_allocated_ports 2"
     assert_includes text, "kube_apiserver_nodeport_allocator_available_ports 8"
   end
+
+  def test_dynamic_node_ports_use_upper_band_before_falling_back_to_static_ports
+    registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
+    @server = API::Server.new(registry: registry, store: API::MemoryStore.new, node_port_range: 30_000..30_016)
+    call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "team"}})
+    dynamic = service("first", {"type" => "NodePort"})
+
+    assert_equal 201, dynamic.status
+    assert_equal 30_016, dynamic.body.dig("spec", "ports", 0, "nodePort")
+    explicit = service("static", {"type" => "NodePort", "ports" => [{"port" => 80, "nodePort" => 30_000}]})
+
+    assert_equal 201, explicit.status
+    remaining = Array.new(15) { |index| {"name" => "p#{index}", "port" => 81 + index} }
+    fallback = service("remaining", {"type" => "NodePort", "ports" => remaining})
+
+    assert_equal 201, fallback.status
+    assert_equal (30_001..30_015).to_a, fallback.body.dig("spec", "ports").map { |port| port.fetch("nodePort") }.sort
+    full = service("full", {"type" => "NodePort"})
+    health = service("full-health", {"type" => "LoadBalancer", "externalTrafficPolicy" => "Local", "allocateLoadBalancerNodePorts" => false})
+
+    assert_equal 500, full.status
+    assert_equal "Internal error occurred: failed to allocate a nodePort: range is full", full.body.fetch("message")
+    assert_equal 500, health.status
+    assert_equal "Internal error occurred: failed to allocate a HealthCheck NodePort 0: range is full", health.body.fetch("message")
+  end
+
+  def test_cluster_ip_pool_exhaustion_and_static_conflict_report_distinct_api_statuses
+    registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
+    @server = API::Server.new(registry: registry, store: API::MemoryStore.new, service_cidrs: ["10.96.0.0/30"])
+    call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "team"}})
+
+    assert_equal 201, service("one", {"clusterIP" => "10.96.0.1"}).status
+    assert_equal 201, service("two", {"clusterIP" => "10.96.0.2"}).status
+    duplicate = service("duplicate", {"clusterIP" => "10.96.0.2"})
+
+    assert_equal 422, duplicate.status
+    assert_equal "spec.clusterIPs", duplicate.body.dig("details", "causes", 0, "field")
+    assert_match(/Invalid value: \["10\.96\.0\.2"\]/, duplicate.body.dig("details", "causes", 0, "message"))
+    exhausted = service("full", {})
+
+    assert_equal 500, exhausted.status
+    assert_equal 'failed to allocate a serviceIP for Service "full": range is full', exhausted.body.dig("details", "causes", 0, "message")
+  end
 end
