@@ -67,6 +67,10 @@ election timeoutは、heartbeat intervalの3倍以上とする。3倍を下回�
 - 再送はアプリケーション層で行う。RPCは`{cluster_id,node_id,term,request_id}`で冪等にする。
 - リーダーからフォロワーへの`AppendEntries`はパイプライン化する。
 
+別のキーの`resourceVersion`を条件とするコマンドは、RaftのTLS接続で対応を確認してから送る。リーダーは現在の投票メンバーとlearner全員の対応を確認してから受け付ける。再接続や既存ログの再送でも、対応を確認できない相手にこのコマンドは送らない。
+
+ローリングアップグレード中や、接続による対応確認が済んでいないメンバーがいる場合は、新しいAPIサーバによるこの条件付き書き込みが`503 ServiceUnavailable`を返すことがある。旧APIサーバは従来のService割り当てを続けるため、NodePortの同時割り当てを防ぐには、Serviceを書き込むすべてのAPIサーバを更新する必要がある。
+
 <a id="sec-5-3-7"></a>
 ## 5.3.7 メンバーシップ変更
 
