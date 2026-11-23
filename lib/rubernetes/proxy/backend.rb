@@ -167,42 +167,22 @@ module Rubernetes
         elsif compiled_or_diff.respond_to?(:rule_map)
           apply_compiled(compiled_or_diff)
         else
-          current = RuleSet.new
-          current.apply(rules, revision: @revision)
-          current.apply(compiled_or_diff)
-          apply_diff(current.last_diff)
+          incoming = Array(compiled_or_diff).to_h { |rule| [rule.key, rule] }
+          replace_rules(incoming)
         end
       end
 
       alias apply_rules apply
 
       def apply_compiled(compiled)
-        incoming = compiled.rule_map
-        @mutex.synchronize do
-          compiled_revision = Integer(compiled.revision)
-          raise StaleRevisionError, "compiled rule revision #{compiled_revision} is older than #{@revision}" if compiled_revision < @revision
-
-          old_rules = @rules
-          added = incoming.keys.reject { |key| old_rules.key?(key) }.map { |key| incoming.fetch(key) }
-          deleted = old_rules.keys.reject { |key| incoming.key?(key) }.map { |key| old_rules.fetch(key) }
-          updated = incoming.keys.filter_map do |key|
-            old_rule = old_rules[key]
-            new_rule = incoming[key]
-            old_rule && new_rule != old_rule ? [old_rule, new_rule] : nil
-          end
-          diff = RuleDiff.new(added: added, updated: updated, deleted: deleted,
-                              from_revision: @revision, to_revision: compiled.revision)
-          apply_diff_locked(diff)
-          @revision = compiled.revision
-          @last_diff = diff
-          diff
-        end
+        replace_rules(compiled.rule_map, revision: Integer(compiled.revision))
       end
 
       def apply_diff(diff)
-        normalized = diff.is_a?(RuleDiff) ? diff : RuleDiff.new(**diff)
-        @mutex.synchronize { apply_diff_locked(normalized) }
-        normalized
+        with_rule_change do
+          normalized = diff.is_a?(RuleDiff) ? diff : RuleDiff.new(**diff)
+          @mutex.synchronize { apply_diff_locked(normalized) }
+        end
       end
 
       def attach(hook: :tc, **)
@@ -380,6 +360,23 @@ module Rubernetes
         end
       end
 
+      def attached?
+        @mutex.synchronize { @attach_state == :attached }
+      end
+
+      def replace_rules(incoming, revision: nil)
+        with_rule_change do
+          @mutex.synchronize do
+            revision ||= @revision + 1
+            raise StaleRevisionError, "compiled rule revision #{revision} is older than #{@revision}" if revision < @revision
+
+            apply_diff_locked(RuleDiff.between(@rules, incoming, from_revision: @revision, to_revision: revision))
+          end
+        end
+      end
+
+      def with_rule_change = yield
+
       def apply_diff_locked(diff)
         raise StaleRevisionError, "rule diff starts at revision #{diff.from_revision}, expected #{@revision}" if diff.from_revision != @revision
 
@@ -540,43 +537,25 @@ module Rubernetes
         @program.freeze
       end
 
-      def apply_diff(diff)
+      def with_rule_change
         @apply_mutex.synchronize do
           previous = backend_state_snapshot
           result = nil
           begin
-            result = super
+            result = yield
             generate_program
             publish_program_diff(result) if attached?
             result
           rescue StandardError => error
-            rollback_error = rollback_program_update(previous, result)
             restore_backend_state(previous)
+            rollback_error = rollback_program_update(previous, result)
             raise BackendError, "eBPF rule update failed: #{error.message}; rollback failed: #{rollback_error.message}" if rollback_error
 
             raise
           end
         end
       end
-
-      def apply_compiled(compiled)
-        @apply_mutex.synchronize do
-          previous = backend_state_snapshot
-          result = nil
-          begin
-            result = super
-            generate_program
-            publish_program_diff(result) if attached?
-            result
-          rescue StandardError => error
-            rollback_error = rollback_program_update(previous, result)
-            restore_backend_state(previous)
-            raise BackendError, "eBPF rule update failed: #{error.message}; rollback failed: #{rollback_error.message}" if rollback_error
-
-            raise
-          end
-        end
-      end
+      private :with_rule_change
 
       def instruction_bytes
         instruction_encoder.encode(program || generate_program)
@@ -633,10 +612,6 @@ module Rubernetes
       end
 
       private
-
-      def attached?
-        @mutex.synchronize { @attach_state == :attached }
-      end
 
       def publish_program_diff(diff)
         ensure_adapter_contract!(phase: :update)
@@ -709,34 +684,12 @@ module Rubernetes
         @messages = messages_for(diff)
       end
 
-      def apply_diff(diff)
+      def with_rule_change
         @apply_mutex.synchronize do
           previous = backend_state_snapshot
           result = nil
           begin
-            result = super
-            encode_messages(diff: diff)
-            transmit_messages if attached?
-            result
-          rescue StandardError => error
-            rollback_error = rollback_message_update(previous, result)
-            restore_backend_state(previous)
-            if rollback_error
-              raise BackendError,
-                    "nftables rule update failed: #{error.message}; rollback failed: #{rollback_error.message}"
-            end
-
-            raise
-          end
-        end
-      end
-
-      def apply_compiled(compiled)
-        @apply_mutex.synchronize do
-          previous = backend_state_snapshot
-          result = nil
-          begin
-            result = super
+            result = yield
             encode_messages(diff: result)
             transmit_messages if attached?
             result
@@ -752,6 +705,7 @@ module Rubernetes
           end
         end
       end
+      private :with_rule_change
 
       def netlink_payload
         netlink_encoder.encode(messages)
@@ -787,10 +741,6 @@ module Rubernetes
       end
 
       private
-
-      def attached?
-        @mutex.synchronize { @attach_state == :attached }
-      end
 
       def transmit_messages(messages = @messages)
         ensure_adapter_contract!(phase: :transaction)
