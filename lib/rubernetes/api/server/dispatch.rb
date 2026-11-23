@@ -15,12 +15,12 @@ module Rubernetes
           case route.kind
           when :version then json_response(version_payload)
           when :api_versions
-            aggregated_discovery?(request) ? aggregated_discovery_response(core_only: true) : json_response(api_versions_payload)
+            discovery_response(request, core_only: true)
           when :api_groups
-            aggregated_discovery?(request) ? aggregated_discovery_response(core_only: false) : json_response(api_groups_payload)
+            discovery_response(request, core_only: false)
           when :api_group then api_group_response(route)
           when :resource_list then resource_list_response(route)
-          when :health then health_response(route.path)
+          when :health then health_response(request, route.path)
           when :metrics then route.path == "/metrics/slis" ? slis_response : metrics_response
           when :statusz then zpage_response(:statusz, request)
           when :flagz then zpage_response(:flagz, request)
@@ -32,21 +32,17 @@ module Rubernetes
           end
         end
 
-        # kube-apiserver registers one go-restful web service per served
-        # group/version; a miss inside one of them is rendered as a Status,
-        # while every other path falls through to the generic HTTP mux and its
-        # plain-text "404 page not found".
+        # Misses below an installed Kubernetes API group use its Status
+        # serializer, including requests for an unserved version. Paths
+        # outside those groups fall through to the generic HTTP mux.
         def unknown_path_response(route)
           segments = route.path.to_s.split("/").reject(&:empty?)
-          group_version = if segments.first == "api" && segments.length >= 2
-                            ["", segments[1]]
-                          elsif segments.first == "apis" && segments.length >= 3
-                            [segments[1], segments[2]]
-                          end
-          return discovery_not_found_response if group_version.nil?
-
-          served = enabled_resources.any? { |resource| resource.group == group_version[0] && resource.version == group_version[1] }
-          return discovery_not_found_response unless served
+          group = case segments
+                  in ["api", _, *] then ""
+                  in ["apis", name, _, *] then name
+                  else nil
+                  end
+          return discovery_not_found_response unless group && enabled_resources.any? { |resource| resource.group == group }
 
           error_response(Status::NotFound.new("the server could not find the requested resource", details: {}))
         end
@@ -55,7 +51,10 @@ module Rubernetes
           resource = route.resource
           raise Status::NotFound.new("the requested API path #{route.path.inspect} was not found") unless resource_enabled?(resource)
 
+          storage_version_precondition!(request, route)
           api_verb = api_verb_for(request, route)
+          return discovery_not_found_response if resource.custom? && resource.namespaced? && !route.namespace && !%w[list watch].include?(api_verb)
+
           allowed_verbs = route.subresource ? resource.subresource_verbs(route.subresource) : resource.verbs
           # A proxy subresource is a Connecter: upstream's ProxyREST accepts
           # every method (GET POST PUT PATCH DELETE HEAD OPTIONS) and relays it,
@@ -63,23 +62,28 @@ module Rubernetes
           # A set of valid responses are returned for both pod and service
           # Proxy" sends OPTIONS.
           proxy = route.subresource.to_s == "proxy"
-          unless proxy || allowed_verbs.empty? || allowed_verbs.include?(api_verb)
-            target = route.subresource ? "#{resource.resource}/#{route.subresource}" : resource.resource
-            raise Status::MethodNotAllowed.new("verb #{request.method} is not supported for #{target}")
+          unless proxy || (api_verb && (allowed_verbs.empty? || allowed_verbs.include?(api_verb)))
+            if resource.custom?
+              details = {"group" => resource.group, "kind" => resource.resource}
+              raise Status::MethodNotAllowed.new("#{api_verb} is not supported on resources of kind \"#{resource.resource}.#{resource.group}\"",
+                                                 details: details)
+            end
+            raise Status::MethodNotAllowed.new("the server does not allow this method on the requested resource", details: {})
           end
 
           return bridged_subresource_response(request, route) if @subresource_bridge&.handles?(route)
 
+          validate_resource_accept!(request, route, api_verb) if request.header("accept") && !proxy
+
           virtual = virtual_resource_response(request, route)
           return virtual if virtual
 
-          return watch_response(request, route) if watch_request?(request)
+          return watch_response(request, route) if api_verb == "watch"
 
           case request.method
           when "GET", "HEAD"
             route.collection ? list_response(request, route) : get_response(route)
           when "POST"
-            require_collection!(route)
             create_response(request, route)
           when "PUT"
             require_member!(route)
@@ -92,6 +96,29 @@ module Rubernetes
           else
             raise Status::MethodNotAllowed.new("method #{request.method} is not supported for #{route.path}")
           end
+        end
+
+        def validate_resource_accept!(request, route, api_verb)
+          validate_builtin_route_accept!(request, route)
+          return if api_verb == "watch"
+          return if !route.resource.custom? && %w[get list].include?(api_verb)
+
+          Negotiation.negotiate_output(
+            request.header("accept"),
+            supported: response_media_types(route),
+            table: table_supported?(route),
+            protobuf: !route.resource.custom?
+          )
+        end
+
+        def validate_builtin_route_accept!(request, route)
+          return if route.resource.custom?
+
+          produces = response_media_types(route)
+          produces += Negotiation.stream_content_types(produces) if request.method == "GET" && (route.collection || route.operation == :watch)
+          return if Negotiation.restful_route_accepts?(request.header("accept"), produces)
+
+          raise Status::NotAcceptable.new("406: Not Acceptable\n\nAvailable representations: #{produces.join(", ")}", details: {})
         end
 
         # A Pod's exec, attach, portforward or log: authenticated, admitted as
@@ -134,6 +161,8 @@ module Rubernetes
           return nil unless route.collection && route.subresource.nil?
 
           case [group, resource.resource]
+          when ["", "bindings"]
+            binding_response(request, route)
           when ["authentication.k8s.io", "tokenreviews"]
             request.method == "POST" ? token_review_response(request, route) : nil
           when ["authentication.k8s.io", "selfsubjectreviews"]
@@ -150,30 +179,29 @@ module Rubernetes
           namespace = storage_namespace(route, operation: :get)
           @store.get(resource: route.resource, namespace: namespace, name: route.name)
         rescue MemoryStore::NotFound
-          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                     details: resource_details(route))
+          raise missing_resource(route)
         end
 
         def api_verb_for(request, route)
           method = request.method
-          return "watch" if method == "GET" && watch_request?(request)
-          return "list" if %w[GET HEAD].include?(method) && route.collection
-          return "get" if %w[GET HEAD].include?(method)
-          return "create" if method == "POST"
-          return "update" if method == "PUT"
-          return "patch" if method == "PATCH"
-          return "deletecollection" if method == "DELETE" && route.collection
-          return "delete" if method == "DELETE"
+          return "watch" if route.watch_request?(request)
+          return if route.operation == :watch && method != "GET"
 
-          method.downcase
-        end
+          custom = route.resource.custom?
+          return if !custom && route.resource.namespaced? && route.namespace.nil? && method != "GET"
 
-        def require_collection!(route)
-          raise Status::Invalid.new("operation requires a resource collection") unless route.collection
+          case method
+          when "GET" then route.collection ? "list" : "get"
+          when "HEAD" then (route.collection ? "list" : "get") if custom
+          when "POST" then "create" if route.collection || route.subresource || custom
+          when "PUT" then "update" if !route.collection || custom
+          when "PATCH" then "patch" if !route.collection || custom
+          when "DELETE" then route.collection ? "deletecollection" : "delete"
+          end
         end
 
         def require_member!(route)
-          raise Status::Invalid.new("operation requires a named resource") if route.collection || route.name.nil?
+          raise Status::BadRequest.new("name must be provided") if route.name.nil?
         end
 
         POD_SCHEDULE_WAIT_SECONDS = Float(ENV.fetch("RUBERNETES_LOG_SCHEDULE_WAIT", "120"))
