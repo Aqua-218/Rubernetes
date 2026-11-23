@@ -59,14 +59,11 @@ module M2LedgerProbe
       resource_kinds = inventory_measurement.fetch("resource_kinds")
       sigkill_matrix.each do |entry|
         effect = entry.fetch("effect_point")
-        effect_points.find { |point| point.fetch("name") == effect }["live_leak_count"] = entry.fetch("dead_residual_count")
+        effect_points.find { |point| point.fetch("name") == effect }["live_leak_count"] = M2ProbeSupport.sigkill_sample_leaks(entry)
       end
       kernel_l3_available = M2ProbeSupport.l3_available?
       l3_available = kernel_l3_available && inventory_measurement.fetch("missing_resource_kinds").empty?
-      matrix_passed = sigkill_matrix.all? do |entry|
-        entry["kill_observed"] == true && entry["restart_observed"] == true && entry["wal_replayed"] == true &&
-          entry["live_wrong_deletion_count"] == 0 && entry["dead_residual_count"] == 0
-      end
+      matrix_passed = sigkill_matrix.all? { |entry| M2ProbeSupport.sigkill_sample_passed?(entry) }
       errors = []
       errors << "L3 kernel isolation profile is unavailable" unless kernel_l3_available
       unless inventory_measurement.fetch("missing_resource_kinds").empty?
@@ -119,6 +116,6 @@ module M2LedgerProbe
   end
 end
 
-M2ProbeSupport.run_probe("m2_resource_ledger", "m2-ledger-probe") do |_current, _input|
+M2ProbeSupport.run_probe("m2_resource_ledger", "m2-ledger-probe", pretty: false) do |_current, _input|
   M2LedgerProbe.run
 end
