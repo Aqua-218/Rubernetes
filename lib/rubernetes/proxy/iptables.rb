@@ -66,14 +66,12 @@ module Rubernetes
       def self.service_chain?(name) = name.start_with?("KUBE-SVC-", "KUBE-SVL-", "KUBE-SEP-", "KUBE-EXT-", "KUBE-FW-")
       def self.probability(n) = format("%0.10f", 1.0 / n)
 
-      # One Service port as the proxier sees it, assembled from the compiler's
-      # per-front-end rules (ClusterIP / ExternalIP / LoadBalancer / NodePort
-      # / HealthCheckNodePort share a service port).
+      # One Service port, assembled from the compiler's per-frontend rules.
       ServicePort = Struct.new(:name_string, :protocol, :port, :cluster_ips, :external_ips, :load_balancer_ips, :node_port, :health_check_node_port,
                                :external_policy_local, :internal_policy_local, :session_affinity, :affinity_timeout, :source_ranges,
-                               :endpoints, :hints, keyword_init: true) do
+                               :endpoints, :hints, :node_zone, keyword_init: true) do
         def externally_accessible? = !external_ips.empty? || !load_balancer_ips.empty? || node_port.to_i.positive?
-        def uses_cluster_endpoints? = !internal_policy_local || !external_policy_local || !externally_accessible?
+        def uses_cluster_endpoints? = !internal_policy_local || externally_accessible?
         def uses_local_endpoints? = internal_policy_local || (external_policy_local && externally_accessible?)
       end
 
@@ -106,7 +104,9 @@ module Rubernetes
         def service_ports(rules)
           groups = {}
           Array(rules).each do |rule|
+            families = Array(rule.metadata["serviceFamilies"])
             next if rule.health_check && rule.kind == "HealthCheckNodePort" && rule.protocol != "TCP"
+            next if rule.node_port && !families.empty? && !families.include?(@family)
 
             service_port = rule.metadata["servicePort"] || {}
             port_name = (service_port["name"] || "").to_s
@@ -118,7 +118,7 @@ module Rubernetes
                                                     internal_policy_local: rule.internal_traffic_policy == "Local",
                                                     session_affinity: rule.session_affinity, affinity_timeout: rule.session_affinity_timeout_seconds,
                                                     source_ranges: Array(rule.metadata["loadBalancerSourceRanges"]).map(&:to_s),
-                                                    endpoints: [], hints: rule.metadata["topologyAwareHints"])
+                                                    endpoints: [], hints: rule.metadata["topologyAwareHints"], node_zone: rule.metadata["zone"])
             case rule.kind
             when "ClusterIP" then entry.cluster_ips << rule.virtual_ip if family_of(rule.virtual_ip) == @family
             when "ExternalIP" then entry.external_ips << rule.virtual_ip if family_of(rule.virtual_ip) == @family
@@ -169,14 +169,12 @@ module Rubernetes
           [cluster, local, (cluster + local).uniq { |endpoint| [endpoint.address, endpoint.port] }, has_any]
         end
 
-        # Topology-aware hints: endpoints hinted for this node's zone, when
-        # every endpoint carries a hint and the node has a zone.
         def apply_hints(service_port, endpoints)
-          return endpoints if @node_zone.to_s.empty? || (service_port.hints.to_s.downcase == "disabled" && service_port.hints)
-          return endpoints unless endpoints.all? { |endpoint| endpoint.respond_to?(:hints) && !Array(endpoint.hints).empty? }
+          return endpoints if service_port.hints == false || service_port.hints.to_s.casecmp?("disabled")
 
-          hinted = endpoints.select { |endpoint| Array(endpoint.hints).map(&:to_s).include?(@node_zone.to_s) }
-          hinted.empty? ? endpoints : hinted
+          TopologyHints.preferred(endpoints, node: @node_name, zone: service_port.node_zone || @node_zone) do |endpoint, field|
+            endpoint.public_send(field) if endpoint.respond_to?(field)
+          end
         end
 
         Program = Struct.new(:text, :filter_rules, :nat_rules, :active_chains, :skipped_nat_rules, :no_local_internal, :no_local_external,
@@ -680,7 +678,7 @@ module Rubernetes
 
         def available? = attachable?
         def production_capable? = @adapter.respond_to?(:production_capable?) && @adapter.production_capable? == true
-        def attached? = @mutex.synchronize { @attach_state == :attached }
+        public :attached?
 
         def kernel_identity
           {"backend" => "iptables", "families" => families, "chains" => CHAINS.values}
@@ -721,11 +719,11 @@ module Rubernetes
           true
         end
 
-        def apply_diff(diff)
+        def with_rule_change
           @apply_mutex.synchronize do
             previous = backend_state_snapshot
             begin
-              result = super
+              result = yield
               remember_changed(result)
               sync_all! if attached?
               result
@@ -735,21 +733,7 @@ module Rubernetes
             end
           end
         end
-
-        def apply_compiled(compiled)
-          @apply_mutex.synchronize do
-            previous = backend_state_snapshot
-            begin
-              result = super
-              remember_changed(result)
-              sync_all! if attached?
-              result
-            rescue StandardError
-              restore_backend_state(previous)
-              raise
-            end
-          end
-        end
+        private :with_rule_change
 
         # One syncProxyRules per family.  Public for tests and the service's
         # periodic resync.
@@ -803,17 +787,6 @@ module Rubernetes
             rule.respond_to?(:service_key) ? rule.service_key : nil
           end
           families.each { |family| @pending_services[family].merge(services) }
-        end
-
-        def set_attach_state(state)
-          @mutex.synchronize { @attach_state = state }
-        end
-
-        def fail_attach_state(error)
-          @mutex.synchronize do
-            @attach_state = :failed
-            @last_error = error
-          end
         end
       end
     end
