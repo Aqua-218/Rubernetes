@@ -10,6 +10,8 @@ require "tempfile"
 require_relative "../../lib/rubernetes/schema"
 require_relative "../../lib/rubernetes/schema/codec/proto_descriptor"
 
+require_relative "../../lib/rubernetes/schema/compiled_types"
+
 module RubernetesFieldParity
   ROOT = File.expand_path("../..", __dir__).freeze
   CORPUS_RELATIVE_PATH = "schema/kubernetes/v1.36.2"
@@ -112,7 +114,6 @@ module RubernetesFieldParity
       @registry = parse_json(File.join(generated_root, "schema/registry.json"), "generated registry")
       @field_sets = parse_json(File.join(generated_root, "fixtures/field-sets.json"), "generated field sets")
       @manifest = parse_json(File.join(generated_root, "manifest.json"), "generated manifest")
-      @ruby_source = read_file(File.join(generated_root, "ruby/kubernetes_types.rb"))
       @rbs_source = read_file(File.join(generated_root, "rbs/kubernetes_types.rbs"))
 
       definitions = @swagger.fetch("definitions")
@@ -126,7 +127,7 @@ module RubernetesFieldParity
       @definitions = definitions
       @types = index_unique(@registry.fetch("types"), "schema", "registry type")
       @resources = @registry.fetch("resources")
-      @ruby_classes = parse_ruby_classes(@ruby_source)
+      @ruby_classes = read_ruby_classes
       @rbs_classes = parse_rbs_classes(@rbs_source)
     end
 
@@ -455,42 +456,44 @@ module RubernetesFieldParity
       registry.messages[proto_name]
     end
 
-    def parse_ruby_classes(source)
-      class_names = source.scan(/^    class (\w+) < Rubernetes::Schema::ValueObject$/).flatten
-      duplicate_values(class_names).each { |name| issue("duplicate_ruby_class", name, "unique", class_names.count(name)) }
-      blocks = {}
-      source.scan(/^    class (\w+) < Rubernetes::Schema::ValueObject\n(.*?)^    end$/m) do |constant, body|
-        schema_matches = body.scan(/^      SCHEMA_NAME = ("(?:\\.|[^"])*")\.freeze$/).flatten
-        fields_matches = body.scan(/^      FIELDS = (\[.*\])\.freeze$/).flatten
-        required_matches = body.scan(/^      REQUIRED_FIELDS = (\[.*\])\.freeze$/).flatten
-        field_definition_count = body.scan(/^      FIELD_DEFINITIONS = Rubernetes::Schema::DeepFreeze\.call\(/).length
-        definition_count = body.scan(/^      DEFINITION = Rubernetes::Schema::Definition\.new\($/).length
-        unless schema_matches.length == 1 && fields_matches.length == 1 && required_matches.length == 1 &&
-               field_definition_count == 1 && definition_count == 1
-          issue("malformed_ruby_class", constant, "one schema/fields/required/field AST/definition declaration",
-                [schema_matches.length, fields_matches.length, required_matches.length, field_definition_count, definition_count])
-          next
-        end
-        method_names = body.scan(/^      def (\S+)$/).flatten
-        methods = {}
-        body.scan(/^      def (\S+)\n        field\(("(?:\\.|[^"])*")\)\n      end$/) do |method_name, field_literal|
-          if methods.key?(method_name)
-            issue("duplicate_ruby_method", "#{constant}##{method_name}", "unique", 2)
-          else
-            methods[method_name] = JSON.parse(field_literal)
+    # Inspect declarations as data. Exercise the shipped binder on an isolated
+    # namespace without executing Ruby from the artifact under review.
+    def read_ruby_classes
+      directory = File.join(generated_root, "ruby")
+      registry = Rubernetes::Schema::CompiledTypes.new(Module.new, directory)
+      classes = {}
+      scaffolding = ['require_relative "../kubernetes_types"', "module Rubernetes::Generated", "end"]
+      Dir[File.join(directory, "types/*.rb")].each do |file|
+        File.foreach(file) do |line|
+          next if line.strip.empty? || line.start_with?("#") || scaffolding.include?(line.chomp)
+
+          match = /\A  TYPES\.define\((.*)\)\s*\z/.match(line)
+          unless match
+            issue("malformed_ruby_class", File.basename(file), "type declaration", line.chomp)
+            next
           end
+          name, readers = JSON.parse("[#{match[1]}]")
+          compare("ruby_package", name, Rubernetes::Schema::CompiledTypes.package(name), File.basename(file, ".rb"))
+          constant = registry.constants.fetch(name)
+          if classes.key?(constant)
+            issue("duplicate_ruby_class", constant, "unique", 2)
+            next
+          end
+          methods = readers.map { |reader| reader.is_a?(Array) ? reader.first : reader }
+          duplicate_values(methods).each { |method| issue("duplicate_ruby_method", "#{constant}##{method}", "unique", methods.count(method)) }
+          klass = registry.define(name, readers)
+          probe = klass.allocate
+          probe.define_singleton_method(:field) { |key| key }
+          targets = klass.public_instance_methods(false).to_h { |method| [method.to_s, klass.instance_method(method).bind_call(probe)] }
+          classes[constant] = {
+            "schema" => klass::SCHEMA_NAME,
+            "fields" => klass::DEFINITION.fields.keys,
+            "required" => klass::DEFINITION.required_fields.map(&:json_name),
+            "methods" => targets
+          }
         end
-        compare("ruby_method_shape", constant, method_names.sort, methods.keys.sort)
-        blocks[constant] = {
-          "schema" => JSON.parse(schema_matches.first),
-          "fields" => JSON.parse(fields_matches.first),
-          "required" => JSON.parse(required_matches.first),
-          "methods" => methods
-        }
-      rescue JSON::ParserError => error
-        issue("malformed_ruby_literal", constant, "JSON-compatible generated literal", error.message)
       end
-      blocks
+      classes
     end
 
     def parse_rbs_classes(source)
