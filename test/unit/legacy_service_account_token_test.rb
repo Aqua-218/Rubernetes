@@ -25,7 +25,7 @@ class LegacyServiceAccountTokenTest < Minitest::Test
     lookup = A::ServiceAccount::Lookup.new(
       service_account: ->(_ns, name) { @objects[name == "builder" ? "sa" : name] },
       secret: ->(_ns, name) { @objects["secret:#{name}"] },
-      pod: ->(_ns, _name) {}, node: ->(_ns, _name) {}
+      pod: ->(_ns, name) { @objects["pod:#{name}"] }, node: ->(_ns, _name) {}
     )
     @authenticator = A::ServiceAccount.new(issuer: "https://kubernetes.default.svc", signing_key: @key, api_audiences: ["https://kubernetes.default.svc"],
                                            lookup: lookup, clock: -> { @now },
@@ -97,11 +97,13 @@ class LegacyServiceAccountTokenTest < Minitest::Test
   end
 
   def test_projected_tokens_count_as_valid_or_stale_by_warnafter
-    token, = @authenticator.issue(namespace: "ns", service_account_name: "builder", service_account_uid: "sa-uid", expiration_seconds: 7200)
+    @objects["pod:build"] = {"metadata" => {"uid" => "pod-uid"}}
+    token, = @authenticator.issue(namespace: "ns", service_account_name: "builder", service_account_uid: "sa-uid", expiration_seconds: 3607,
+                                  bound_object: {"kind" => "Pod", "name" => "build", "uid" => "pod-uid"})
     @authenticator.authenticate_token(token)
 
     assert_includes @metrics.render, "serviceaccount_valid_tokens_total 1"
-    @now += 3601
+    @now += 3608
     @authenticator.authenticate_token(token)
 
     assert_includes @metrics.render, "serviceaccount_stale_tokens_total 1"
