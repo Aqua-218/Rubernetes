@@ -79,6 +79,7 @@ require_relative "native/resource_limits"
 require_relative "native/device_filter"
 require_relative "native/sandbox_lifecycle"
 require_relative "native/container_lifecycle"
+require_relative "native/container_log_retention"
 require_relative "native/container_start"
 require_relative "native/container_hooks"
 require_relative "native/connectors"
@@ -114,11 +115,12 @@ module Rubernetes
       # An attach client borrows the supervisor-owned stdio descriptors. Its
       # HTTP/WebSocket lifecycle must never close the sole read end and send
       # SIGPIPE to the container. Each request gets an independently closable
-      # view while the underlying descriptor remains owned by the process
-      # supervisor until container teardown.
+      # view. The process keeps stdin across sessions unless stdinOnce asks
+      # the first attachment to finish it.
       class BorrowedProcessStream
-        def initialize(endpoint)
+        def initialize(endpoint, &finish)
           @endpoint = endpoint
+          @finish = finish
           @closed = false
           @mutex = Mutex.new
         end
@@ -157,7 +159,12 @@ module Rubernetes
         end
 
         def close
-          @mutex.synchronize { @closed = true }
+          @mutex.synchronize do
+            return self if @closed
+
+            @closed = true
+          end
+          @finish&.call
           self
         end
 
@@ -192,6 +199,7 @@ module Rubernetes
       include ResourceCleanup    # cleanup of one observed resource
       include CrashRecovery      # recovery and reconstruction after a restart
       include Teardown           # rollback and reverse-order release
+      include ContainerLogRetention
       include CleanupErrors      # structured cleanup failures
 
       def initialize(config: nil, profile: nil, adapters: {}, journal: nil, clock: -> { Time.now.utc },
@@ -252,6 +260,13 @@ module Rubernetes
       end
 
       attr_reader :capability_probe, :config, :ledger, :namespace, :filesystem, :security, :process_supervisor, :events, :image_resolver
+
+      # The native runtime's namespace supervisors and holders run outside
+      # the workload and agent cgroups so they can survive an agent restart.
+      def runtime_service_cgroup
+        adapter = @namespace.adapter
+        adapter.supervisor_cgroup if adapter.is_a?(Platform::Linux::NativeAdapters::NamespaceAdapter)
+      end
 
       def validate_config!
         config.validate!
