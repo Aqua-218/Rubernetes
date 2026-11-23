@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../peer_transport"
+
 module Rubernetes
   module API
     class Server
@@ -127,7 +129,7 @@ module Rubernetes
                   end
           verb = method
           verb = scope == "resource" || scope.empty? ? "GET" : "LIST" if %w[GET HEAD].include?(method)
-          verb = "WATCH" if method == "GET" && watch_request?(request)
+          verb = "WATCH" if method == "GET" && route&.watch_request?(request)
           verb = "APPLY" if method == "PATCH" && request.header("content-type").to_s.split(";").first.to_s.strip == APPLY_PATCH_TYPE
           verb = "CONNECT" if resource && CONNECT_SUBRESOURCES.include?(subresource.to_s)
           verb = "other" unless %w[APPLY CONNECT CREATE DELETE DELETECOLLECTION GET LIST PATCH POST PROXY PUT UPDATE WATCH
@@ -141,7 +143,7 @@ module Rubernetes
         def long_running_response(request, route, response, started, webhook_seconds)
           return nil unless @metrics && request && route&.resource_route? && response.is_a?(Response)
 
-          watch = request.method == "GET" && watch_request?(request)
+          watch = request.method == "GET" && route&.watch_request?(request)
           return nil unless watch || LONG_RUNNING_SUBRESOURCES.include?(route.subresource.to_s)
 
           return nil unless streaming_body?(response) || response.upgrade?
@@ -162,13 +164,16 @@ module Rubernetes
                 finish.call
               end
             end
+            metered.define_singleton_method(:close) { upgrade.close } if upgrade.is_a?(PeerTransport::UpgradeRelay) || upgrade.is_a?(WatchWebSocket)
             return Response.new(status: response.status, headers: response.headers, body: response.body, stream: response.stream?,
                                 upgrade: metered, unbounded: response.unbounded?, encoded_body: response.encoded_body)
           end
 
           resource = route.resource
-          events = watch ? {"group" => resource.group.to_s, "version" => resource.version.to_s, "resource" => resource.resource.to_s} : nil
-          watch_list = if watch && truthy?(query(request, "sendInitialEvents")) && feature_gate_enabled?("WatchList")
+          events = if watch && resource && !response.body.is_a?(PeerTransport::Stream)
+                     {"group" => resource.group.to_s, "version" => resource.version.to_s, "resource" => resource.resource.to_s}
+                   end
+          watch_list = if events && truthy?(query(request, "sendInitialEvents")) && feature_gate_enabled?("WatchList")
                          {labels: events.merge("scope" => labels["scope"]), started: started}
                        end
           body = LongRunningBody.new(response.body, metrics: @metrics, labels: labels, watch: events, finish: finish, watch_list: watch_list)
