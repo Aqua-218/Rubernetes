@@ -87,12 +87,6 @@ module Rubernetes
           (annotations[UID_ANNOTATION].to_s.empty? || annotations[UID_ANNOTATION].to_s == Support.uid(service_account).to_s)
       end
 
-      def token_secret_name(service_account)
-        base = Support.name(service_account).downcase.gsub(/[^a-z0-9-]/, "-").squeeze("-").sub(/\A-|-\z/, "")
-        digest = Digest::SHA256.hexdigest("#{Support.namespace(service_account)}/#{Support.uid(service_account)}")[0, 10]
-        "#{base.empty? ? "serviceaccount" : base}-token-#{digest}"[0, 253]
-      end
-
       def token_secret(service_account, name, token:, root_ca:)
         namespace = Support.namespace(service_account)
         annotations = {
@@ -119,15 +113,6 @@ module Rubernetes
         candidate["data"] = Support.deep_copy(Support.value(existing, "data", {}))
         desired.fetch("data").each { |key, value| candidate["data"][key] ||= value }
         candidate
-      end
-
-      def service_account_secret_refs(service_account, token_secret)
-        existing = Array(Support.value(service_account, "secrets", []))
-        refs = existing.map { |reference| Support.deep_copy(reference) }
-        return refs if refs.any? { |reference| Support.value(reference, "name", "").to_s == Support.name(token_secret) }
-
-        refs << {"name" => Support.name(token_secret), "namespace" => Support.namespace(service_account)}
-        refs
       end
 
       def existing_token(encoded)
