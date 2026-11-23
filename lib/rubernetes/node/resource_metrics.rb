@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 require "time"
-require "find"
 require "etc"
 require_relative "../observability/metrics"
+require_relative "directory_usage"
+require_relative "cadvisor_filesystems"
 
 module Rubernetes
   module Node
@@ -150,10 +151,9 @@ module Rubernetes
         ["container_fs_inodes_total", "gauge", "Number of Inodes"],
         ["container_fs_limit_bytes", "gauge", "Number of bytes that can be consumed by the container on this filesystem."],
         ["container_fs_usage_bytes", "gauge", "Number of bytes that are consumed by the container on this filesystem."],
+        *Filesystems::DISK_FAMILIES.map { |family| family.take(3) },
         ["container_fs_reads_bytes_total", "counter", "Cumulative count of bytes read"],
-        ["container_fs_reads_total", "counter", "Cumulative count of reads completed"],
         ["container_fs_writes_bytes_total", "counter", "Cumulative count of bytes written"],
-        ["container_fs_writes_total", "counter", "Cumulative count of writes completed"],
         ["container_blkio_device_usage_total", "counter", "Blkio Device bytes usage"],
         ["container_network_receive_bytes_total", "counter", "Cumulative count of bytes received"],
         ["container_network_receive_packets_total", "counter", "Cumulative count of packets received"],
@@ -207,6 +207,7 @@ module Rubernetes
 
         stamp_ms = (now.to_f * 1000).to_i
         samples = Hash.new { |hash, key| hash[key] = [] }
+        Filesystems.add_node(samples, stamp_ms, proc_root)
         failed = false
         Array(usages).each do |record, usage|
           render_pod(samples, record, usage, stamp_ms, now, proc_root, sys_root, disk_usage)
@@ -216,7 +217,17 @@ module Rubernetes
         # cAdvisor's plain gauge: 1 when any container's metrics failed.
         samples["container_scrape_error"] << [{}, failed ? 1 : 0, nil]
         machine_samples(samples, machine)
-        (MACHINE_FAMILIES + CONTAINER_FAMILIES).filter_map do |name, type, help|
+        render_families(MACHINE_FAMILIES + CONTAINER_FAMILIES, samples)
+      end
+
+      def render_machine(machine)
+        samples = Hash.new { |hash, key| hash[key] = [] }
+        machine_samples(samples, machine)
+        render_families(MACHINE_FAMILIES, samples)
+      end
+
+      def render_families(families, samples)
+        families.filter_map do |name, type, help|
           lines = samples[name]
           next if lines.empty?
 
@@ -255,7 +266,7 @@ module Rubernetes
           started = entry && ResourceMetrics.parse_time(entry[:started_at] || entry["started_at"] || entry.dig(:status, "running",
                                                                                                                "startedAt"))
           samples["container_start_time_seconds"] << [labels, started.to_f, stamp_ms] if started
-          add_rootfs(samples, container["rootfs"], labels, stamp_ms, disk_usage) if container["rootfs"]
+          Filesystems.add_container(samples, container["rootfs"], labels, stamp_ms, sys_root, disk_usage) if container["rootfs"]
         end
       end
 
@@ -327,42 +338,7 @@ module Rubernetes
         device
       end
 
-      def add_rootfs(samples, path, labels, stamp_ms, disk_usage)
-        return unless File.directory?(path)
-
-        used, _inodes = disk_usage ? disk_usage.call(path) : directory_usage(path)
-        stat = statfs(path)
-        device_labels = labels.merge("device" => stat && stat[:device] ? stat[:device] : "rootfs")
-        samples["container_fs_usage_bytes"] << [device_labels, used.to_i, stamp_ms]
-        return unless stat
-
-        samples["container_fs_limit_bytes"] << [device_labels, stat[:capacity], stamp_ms]
-        samples["container_fs_inodes_free"] << [device_labels, stat[:inodes_free], stamp_ms]
-        samples["container_fs_inodes_total"] << [device_labels, stat[:inodes], stamp_ms]
-      end
-
-      def statfs(path)
-        require_relative "../platform/linux/statfs"
-        return nil unless Platform::Linux::Statfs.supported?
-
-        result = Platform::Linux::Statfs.statfs(path)
-        {capacity: result.capacity_bytes, inodes_free: result.files_free, inodes: result.files, device: nil}
-      rescue StandardError
-        nil
-      end
-
-      def directory_usage(path)
-        bytes = 0
-        inodes = 0
-        Find.find(path) do |entry|
-          stat = File.lstat(entry)
-          bytes += stat.blocks * 512
-          inodes += 1
-        rescue SystemCallError
-          Find.prune
-        end
-        [bytes, inodes]
-      end
+      def directory_usage(path) = DirectoryUsage.measure(path)
 
       # /proc/<pid>/net/dev of the Pod's network namespace holder: every
       # interface but loopback, like cAdvisor.
