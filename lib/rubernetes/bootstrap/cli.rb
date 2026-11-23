@@ -49,8 +49,10 @@ module Rubernetes
         assembly = Assembler.new(
           process_name: @process_name,
           config_path: options[:config_path],
+          kubelet_config_path: options[:kubelet_config_path],
           log_io: @stderr
         ).build
+        report_read_only_kubelet_fields(assembly.config)
         if options[:check_config]
           @stdout.puts(JSON.generate(process: @process_name, valid: true, config: assembly.config.to_h))
           assembly.shutdown.close
@@ -63,6 +65,13 @@ module Rubernetes
       end
 
       private
+
+      def report_read_only_kubelet_fields(config)
+        fields = config.kubelet_read_only_fields
+        return if fields.empty?
+
+        @stderr.puts("#{@process_name}: unchanged readback-only KubeletConfiguration fields: #{fields.join(", ")}")
+      end
 
       def run_rubectl(argv)
         require_relative "../rubectl"
@@ -79,6 +88,9 @@ module Rubernetes
         OptionParser.new do |parser|
           parser.banner = "Usage: #{@process_name} [options]"
           parser.on("-c", "--config PATH", "load configuration from PATH") { |path| options[:config_path] = path }
+          if @process_name == "rubernetes-agent"
+            parser.on("--kubelet-config PATH", "overlay a kubelet v1beta1 configuration") { |path| options[:kubelet_config_path] = path }
+          end
           parser.on("--check-config", "validate configuration and exit") { options[:check_config] = true }
           parser.on("-v", "--version", "print version and exit") { options[:version] = true }
           parser.on("-h", "--help", "show this help and exit") { options[:help] = true }
