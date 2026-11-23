@@ -34,7 +34,7 @@ module M9Gate
   RELEASE_REQUIRED = %w[release_manifest_present release_manifest_binds_source sbom_present
                         sbom_pins_every_component rebuild_is_byte_identical clean_host_rebuild_attached
                         ruby_ratio_at_least_85_percent].freeze
-  FORMAL_REQUIRED = %w[lean_sources_present lean_has_no_escape_hatch lean_proofs_compile
+  FORMAL_REQUIRED = %w[lean_sources_present lean_has_no_escape_hatch lean_proofs_compile lean_implementation_parity
                        model_checked_claims_have_a_run every_claim_states_its_level].freeze
   OPERATIONS_REQUIRED = %w[benchmark_against_oracle soak_ran_for_the_required_duration
                            soak_found_no_defect clean_host_reproduction].freeze
@@ -250,6 +250,7 @@ module M9Gate
       occurrences = Array(by_id.dig("lean_has_no_escape_hatch", "occurrences"))
       errors << "Lean sources must contain no sorry/admit/native_decide: #{occurrences.first(3).inspect}" unless occurrences.empty?
       errors << "every Lean proof must compile" unless by_id.dig("lean_proofs_compile", "passed") == true
+      errors << "Lean differential tests must match the Ruby implementation" unless by_id.dig("lean_implementation_parity", "passed") == true
       errors << "every model_checked claim must name its run and report no counterexample" unless by_id.dig(
         "model_checked_claims_have_a_run", "passed"
       ) == true
