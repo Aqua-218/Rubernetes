@@ -18,6 +18,7 @@ class M2ProbesTest < Minitest::Test
     # asserted in order afterwards.
     names = %w[attack lifecycle ledger]
     outcomes = names.map { |name| Thread.new { run_probe(name) } }.map(&:value)
+    lifecycle_victim_cgroups = []
     names.zip(outcomes).each do |name, (report, stderr, status)|
       assert_empty stderr
       case name
@@ -33,7 +34,7 @@ class M2ProbesTest < Minitest::Test
         # the external Kubernetes oracle is never BLOCKED. With the pinned
         # source checkout configured it must execute on the real v1.36.2 node;
         # otherwise it must name the missing input instead of fabricating.
-        oracle = report.fetch("lifecycle_oracle")
+        oracle = required_probe_value(name, report, "lifecycle_oracle")
 
         refute_equal "BLOCKED", oracle.fetch("status")
         refute_includes report.fetch("errors"), M2KubernetesLifecycleOracle::CNI_LOCK_BLOCKER
@@ -65,14 +66,18 @@ class M2ProbesTest < Minitest::Test
         assert_empty report.fetch("inventory_measurement").fetch("missing_resource_kinds")
         assert_equal "PASS", report.fetch("inventory_measurement").fetch("profile_status")
         assert_equal(M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") })
+        lifecycle_victim_cgroups = victim_cgroup_paths(report)
+
         assert(report.fetch("sigkill_matrix").all? do |entry|
           entry.fetch("kill_observed") && entry.fetch("restart_observed") && entry.fetch("wal_replayed") &&
             entry.fetch("wait_status").fetch("signal") == "SIGKILL" &&
             entry.fetch("live_wrong_deletion_count").zero? && entry.fetch("dead_residual_count").zero?
         end)
+        assert_sigkill_handoff(report)
         assert(report.fetch("subresource_e2e").values.all? { |entry| entry.fetch("passed") })
       when "ledger"
-        if report.fetch("l3_available")
+        l3_available = required_probe_value(name, report, "l3_available")
+        if l3_available
           assert_predicate status, :success?, "#{name} should pass only with complete L3 evidence"
         else
           refute_predicate status, :success?, "#{name} must fail closed without L3 kernel evidence"
@@ -93,8 +98,12 @@ class M2ProbesTest < Minitest::Test
         assert_equal expected_ledger_cycles, report.fetch("cycle_inventory_measurement").fetch("cycle_count")
         assert_equal "Rubernetes::Platform::Linux::NativeAdapters", report.fetch("cycle_inventory_measurement").fetch("adapter_class")
         assert_equal(M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") })
+        assert_empty lifecycle_victim_cgroups & victim_cgroup_paths(report), "independent crash probes must own distinct cgroups"
         assert(report.fetch("sigkill_matrix").all? { |entry| entry.fetch("dead_residual_count").zero? })
+        assert_sigkill_handoff(report)
       end
+    rescue Minitest::Assertion, KeyError => error
+      raise probe_assertion(error, name, report, stderr)
     end
 
     %w[runtime kernel].each do |name|
@@ -114,6 +123,24 @@ class M2ProbesTest < Minitest::Test
         assert_equal "INCOMPLETE", report.fetch("status")
         refute_empty report.fetch("errors")
       end
+    rescue Minitest::Assertion, KeyError => error
+      raise probe_assertion(error, name, report, stderr) if report
+
+      raise
+    end
+  end
+
+  private def assert_sigkill_handoff(report)
+    report.fetch("sigkill_matrix").each do |entry|
+      precommit = entry.fetch("precommit")
+
+      assert precommit.fetch("kill_observed"), entry.fetch("effect_point")
+      assert precommit.fetch("ready"), entry.fetch("effect_point")
+      assert_equal 0, precommit.fetch("checkpoint").fetch("workload_process_count")
+      assert_equal "Stopped", precommit.fetch("replayed_state")
+      assert_empty precommit.fetch("inventory_after_recovery")
+      assert_equal entry.fetch("actual_workload").values_at("pid", "start_time"),
+                   entry.fetch("adopted_running_workload").values_at("pid", "start_time")
     end
   end
 
@@ -176,5 +203,31 @@ class M2ProbesTest < Minitest::Test
     path = File.join(ROOT, "tools/milestones/m2_#{name}_probe.rb")
     stdout, stderr, status = Open3.capture3(environment, RbConfig.ruby, path, chdir: ROOT)
     [JSON.parse(stdout), stderr, status]
+  rescue JSON::ParserError => error
+    directory = capture_probe_failure(name, stdout, stderr)
+
+    flunk "#{name} probe did not produce a JSON report (#{status.inspect}): #{error.message}. Output in #{directory}"
+  end
+
+  def required_probe_value(name, report, key)
+    return report.fetch(key) if report.key?(key)
+
+    flunk "#{name} probe omitted #{key}: #{Array(report["errors"]).join(", ")}"
+  end
+
+  def victim_cgroup_paths(report)
+    report.fetch("sigkill_matrix").map { |entry| entry.fetch("actual_workload").fetch("cgroup_path") }
+  end
+
+  def probe_assertion(error, name, report, stderr)
+    directory = capture_probe_failure(name, JSON.pretty_generate(report), stderr)
+    error.exception("#{error.message}\nFull #{name} probe report in #{directory}")
+  end
+
+  def capture_probe_failure(name, stdout, stderr)
+    directory = Dir.mktmpdir("rubernetes-m2-#{name}-failure-")
+    File.write(File.join(directory, "report.json"), stdout)
+    File.write(File.join(directory, "stderr.log"), stderr)
+    directory
   end
 end
