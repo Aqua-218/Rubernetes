@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
 require "time"
+require_relative "../taint_toleration"
 require_relative "support"
 require_relative "types"
 
@@ -32,8 +35,8 @@ module Rubernetes
           super
         end
 
-        def plan(daemon_set, store: nil, pods: nil, nodes: nil, revisions: nil, controller_revisions: nil, now: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+        def plan(daemon_set, store: nil, pods: nil, nodes: nil, revisions: nil, controller_revisions: nil, now: nil, feature_gates: {}, **_options)
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(daemon_set))
           nodes ||= list_children(adapter, NODE, nil)
           revisions = controller_revisions unless controller_revisions.nil?
@@ -41,12 +44,12 @@ module Rubernetes
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
 
-          Sync.new(self, daemon_set, owned(daemon_set, pods), Array(nodes), revisions, now).run
+          Sync.new(self, daemon_set, owned(daemon_set, pods), Array(nodes), revisions, now, taint_comparisons: feature_gates[TaintToleration::GATE] == true).run
         end
 
         # The live copy of a Pod, or nil when this controller cannot read live.
         def live_pod(pod)
-          adapter = store.is_a?(StoreAdapter) ? store : (store && StoreAdapter.new(store))
+          adapter = store && StoreAdapter.wrap(store)
           return nil unless adapter.respond_to?(:find_live)
 
           adapter.find_live(POD, name: Support.name(pod), namespace: Support.namespace(pod))
@@ -59,7 +62,7 @@ module Rubernetes
         end
 
         def delete(daemon_set, pods: nil, store: nil, orphan: false)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(daemon_set))
           operations = if orphan
                          []
@@ -185,13 +188,15 @@ module Rubernetes
         public :operation_create, :operation_delete, :operation_update, :operation_status, :pod_for, :template
 
         class Sync
-          def initialize(controller, daemon_set, pods, nodes, revisions, now)
+          def initialize(controller, daemon_set, pods, nodes, revisions, now, taint_comparisons: false)
+            @taint_comparisons = taint_comparisons
             @c = controller
             @ds = daemon_set
             @pods = pods
             @nodes = nodes
             @revisions = revisions
             @now = now
+            @placements = {}.compare_by_identity
             @operations = []
             @events = []
             @status = Support.deep_copy(Support.status(daemon_set))
@@ -324,9 +329,9 @@ module Rubernetes
             @pods.each do |pod|
               next if Support.labels(pod)[HASH_LABEL] == keep_hash
 
-              candidate = Support.deep_copy(pod)
-              candidate["metadata"]["labels"] = Support.labels(candidate).merge(HASH_LABEL => keep_hash)
-              @operations << @c.operation_update(pod, candidate, descriptor: POD, reason: "daemonset history dedup")
+              key = [Support.namespace(pod), Support.name(pod)].compact.join("/")
+              patch = {"metadata" => {"labels" => {HASH_LABEL => keep_hash}, "uid" => Support.uid(pod)}}
+              @operations << Operation.new(action: :patch, resource: POD, key: key, object: pod, patch: patch, reason: "daemonset history dedup")
             end
             current_histories.each do |history|
               next if Support.name(history) == Support.name(keep)
@@ -354,16 +359,18 @@ module Rubernetes
           # ---- placement ------------------------------------------------------------
 
           def daemon_pod_template
+            return @daemon_pod_template if @daemon_pod_template
+
             template = @c.template(@ds)
             template["spec"] ||= {}
             template["spec"]["tolerations"] = daemon_tolerations(Array(template["spec"]["tolerations"]),
                                                                  host_network: Support.value(template["spec"], "hostNetwork",
                                                                                              false) == true)
-            template
+            @daemon_pod_template = template
           end
 
           def daemon_tolerations(tolerations, host_network:)
-            values = tolerations.map { |entry| Support.deep_copy(entry) }
+            values = tolerations.dup
             desired = NO_EXECUTE_TOLERATIONS.map { |key| {"key" => key, "operator" => "Exists", "effect" => "NoExecute"} }
             desired += NO_SCHEDULE_TOLERATIONS.map { |key| {"key" => key, "operator" => "Exists", "effect" => "NoSchedule"} }
             desired << {"key" => "node.kubernetes.io/network-unavailable", "operator" => "Exists", "effect" => "NoSchedule"} if host_network
@@ -378,8 +385,11 @@ module Rubernetes
 
           # daemon_controller.go NodeShouldRunDaemonPod: [should_run, should_continue_running]
           def node_should_run?(node)
-            template = daemon_pod_template
-            spec = template["spec"]
+            @placements[node] ||= placement_for(node)
+          end
+
+          def placement_for(node)
+            spec = daemon_pod_template.fetch("spec")
             node_name = Support.value(spec, "nodeName", "").to_s
             return [false, false] unless node_name.empty? || node_name == Support.name(node)
             return [false, false] unless required_node_affinity_matches?(spec, node)
@@ -388,7 +398,7 @@ module Rubernetes
             tolerations = Array(spec["tolerations"])
             untolerated = taints.select do |taint|
               effect = Support.value(taint, "effect", "").to_s
-              %w[NoExecute NoSchedule].include?(effect) && tolerations.none? { |toleration| tolerates?(toleration, taint) }
+              %w[NoExecute NoSchedule].include?(effect) && tolerations.none? { |entry| TaintToleration.matches?(entry, taint, comparisons: @taint_comparisons) }
             end
             return [true, true] if untolerated.empty?
 
@@ -422,36 +432,20 @@ module Rubernetes
             values = Array(Support.value(expression, "values", [])).map(&:to_s)
             present = labels.key?(key)
             actual = labels[key].to_s
-            case Support.value(expression, "operator", "In").to_s
-            when "In" then present && values.include?(actual)
-            when "NotIn" then !present || !values.include?(actual)
-            when "Exists" then present
-            when "DoesNotExist" then !present
+            operator = Support.value(expression, "operator", "In").to_s
+            case operator
             when "Gt" then present && Integer(actual, 10) > Integer(values.first.to_s, 10)
             when "Lt" then present && Integer(actual, 10) < Integer(values.first.to_s, 10)
-            else false
+            else LabelRequirement.matches?(operator, actual, values, present: present)
             end
           rescue ArgumentError, TypeError
             false
           end
 
-          def tolerates?(toleration, taint)
-            effect = Support.value(toleration, "effect", "").to_s
-            return false unless effect.empty? || effect == Support.value(taint, "effect", "").to_s
-
-            key = Support.value(toleration, "key", "").to_s
-            operator = Support.value(toleration, "operator", "Equal").to_s
-            case operator
-            when "Exists" then key.empty? || key == Support.value(taint, "key", "").to_s
-            else key == Support.value(taint, "key",
-                                      "").to_s && Support.value(toleration, "value", "").to_s == Support.value(taint, "value", "").to_s
-            end
-          end
-
           # daemon_controller.go getNodesToDaemonPods
-          def nodes_to_daemon_pods(include_deleted_terminal: false)
-            @pods.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |pod, result|
-              next if !include_deleted_terminal && @c.pod_terminal?(pod) && @c.pod_deleting?(pod)
+          def nodes_to_daemon_pods
+            @nodes_to_daemon_pods ||= @pods.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |pod, result|
+              next if @c.pod_terminal?(pod) && @c.pod_deleting?(pod)
 
               node_name = @c.target_node_name(pod)
               next if node_name.nil? || node_name.empty?
@@ -541,7 +535,7 @@ module Rubernetes
                 daemon_pods.each { |pod| to_delete << pod unless @c.pod_deleting?(pod) }
               end
             end
-            node_names = @nodes.map { |node| Support.name(node) }
+            node_names = @nodes.to_set { |node| Support.name(node) }
             node_to_pods.each do |node_name, pods|
               next if node_names.include?(node_name)
 
@@ -609,7 +603,7 @@ module Rubernetes
           # update.go rollingUpdate
           def rolling_update(hash)
             ds = @ds
-            node_to_pods = nodes_to_daemon_pods
+            node_to_pods = nodes_to_daemon_pods.dup
             generation = @c.template_generation(ds)
             desired = 0
             @nodes.each do |node|
@@ -617,7 +611,7 @@ module Rubernetes
               next unless should_run
 
               desired += 1
-              node_to_pods[Support.name(node)] = [] unless node_to_pods.key?(Support.name(node))
+              node_to_pods[Support.name(node)] ||= []
             end
             max_unavailable = @c.unavailable_count(ds, desired)
             max_surge = @c.surge_count(ds, desired)
@@ -753,15 +747,6 @@ module Rubernetes
           def finish(status:)
             ds = @ds
             if status
-              template_generation = status["observedGeneration"].to_i
-              current_annotation = Support.annotations(ds)[TEMPLATE_GENERATION_ANNOTATION].to_s
-              if template_generation.positive? && current_annotation != template_generation.to_s
-                candidate = Support.deep_copy(ds)
-                candidate["metadata"] ||= {}
-                candidate["metadata"]["annotations"] =
-                  Support.annotations(candidate).merge(TEMPLATE_GENERATION_ANNOTATION => template_generation.to_s)
-                @operations.unshift(@c.operation_update(ds, candidate, descriptor: DESCRIPTOR, reason: "daemonset template generation"))
-              end
               status_operation = @c.operation_status(ds, status, descriptor: DESCRIPTOR)
               @operations << status_operation if status_operation
             end
