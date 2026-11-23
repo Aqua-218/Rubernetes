@@ -180,7 +180,7 @@ module Rubernetes
           parser.on("-n", "--namespace NAME", "use namespace NAME") { |value| options[:namespace] = value }
           parser.on("-A", "--all-namespaces", "include every namespace in get, watch, and disk lists") { options[:all_namespaces] = true }
           parser.on("--node NAME", "filter the disk report to Pods on one node") { |value| options[:node] = value }
-          parser.on("-o", "--output FORMAT", "output format (json, yaml, name, or text for plan and disk)") { |value| options[:output] = value }
+          parser.on("-o", "--output FORMAT", "output format (json, yaml, name, table, wide, or text for plan and disk)") { |value| options[:output] = value }
           parser.on("-f", "--filename PATH", "read a manifest file (repeatable)") { |value| options[:filenames] << value } unless logs
           parser.on("--from RFC3339", "list CronJob times strictly after this instant") { |value| options[:cron_from] = value }
           parser.on("--count COUNT", Integer, "number of future times per CronJob (default 5, maximum 100)") { |value| options[:cron_count] = value }
