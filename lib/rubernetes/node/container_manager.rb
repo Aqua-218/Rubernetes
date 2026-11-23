@@ -4,6 +4,7 @@ require_relative "topology_manager"
 require_relative "cpu_manager"
 require_relative "memory_manager"
 require_relative "node_allocatable"
+require_relative "../runtime/cpu_quota"
 
 module Rubernetes
   module Node
@@ -22,11 +23,14 @@ module Rubernetes
       # topologyManager* kubelet settings; +reservation+: the node
       # allocatable reservation ({resource => Quantity}).
       def initialize(state_directory:, reservation: {}, cpu: {}, memory: {}, topology: {}, machine: nil, cpu_topology: nil,
-                     reserved_system_cpus: nil, sleeper: ->(seconds) { sleep(seconds) }, pod_level_resource_managers: false)
+                     reserved_system_cpus: nil, sleeper: ->(seconds) { sleep(seconds) }, pod_level_resource_managers: false,
+                     feature_gates: {})
         cpu = stringify(cpu)
         memory = stringify(memory)
         topology = stringify(topology)
         @reservation = reservation
+        @pod_level_resource_managers = pod_level_resource_managers
+        @exclusive_cpu_quota_exemption = feature_gates.fetch(Runtime::CPUQuota::EXCLUSIVE_CPU_GATE, true)
         machine ||= CPUManager::Topology.machine_info
         @topology_manager = TopologyManager::Manager.new(policy: topology.fetch("policy", TopologyManager::POLICY_NONE),
                                                          scope: topology.fetch("scope", TopologyManager::SCOPE_CONTAINER),
@@ -37,6 +41,8 @@ module Rubernetes
                                                topology: cpu_topology, node_allocatable_reservation: reservation,
                                                reserved_cpus: reserved_system_cpus, state_directory: state_directory,
                                                affinity: @topology_manager,
+                                               alpha_options: feature_gates["CPUManagerPolicyAlphaOptions"] == true,
+                                               beta_options: feature_gates.fetch("CPUManagerPolicyBetaOptions", true) != false,
                                                reconcile_period: cpu.fetch("reconcile_period_seconds", CPUManager::Manager::DEFAULT_RECONCILE_PERIOD),
                                                sleeper: sleeper, pod_level: pod_level_resource_managers)
         @memory_manager = MemoryManager::Manager.new(policy: memory.fetch("policy", MemoryManager::POLICY_NONE),
@@ -83,6 +89,27 @@ module Rubernetes
       # The allocate-resources pod admit handler.
       def admit(pod) = @topology_manager.admit(pod)
 
+      def pod_cpu_quota_exempt?(pod)
+        return false unless @exclusive_cpu_quota_exemption
+
+        containers = CPUManager::PodResources.containers(pod)
+        if pod_scope_cpu_isolation?(pod)
+          containers.all? { |container| container_cpu_quota_exempt?(pod, container) }
+        else
+          containers.any? { |container| container_cpu_quota_exempt?(pod, container) }
+        end
+      end
+
+      def container_cpu_quota_exempt?(pod, container)
+        return false unless @exclusive_cpu_quota_exemption && pod
+
+        resources = CPUManager::PodResources
+        return false if @cpu_manager.exclusive_cpus(resources.uid(pod), container["name"]).empty?
+        return true unless pod_scope_cpu_isolation?(pod)
+
+        resources.container_equivalent_guaranteed?(container) && resources.integral_cpus(resources.cpu_request(container)).to_i.positive?
+      end
+
       # PreCreateContainer: the cgroup files to pin, {} when nothing is.
       def container_limits(pod, container)
         limits = {}
@@ -104,6 +131,10 @@ module Rubernetes
       def post_stop(container_id) = @topology_manager.remove_container(container_id)
 
       private
+
+      def pod_scope_cpu_isolation?(pod)
+        @pod_level_resource_managers && CPUManager::PodResources.pod_level_resources?(pod)
+      end
 
       def stringify(value) = (value || {}).to_h { |key, entry| [key.to_s, entry] }
 
