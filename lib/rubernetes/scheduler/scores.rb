@@ -75,7 +75,7 @@ module Rubernetes
       class TaintToleration
         include NodeSetScorer
 
-        def score_nodes(pod, nodes, _context = nil)
+        def score_nodes(pod, nodes, context = nil)
           tolerations = pod.tolerations.select do |toleration|
             %w[PreferNoSchedule].include?(Support.value(toleration, "effect",
                                                         "").to_s) || Support.value(toleration, "effect", "").to_s.empty?
@@ -83,7 +83,7 @@ module Rubernetes
           raw = nodes.to_h do |node|
             [node.name, node.taints.count do |taint|
               Support.value(taint, "effect", "").to_s == "PreferNoSchedule" &&
-                tolerations.none? { |toleration| Filters::Helpers.tolerates?(toleration, taint) }
+                tolerations.none? { |toleration| Filters::Helpers.tolerates?(toleration, taint, context) }
             end]
           end
           Normalize.default(raw, reverse: true)
@@ -99,46 +99,18 @@ module Rubernetes
           terms = Array(Support.value(pod.node_affinity, "preferredDuringSchedulingIgnoredDuringExecution", []))
           return SKIP if terms.empty?
 
-          Normalize.default(nodes.to_h { |node| [node.name, preferred_score(pod, node)] })
+          Normalize.default(nodes.to_h { |node| [node.name, preferred_score(terms, node)] })
         end
 
         private
 
-        def preferred_score(pod, node)
-          affinity = pod.node_affinity
-          terms = Array(Support.value(affinity, "preferredDuringSchedulingIgnoredDuringExecution", []))
+        def preferred_score(terms, node)
           terms.sum do |term|
             term = Support.object_hash(term)
-            selector = {"matchExpressions" => Support.value(term, "preference", {}).then do |value|
-              Support.value(value, "matchExpressions", [])
-            end,
-                        "matchFields" => Support.value(term, "preference", {}).then { |value| Support.value(value, "matchFields", []) }}
-            matches = Array(selector.fetch("matchExpressions")).all? do |expression|
-              requirement_matches?(expression, node.labels)
-            end && Array(selector.fetch("matchFields")).all? do |expression|
-              requirement_matches?(expression, {"metadata.name" => node.name})
-            end
-            matches ? Integer(Support.value(term, "weight", 0) || 0) : 0
+            preference = Support.value(term, "preference", {})
+            Filters::Helpers.node_term_matches?(preference, node) ? Integer(Support.value(term, "weight", 0) || 0) : 0
           rescue ArgumentError, TypeError
             0
-          end
-        end
-
-        def requirement_matches?(expression, labels)
-          expression = Support.object_hash(expression)
-          key = Support.value(expression, "key", "").to_s
-          operator = Support.value(expression, "operator", "").to_s
-          values = Array(Support.value(expression, "values", [])).map(&:to_s)
-          present = labels.key?(key)
-          actual = labels[key].to_s
-          case operator
-          when "In" then present && values.include?(actual)
-          when "NotIn" then !present || !values.include?(actual)
-          when "Exists" then present
-          when "DoesNotExist" then !present
-          when "Gt" then present && Filters::Helpers.numeric_compare(actual, values.first, :>)
-          when "Lt" then present && Filters::Helpers.numeric_compare(actual, values.first, :<)
-          else false
           end
         end
       end
@@ -362,16 +334,16 @@ module Rubernetes
 
                             {"topologyKey" => Support.value(constraint, "topologyKey", "").to_s,
                              "maxSkew" => Integer(Support.value(constraint, "maxSkew", 1) || 1),
-                             "selector" => merge_match_label_keys(Support.object_hash(Support.value(constraint, "labelSelector", {})),
-                                                                  constraint, pod)}
+                             "nodeAffinityPolicy" => constraint["nodeAffinityPolicy"], "nodeTaintsPolicy" => constraint["nodeTaintsPolicy"],
+                             "selector" => Filters::Helpers.effective_selector(constraint, pod, mismatch: false)}
                           end
                         end
           return SKIP if constraints.empty?
 
           require_all = !declared.empty?
-          ignored = require_all ? nodes.reject { |node| all_keys?(node, constraints) }.map(&:name) : []
+          missing_keys = require_all ? nodes.reject { |node| all_keys?(node, constraints) } : []
+          ignored = missing_keys.to_set(&:name)
           counts = constraints.map { {} }
-          sizes = constraints.map { 0 }
           nodes.each do |node|
             next if ignored.include?(node.name)
 
@@ -379,25 +351,20 @@ module Rubernetes
               next if constraint["topologyKey"] == HOSTNAME
 
               value = node.labels[constraint["topologyKey"]].to_s
-              next if counts[index].key?(value)
-
               counts[index][value] = 0
-              sizes[index] += 1
             end
           end
           weights = constraints.each_with_index.map do |constraint, index|
-            size = constraint["topologyKey"] == HOSTNAME ? nodes.length - ignored.length : sizes[index]
+            size = constraint["topologyKey"] == HOSTNAME ? nodes.length - missing_keys.length : counts[index].size
             Math.log(size + 2)
           end
-          affinity = Filters::NodeAffinity.new
           by_node = pods_by_node(context)
           Filters::Helpers.context_nodes(context).each do |node|
-            next unless affinity.call(pod, node) == true
             next if require_all && !all_keys?(node, constraints)
 
             constraints.each_with_index do |constraint, index|
               value = node.labels[constraint["topologyKey"]].to_s
-              next unless counts[index].key?(value)
+              next unless counts[index].key?(value) && Filters::PodTopologySpread.includes_node?(constraint, pod, node, context)
 
               counts[index][value] += matching(by_node[node.name], constraint["selector"], pod)
             end
@@ -444,7 +411,7 @@ module Rubernetes
         def matching(pods, selector, pod)
           Array(pods).count do |existing|
             existing.namespace == pod.namespace && Support.value(existing.metadata, "deletionTimestamp", nil).nil? &&
-              Filters::Helpers.selector_matches?(existing.labels, selector)
+              Filters::Helpers.selector_matches?(existing, selector)
           end
         end
 
@@ -495,19 +462,6 @@ module Rubernetes
           return nil if match_labels.empty? && expressions.empty?
 
           {"matchLabels" => match_labels, "matchExpressions" => expressions}
-        end
-
-        def merge_match_label_keys(selector, constraint, pod)
-          selector = Support.deep_copy(selector)
-          labels = pod.labels
-          Array(Support.value(constraint, "matchLabelKeys", [])).each do |key|
-            key = key.to_s
-            next unless labels.key?(key)
-
-            selector["matchLabels"] = Support.object_hash(Support.value(selector, "matchLabels", {}))
-            selector["matchLabels"][key] = labels[key]
-          end
-          selector
         end
       end
 
