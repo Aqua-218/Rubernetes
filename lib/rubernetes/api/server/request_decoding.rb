@@ -15,20 +15,35 @@ module Rubernetes
           hash[key] || hash[key.to_sym]
         end
 
+        # Standalone payloads such as Scale and TokenRequest belong to a
+        # different schema from the workload or service account in the URL.
+        def typed_subresource(group, version, kind, resource)
+          require_relative "../../../../generated/ruby/kubernetes_types"
+          definition = Rubernetes::Generated.definition_for("io.k8s.api.#{group.split(".").first}.#{version}.#{kind}")
+          Resource.new(group: group, version: version, kind: kind, resource: resource, scope: :namespaced, schema: definition)
+        end
+
         def normalize_object(request, route)
-          body = request_body(request)
+          body = request_body(request, resource: route.resource)
           raise Status::Invalid.new("request body must be a JSON object") unless body.is_a?(Hash)
 
           # A JSON or protobuf body was just decoded into a fresh object with
           # String keys (request_body keeps nothing): copying it again was a
           # tenth of a Pod PUT's normalization.  A Hash handed in-process, or
           # YAML (whose keys need not be Strings), is still copied.
-          fresh = request.body.is_a?(String) && !request.content_type.to_s.include?("yaml")
+          fresh = request.body.is_a?(String) && !request.content_type.to_s.downcase.include?("yaml")
           object = fresh ? body : stringify_keys(body)
-          validate_route_identity!(object, route)
-          object["apiVersion"] ||= route_identity(route).fetch(:api_version)
-          object["kind"] ||= route_identity(route).fetch(:kind)
+          identity = route_identity(route)
+          object["apiVersion"] = identity.fetch(:api_version) if object["apiVersion"].to_s.empty?
+          object["kind"] = identity.fetch(:kind) if object["kind"].to_s.empty?
+          if route.resource.custom?
+            validate_route_identity!(object, route)
+          elsif object["apiVersion"] != identity.fetch(:api_version) || object["kind"] != identity.fetch(:kind)
+            reject_mismatched_builtin!(object, identity)
+          end
           object["metadata"] = stringify_keys(object["metadata"] || {})
+          validate_wire_identity!(request, route.resource, object)
+          match_request_namespace!(object, route)
           # kube-apiserver decodes a JSON null for a map, slice or pointer field of
           # a typed object as "absent" and never serves it back; a stored
           # "annotations": null reached every Pod a Job created from such a
@@ -37,9 +52,34 @@ module Rubernetes
           if route.resource.custom?
             drop_null_fields!(object["metadata"])
           else
+            object = SecretData.normalize_request(object) if SecretData.resource?(route.resource)
+            Schema::JobSelector.normalize_label_values!(object) if Schema::JobSelector.resource?(route.resource)
             drop_null_fields!(object)
           end
           object
+        end
+
+        # ObjectMeta is decoded before storage preconditions are evaluated.
+        # Custom resources decode metadata separately from their unstructured body.
+        def validate_wire_identity!(request, resource, object)
+          metadata = object["metadata"]
+          return if metadata.nil?
+          raise Status::BadRequest.new("metadata must be an object") unless metadata.is_a?(Hash)
+
+          %w[uid resourceVersion].each do |key|
+            value = metadata[key]
+            next if value.nil? || value.is_a?(String)
+
+            actual = case value
+                     when Numeric then "number"
+                     when true, false then "bool"
+                     when Array then "array"
+                     else "object"
+                     end
+            field = resource.custom? ? key : "metadata.#{key}"
+            expected = key == "uid" ? "types.UID" : "string"
+            refuse_undecodable_write!(resource, request, "json: cannot unmarshal #{actual} into Go struct field ObjectMeta.#{field} of type #{expected}")
+          end
         end
 
         def drop_null_fields!(value)
@@ -61,7 +101,8 @@ module Rubernetes
           return [] unless body.is_a?(String) && !body.empty?
 
           media_type = request.content_type.to_s.split(";", 2).first.to_s.strip.downcase
-          return [] if media_type == Negotiation::PROTOBUF_TYPE
+          return [] if [Negotiation::PROTOBUF_TYPE, Negotiation::CBOR_TYPE,
+                        Schema::Codec::KubernetesCBOR::APPLY_CONTENT_TYPE].include?(media_type)
 
           text = body.dup.force_encoding(Encoding::UTF_8)
           return [] unless text.valid_encoding?
@@ -186,13 +227,26 @@ module Rubernetes
           duplicates.uniq
         end
 
-        def request_body(request)
+        def request_body(request, resource: nil)
           body = request.body
+          media_type = request.content_type.to_s.split(";", 2).first.to_s.strip.downcase
+          unless request.method == "PATCH"
+            supported = resource&.custom? ? [Negotiation::JSON_TYPE, Negotiation::YAML_TYPE] : Negotiation::STANDARD_TYPES
+            supported = [*supported, Negotiation::CBOR_TYPE] if feature_gate_enabled?("CBORServingAndStorage")
+            media_type = Negotiation.negotiate_input(media_type, supported: supported)
+          end
+          if cbor_request_media_type?(media_type)
+            allowed = media_type == Negotiation::CBOR_TYPE ||
+                      (request.method == "PATCH" && media_type == Schema::Codec::KubernetesCBOR::APPLY_CONTENT_TYPE)
+            unless allowed && feature_gate_enabled?("CBORServingAndStorage")
+              raise Status::UnsupportedMediaType.new("unsupported request content type #{media_type.inspect}")
+            end
+            return decode_cbor_body(body) if body.is_a?(String)
+          end
           return {} if body.nil?
           return {} if body.is_a?(String) && body.empty?
           return body unless body.is_a?(String)
 
-          media_type = request.content_type.to_s.split(";", 2).first.to_s.strip.downcase
           unless media_type == Negotiation::PROTOBUF_TYPE
             # JSON and YAML bodies must be valid UTF-8 (RFC 8259); anything else
             # is a 400, never an exception from the encoder later on.
@@ -206,14 +260,23 @@ module Rubernetes
           # treats it.  Asking a nil for #include? turned every such request --
           # a Binding posted by a client that omits the header among them --
           # into a 500.
-          content_type = request.content_type.to_s
           if media_type == Negotiation::PROTOBUF_TYPE
             decode_protobuf_body(body)
-          elsif content_type.include?("yaml")
+          elsif media_type.include?("yaml")
             YAML.safe_load(body, permitted_classes: [], aliases: false) || {}
           else
             JSON.parse(body)
           end
+        end
+
+        def cbor_request_media_type?(media_type)
+          [Negotiation::CBOR_TYPE, Negotiation::CBOR_SEQUENCE_TYPE, Schema::Codec::KubernetesCBOR::APPLY_CONTENT_TYPE].include?(media_type)
+        end
+
+        def decode_cbor_body(body)
+          Schema::Codec::KubernetesCBOR.decode(body)
+        rescue Schema::Codec::Error => error
+          raise Status::BadRequest.new("request body is not valid Kubernetes CBOR: #{error.message}")
         end
 
         # Kubernetes protobuf bodies arrive as the runtime.Unknown envelope that
@@ -223,6 +286,36 @@ module Rubernetes
           protobuf_codec.decode(body.b)
         rescue Schema::Codec::KubernetesProtobuf::Error, Schema::Codec::ParseError => error
           raise Status::BadRequest.new("request body is not valid Kubernetes protobuf: #{error.message}")
+        end
+
+        # The core apiserver, apiextensions and aggregator each decode into
+        # their own scheme. An unregistered GVK fails before field validation.
+        BUILTIN_SCHEMES = {
+          "apiextensions.k8s.io" => "pkg/apiserver/apiserver.go:55",
+          "apiregistration.k8s.io" => "pkg/apiserver/scheme/scheme.go:28"
+        }.freeze
+
+        def reject_mismatched_builtin!(object, identity)
+          api_version = object.fetch("apiVersion").to_s
+          group, _, version = api_version.rpartition("/")
+          kind = object.fetch("kind").to_s
+          expected = identity.fetch(:kind)
+          expected_version = identity.fetch(:api_version)
+          target_group = expected_version.rpartition("/").first
+          same_scheme = BUILTIN_SCHEMES[group] == BUILTIN_SCHEMES[target_group]
+          known = same_scheme && protobuf_codec.supports?(api_version: api_version, kind: kind)
+          if known && kind == expected && group == target_group
+            raise Status::BadRequest.new("the API version in the data (#{api_version}) does not match the expected API version (#{expected_version})")
+          end
+
+          reason = if known
+                     package = target_group.empty? ? "core" : target_group.split(".").first
+                     "converting (#{version}.#{kind}) to (#{package}.#{expected}): unknown conversion"
+                   else
+                     scheme = BUILTIN_SCHEMES.fetch(target_group, "pkg/api/legacyscheme/scheme.go:30")
+                     "no kind #{kind.inspect} is registered for version #{api_version.inspect} in scheme #{scheme.inspect}"
+                   end
+          raise Status::BadRequest.new("#{kind} in version #{version.inspect} cannot be handled as a #{expected}: #{reason}")
         end
 
         # A PATCH route identifies a concrete GVR, so an apply document cannot
@@ -302,10 +395,6 @@ module Rubernetes
           %w[1 true yes].include?(value.to_s.downcase)
         end
 
-        def watch_request?(request)
-          request.method == "GET" && truthy?(query(request, "watch"))
-        end
-
         def storage_namespace(route, operation:)
           return :cluster if route.resource.cluster_scoped?
           return route.namespace unless route.namespace.nil?
@@ -314,11 +403,25 @@ module Rubernetes
           raise Status::Invalid.new("namespace is required for #{operation} on namespaced resources")
         end
 
-        def ensure_name!(object, expected_name)
-          actual = metadata_value(object, "name")
-          return if actual.to_s.empty? || actual.to_s == expected_name.to_s
+        def check_update_name!(object, route)
+          name = metadata_value(object, "name").to_s
+          raise Status::BadRequest.new("the name of the object (#{route.name} based on URL) was undeterminable: name must be provided") if name.empty?
+          return if name == route.name
 
-          raise Status::Invalid.new("metadata.name #{actual.inspect} does not match URL name #{expected_name.inspect}")
+          raise Status::BadRequest.new("the name of the object (#{name}) does not match the name on the URL (#{route.name})")
+        end
+
+        def match_request_namespace!(object, route)
+          metadata = object["metadata"] ||= {}
+          raise Status::BadRequest.new("metadata must be an object") unless metadata.is_a?(Hash)
+
+          if route.resource.cluster_scoped?
+            metadata.delete("namespace")
+          elsif metadata["namespace"].to_s.empty?
+            metadata["namespace"] = route.namespace
+          elsif metadata["namespace"] != route.namespace
+            raise Status::BadRequest.new("the namespace of the provided object does not match the namespace sent on the request")
+          end
         end
 
         def ensure_expected_version!(existing, expected)
