@@ -1,53 +1,87 @@
 # frozen_string_literal: true
 
+require_relative "network_policy"
+require_relative "service_spec"
+require_relative "../../support/service_traffic"
+
 module Rubernetes
   module Schema
-    # Service, Endpoints, EndpointSlice, Ingress, IngressClass, ServiceCIDR
-    # and NetworkPolicy.
+    # Service, Endpoints, EndpointSlice, Ingress, IngressClass, and ServiceCIDR.
     module KubernetesValidator
       module_function
 
-      # validation.go ValidateServiceSpec: every Service needs at least one
-      # port except an ExternalName, which is a DNS alias and carries none.
-      def external_name_service?(spec)
-        fetch(spec, "type").to_s == "ExternalName"
-      end
-
-      def service_errors(root)
+      def service_load_balancer_errors(root, old, operation)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
-        ports = fetch(spec, "ports")
-        return [] if external_name_service?(spec) && (ports.nil? || (ports.is_a?(Array) && ports.empty?))
-        return [issue(%w[spec ports], :required, "")] unless ports.is_a?(Array) && !ports.empty?
+        old_spec = fetch(old, "spec") if operation == :update
+        load_balancer = fetch(spec, "type") == "LoadBalancer"
+        old_load_balancer = fetch(old_spec, "type") == "LoadBalancer"
+        class_name = fetch(spec, "loadBalancerClass")
+        old_class_name = fetch(old_spec, "loadBalancerClass")
+        allocate = fetch(spec, "allocateLoadBalancerNodePorts")
+        # The allocation strategy will drop unchanged fields when leaving LoadBalancer.
+        if old_load_balancer && !load_balancer
+          class_name = nil if class_name == old_class_name
+          allocate = nil if allocate == fetch(old_spec, "allocateLoadBalancerNodePorts")
+        end
 
-        # validateServicePort (validation.go:6890-6910): with more than one
-        # port each needs a NAME and the names must be unique; every port
-        # number must be in range and every port needs a protocol.  Only the
-        # empty-name case was checked, so a Service could be stored with two
-        # ports sharing a name -- which no EndpointSlice can then address.
+        path = %w[spec loadBalancerClass]
+        class_issues = service_load_balancer_class_errors(path, class_name, load_balancer)
         issues = []
-        seen_names = {}
-        multiple = ports.length > 1
-        ports.each_with_index do |port, index|
-          next unless port.is_a?(Hash)
+        issues << valued_issue(path, class_name, "may not change once set") if old_load_balancer && load_balancer && class_name != old_class_name
+        # ValidateServiceUpdate checks the class before running the base Service validator.
+        issues.concat(class_issues) if old_spec
+        if !load_balancer && !allocate.nil?
+          issues << issue(%w[spec allocateLoadBalancerNodePorts], :forbidden, "may only be used when `type` is 'LoadBalancer'")
+        end
+        issues.concat(class_issues)
+      end
 
-          path = ["spec", "ports", index.to_s]
-          name = fetch(port, "name")
-          if name.is_a?(String) && name.empty?
-            issues << issue(path + ["name"], :invalid, "name part must be non-empty")
-          elsif multiple && blank?(name)
-            issues << issue(path + ["name"], :required, "")
-          elsif !blank?(name)
-            issues << issue(path + ["name"], :duplicate, name.to_s) if seen_names.key?(name.to_s)
-            seen_names[name.to_s] = true
+      def service_traffic_errors(root, old)
+        spec = fetch(root, "spec")
+        return [] unless spec.is_a?(Hash)
+
+        previous = fetch(old, "spec") || {}
+        traffic = Rubernetes::Support::ServiceTraffic
+        issues = []
+        if traffic.type(spec) == "ClusterIP" && !traffic.drop_node_ports?(previous, spec)
+          Array(spec["ports"]).each_with_index do |port, index|
+            next unless port.is_a?(Hash) && port["nodePort"].is_a?(Integer) && !port["nodePort"].zero?
+
+            issues << issue(["spec", "ports", index.to_s, "nodePort"], :forbidden, "may not be used when `type` is 'ClusterIP'")
           end
-          number = fetch(port, "port")
-          issues << issue(path + ["port"], :invalid, "must be between 1 and 65535, inclusive") if number.is_a?(Integer) && !number.between?(1, 65_535)
-          protocol = fetch(port, "protocol")
-          issues << issue(path + ["protocol"], :required, "") if protocol.is_a?(String) && protocol.empty?
+        end
+        external = spec["externalTrafficPolicy"]
+        if external.is_a?(String) && !external.empty? && !traffic.drop_external_policy?(previous, spec)
+          if !traffic.external?(spec)
+            issues << valued_issue(%w[spec externalTrafficPolicy], external, "may only be set for externally-accessible services")
+          elsif !%w[Cluster Local].include?(external)
+            issues << issue(%w[spec externalTrafficPolicy], :unsupported, unsupported_detail(%w[Cluster Local]))
+          end
+        end
+
+        health = spec["healthCheckNodePort"]
+        if health.is_a?(Integer) && !health.zero?
+          if !traffic.health_check?(spec) && !traffic.drop_health_port?(previous, spec)
+            issues << valued_issue(%w[spec healthCheckNodePort], health,
+                                   "may only be set when `type` is 'LoadBalancer' and `externalTrafficPolicy` is 'Local'")
+          elsif traffic.health_check?(previous) && traffic.health_check?(spec) && health != previous["healthCheckNodePort"]
+            issues << issue(%w[spec healthCheckNodePort], :forbidden, "field is immutable")
+          end
+        end
+        internal = spec["internalTrafficPolicy"]
+        if internal.is_a?(String) && !%w[Cluster Local].include?(internal)
+          issues << issue(%w[spec internalTrafficPolicy], :unsupported, unsupported_detail(%w[Cluster Local]))
         end
         issues
+      end
+
+      def service_load_balancer_class_errors(path, class_name, load_balancer)
+        return [] if class_name.nil?
+        return [issue(path, :forbidden, "may only be used when `type` is 'LoadBalancer'")] unless load_balancer
+
+        qualified_name_messages(class_name, label_key: true).map { |message| valued_issue(path, class_name, message) }
       end
 
       # validateUpgradeDowngradeClusterIPs (pkg/apis/core/validation): a
@@ -118,29 +152,30 @@ module Rubernetes
         end
       end
 
-      def endpoint_slice_errors(root, operation = :create)
+      def endpoint_slice_errors(root, operation = :create, old = nil)
         issues = []
         address_type = fetch(root, "addressType")
-        if root.key?("addressType") && blank?(address_type)
+        if blank?(address_type)
           issues << issue(%w[addressType], :required, "")
-        elsif root.key?("addressType") && !%w[FQDN IPv4 IPv6].include?(address_type.to_s)
+        elsif !%w[FQDN IPv4 IPv6].include?(address_type.to_s)
           issues << issue(%w[addressType], :unsupported, "supported values: \"FQDN\", \"IPv4\", \"IPv6\"")
         end
-        # Endpoint contents are validated on create.  Update validation keeps
-        # the old endpoint payload and checks object metadata only.
-        return issues unless operation == :create
-
         endpoints = fetch(root, "endpoints")
-        if endpoints.is_a?(Array)
+        if endpoints.is_a?(Array) && !(operation == :update && endpoints == fetch(old, "endpoints"))
           endpoints.each_with_index do |endpoint, index|
             next unless endpoint.is_a?(Hash)
 
             addresses = fetch(endpoint, "addresses")
-            next if addresses.is_a?(Array) && !addresses.empty?
-
-            issues << issue(["endpoints", index.to_s, "addresses"], :required, "must contain at least 1 address")
+            path = ["endpoints", index.to_s, "addresses"]
+            if !addresses.is_a?(Array) || addresses.empty?
+              issues << issue(path, :required, "must contain at least 1 address")
+            elsif addresses.length > 100
+              issues << ValidationIssue.new(path: path, code: :too_many, message: "must have at most 100 items",
+                                            value: addresses.length, kubernetes_type: "Too many")
+            end
           end
         end
+        issues << issue(%w[addressType], :invalid, "field is immutable") if operation == :update && old && address_type.to_s != fetch(old, "addressType").to_s
         issues
       end
 
@@ -236,81 +271,40 @@ module Rubernetes
         issues
       end
 
-      def ingress_class_errors(root)
+      def ingress_class_errors(root, old = nil, operation = :create)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
-        return [] unless blank?(fetch(spec, "controller"))
 
-        [issue(%w[spec controller], :required, "")]
+        issues = []
+        required(spec, "controller", %w[spec], issues)
+        parameters = fetch(spec, "parameters")
+        %w[kind name].each { |field| required(parameters, field, %w[spec parameters], issues) } if parameters.is_a?(Hash)
+        if operation == :update && old && fetch(spec, "controller") != value_at_path(old, %w[spec controller])
+          issues << issue(%w[spec controller], :invalid, "field is immutable")
+        end
+        issues
       end
 
-      def network_policy_errors(root, _operation = :create, old = nil)
-        spec = fetch(root, "spec")
-        return [] unless spec.is_a?(Hash)
-
-        # AllowCIDRsEvenIfInvalid: any CIDR the old policy held stays valid.
-        allowed = []
-        if old.is_a?(Hash)
-          walk(old) do |value, path|
-            next unless value.is_a?(Hash) && path.last.to_s == "ipBlock"
-
-            allowed << fetch(value, "cidr").to_s
-            allowed.concat(Array(fetch(value, "except")).map(&:to_s))
-          end
-        end
+      def ip_address_errors(root, old, operation)
+        path = %w[spec parentRef]
+        parent = value_at_path(root, path)
         issues = []
-        walk(root) do |value, path|
-          if value.is_a?(Hash) && path.last.to_s == "ipBlock"
-            issues.concat(ip_block_errors(value, path, allowed))
-          elsif value.is_a?(Array) && path.last.to_s == "to"
-            value.each_with_index do |peer, index|
-              next unless peer.is_a?(Hash)
-
-              sources = %w[podSelector namespaceSelector ipBlock].count { |name| fetch(peer, name).is_a?(Hash) }
-              if sources.zero?
-                issues << issue(path + [index.to_s], :required,
-                                "must specify a peer")
-              end
+        if parent.is_a?(Hash)
+          group = fetch(parent, "group").to_s
+          issues.concat(invalid_messages(path + ["group"], dns1123_subdomain_messages(group))) unless group.empty?
+          %w[resource name namespace].each do |field|
+            value = fetch(parent, field).to_s
+            if value.empty?
+              issues << issue(path + [field], :required, "") unless field == "namespace"
+            else
+              issues.concat(invalid_messages(path + [field], path_segment_name_messages(value)))
             end
           end
+        else
+          issues << issue(path, :required, "")
         end
+        issues << issue(path, :invalid, "field is immutable") if operation == :update && old && parent != value_at_path(old, path)
         issues
-      end
-
-      # ValidateIPBlock.
-      def ip_block_errors(block, path, allowed)
-        cidr = fetch(block, "cidr").to_s
-        return [issue(path + ["cidr"], :required, "")] if cidr.empty?
-
-        issues = cidr_field_issues(path + ["cidr"], cidr, allowed)
-        network = sloppy_cidr(cidr)
-        return issues unless network
-
-        Array(fetch(block, "except")).each_with_index do |except, index|
-          except_path = path + ["except", index.to_s]
-          issues.concat(cidr_field_issues(except_path, except, allowed))
-          inner = sloppy_cidr(except)
-          next unless inner
-
-          unless network[0].family == inner[0].family && network[0].include?(inner[0]) && network[1] < inner[1]
-            issues << issue(except_path, :invalid, "must be a strict subset of `cidr`")
-          end
-        end
-        issues
-      end
-
-      # netutils.ParseCIDRSloppy: [masked network, prefix length] or nil.
-      def sloppy_cidr(value)
-        address_text, slash, length_text = value.to_s.rpartition("/")
-        return nil if slash.empty? || !length_text.match?(/\A\d+\z/)
-
-        address, = sloppy_ip(address_text)
-        return nil unless address
-
-        length = length_text.to_i
-        return nil if length > (address.ipv4? ? 32 : 128)
-
-        [address.mask(length), length]
       end
     end
   end
