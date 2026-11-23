@@ -66,9 +66,9 @@ class ProxyConntrackReconcilerTest < Minitest::Test
                         family: ip.include?(":") ? "IPv6" : "IPv4")
   end
 
-  def rule(kind:, vip: nil, node_port: nil, port: 53, protocol: "UDP", backends: [])
+  def rule(kind:, vip: nil, node_port: nil, port: 53, protocol: "UDP", backends: [], metadata: {})
     Proxy::Rule.new(service_key: "kube-system/dns", service_type: kind == "NodePort" ? "NodePort" : "ClusterIP", kind: kind,
-                    virtual_ip: vip, port: port, protocol: protocol, node_port: node_port, backends: backends)
+                    virtual_ip: vip, port: port, protocol: protocol, node_port: node_port, backends: backends, metadata: metadata)
   end
 
   def rules
@@ -129,6 +129,30 @@ class ProxyConntrackReconcilerTest < Minitest::Test
     assert_match(/kubeproxy_conntrack_reconciler_sync_duration_seconds_sum\{ip_family="IPv4"\} 0.25/, text)
     assert_match(/kubeproxy_conntrack_reconciler_sync_duration_seconds_count\{ip_family="IPv6"\} 1/, text)
     refute_predicate reconciler, :disabled?
+  end
+
+  def test_removing_a_node_port_retires_only_translated_udp_flows_to_that_local_frontend
+    node = "192.0.2.53"
+    pool = []
+    socket = FakeSocket.new(pool)
+    netlink = Proxy::ConntrackNetlink.new(socket_factory: -> { socket }, timeout: 2.0)
+    reconciler = Proxy::ConntrackReconciler.new(families: %w[IPv4 IPv6], netlink: netlink)
+    port = 30_053
+    frontend = rule(kind: "NodePort", node_port: port, metadata: {"nodeAddresses" => [node], "serviceFamilies" => ["IPv4"]})
+    reconciler.reconcile([frontend])
+    pool.push(
+      flow(orig_dst: node, orig_dport: port, reply_src: "10.244.0.10", reply_sport: 53, id: 1),
+      flow(orig_dst: node, orig_dport: port, reply_src: node, reply_sport: port, id: 2),
+      flow(orig_dst: "192.0.2.54", orig_dport: port, reply_src: "10.244.0.10", reply_sport: 53, id: 3),
+      flow(orig_dst: node, orig_dport: port, reply_src: "10.244.0.10", reply_sport: 53, protocol: 6, id: 4),
+      flow(orig_dst: node, orig_dport: port + 1, reply_src: "10.244.0.10", reply_sport: 53, id: 5)
+    )
+
+    assert_equal({"IPv4" => 1, "IPv6" => 0}, reconciler.reconcile([]))
+    deleted = socket.deletes.map { |entry| [entry.orig_dst, entry.orig_dport, entry.reply_src, entry.reply_sport] }
+
+    assert_equal [[node, port, "10.244.0.10", 53]], deleted
+    assert_equal({"IPv4" => 0, "IPv6" => 0}, reconciler.reconcile([]))
   end
 
   def test_permission_failure_disables_the_reconciler_once
