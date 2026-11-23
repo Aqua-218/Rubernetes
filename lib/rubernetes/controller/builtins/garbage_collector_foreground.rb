@@ -16,8 +16,8 @@ module Rubernetes
         FOREGROUND_FINALIZER = "foregroundDeletion"
         FOREGROUND_SETTLE_SECONDS = 5.0
 
-        def with_foreground_operations(result, objects, now: Time.now.utc, live: nil)
-          operations = foreground_operations(objects, now, live: live)
+        def with_gc_finalizer_operations(result, objects, now: Time.now.utc, live: nil, resolve: ResourceDescriptor.method(:parse))
+          operations = gc_finalizer_operations(objects, now, live: live, resolve: resolve)
           return result if operations.empty?
 
           ReconcileResult.new(operations: Array(result.operations) + operations,
@@ -35,46 +35,70 @@ module Rubernetes
         # valid owner and owner that's waiting for dependents to be deleted"
         # expected 50 pods, got 40).
 
-        def foreground_operations(objects, now, live: nil)
-          owners = objects.select { |object| foreground_owner?(object) }
+        def gc_finalizer_operations(objects, now, live: nil, resolve: ResourceDescriptor.method(:parse))
+          owners = objects.select { |object| deletion_finalizer(object) }
           return [] if owners.empty?
 
           by_uid = objects.to_h { |object| [Support.uid(object).to_s, object] }
-          dependents_of = Hash.new { |hash, key| hash[key] = [] }
-          objects.each do |object|
-            Support.owner_references(object).each do |reference|
-              dependents_of[Support.ref_value(reference, "uid", "").to_s] << object
-            end
-          end
+          dependents_of = OwnerReferenceIndex.dependents_by_uid(objects)
           owners.flat_map do |owner|
+            finalizer = deletion_finalizer(owner)
             uid = Support.uid(owner).to_s
             dependents = dependents_of[uid].select { |dependent| same_scope?(owner, dependent) }
             dependents = current_dependents(dependents, live, uid)
+            unless finalizer == "orphan"
+              dependents.select! do |dependent|
+                Support.owner_references(dependent).any? do |reference|
+                  Support.ref_value(reference, "uid", "").to_s == uid && Support.ref_value(reference, "blockOwnerDeletion", false) == true
+                end
+              end
+            end
             if dependents.empty?
-              next [] if marked_seconds_ago(owner, now) < FOREGROUND_SETTLE_SECONDS
+              current = current_deleting_owner(owner, live, uid, finalizer)
+              next [] if current.nil? || marked_seconds_ago(current, now) < FOREGROUND_SETTLE_SECONDS
 
-              candidate = Support.deep_copy(owner)
-              candidate["metadata"]["finalizers"] = Array(candidate["metadata"]["finalizers"]) - [FOREGROUND_FINALIZER]
-              next [operation_update(owner, candidate, descriptor: ResourceDescriptor.parse(owner),
-                                                       reason: "foreground deletion: dependents gone")]
+              next [remove_gc_finalizer(current, resolve.call(current), finalizer)]
             end
 
             dependents.filter_map do |dependent|
-              next nil if Support.value(Support.metadata(dependent), "deletionTimestamp", nil)
+              next nil if finalizer != "orphan" && Support.value(Support.metadata(dependent), "deletionTimestamp", nil)
 
-              if other_live_owner?(dependent, uid, by_uid)
+              if finalizer == "orphan" || other_live_owner?(dependent, uid, by_uid)
                 candidate = Support.deep_copy(dependent)
                 candidate["metadata"]["ownerReferences"] = Support.owner_references(dependent).reject do |reference|
                   Support.ref_value(reference, "uid", "").to_s == uid
                 end
-                operation_update(dependent, candidate, descriptor: ResourceDescriptor.parse(dependent),
-                                                       reason: "foreground deletion: released to its other owner")
+                operation_update(dependent, candidate, descriptor: resolve.call(dependent),
+                                                       reason: "#{finalizer}: released owner reference")
               else
-                operation_delete(dependent, descriptor: ResourceDescriptor.parse(dependent),
+                operation_delete(dependent, descriptor: resolve.call(dependent),
                                             reason: "foreground deletion of #{Support.name(owner)}")
               end
             end
           end
+        end
+
+        # Read finalizers after the dependent checks. A versioned PUT can
+        # conflict with every status update from a terminating operator.
+        def current_deleting_owner(owner, live, uid, finalizer)
+          return owner unless live
+
+          current = live.call(owner)
+          return unless current.is_a?(Hash) && !uid.empty? && Support.uid(current).to_s == uid
+          return unless deletion_finalizer(current) == finalizer
+
+          current
+        end
+
+        def remove_gc_finalizer(owner, descriptor, finalizer)
+          finalizers = Support.metadata(owner).fetch("finalizers")
+          patch = [
+            {"op" => "test", "path" => "/metadata/uid", "value" => Support.uid(owner)},
+            {"op" => "test", "path" => "/metadata/finalizers", "value" => finalizers},
+            {"op" => "replace", "path" => "/metadata/finalizers", "value" => finalizers - [finalizer]}
+          ]
+          Operation.new(action: :json_patch, resource: descriptor, key: object_key(descriptor, owner), object: owner,
+                        patch: patch, reason: "#{finalizer}: dependents gone")
         end
 
         # The live copies of the owner's dependents: one the API no longer has,
@@ -104,10 +128,11 @@ module Rubernetes
           end
         end
 
-        def foreground_owner?(object)
+        def deletion_finalizer(object)
           metadata = Support.metadata(object)
-          !Support.value(metadata, "deletionTimestamp", nil).nil? &&
-            Array(Support.value(metadata, "finalizers", [])).include?(FOREGROUND_FINALIZER)
+          return unless Support.value(metadata, "deletionTimestamp", nil)
+
+          Array(Support.value(metadata, "finalizers", [])).find { |entry| [FOREGROUND_FINALIZER, "orphan"].include?(entry) }
         end
 
         def same_scope?(owner, dependent)
