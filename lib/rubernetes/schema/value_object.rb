@@ -76,7 +76,7 @@ module Rubernetes
 
             seen[ruby_name] = field
             if method_defined?(ruby_name.to_sym) || private_method_defined?(ruby_name.to_sym) ||
-               protected_method_defined?(ruby_name.to_sym) || seen.values[0...-1].any? { |item| item.ruby_name == ruby_name }
+               protected_method_defined?(ruby_name.to_sym)
               raise GenerationError, "field #{field.json_name.inspect} collides with generated accessor #{ruby_name.inspect}"
             end
 
@@ -301,23 +301,15 @@ module Rubernetes
       protected
 
       def field_for_key(definition, key)
-        return nil if key.nil?
-
-        name = key.to_s
-        definition.fields[name] || definition.fields.values.find { |field| field.ruby_name == name || field.json_name == name }
+        definition.field_for_input(key) unless key.nil?
       end
 
       def canonical_field_name(name)
-        return nil if name.nil?
-
-        field = find_field(name)
-        field&.name
+        find_field(name)&.name unless name.nil?
       end
 
       def find_field(name)
-        definition.field(name) || definition.fields.values.find do |item|
-          item.ruby_name == name.to_s || item.json_name == name.to_s
-        end
+        definition.field_for_input(name)
       end
 
       def normalize_input(values, keywords)
@@ -342,7 +334,7 @@ module Rubernetes
           return values.map { |item| normalize_item(field.items, item) }
         end
 
-        nested = nested_definition(field)
+        nested = definition.nested_definition_for(field, include_items: true)
         return nested.value_class.new(value) if nested && !value.is_a?(ValueObject)
         return value if value.is_a?(ValueObject)
 
@@ -351,8 +343,6 @@ module Rubernetes
             result[deep_copy(key)] = normalize_item(field.additional_properties, item)
           end
         end
-
-        return deep_copy(value) if type == :object && value.is_a?(Hash) && field.properties.empty?
 
         deep_copy(value)
       end
@@ -363,29 +353,8 @@ module Rubernetes
         return normalize_value(item, value) if item.is_a?(Field)
         return item.value_class.new(value) if item.is_a?(Definition)
         return item.resolve.value_class.new(value) if item.is_a?(Reference)
-        return deep_copy(value) if item == :any
-        return deep_copy(value) if item.is_a?(Class) && value.is_a?(item)
 
         deep_copy(value)
-      end
-
-      def nested_definition(field)
-        return field.type if field.type.is_a?(Definition)
-        return field.type.resolve if field.type.is_a?(Reference)
-        return field.items if field.items.is_a?(Definition)
-        return field.items.resolve if field.items.is_a?(Reference)
-        return nil unless field.object? && !field.properties.empty?
-
-        Definition.new(
-          name: "#{definition.kind}#{field.name.capitalize}",
-          group: definition.group,
-          version: definition.version,
-          kind: "#{definition.kind}#{field.name.capitalize}",
-          resource: "#{definition.resource}-#{field.name}",
-          scope: definition.scope,
-          fields: field.properties,
-          preserve_unknown_fields: field.preserve_unknown_fields
-        )
       end
 
       def normalize_unknown_mode(mode, include_unknown)
