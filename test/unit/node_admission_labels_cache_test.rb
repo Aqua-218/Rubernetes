@@ -54,4 +54,27 @@ class NodeAdmissionLabelsCacheTest < Minitest::Test
     assert_equal "NodeSelectorMismatch", decision.reason
     assert_equal 3, calls.call, "a rejection is only ever made on labels read just now"
   end
+
+  def test_no_execute_rejections_recheck_the_live_node
+    taint = {"key" => "maintenance", "effect" => "NoExecute"}
+    cached = []
+    live = [taint]
+    reads = 0
+    provider = lambda do
+      reads += 1
+      live
+    end
+    subject = Rubernetes::Node::Admission.new(node_name: "n1", capacity: {"pods" => "110"},
+                                              node_taints: -> { cached }, node_taints_provider: provider)
+
+    assert subject.admit(pod).accepted
+    assert_equal 0, reads
+    cached = [taint]
+
+    assert_equal "TaintToleration", subject.admit(pod).reason
+    live = []
+
+    assert subject.admit(pod).accepted
+    assert_equal 2, reads
+  end
 end
