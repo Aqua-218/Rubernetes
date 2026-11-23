@@ -141,36 +141,57 @@ module Rubernetes
       end
 
       # metav1validation.ValidateConditions.
-      def meta_conditions_errors(conditions, path)
+      def meta_conditions_errors(conditions, path, wire_values: false)
         issues = []
         types = {}
         conditions.each_with_index do |condition, index|
           condition = {} unless condition.is_a?(Hash)
           item = path + [index.to_s]
           type = fetch(condition, "type").to_s
-          issues << issue(item + ["type"], :duplicate, "") if types[type]
+          issues << meta_condition_string_issue(item + ["type"], :duplicate, "", type, wire_values) if types[type]
           types[type] = true
-          issues.concat(invalid_messages(item + ["type"], qualified_name_messages(type)))
-          unless %w[True False Unknown].include?(fetch(condition, "status").to_s)
-            issues << issue(item + ["status"], :unsupported, 'supported values: "False", "True", "Unknown"')
+          qualified_name_messages(type, label_key: wire_values).each do |message|
+            issues << meta_condition_string_issue(item + ["type"], :invalid, message, type, wire_values)
+          end
+          status = fetch(condition, "status").to_s
+          unless %w[True False Unknown].include?(status)
+            detail = 'supported values: "False", "True", "Unknown"'
+            issues << meta_condition_string_issue(item + ["status"], :unsupported, detail, status, wire_values)
           end
           observed = fetch(condition, "observedGeneration")
           if observed.is_a?(Integer) && observed.negative?
             issues << issue(item + ["observedGeneration"], :invalid,
                             "must be greater than or equal to zero")
           end
-          issues << issue(item + ["lastTransitionTime"], :required, "") if blank?(fetch(condition, "lastTransitionTime"))
+          time = fetch(condition, "lastTransitionTime")
+          issues << issue(item + ["lastTransitionTime"], :required, "") if blank?(time) || (wire_values && zero_condition_time?(time))
           reason = fetch(condition, "reason").to_s
           if reason.empty?
             issues << issue(item + ["reason"], :required, "")
           else
-            issues << issue(item + ["reason"], :invalid, CONDITION_REASON_MSG) unless reason.match?(CONDITION_REASON)
+            issues << meta_condition_string_issue(item + ["reason"], :invalid, CONDITION_REASON_MSG, reason, wire_values) unless reason.match?(CONDITION_REASON)
             issues << issue(item + ["reason"], :too_long, "may not be more than 1024 bytes") if reason.bytesize > 1024
           end
           message = fetch(condition, "message").to_s
           issues << issue(item + ["message"], :too_long, "may not be more than 32768 bytes") if message.bytesize > 32 * 1024
         end
         issues
+      end
+
+      def meta_condition_string_issue(path, code, detail, value, wire_values)
+        return issue(path, code, detail) unless wire_values
+
+        if code == :unsupported
+          return ValidationIssue.new(path: path, code: code, message: detail, value: go_value(InternalPodSpec.go_string(value)),
+                                     kubernetes_type: "Unsupported value")
+        end
+        ValidationIssue.new(path: path, code: code, message: detail, value: go_value(job_status_index_quote(value)))
+      end
+
+      def zero_condition_time?(time)
+        time.is_a?(String) && Time.iso8601(time) == Time.utc(1)
+      rescue ArgumentError
+        false
       end
 
       # validateRawExtension (not stored): a JSON object within the limit.
