@@ -40,10 +40,30 @@ module Rubernetes
 
     # Immutable, schema-shaped view passed to filter and score plugins.
     class Snapshot
+      EMPTY_MAP = {}.freeze
+      EMPTY_LIST = [].freeze
+
       attr_reader :raw
 
       def initialize(value)
         @raw = Support.snapshot(value)
+        @derived = {}
+      end
+
+      def metadata
+        self["metadata"] || EMPTY_MAP
+      end
+
+      def spec
+        self["spec"] || EMPTY_MAP
+      end
+
+      def status
+        self["status"] || EMPTY_MAP
+      end
+
+      def labels
+        @derived[:labels] ||= Support.labels(self)
       end
 
       def [](key)
@@ -55,17 +75,7 @@ module Rubernetes
       end
 
       def dig(*path)
-        current = @raw
-        path.each do |key|
-          return nil unless current.is_a?(Hash)
-
-          current = if current.key?(key.to_s)
-                      current[key.to_s]
-                    elsif current.key?(key.to_sym)
-                      current[key.to_sym]
-                    end
-        end
-        current
+        path.reduce(@raw) { |value, key| value.is_a?(Hash) ? value.fetch(key.to_s) { value[key.to_sym] } : nil }
       end
 
       def fetch(key, *, &)
@@ -84,9 +94,7 @@ module Rubernetes
 
       def with(changes = {})
         updates = Support.object_hash(changes)
-        merged = Support.deep_copy(@raw)
-        updates.each { |key, value| merged[key.to_s] = Support.deep_copy(value) }
-        self.class.new(merged)
+        self.class.new(@raw.merge(updates))
       end
 
       # Explicit field access keeps the plugin ABI stable and avoids dynamic
@@ -104,6 +112,26 @@ module Rubernetes
       def hash
         to_h.hash
       end
+
+      private
+
+      def list_field(source, key)
+        value = Support.value(source, key)
+        return EMPTY_LIST if value.nil?
+        return value if value.is_a?(Array)
+
+        Support.snapshot(Array(value))
+      end
+
+      def validate_shape!(kind)
+        %w[metadata spec status].each do |key|
+          value = self[key]
+          next if value.nil?
+          raise ValidationError, "#{kind} #{key} must be an object" unless value.respond_to?(:to_h)
+        end
+        labels = Support.value(metadata, "labels")
+        raise ValidationError, "#{kind} metadata.labels must be an object" if labels && !labels.respond_to?(:to_h)
+      end
     end
 
     class Pod < Snapshot
@@ -114,18 +142,6 @@ module Rubernetes
 
         validate_shape!
         freeze
-      end
-
-      def metadata
-        Support.snapshot(self["metadata"] || {})
-      end
-
-      def spec
-        Support.snapshot(self["spec"] || {})
-      end
-
-      def status
-        Support.snapshot(self["status"] || {})
       end
 
       def name
@@ -140,23 +156,21 @@ module Rubernetes
         Support.uid(self)
       end
 
-      def labels
-        Support.labels(self)
-      end
-
       def annotations
-        Support.annotations(self)
+        @derived[:annotations] ||= Support.annotations(self)
       end
 
-      def requests
-        ResourceMap.new(Support.requests_for(self))
+      def requests(use_dra_node_allocatable: false)
+        key = use_dra_node_allocatable ? :requests_with_dra : :requests
+        @derived[key] ||= ResourceMap.new(Support.requests_for(self, use_dra_node_allocatable: use_dra_node_allocatable))
       end
 
       alias resource_requests requests
 
       # The requests LeastAllocated scores with (defaults for what is unset).
-      def non_zero_requests
-        ResourceMap.new(Support.non_zero_requests_for(self))
+      def non_zero_requests(use_dra_node_allocatable: false)
+        key = use_dra_node_allocatable ? :non_zero_requests_with_dra : :non_zero_requests
+        @derived[key] ||= ResourceMap.new(Support.non_zero_requests_for(self, use_dra_node_allocatable: use_dra_node_allocatable))
       end
 
       def node_name
@@ -201,9 +215,7 @@ module Rubernetes
         Support.value(spec, "schedulerName", "default-scheduler").to_s
       end
 
-      def scheduling_gates
-        Support.snapshot(Array(Support.value(spec, "schedulingGates", [])))
-      end
+      def scheduling_gates = list_field(spec, "schedulingGates")
 
       # spec.schedulingGroup.podGroupName (GenericWorkload), or nil.
       def scheduling_group
@@ -215,57 +227,40 @@ module Rubernetes
         !scheduling_gates.empty?
       end
 
-      def containers
-        Support.snapshot(Array(Support.value(spec, "containers", [])))
-      end
+      def containers = list_field(spec, "containers")
 
-      def init_containers
-        Support.snapshot(Array(Support.value(spec, "initContainers", [])))
-      end
+      def init_containers = list_field(spec, "initContainers")
 
-      def volumes
-        Support.snapshot(Array(Support.value(spec, "volumes", [])))
-      end
+      def volumes = list_field(spec, "volumes")
 
-      def tolerations
-        Support.snapshot(Array(Support.value(spec, "tolerations", [])))
-      end
+      def tolerations = list_field(spec, "tolerations")
 
       def affinity
-        Support.snapshot(Support.value(spec, "affinity", {}))
+        Support.value(spec, "affinity", EMPTY_MAP)
       end
 
       def node_selector
-        Support.snapshot(Support.value(spec, "nodeSelector", {}))
+        Support.value(spec, "nodeSelector", EMPTY_MAP)
       end
 
-      def topology_spread_constraints
-        Support.snapshot(Array(Support.value(spec, "topologySpreadConstraints", [])))
-      end
+      def topology_spread_constraints = list_field(spec, "topologySpreadConstraints")
 
       def node_affinity
-        Support.snapshot(Support.value(affinity, "nodeAffinity", {}))
+        Support.value(affinity, "nodeAffinity", EMPTY_MAP)
       end
 
       def pod_affinity
-        Support.snapshot(Support.value(affinity, "podAffinity", {}))
+        Support.value(affinity, "podAffinity", EMPTY_MAP)
       end
 
       def pod_anti_affinity
-        Support.snapshot(Support.value(affinity, "podAntiAffinity", {}))
+        Support.value(affinity, "podAntiAffinity", EMPTY_MAP)
       end
 
       private
 
       def validate_shape!
-        %w[metadata spec status].each do |key|
-          value = self[key]
-          next if value.nil?
-          raise ValidationError, "pod #{key} must be an object" unless value.respond_to?(:to_h)
-        end
-        labels = Support.value(metadata, "labels")
-        raise ValidationError, "pod metadata.labels must be an object" if labels && !labels.respond_to?(:to_h)
-
+        super("pod")
         selectors = Support.value(spec, "nodeSelector")
         raise ValidationError, "pod spec.nodeSelector must be an object" if selectors && !selectors.respond_to?(:to_h)
       end
@@ -274,36 +269,21 @@ module Rubernetes
     class Node < Snapshot
       attr_reader :pods
 
-      def initialize(value, pods: nil)
+      def initialize(value, pods: nil, use_dra_node_allocatable: false)
         super(value)
         kind = self["kind"]
         raise ValidationError, "scheduler expected a Node, got #{kind.inspect}" if kind && kind.to_s != "Node"
 
-        validate_shape!
+        validate_shape!("node")
         @pods_explicit = !pods.nil? || key?("pods")
         source_pods = pods.nil? ? self["pods"] : pods
         @pods = Array(source_pods).map { |pod| pod.is_a?(Pod) ? pod : Pod.new(pod) }.freeze
+        @use_dra_node_allocatable = use_dra_node_allocatable
         freeze
-      end
-
-      def metadata
-        Support.snapshot(self["metadata"] || {})
-      end
-
-      def spec
-        Support.snapshot(self["spec"] || {})
-      end
-
-      def status
-        Support.snapshot(self["status"] || {})
       end
 
       def name
         Support.node_name(self)
-      end
-
-      def labels
-        Support.labels(self)
       end
 
       def taints
@@ -328,7 +308,7 @@ module Rubernetes
       end
 
       def allocatable
-        ResourceMap.new(
+        @derived[:allocatable] ||= ResourceMap.new(
           Support.value(status, "allocatable",
                         Support.value(self, "allocatable",
                                       Support.value(spec, "allocatable", Support.value(status, "capacity", {}))))
@@ -340,21 +320,29 @@ module Rubernetes
       end
 
       def requested
-        return ResourceMap.new(Support.sum_maps(@pods.map(&:requests))) if @pods_explicit
-
-        ResourceMap.new(
-          Support.value(self, "requested",
-                        Support.value(status, "requested", Support.value(status, "used", Support.value(self, "used", {}))))
-        )
+        @derived[:requested] ||= if @pods_explicit
+                                   pod_total { |pod| pod.requests(use_dra_node_allocatable: @use_dra_node_allocatable) }
+                                 else
+                                   used = Support.value(status, "used", self["used"])
+                                   ResourceMap.new(Support.value(self, "requested", Support.value(status, "requested", used)))
+                                 end
       end
 
       alias used requested
 
       # NodeInfo.NonZeroRequested: the node's Pods sized with the scoring defaults.
       def non_zero_requested
-        return ResourceMap.new(Support.sum_maps(@pods.map(&:non_zero_requests))) if @pods_explicit
+        return requested unless @pods_explicit
 
-        requested
+        @derived[:non_zero_requested] ||= pod_total { |pod| pod.non_zero_requests(use_dra_node_allocatable: @use_dra_node_allocatable) }
+      end
+
+      private def pod_total
+        amounts = Hash.new(0)
+        @pods.each do |pod|
+          yield(pod).each { |resource, amount| amounts[resource] += amount }
+        end
+        ResourceMap.new(amounts)
       end
 
       def available
@@ -362,11 +350,13 @@ module Rubernetes
       end
 
       def utilization_percent
-        resources = allocatable.keys.select { |resource| allocatable.fetch(resource).positive? }
+        capacity = allocatable
+        resources = capacity.keys.select { |resource| capacity.fetch(resource).positive? }
         return 0 if resources.empty?
 
+        used = requested
         ratio = resources.sum do |resource|
-          [(requested.fetch(resource, Rational(0)) * 100 / allocatable.fetch(resource)), Rational(100)].min
+          [(used.fetch(resource, Rational(0)) * 100 / capacity.fetch(resource)), Rational(100)].min
         end
         (ratio / resources.length).floor
       end
@@ -385,22 +375,10 @@ module Rubernetes
         condition && Support.value(condition, "status", "").to_s == "True"
       end
 
-      def with_pods(pod_list, preserve_requested: false)
+      def with_pods(pod_list, preserve_requested: false, use_dra_node_allocatable: @use_dra_node_allocatable)
         return self if preserve_requested && Array(pod_list).empty? && !@pods_explicit
 
-        self.class.new(to_h, pods: pod_list)
-      end
-
-      private
-
-      def validate_shape!
-        %w[metadata spec status].each do |key|
-          value = self[key]
-          next if value.nil?
-          raise ValidationError, "node #{key} must be an object" unless value.respond_to?(:to_h)
-        end
-        labels = Support.value(metadata, "labels")
-        raise ValidationError, "node metadata.labels must be an object" if labels && !labels.respond_to?(:to_h)
+        self.class.new(to_h, pods: pod_list, use_dra_node_allocatable: use_dra_node_allocatable)
       end
     end
 
