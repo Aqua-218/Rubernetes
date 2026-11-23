@@ -11,3 +11,4 @@
 /.claude/settings.local.json
 /tmp/
 *.log
+.kube/
