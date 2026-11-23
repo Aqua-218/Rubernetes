@@ -1,23 +1,32 @@
 # frozen_string_literal: true
 
+require_relative "../../label_requirement"
+
+require_relative "../../schema/job_selector"
+
 module Rubernetes
   module Storage
     # Bridges selector objects owned by API::StoreAdapter without coupling the
     # storage layer to API constants. Its stable signature keeps continue
     # tokens bound to the exact label/field query across requests.
     class ExternalSelectorPredicate
-      attr_reader :selector_signature
+      attr_reader :selector_signature, :shard
 
-      def initialize(selector, kind: :combined)
+      def initialize(selector, kind: :combined, shard: nil)
         @selector = selector
         @kind = kind.to_sym
+        @shard = shard
         @selector_signature = MemoryStoreSupport.immutable_copy(signature_for(selector, @kind))
         freeze
       end
 
-      def call(object)
+      def filters_attributes?
+        !@selector.empty?
+      end
+
+      def call(object, &)
         candidate = @kind == :label ? labels_from(object) : object
-        @selector.matches?(candidate)
+        @selector.matches?(candidate, &)
       end
 
       private
@@ -25,6 +34,7 @@ module Rubernetes
       def labels_from(object)
         metadata = object.is_a?(Hash) ? object.fetch("metadata", {}) : {}
         labels = metadata.fetch("labels", {})
+        labels = Schema::JobSelector.inherited_labels(object) || labels if Schema::JobSelector.object?(object)
         labels = labels.is_a?(Hash) ? MemoryStoreSupport.deep_dup(labels) : {}
         labels["metadata.name"] = metadata["name"] if metadata.key?("name")
         labels
@@ -34,11 +44,13 @@ module Rubernetes
       # one list of requirements.
       def signature_for(selector, kind)
         if Shape.selector_pair?(selector)
-          {
+          signature = {
             "kind" => kind.to_s,
             "label" => requirements_for(selector.label),
             "field" => requirements_for(selector.field)
           }
+          signature["shard"] = shard.to_s if shard
+          signature
         else
           {"kind" => kind.to_s, "requirements" => requirements_for(selector)}
         end
@@ -55,26 +67,33 @@ module Rubernetes
     class Selector
       Clause = Data.define(:path, :operator, :values, :kind)
 
-      attr_reader :signature
+      attr_reader :signature, :shard
 
       def initialize(label_selector:, field_selector:)
-        @label_clauses = parse(label_selector, :label)
-        @field_clauses = parse(field_selector, :field)
+        label_clauses = parse(label_selector, :label)
+        field_clauses = parse(field_selector, :field)
+        @shard = label_selector.shard if label_selector.is_a?(ExternalSelectorPredicate)
+        @clauses = label_clauses + field_clauses
+        @filters_attributes = @clauses.any? do |clause|
+          predicate = clause.values.first
+          !predicate.is_a?(ExternalSelectorPredicate) || predicate.filters_attributes?
+        end
         @signature = MemoryStoreSupport.digest(
-          labels: @label_clauses.map(&:to_h),
-          fields: @field_clauses.map(&:to_h)
+          labels: label_clauses.map(&:to_h),
+          fields: field_clauses.map(&:to_h)
         ).freeze
         freeze
       end
 
-      def matches?(object)
-        @label_clauses.all? { |clause| match_clause(clause, label_value(object, clause.path), object) } &&
-          @field_clauses.all? { |clause| match_clause(clause, field_value(object, clause.path), object) }
+      def matches?(object, &)
+        @clauses.all? { |clause| match_clause(clause, object, &) }
       end
 
       def empty?
-        @label_clauses.empty? && @field_clauses.empty?
+        @clauses.empty?
       end
+
+      def filters_attributes? = @filters_attributes
 
       private
 
@@ -82,14 +101,14 @@ module Rubernetes
         return [] if selector.nil? || selector == "" || selector == {}
         return [Clause.new(path: "", operator: :callable, values: [selector], kind: kind)] if Shape.callable?(selector)
 
-        if selector.is_a?(Hash)
-          return selector.flat_map do |path, expected|
-            parse_hash_clause(path, expected, kind)
-          end
-        end
+        return selector.map { |path, expected| parse_hash_clause(path, expected, kind) } if selector.is_a?(Hash)
 
-        expressions = selector.is_a?(Array) ? selector : split_expressions(String(selector))
-        expressions.flat_map { |expression| parse_expression(expression, kind) }
+        expressions = if selector.is_a?(Array)
+                        selector
+                      else
+                        LabelRequirement.split(String(selector)) { raise ArgumentError, "unbalanced selector parentheses" }
+                      end
+        expressions.map { |expression| parse_expression(expression, kind) }
       rescue ArgumentError => error
         field = kind == :label ? "labelSelector" : "fieldSelector"
         raise InvalidSelector.new(error.message, field: field)
@@ -100,7 +119,7 @@ module Rubernetes
 
         if name.start_with?("!")
           validate_selector_key!(name[1..].to_s)
-          return [Clause.new(path: name[1..], operator: :not_exists, values: [], kind: kind)] if expected == true || expected.nil?
+          return Clause.new(path: name[1..], operator: :not_exists, values: [], kind: kind) if expected == true || expected.nil?
 
           raise ArgumentError, "absence selector cannot have a value: #{name}"
         end
@@ -108,11 +127,11 @@ module Rubernetes
 
         case expected
         when Array
-          [Clause.new(path: name, operator: :in, values: expected.map { |value| String(value) }, kind: kind)]
+          Clause.new(path: name, operator: :in, values: expected.map { |value| String(value) }, kind: kind)
         when nil
-          [Clause.new(path: name, operator: :exists, values: [], kind: kind)]
+          Clause.new(path: name, operator: :exists, values: [], kind: kind)
         else
-          [Clause.new(path: name, operator: :equal, values: [String(expected)], kind: kind)]
+          Clause.new(path: name, operator: :equal, values: [String(expected)], kind: kind)
         end
       end
 
@@ -124,32 +143,31 @@ module Rubernetes
           path = text[1..].strip
           validate_selector_key!(path)
 
-          return [Clause.new(path: path, operator: :not_exists, values: [], kind: kind)]
+          return Clause.new(path: path, operator: :not_exists, values: [], kind: kind)
         end
 
         if (match = text.match(/\A(.+?)\s+(notin|in)\s*\((.*)\)\z/i))
           path = match[1].strip
           validate_selector_key!(path)
-          values = split_values(match[3])
+          values = match[3].split(",").map(&:strip).reject(&:empty?)
           raise ArgumentError, "set selector must contain a value" if values.empty?
 
           operator = match[2].downcase == "in" ? :in : :not_in
-          return [Clause.new(path: path, operator: operator, values: values, kind: kind)]
+          return Clause.new(path: path, operator: operator, values: values, kind: kind)
         end
 
         if (match = text.match(/\A(.+?)\s*(!=|==|=)\s*(.*)\z/))
           path = match[1].strip
           validate_selector_key!(path)
           value = match[3].strip
-          raise ArgumentError, "selector key must not be empty" if path.empty?
           raise ArgumentError, "selector value must not be empty" if value.empty?
 
           operator = match[2] == "!=" ? :not_equal : :equal
-          return [Clause.new(path: path, operator: operator, values: [value], kind: kind)]
+          return Clause.new(path: path, operator: operator, values: [value], kind: kind)
         end
 
         validate_selector_key!(text)
-        [Clause.new(path: text, operator: :exists, values: [], kind: kind)]
+        Clause.new(path: text, operator: :exists, values: [], kind: kind)
       end
 
       def validate_selector_key!(value)
@@ -159,32 +177,9 @@ module Rubernetes
         raise ArgumentError, "selector key #{value.inspect} is invalid"
       end
 
-      def split_expressions(selector)
-        expressions = []
-        start = 0
-        depth = 0
-        selector.each_char.with_index do |char, index|
-          depth += 1 if char == "("
-          depth -= 1 if char == ")"
-          raise ArgumentError, "unbalanced selector parentheses" if depth.negative?
-
-          if char == "," && depth.zero?
-            expressions << selector[start...index]
-            start = index + 1
-          end
-        end
-        raise ArgumentError, "unbalanced selector parentheses" unless depth.zero?
-
-        expressions << selector[start..]
-        expressions
-      end
-
-      def split_values(values)
-        values.split(",").map(&:strip).reject(&:empty?)
-      end
-
       def label_value(object, path)
         labels = object.dig("metadata", "labels")
+        labels = Schema::JobSelector.inherited_labels(object) || labels if Schema::JobSelector.object?(object)
         return nil unless labels.is_a?(Hash)
 
         labels[path]
@@ -198,27 +193,11 @@ module Rubernetes
         end
       end
 
-      def match_clause(clause, value, object)
-        return clause.values.first.call(object) if clause.operator == :callable
+      def match_clause(clause, object, &)
+        return clause.values.first.call(object, &) if clause.operator == :callable
 
-        present = !value.nil?
-        string_value = value.nil? ? nil : String(value)
-        case clause.operator
-        when :exists
-          present
-        when :not_exists
-          !present
-        when :equal
-          present && string_value == clause.values.first
-        when :not_equal
-          !present || string_value != clause.values.first
-        when :in
-          present && clause.values.include?(string_value)
-        when :not_in
-          !present || !clause.values.include?(string_value)
-        else
-          false
-        end
+        value = clause.kind == :label ? label_value(object, clause.path) : field_value(object, clause.path)
+        LabelRequirement.matches?(clause.operator, value.nil? ? nil : String(value), clause.values, present: !value.nil?)
       end
     end
   end
