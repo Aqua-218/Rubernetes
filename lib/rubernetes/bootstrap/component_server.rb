@@ -24,18 +24,19 @@ module Rubernetes
       # nil unless serving.enabled.
       # +extra_paths+: path => callable returning the body, served as text
       # exposition (kube-scheduler's /metrics/resources).  +health+: a
-      # callable answering [status, message] for /healthz and /livez
-      # (kube-proxy's proxier health), nil for the plain ping.
-      def self.from_config(component:, config:, metrics:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil)
+      # callable answering [status, headers, body] or [status, message] for
+      # /healthz and /livez, nil for the plain ping. +proxy_mode+ supplies the
+      # active backend for kube-proxy's /proxyMode endpoint.
+      def self.from_config(component:, config:, metrics:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil, proxy_mode: nil)
         serving = (config || {})["serving"] || {}
         return nil unless serving["enabled"] == true
 
         new(component: component, config: config, metrics: metrics, ready: ready, logger: logger,
             host: serving.fetch("bind_address", "127.0.0.1").to_s, port: Integer(serving.fetch("port")),
-            extra_paths: extra_paths, health: health)
+            extra_paths: extra_paths, health: health, proxy_mode: proxy_mode)
       end
 
-      def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil)
+      def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil, proxy_mode: nil)
         unless LOOPBACK.include?(host)
           raise Config::Error,
                 "#{component} serving.bind_address #{host.inspect} is not loopback: the component endpoints have no authorizer"
@@ -50,6 +51,7 @@ module Rubernetes
         @slis = Observability::HealthcheckSLIs.new
         @extra_paths = extra_paths.to_h.transform_keys(&:to_s)
         @health = health
+        @proxy_mode = proxy_mode
         @server = Transport::HTTPServer.new(method(:call), host: host, port: port, logger: logger)
       end
 
@@ -69,10 +71,19 @@ module Rubernetes
 
       def call(request)
         path = request.path.to_s
+        if path == "/proxyMode" && @proxy_mode
+          return [200, {"content-type" => "text/plain; charset=utf-8", "x-content-type-options" => "nosniff"}, [@proxy_mode.call.to_s]]
+        end
+
         # SLIMetricsWithReset: DELETE /metrics/slis resets the registry.
         if path == "/metrics/slis" && request.method.to_s.upcase == "DELETE"
           @slis.reset
           return [200, {"content-type" => "text/plain; charset=utf-8"}, ["metrics reset\n"]]
+        end
+        if @health && %w[/healthz /livez].include?(path)
+          response = @health.call(path)
+          response = text(*response) if response.length == 2
+          return observed_health(path, response.first == 200) { response }
         end
         return text(405, "method not allowed") unless %w[GET HEAD].include?(request.method.to_s.upcase)
 
@@ -82,12 +93,7 @@ module Rubernetes
 
         case path
         when "/healthz", "/livez"
-          if @health
-            status, message = @health.call(path)
-            observed_health(path, status == 200) { text(status, message) }
-          else
-            observed_health(path, true) { text(200, "ok") }
-          end
+          observed_health(path, true) { text(200, "ok") }
         when "/readyz"
           ready = ready?
           observed_health(path, ready) { ready ? text(200, "ok") : text(500, "[-]leaderElection failed: not ready") }
@@ -122,7 +128,7 @@ module Rubernetes
         status, headers, body = if path == "/statusz"
                                   Observability::ZPages.statusz(component: @component, start_time: @started_at, binary_version: version,
                                                                 emulation_version: version.split(".").first(2).join("."),
-                                                                paths: PATHS, accept: accept)
+                                                                paths: @proxy_mode ? PATHS + ["/proxyMode"] : PATHS, accept: accept)
                                 else
                                   Observability::ZPages.flagz(component: @component, flags: @flags, accept: accept)
                                 end
