@@ -5,6 +5,7 @@ require "json"
 require "socket"
 require "time"
 require_relative "metrics"
+require_relative "node_topology"
 require "timeout"
 
 module Rubernetes
@@ -93,7 +94,7 @@ module Rubernetes
     end
 
     HealthCheckResult = Struct.new(:service_key, :node_name, :node_port, :healthy,
-                                   :status, :endpoints, :checked_at, keyword_init: true) do
+                                   :status, :endpoints, :checked_at, :proxy_healthy, keyword_init: true) do
       def initialize(**attributes)
         super
         freeze
@@ -126,11 +127,13 @@ module Rubernetes
 
       attr_reader :proxy, :bind_address
 
-      def initialize(proxy:, bind_address: DEFAULT_BIND_ADDRESS)
+      def initialize(proxy:, bind_address: nil, &on_bind_error)
         raise ArgumentError, "proxy is required" unless proxy
 
         @proxy = proxy
-        @bind_address = String(bind_address)
+        @on_bind_error = on_bind_error
+        @automatic_address = bind_address.nil?
+        @bind_address = String(bind_address || DEFAULT_BIND_ADDRESS)
         raise ArgumentError, "health responder bind address must not be empty" if @bind_address.empty?
 
         @mutex = Mutex.new
@@ -140,13 +143,14 @@ module Rubernetes
       end
 
       def start
-        @mutex.synchronize do
+        failures = @mutex.synchronize do
           return self if @started && !@closed
 
           @closed = false
           @started = true
           refresh_locked
         end
+        failures.each { |failure| @on_bind_error&.call(*failure) }
         self
       rescue StandardError
         @started = false
@@ -156,9 +160,8 @@ module Rubernetes
       end
 
       def refresh
-        @mutex.synchronize do
-          refresh_locked if @started && !@closed
-        end
+        failures = @mutex.synchronize { @started && !@closed ? refresh_locked : [] }
+        failures.each { |failure| @on_bind_error&.call(*failure) }
         self
       end
 
@@ -181,7 +184,7 @@ module Rubernetes
       end
 
       def ports
-        @mutex.synchronize { @listeners.keys.sort.freeze }
+        @mutex.synchronize { @listeners.keys.map(&:last).uniq.sort.freeze }
       end
 
       private
@@ -191,34 +194,48 @@ module Rubernetes
           port = service.health_check_node_port
           next unless port
 
-          result[Integer(port)] ||= service.key
+          addresses = if @automatic_address
+                        service.ip_families.map { |family| family == "IPv6" ? "::" : DEFAULT_BIND_ADDRESS }
+                      else
+                        [@bind_address]
+                      end
+          addresses.each { |address| result[[address, Integer(port)]] = service.key }
         end
         stale = @listeners.keys - desired.keys
-        close_listeners(stale.filter_map { |port| @listeners.delete(port) })
-        desired.each do |port, service_key|
-          listener = @listeners[port]
+        close_listeners(stale.filter_map { |key| @listeners.delete(key) })
+        failures = []
+        desired.each do |key, service_key|
+          address, port = key
+          listener = @listeners[key]
           if listener
             listener[:service_key] = service_key
             next
           end
 
-          server = TCPServer.new(@bind_address, port)
-          server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+          # Addrinfo#listen sets IPV6_V6ONLY before binding, allowing one
+          # IPv4 and one IPv6 listener on a dual-stack Service port.
+          begin
+            server = Addrinfo.tcp(address, port).listen
+          rescue SystemCallError, SocketError => error
+            failures << [service_key, address, port, error]
+            next
+          end
           listener = {server: server, service_key: service_key}
-          listener[:thread] = Thread.new { serve(port, listener) }
+          listener[:thread] = Thread.new { serve(listener) }
           listener[:thread].name = "rubernetes-health-#{port}" if listener[:thread].respond_to?(:name=)
-          @listeners[port] = listener
+          @listeners[key] = listener
         end
+        failures
       rescue StandardError
         close_listeners(@listeners.values)
         @listeners = {}
         raise
       end
 
-      def serve(port, listener)
+      def serve(listener)
         loop do
-          client = listener.fetch(:server).accept
-          handle(client, port)
+          client, = listener.fetch(:server).accept
+          handle(client, listener.fetch(:service_key))
         rescue IOError, Errno::EBADF
           break
         rescue SystemCallError
@@ -232,7 +249,7 @@ module Rubernetes
         end
       end
 
-      def handle(client, port)
+      def handle(client, service_key)
         request_line = nil
         Timeout.timeout(REQUEST_TIMEOUT) do
           request_line = client.gets(MAX_HEADER_BYTES)
@@ -246,29 +263,22 @@ module Rubernetes
             break if ["\r\n", "\n"].include?(line)
           end
         end
-        method, path, = request_line.to_s.split(" ", 3)
-        status, reason, body = health_response(port, method, path)
-        client.write("HTTP/1.1 #{status} #{reason}\r\nContent-Type: text/plain\r\n" \
-                     "Content-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+        return unless request_line
+
+        service = @proxy.service(service_key)
+        return unless service
+
+        family = client.local_address.ipv6? ? "IPv6" : "IPv4"
+        result = @proxy.health_check(service: service, node: @proxy.local_node, family: family)
+        count = result.endpoints.size
+        body = JSON.generate("service" => {"namespace" => service.namespace, "name" => service.name},
+                             "localEndpoints" => count, "serviceProxyHealthy" => result.proxy_healthy)
+        status = result.healthy? ? "200 OK" : "503 Service Unavailable"
+        client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\nX-Content-Type-Options: nosniff\r\n" \
+                     "X-Load-Balancing-Endpoint-Weight: #{count}\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n")
+        client.write(body) unless request_line.start_with?("HEAD ")
       rescue Timeout::Error, IOError, SystemCallError
         nil
-      end
-
-      def health_response(port, method, path)
-        return [405, "Method Not Allowed", ""] unless %w[GET HEAD].include?(method)
-        return [404, "Not Found", ""] unless path == "/healthz"
-
-        service = @proxy.services.find { |candidate| candidate.health_check_node_port.to_i == port }
-        return [503, "Service Unavailable", "FAIL\n"] unless service
-
-        result = @proxy.health_check(service: service, node: @proxy.local_node)
-        if result.healthy?
-          [200, "OK", method == "HEAD" ? "" : "OK\n"]
-        else
-          [503, "Service Unavailable", method == "HEAD" ? "" : "FAIL\n"]
-        end
-      rescue StandardError
-        [503, "Service Unavailable", method == "HEAD" ? "" : "FAIL\n"]
       end
 
       def close_listeners(listeners)
@@ -604,6 +614,8 @@ module Rubernetes
     # updates, compiles only changed rules, publishes a backend-neutral diff,
     # and routes packets with deterministic conntrack selection.
     class Proxy
+      include NodeTopology
+
       attr_reader :endpoint_store, :compiler, :rule_set, :conntrack, :node_port_allocator, :local_node, :backend, :clock,
                   :last_compilation, :node_zone, :health_check_responder, :connection_probe, :connection_tracker, :node_addresses, :publish_coalescing_seconds,
                   :last_publish_error
@@ -641,7 +653,7 @@ module Rubernetes
                      clock: -> { Time.now.utc }, attach: false)
         @clock = clock
         @local_node = (local_node || node_name || node)&.to_s
-        @node_zone = (node_zone || zone)&.to_s
+        compiler = initialize_node_zone(node_zone || zone, compiler)
         address_values = Array(node_addresses)
         address_values = Array(node_ips) if address_values.empty? && node_ips
         @node_addresses = address_values.filter_map { |ip| ModelSupport.canonical_ip(ip) }.freeze
@@ -777,11 +789,13 @@ module Rubernetes
 
       def compile(value, endpoint_slices: nil, endpoints: nil, revision: nil)
         service_object = value.is_a?(Service) ? value : Service.new(value)
-        @compiler.compile(service_object,
-                          endpoint_slices || @endpoint_store.endpoint_slices(service_object.key),
-                          endpoints: endpoints || @endpoint_store.endpoints_for(service_object.key),
-                          revision: revision || @endpoint_store.revision,
-                          compiled_at: @clock.call)
+        @mutex.synchronize do
+          @compiler.compile(service_object,
+                            endpoint_slices || @endpoint_store.endpoint_slices(service_object.key),
+                            endpoints: endpoints || @endpoint_store.endpoints_for(service_object.key),
+                            revision: revision || @endpoint_store.revision,
+                            compiled_at: @clock.call)
+        end
       end
 
       def compiled_services
@@ -844,29 +858,14 @@ module Rubernetes
         candidate_endpoints = eligible_endpoints(rule, service_object, packet)
         return nil if candidate_endpoints.empty?
 
-        healthy_endpoints = candidate_endpoints.select(&:healthy?)
-        selectable_endpoints = if healthy_endpoints.empty?
-                                 if service_object.publish_not_ready_addresses
-                                   candidate_endpoints
-                                 else
-                                   candidate_endpoints.select { |endpoint| endpoint.eligible?(allow_terminating: true) }
-                                 end
-                               else
-                                 candidate_endpoints
-                               end
-        return nil if selectable_endpoints.empty?
-
-        selector = lambda do |all_candidates|
-          preferred = healthy_endpoints & all_candidates
-          hasher.select(packet_hash_key(packet), preferred.empty? ? all_candidates : preferred)
-        end
         connection_key = ConnectionKey.new(packet)
+        session_affinity = service_object.session_affinity
         connection = @conntrack.find_or_select(
           connection_key,
           service_key: service_object.key,
-          backends: selectable_endpoints,
-          selector: selector,
-          session_affinity: service_object.session_affinity,
+          backends: candidate_endpoints,
+          selector: ->(backends) { hasher.select(packet_hash_key(packet), backends, client_ip_affinity: session_affinity == "ClientIP") },
+          session_affinity: session_affinity,
           source_ip: packet.source_ip,
           timeout_seconds: service_object.session_affinity_timeout_seconds,
           generation: @rule_set.revision,
@@ -897,23 +896,25 @@ module Rubernetes
         route(value, **) || raise(NoRoute, "no healthy endpoint matched packet")
       end
 
-      def health_check(service: nil, namespace: nil, node: @local_node, port: nil, now: @clock.call)
+      def health_check(service: nil, namespace: nil, node: @local_node, port: nil, family: nil, now: @clock.call)
         service_object = service.is_a?(Service) ? service : self.service(service, namespace: namespace)
         raise NoRoute, "service is required for health check" unless service_object
 
         endpoint_set = @endpoint_store.endpoints_for(service_object.key).select { |endpoint| endpoint.local_to?(node) }
-        endpoint_set = endpoint_set.select(&:healthy?)
+        endpoint_set = endpoint_set.select { |endpoint| endpoint.ready? && (family.nil? || endpoint.family == family) }.uniq(&:address)
+        proxy_healthy = @metrics.nil? || @metrics.healthy?
+        healthy = endpoint_set.any? && proxy_healthy
         selected_port = service_object.health_check_node_port || port
         HealthCheckResult.new(service_key: service_object.key, node_name: node,
-                              node_port: selected_port, healthy: endpoint_set.any?,
-                              status: endpoint_set.any? ? 200 : 503,
+                              node_port: selected_port, healthy: healthy, proxy_healthy: proxy_healthy,
+                              status: healthy ? 200 : 503,
                               endpoints: endpoint_set, checked_at: now)
       end
 
       alias health health_check
 
-      def start_health_check_responder(bind_address: HealthCheckResponder::DEFAULT_BIND_ADDRESS)
-        @health_check_responder ||= HealthCheckResponder.new(proxy: self, bind_address: bind_address)
+      def start_health_check_responder(bind_address: nil, &)
+        @health_check_responder ||= HealthCheckResponder.new(proxy: self, bind_address: bind_address, &)
         @health_check_responder.start
       end
 
@@ -1042,12 +1043,16 @@ module Rubernetes
       def compile_service(service)
         return unless service
 
-        compiled = @compiler.compile(service, endpoints: @endpoint_store.endpoints_for(service.key),
-                                              revision: @endpoint_store.revision, compiled_at: @clock.call)
-        @mutex.synchronize { @compiled[service.key] = compiled }
+        compiled = @mutex.synchronize do
+          @last_compilation = @compiled[service.key] = compile_stored_service(service)
+        end
         schedule_publish
-        @last_compilation = compiled
         compiled
+      end
+
+      def compile_stored_service(service)
+        @compiler.compile(service, endpoints: @endpoint_store.endpoints_for(service.key),
+                                   revision: @endpoint_store.revision, compiled_at: @clock.call)
       end
 
       # Publishing after every watch event costs a full datapath update each
@@ -1129,7 +1134,6 @@ module Rubernetes
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         full = false
         failed = false
-        published_rules = nil
         @publish_mutex.synchronize do
           all_rules = @mutex.synchronize { @compiled.values.flat_map(&:rules) }
           full = @rule_set.revision.zero?
@@ -1140,14 +1144,13 @@ module Rubernetes
             full = true
             resynchronize_backend(all_rules, @rule_set.revision)
           end
-          published_rules = all_rules
+          reconcile_conntrack(all_rules)
           diff
         end
       rescue StandardError
         failed = true
         raise
       ensure
-        reconcile_conntrack(published_rules) if published_rules && !failed
         seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
         record_publish(seconds)
         if @metrics
@@ -1226,25 +1229,14 @@ module Rubernetes
         raise unless @backend.respond_to?(:rules) && @backend.respond_to?(:revision)
 
         backend_revision = Integer(@backend.revision)
-        catch_up = RuleSet.new
-        catch_up.apply(@backend.rules, revision: backend_revision)
-        catch_up.apply(rules, revision: [Integer(revision), backend_revision].max)
-        @backend.apply(catch_up.last_diff)
+        previous = @backend.rules.to_h { |rule| [rule.key, rule] }
+        incoming = rules.to_h { |rule| [rule.key, rule] }
+        @backend.apply(RuleDiff.between(previous, incoming, from_revision: backend_revision, to_revision: [Integer(revision), backend_revision].max))
       end
 
       def matching_rules(packet, service: nil)
-        @rule_set.snapshot.select do |rule|
-          next false unless rule.protocol == packet.protocol
-          next false if rule.health_check && packet.destination_port != rule.node_port
-          next false unless rule.health_check || packet.destination_port == rule.port || packet.destination_port == rule.node_port
-          next false if service && rule.service_key != service.key
-
-          if rule.virtual_ip
-            rule.virtual_ip == packet.destination_ip
-          else
-            node_port_destination?(packet)
-          end
-        end
+        rules = @rule_set.for_destination(packet.protocol, packet.destination_ip, packet.destination_port, node_port: node_port_destination?(packet))
+        service ? rules.select { |rule| rule.service_key == service.key } : rules
       end
 
       def choose_rule(candidates, packet)
@@ -1269,18 +1261,12 @@ module Rubernetes
         external = external_flow?(packet, rule)
         policy = external ? service.external_traffic_policy : service.internal_traffic_policy
         endpoints = endpoints.select { |endpoint| endpoint.local_to?(@local_node || packet.node_name) } if policy == "Local"
-        endpoints = if service.publish_not_ready_addresses
-                      non_terminating = endpoints.reject(&:terminating?)
-                      non_terminating.empty? ? endpoints.select { |endpoint| endpoint.terminating? && endpoint.serving? } : non_terminating
-                    else
-                      endpoints.select { |endpoint| endpoint.healthy? || (endpoint.terminating? && endpoint.serving?) }
-                    end
-        if service.topology_aware_hints && packet.zone && policy != "Local"
-          hinted = endpoints.select { |endpoint| endpoint.in_zone?(packet.zone) }
-          all_endpoints_hinted = !endpoints.empty? && endpoints.all? { |endpoint| !endpoint.hints.empty? }
-          endpoints = hinted if all_endpoints_hinted && !hinted.empty?
-        end
-        endpoints
+        ready = endpoints.select(&:ready?)
+        return endpoints.select { |endpoint| endpoint.serving? && endpoint.terminating? } if ready.empty?
+
+        return ready if policy == "Local" || !service.topology_aware_hints
+
+        TopologyHints.preferred(ready, node: @local_node || packet.node_name, zone: @node_zone || packet.zone)
       end
 
       def headless_rule(service, packet)
@@ -1320,7 +1306,7 @@ module Rubernetes
       end
 
       def health_route(service, rule, packet, now:)
-        result = health_check(service: service, node: @local_node, port: rule.node_port, now: now)
+        result = health_check(service: service, node: @local_node, port: rule.node_port, family: ModelSupport.ip_family(packet.destination_ip), now: now)
         Route.new(service: service, rule: rule, packet: packet, kind: "HealthCheckNodePort",
                   source_preserved: true, external: true,
                   metadata: {"health" => result.to_h}, translated_port: result.status)
