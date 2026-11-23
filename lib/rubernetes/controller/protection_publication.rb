@@ -4,7 +4,9 @@ require "digest"
 require "time"
 
 require_relative "errors"
+require_relative "builtins"
 require_relative "registry"
+require_relative "builtin_factory"
 require_relative "runtime"
 require_relative "support"
 require_relative "types"
@@ -23,12 +25,8 @@ module Rubernetes
       JOB = ResourceDescriptor.parse("Job")
       NAMESPACE = ResourceDescriptor.parse("Namespace")
       CONFIG_MAP = ResourceDescriptor.parse("ConfigMap")
-      POD_GROUP = ResourceDescriptor.parse({"apiVersion" => "scheduling.k8s.io/v1alpha2", "kind" => "PodGroup"},
-                                           resource: "podgroups", scope: :namespaced)
-      CLUSTER_TRUST_BUNDLE = ResourceDescriptor.parse(
-        {"apiVersion" => "certificates.k8s.io/v1beta1", "kind" => "ClusterTrustBundle"},
-        resource: "clustertrustbundles", scope: :cluster
-      )
+      POD_GROUP = ResourceDescriptor.parse("PodGroup")
+      CLUSTER_TRUST_BUNDLE = ResourceDescriptor.parse("ClusterTrustBundle")
       STORAGE_VERSION = ResourceDescriptor.parse("StorageVersion")
       LEASE = ResourceDescriptor.parse("Lease")
 
@@ -49,9 +47,7 @@ module Rubernetes
 
       def adapter_for(store, fallback = nil)
         candidate = store || fallback
-        return nil unless candidate
-
-        candidate.is_a?(StoreAdapter) ? candidate : StoreAdapter.new(candidate)
+        StoreAdapter.wrap(candidate) if candidate
       end
 
       def list_kind(adapter, kind, namespace: :all)
@@ -79,28 +75,14 @@ module Rubernetes
         !Support.value(Support.metadata(object), "deletionTimestamp", nil).nil?
       end
 
-      def deletion_candidate?(object, finalizer)
-        deletion_timestamp?(object) && finalizers(object).include?(finalizer)
-      end
-
-      def need_finalizer?(object, finalizer)
-        !deletion_timestamp?(object) && !finalizers(object).include?(finalizer)
-      end
-
-      def candidate_with_finalizers(object, values)
-        candidate = Support.deep_copy(object)
-        candidate["metadata"] ||= {}
-        candidate["metadata"]["finalizers"] = Array(values).map(&:to_s)
-        candidate
-      end
-
-      def result_for(resource, operations: [], status: nil, events: [], controller: nil)
+      def result_for(resource, operations: [], status: nil, events: [], controller: nil, requeue_after: nil)
         ReconcileResult.new(
           operations: Array(operations).compact,
           status: status || Support.status(resource),
           events: events,
           controller: controller,
-          key: [Support.namespace(resource), Support.name(resource)].compact.join("/")
+          key: [Support.namespace(resource), Support.name(resource)].compact.join("/"),
+          requeue_after: requeue_after
         )
       end
 
@@ -163,95 +145,48 @@ module Rubernetes
       end
     end
 
-    # Removes PVCProtectionFinalizer only after a complete snapshot shows no
-    # scheduled Pod references the claim.  The Kubernetes controller also
-    # repairs finalizers missing from old PVCs, which is retained here.
-    class PersistentVolumeClaimProtectionController < BaseController
-      include ProtectionPublicationSupport
-
-      def plan(pvc, store: nil, pods: nil, **_options)
-        return empty_result(pvc, controller: name) unless resource_kind?(pvc, PVC.kind)
-
-        current_finalizers = finalizers(pvc)
-        if need_finalizer?(pvc, PVC_PROTECTION_FINALIZER)
-          candidate = candidate_with_finalizers(pvc, current_finalizers + [PVC_PROTECTION_FINALIZER])
-          operation = operation_update(pvc, candidate, descriptor: PVC, reason: "add PVC protection finalizer")
-          event = operation_event("Normal", "PVCProtectionFinalizer", "PVC #{Support.name(pvc)} protection finalizer added")
-          return result_for(pvc, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                                 events: [event], controller: name)
-        end
-
-        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pvc,
-                                                                                                                            PVC_PROTECTION_FINALIZER)
-
-        adapter = adapter_for(store, self.store)
-        observed = !pods.nil? || !adapter.nil?
-        observed_pods = if pods.nil?
-                          list_kind(adapter, "Pod", namespace: Support.namespace(pvc))
-                        else
-                          Array(pods).select { |pod| Support.namespace(pod).to_s == Support.namespace(pvc).to_s }
-                        end
-        # A missing list is an unknown dependency, not evidence that a PVC is
-        # unused.  Keeping the finalizer is the safe result during recovery.
-        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) unless observed
-        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? do |pod|
-          pod_uses_pvc_for_deletion?(pod, pvc)
-        end
-
-        candidate = candidate_with_finalizers(pvc, current_finalizers.reject { |value| value == PVC_PROTECTION_FINALIZER })
-        operation = operation_update(pvc, candidate, descriptor: PVC, reason: "remove PVC protection finalizer")
-        event = operation_event("Normal", "PVCProtectionFinalizer", "PVC #{Support.name(pvc)} protection finalizer removed")
-        result_for(pvc, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                        events: [event], controller: name)
-      end
-
+    # PV, PVC and VAC repair missing finalizers on older objects. PodGroup
+    # admission supplies its finalizer. Each controller checks its own live
+    # dependencies before allowing removal during deletion.
+    module ProtectionFinalizers
       private
 
-      def pod_uses_pvc_for_deletion?(pod, pvc)
-        node_name = Support.value(Support.spec(pod), "nodeName", nil)
-        return false if node_name.nil? || node_name.to_s.empty?
-
-        Array(Support.value(Support.spec(pod), "volumes", [])).any? do |volume|
-          claim = Support.value(Support.value(volume, "persistentVolumeClaim", {}), "claimName", nil)
-          direct_reference = claim.to_s == Support.name(pvc)
-          ephemeral = Support.value(volume, "ephemeral", nil)
-          ephemeral_reference = ephemeral.is_a?(Hash) &&
-                                !pod_is_shut_down?(pod) &&
-                                ephemeral_claim_name(pod, volume) == Support.name(pvc) &&
-                                owner_reference_for?(pod, pvc)
-          direct_reference || ephemeral_reference
+      def reconcile_finalizer(object, descriptor, finalizer, label:, event_kind: label, add_missing: true, status: nil, status_write: nil)
+        values = finalizers(object)
+        deleting = deletion_timestamp?(object)
+        operations = [status_write].compact
+        events = []
+        change = if deleting
+                   values.include?(finalizer) && yield
+                 else
+                   add_missing && !values.include?(finalizer)
+                 end
+        if change
+          values = deleting ? values - [finalizer] : values + [finalizer]
+          candidate = object.merge("metadata" => (object["metadata"] || {}).merge("finalizers" => values))
+          reason = "#{deleting ? "remove" : "add"} #{label} protection finalizer"
+          operations << operation_update(object, candidate, descriptor: descriptor, reason: reason)
+          events << operation_event("Normal", "#{event_kind}ProtectionFinalizer",
+                                    "#{event_kind} #{Support.name(object)} protection finalizer #{deleting ? "removed" : "added"}")
         end
+        result_for(object, operations: operations, status: status || {"finalizers" => values}, events: events, controller: name)
       end
     end
+
+    require_relative "persistent_volume_claim_protection_controller"
 
     # Adds PVProtectionFinalizer to legacy PVs and removes it only after the
     # PV controller has observed a non-Bound phase.
     class PersistentVolumeProtectionController < BaseController
       include ProtectionPublicationSupport
+      include ProtectionFinalizers
 
       def plan(pv, **_options)
         return empty_result(pv, controller: name) unless resource_kind?(pv, PV.kind)
 
-        current_finalizers = finalizers(pv)
-        if need_finalizer?(pv, PV_PROTECTION_FINALIZER)
-          candidate = candidate_with_finalizers(pv, current_finalizers + [PV_PROTECTION_FINALIZER])
-          operation = operation_update(pv, candidate, descriptor: PV, reason: "add PV protection finalizer")
-          event = operation_event("Normal", "PVProtectionFinalizer", "PV #{Support.name(pv)} protection finalizer added")
-          return result_for(pv, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                                events: [event], controller: name)
+        reconcile_finalizer(pv, PV, PV_PROTECTION_FINALIZER, label: "PV") do
+          Support.value(Support.status(pv), "phase").to_s != "Bound"
         end
-
-        return empty_result(pv, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pv,
-                                                                                                                           PV_PROTECTION_FINALIZER)
-
-        phase = Support.value(Support.status(pv), "phase", "").to_s
-        return empty_result(pv, controller: name, status: {"finalizers" => current_finalizers}) if phase == "Bound"
-
-        candidate = candidate_with_finalizers(pv, current_finalizers.reject { |value| value == PV_PROTECTION_FINALIZER })
-        operation = operation_update(pv, candidate, descriptor: PV, reason: "remove PV protection finalizer")
-        event = operation_event("Normal", "PVProtectionFinalizer", "PV #{Support.name(pv)} protection finalizer removed")
-        result_for(pv, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                       events: [event], controller: name)
       end
     end
 
@@ -260,32 +195,19 @@ module Rubernetes
     # reference spec.schedulingGroup.podGroupName.
     class PodGroupProtectionController < BaseController
       include ProtectionPublicationSupport
+      include ProtectionFinalizers
 
       def plan(pod_group, store: nil, pods: nil, **_options)
         return empty_result(pod_group, controller: name) unless resource_kind?(pod_group, POD_GROUP.kind)
 
-        current_finalizers = finalizers(pod_group)
-        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(
-          pod_group, POD_GROUP_PROTECTION_FINALIZER
-        )
+        reconcile_finalizer(pod_group, POD_GROUP, POD_GROUP_PROTECTION_FINALIZER, label: "PodGroup", add_missing: false) do
+          adapter = adapter_for(store, self.store)
+          next false if pods.nil? && !adapter
 
-        adapter = adapter_for(store, self.store)
-        observed = !pods.nil? || !adapter.nil?
-        observed_pods = if pods.nil?
-                          list_kind(adapter, "Pod", namespace: Support.namespace(pod_group))
-                        else
-                          Array(pods).select { |pod| Support.namespace(pod).to_s == Support.namespace(pod_group).to_s }
-                        end
-        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) unless observed
-        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? do |pod|
-          active_pod_group_reference?(pod, pod_group)
+          namespace = Support.namespace(pod_group)
+          observed = pods.nil? ? list_kind(adapter, "Pod", namespace: namespace) : Array(pods)
+          observed.none? { |pod| Support.namespace(pod).to_s == namespace.to_s && active_pod_group_reference?(pod, pod_group) }
         end
-
-        candidate = candidate_with_finalizers(pod_group, current_finalizers.reject { |value| value == POD_GROUP_PROTECTION_FINALIZER })
-        operation = operation_update(pod_group, candidate, descriptor: POD_GROUP, reason: "remove PodGroup protection finalizer")
-        event = operation_event("Normal", "PodGroupProtectionFinalizer", "PodGroup #{Support.name(pod_group)} protection finalizer removed")
-        result_for(pod_group, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                              events: [event], controller: name)
       end
 
       private
@@ -304,41 +226,20 @@ module Rubernetes
     # supplied/store-backed complete snapshot and fails closed when absent.
     class VolumeAttributesClassProtectionController < BaseController
       include ProtectionPublicationSupport
+      include ProtectionFinalizers
 
       def plan(vac, store: nil, pvs: nil, pvcs: nil, **_options)
         return empty_result(vac, controller: name) unless resource_kind?(vac, VAC.kind)
 
-        current_finalizers = finalizers(vac)
-        if need_finalizer?(vac, VAC_PROTECTION_FINALIZER)
-          candidate = candidate_with_finalizers(vac, current_finalizers + [VAC_PROTECTION_FINALIZER])
-          operation = operation_update(vac, candidate, descriptor: VAC, reason: "add VAC protection finalizer")
-          event = operation_event("Normal", "VolumeAttributesClassProtectionFinalizer",
-                                  "VolumeAttributesClass #{Support.name(vac)} protection finalizer added")
-          return result_for(vac, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                                 events: [event], controller: name)
+        reconcile_finalizer(vac, VAC, VAC_PROTECTION_FINALIZER, label: "VAC", event_kind: "VolumeAttributesClass") do
+          adapter = adapter_for(store, self.store)
+          next false if !adapter && (pvs.nil? || pvcs.nil?)
+
+          vac_name = Support.name(vac)
+          next false if Array(pvs || list_kind(adapter, "PersistentVolume")).any? { |pv| pv_volume_attributes_class(pv) == vac_name }
+
+          Array(pvcs || list_kind(adapter, "PersistentVolumeClaim")).none? { |pvc| pvc_volume_attributes_classes(pvc).include?(vac_name) }
         end
-
-        return empty_result(vac, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(vac,
-                                                                                                                            VAC_PROTECTION_FINALIZER)
-
-        adapter = adapter_for(store, self.store)
-        pvs_observed = !pvs.nil? || !adapter.nil?
-        pvcs_observed = !pvcs.nil? || !adapter.nil?
-        observed_pvs = pvs.nil? ? list_kind(adapter, "PersistentVolume") : Array(pvs)
-        observed_pvcs = pvcs.nil? ? list_kind(adapter, "PersistentVolumeClaim", namespace: :all) : Array(pvcs)
-        return empty_result(vac, controller: name, status: {"finalizers" => current_finalizers}) unless pvs_observed && pvcs_observed
-
-        vac_name = Support.name(vac)
-        used = observed_pvs.any? { |pv| pv_volume_attributes_class(pv) == vac_name } ||
-               observed_pvcs.any? { |pvc| pvc_volume_attributes_classes(pvc).include?(vac_name) }
-        return empty_result(vac, controller: name, status: {"finalizers" => current_finalizers}) if used
-
-        candidate = candidate_with_finalizers(vac, current_finalizers.reject { |value| value == VAC_PROTECTION_FINALIZER })
-        operation = operation_update(vac, candidate, descriptor: VAC, reason: "remove VAC protection finalizer")
-        event = operation_event("Normal", "VolumeAttributesClassProtectionFinalizer",
-                                "VolumeAttributesClass #{Support.name(vac)} protection finalizer removed")
-        result_for(vac, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                        events: [event], controller: name)
       end
 
       private
@@ -367,27 +268,23 @@ module Rubernetes
         super(**)
       end
 
-      def plan(job, fresh: nil, now: nil, **_options)
+      def plan(job, fresh: nil, now: nil, store: nil, **_options)
         candidate = fresh || job
-        return empty_result(candidate, controller: name) unless resource_kind?(candidate, JOB.kind)
-        return empty_result(candidate, controller: name) if deletion_timestamp?(candidate)
-
-        raw_ttl = Support.value(Support.spec(candidate), "ttlSecondsAfterFinished", nil)
-        return empty_result(candidate, controller: name) if raw_ttl.nil?
-
-        ttl = Integer(raw_ttl)
-        raise ArgumentError, "Job TTL must be non-negative" if ttl.negative?
-
-        finished_at = job_finish_time(candidate)
-        return empty_result(candidate, controller: name) unless finished_at
+        expires_at = job_expiration(candidate)
+        return empty_result(candidate, controller: name) unless expires_at
 
         current_time = Support.parse_time(now || @clock.call)
         raise ArgumentError, "clock must return Time or RFC3339 value" unless current_time
 
-        expires_at = finished_at + ttl
-        return empty_result(candidate, controller: name) if current_time < expires_at
+        if current_time >= expires_at && fresh.nil? && Builtins::AdapterCapability.live_reads?(store)
+          candidate = store.find_live(JOB, name: Support.name(job), namespace: Support.namespace(job))
+          expires_at = job_expiration(candidate)
+          return empty_result(job, controller: name) unless expires_at
+        end
+        return result_for(candidate, controller: name, requeue_after: expires_at - current_time) if current_time < expires_at
 
-        operation = operation_delete(candidate, descriptor: JOB, reason: "TTLExpired")
+        options = {"propagationPolicy" => "Foreground", "preconditions" => {"uid" => Support.uid(candidate)}}
+        operation = operation_delete(candidate, descriptor: JOB, reason: "TTLExpired", options: options)
         event = operation_event("Normal", "TTLExpired", "Job #{Support.name(candidate)} TTL expired")
         result_for(candidate, operations: [operation], events: [event], controller: name)
       rescue ArgumentError => error
@@ -397,6 +294,19 @@ module Rubernetes
       end
 
       private
+
+      def job_expiration(job)
+        return unless resource_kind?(job, JOB.kind) && !deletion_timestamp?(job)
+
+        raw_ttl = Support.value(Support.spec(job), "ttlSecondsAfterFinished", nil)
+        return if raw_ttl.nil?
+
+        ttl = Integer(raw_ttl)
+        raise ArgumentError, "Job TTL must be non-negative" if ttl.negative?
+
+        finished_at = job_finish_time(job)
+        finished_at + ttl if finished_at
+      end
 
       def job_finish_time(job)
         condition = Array(Support.value(Support.status(job), "conditions", [])).find do |value|
@@ -872,20 +782,9 @@ module Rubernetes
     # Registration is explicit so merely requiring this file never mutates a
     # caller's registry.
     module ProtectionPublicationControllerFactory
-      VERSION = "v1.36.2"
-      NAMES = %w[
-        persistentvolumeclaim-protection-controller
-        persistent-volume-protection-controller
-        podgroup-protection-controller
-        volume-attributes-class-protection-controller
-        ttl-after-finished-controller
-        root-ca-certificate-publisher-controller
-        kube-apiserver-serving-clustertrustbundle-publisher-controller
-        ephemeral-volume-controller
-        storageversion-garbage-collector-controller
-      ].freeze
-      CONTROLLER_NAMES = NAMES
+      include BuiltinFactory
 
+      VERSION = "v1.36.2"
       IMPLEMENTATIONS = {
         "persistentvolumeclaim-protection-controller" => PersistentVolumeClaimProtectionController,
         "persistent-volume-protection-controller" => PersistentVolumeProtectionController,
@@ -897,11 +796,10 @@ module Rubernetes
         "ephemeral-volume-controller" => EphemeralVolumeController,
         "storageversion-garbage-collector-controller" => StorageVersionGarbageCollectorController
       }.freeze
+      NAMES = IMPLEMENTATIONS.keys.freeze
+      CONTROLLER_NAMES = NAMES
 
-      METADATA = NAMES.each_with_object({}) do |controller_name, result|
-        entry = BuiltinControllerCorpus.fetch(controller_name)
-        result[controller_name] = entry.to_h
-      end.freeze
+      METADATA = NAMES.to_h { |name| [name, BuiltinControllerCorpus.fetch(name).to_h] }.freeze
 
       WATCHES = {
         "persistentvolumeclaim-protection-controller" => [["PersistentVolumeClaim", :all], ["Pod", :all]],
@@ -920,17 +818,13 @@ module Rubernetes
         "ephemeral-volume-controller" => [%w[Pod PersistentVolumeClaim]]
       }.freeze
 
+      module_function :entries, :register!, :usable_descriptor
+      private_class_method :usable_descriptor
+      alias register register!
+
       module_function
 
-      def entries
-        NAMES.map do |name|
-          BuiltinControllerCorpus.fetch(name) || raise(ValidationError, "missing pinned corpus entry #{name.inspect}")
-        end
-      end
-
-      def names
-        NAMES
-      end
+      def names = CONTROLLER_NAMES
 
       def metadata(name = nil)
         return entries.map(&:to_h).freeze if name.nil?
@@ -940,71 +834,33 @@ module Rubernetes
         end
       end
 
+      PLAN_OPTIONS = lambda do |options, store|
+        next {} unless options.is_a?(Hash)
+
+        options.merge(store: options[:store] || store)
+      end
+      private_constant :PLAN_OPTIONS
+
       def definitions(registry: nil, root_ca: "", signer_name: ProtectionPublicationSupport::CLUSTER_TRUST_BUNDLE_SIGNER, ca_bundle: "")
         entries.map do |entry|
           implementation = IMPLEMENTATIONS.fetch(entry.name)
-          definition = nil
-          mutex = Mutex.new
-          instance = nil
-          reconcile = lambda do |resource, context = nil|
-            context = {} unless context.is_a?(Hash)
-            controller = context[:controller] || context["controller"]
-            controller ||= mutex.synchronize do
-              options = {store: context[:store] || context["store"], definition: definition}
-              if entry.name == "root-ca-certificate-publisher-controller"
-                options[:root_ca] = root_ca
-              elsif entry.name == "kube-apiserver-serving-clustertrustbundle-publisher-controller"
-                options[:signer_name] = signer_name
-                options[:ca_bundle] = ca_bundle
-              end
-              instance ||= implementation.new(**options)
-            end
-            options = context[:options] || context["options"] || {}
-            options = options.dup if options.is_a?(Hash)
-            options[:store] ||= context[:store] || context["store"] if options.is_a?(Hash)
-            controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
+          kind = descriptor_for(entry.kind, registry: registry)
+          entry.build_controller(implementation, kind: kind, owns: ownership_edges(entry.name, registry: registry),
+                                                 watches: watch_specs(entry.name, registry: registry), options_for: PLAN_OPTIONS) do |definition, store|
+            options = case entry.name
+                      when "root-ca-certificate-publisher-controller" then {root_ca: root_ca}
+                      when "kube-apiserver-serving-clustertrustbundle-publisher-controller" then {signer_name: signer_name, ca_bundle: ca_bundle}
+                      else {}
+                      end
+            implementation.new(store: store, definition: definition, **options)
           end
-          definition = ControllerDefinition.new(
-            name: entry.name,
-            kind: descriptor_for(entry.kind, registry: registry),
-            owns: ownership_edges(entry.name, registry: registry),
-            watches: watch_specs(entry.name, registry: registry),
-            reconcile_block: reconcile,
-            feature_gates: entry.feature_gates,
-            startup_conditions: entry.startup_conditions,
-            sync_targets: entry.sync_targets,
-            status_fields: entry.status_fields,
-            events: entry.events,
-            implementation: implementation
-          )
-          definition
         end.freeze
       end
 
       alias build_definitions definitions
 
-      def register!(registry, **)
-        definitions(registry: registry, **).each { |definition| registry.register(definition) }
-        registry
-      end
-
-      alias register register!
-
       def descriptor_for(kind, registry: nil)
-        descriptor = case kind.to_s
-                     when "PodGroup"
-                       ProtectionPublicationSupport::POD_GROUP
-                     when "ClusterTrustBundle"
-                       ProtectionPublicationSupport::CLUSTER_TRUST_BUNDLE
-                     else
-                       ResourceDescriptor.parse(kind)
-                     end
-        return descriptor unless registry
-
-        registry.validate_descriptor!(descriptor)
-        descriptor
-      rescue UnknownGVKError
-        ResourceDescriptor.parse(descriptor.kind)
+        usable_descriptor(ResourceDescriptor.parse(kind), registry)
       end
 
       def ownership_edges(name, registry: nil)
@@ -1030,12 +886,22 @@ module Rubernetes
       def watch_specs(name, registry: nil)
         WATCHES.fetch(name).map.with_index do |(kind, relationship), index|
           descriptor = descriptor_for(kind, registry: registry)
-          route = SELF_ROUTED_WATCHES.fetch(name, []).include?(kind) ? :self : :fan_out
+          pvc_usage = name == "persistentvolumeclaim-protection-controller" && kind == "Pod"
+          route = pvc_usage || SELF_ROUTED_WATCHES.fetch(name, []).include?(kind) ? :self : :fan_out
+          key = pvc_usage ? method(:pod_pvc_keys) : ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") }
           WatchSpec.new(resource: descriptor, via: relationship,
                         index_name: "protection-publication/#{name}/#{index}",
                         predicate: ->(_object) { true },
-                        queue_key: ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") },
+                        queue_key: key,
                         scope: descriptor.scope, route: route)
+        end
+      end
+
+      def pod_pvc_keys(pod)
+        Array(Support.value(Support.spec(pod), "volumes", [])).filter_map do |volume|
+          claim = Support.value(Support.value(volume, "persistentVolumeClaim", nil), "claimName", nil)
+          claim ||= ProtectionPublicationSupport.ephemeral_claim_name(pod, volume) if Support.value(volume, "ephemeral", nil).is_a?(Hash)
+          "#{Support.namespace(pod)}/#{claim}" unless claim.to_s.empty?
         end
       end
     end
