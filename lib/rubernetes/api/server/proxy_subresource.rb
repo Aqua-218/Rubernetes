@@ -20,7 +20,7 @@ module Rubernetes
         PROXY_MAX_BODY_BYTES = 32 * 1024 * 1024
 
         def proxy_response(request, route)
-          redirect = proxy_root_redirect(request)
+          redirect = proxy_root_redirect(request) if route.subresource_path.to_s.empty?
           return redirect if redirect
 
           scheme, name, port = split_scheme_name_port(route.name)
@@ -31,8 +31,9 @@ module Rubernetes
                    end
           scheme ||= target[:scheme]
           uri = URI("#{scheme}://#{format_proxy_host(target.fetch(:host))}:#{target.fetch(:port)}")
-          uri.path = "/#{route.subresource_path.to_s.delete_prefix("/")}"
-          uri.path = "/" if uri.path == "/"
+          path = "/#{route.subresource_path.to_s.delete_prefix("/")}"
+          path += "/" if request.raw_path.end_with?("/") && !path.end_with?("/")
+          uri.path = path
           query = request.query.reject { |key, _| key == "path" }
           uri.query = encode_proxy_query(query) unless query.empty?
           perform_proxy(request, uri, prefix: proxy_path_prefix(request, route), tls: target[:tls])
