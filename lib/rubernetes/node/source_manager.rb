@@ -23,6 +23,7 @@ module Rubernetes
       CONFIG_SOURCE_ANNOTATION = "kubernetes.io/config.source"
       CONFIG_MIRROR_ANNOTATION = "kubernetes.io/config.mirror"
       STATIC_SOURCES = %w[file http].freeze
+      MAX_MANIFEST_BYTES = 10 * 1024 * 1024
       MANIFEST_EXTENSIONS = %w[.yaml .yml .json].freeze
 
       def initialize(node_name:, manifest_dir: nil, static_manifest_dir: nil, api_source: nil, api_client: nil, mirror_writer: nil, parser: nil,
@@ -81,18 +82,9 @@ module Rubernetes
       end
 
       def load_static(directory: @manifest_dir)
-        return [] if directory.nil?
-
-        directory = File.expand_path(directory)
-        return [] unless Dir.exist?(directory)
-
         pods = []
-        Dir.children(directory).sort.each do |entry|
-          path = File.join(directory, entry)
-          next unless MANIFEST_EXTENSIONS.include?(File.extname(entry).downcase)
-          next unless File.file?(path) && !File.symlink?(path)
-
-          parsed = invoke_parser(File.binread(path), path)
+        manifest_files(directory).each do |path|
+          parsed = parse_file(path)
           normalize_pod_list(parsed).each do |pod|
             next unless pod_kind?(pod)
 
@@ -104,6 +96,17 @@ module Rubernetes
       end
 
       alias read_static load_static
+
+      def parse_file(path)
+        content = File.binread(path, MAX_MANIFEST_BYTES + 1)
+        raise ArgumentError, "static Pod manifest exceeds #{MAX_MANIFEST_BYTES} bytes" if content.bytesize > MAX_MANIFEST_BYTES
+
+        parse_content(content, path)
+      end
+
+      def parse_content(content, source)
+        invoke_parser(content, source)
+      end
 
       def refresh(api_pods: nil, static_pods: nil, reconcile_mirrors: true)
         source_pods = if api_pods.nil?
@@ -152,7 +155,7 @@ module Rubernetes
         merged = merge(api_pods: api_pods, static_pods: static_pods)
         merged.map do |pod|
           annotations = Support.object_hash(Support.value(Support.metadata(pod), "annotations", {}))
-          source = annotations[CONFIG_SOURCE_ANNOTATION].to_s == "file" ? :static : :api
+          source = STATIC_SOURCES.include?(annotations[CONFIG_SOURCE_ANNOTATION]) ? :static : :api
           Source.new(pod: pod, source: source, key: pod_key(pod), mirror: mirror_pod?(pod))
         end
       end
@@ -200,6 +203,21 @@ module Rubernetes
       end
 
       private
+
+      def manifest_files(source)
+        return [] unless source
+
+        path = File.expand_path(source)
+        return [path] if File.file?(path) && !File.symlink?(path)
+        return [] unless File.directory?(path)
+
+        Dir.children(path).sort.filter_map do |entry|
+          next unless MANIFEST_EXTENSIONS.include?(File.extname(entry).downcase)
+
+          file = File.join(path, entry)
+          file if File.file?(file) && !File.symlink?(file)
+        end
+      end
 
       def read_api_source
         result = if @api_source.respond_to?(:call)
@@ -322,7 +340,10 @@ module Rubernetes
       end
 
       def invoke_parser(content, path)
-        parameters = @parser.method(:call).parameters
+        parameters = case @parser
+                     when Method, Proc then @parser.parameters
+                     else @parser.method(:call).parameters
+                     end
         positional = parameters.any? { |kind, _| kind == :rest } ? 2 : parameters.count { |kind, _| %i[req opt].include?(kind) }
         @parser.call(*[content, path].first(positional))
       end
