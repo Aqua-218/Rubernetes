@@ -50,4 +50,26 @@ class StatefulSetSemanticRevisionTest < Minitest::Test
     refute_equal "web-abc", Controller::Support.name(result[:update])
     assert(result[:operations].any? { |operation| operation.action == :create })
   end
+
+  def test_null_helm_template_fields_do_not_churn_revisions
+    controller = Controller::StatefulSetController.new
+    owner = set
+    owner.dig("spec", "template", "metadata")["annotations"] = nil
+    owner.dig("spec", "template", "spec", "containers", 0)["env"] = nil
+    stored = controller.send(:default_stateful_set, owner)
+    first = controller.send(:reconcile_revisions, stored, [], [], 0).fetch(:update)
+    # ControllerRevision's stored patch omits a nil ObjectMeta annotation map.
+    first.dig("data", "spec", "template", "metadata").delete("annotations")
+    first.dig("data", "spec", "template", "spec", "containers", 0).delete("env")
+
+    next_pass = controller.send(:reconcile_revisions, stored, [first], [], 0)
+
+    assert_equal Controller::Support.name(first), Controller::Support.name(next_pass.fetch(:update))
+    assert_empty next_pass.fetch(:operations)
+
+    stored.dig("spec", "template", "metadata")["annotations"] = {"config" => "changed"}
+    changed = controller.send(:reconcile_revisions, stored, [first], [], 0)
+
+    assert(changed.fetch(:operations).any? { |operation| operation.action == :create })
+  end
 end
