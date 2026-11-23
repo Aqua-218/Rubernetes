@@ -1,5 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
+require_relative "../support/object_tree"
+
+require_relative "volume_binding/storage_capacity"
+require_relative "../volume/csi_migration"
+
 module Rubernetes
   module Scheduler
     # The VolumeBinding plugin (pkg/scheduler/framework/plugins/volumebinding,
@@ -44,7 +51,7 @@ module Rubernetes
       # The PVCs a Pod uses, sorted into GetPodVolumeClaims' groups.
       Claims = Struct.new(:bound, :delay, :immediate, :volumes_by_class, keyword_init: true)
       # PodVolumes: static bindings [pv, pvc] and claims to provision.
-      PodVolumes = Struct.new(:bindings, :provisions, keyword_init: true)
+      PodVolumes = Struct.new(:bindings, :provisions, :provision_capacities, keyword_init: true)
       State = Struct.new(:key, :rejection, :claims, :by_node, :all_bound, keyword_init: true)
 
       # Reads and writes the API objects PreBind needs.
@@ -72,8 +79,6 @@ module Rubernetes
           nil
         end
       end
-
-      attr_accessor :api
       # Scheduler::Metrics: scheduler_volume_binder_cache_requests_total and
       # scheduler_volume_scheduling_stage_error_total.
       attr_accessor :metrics
@@ -122,6 +127,15 @@ module Rubernetes
       end
 
       alias filter call
+
+      attr_accessor :api, :capacity_scoring
+
+      def score_nodes(pod, nodes, _context)
+        return Scores::SKIP unless @capacity_scoring
+
+        state = @mutex.synchronize { @states[pod_key(pod)] }
+        nodes.to_h { |node| [node.name, storage_capacity_score(state&.by_node&.[](node.name))] }
+      end
 
       # ----------------------------------------------------------- Reserve
 
@@ -368,7 +382,9 @@ module Rubernetes
           unbound_satisfied, podvolumes.bindings, unmatched = find_matching_volumes(to_match, claims.volumes_by_class, node, data)
           to_provision.concat(unmatched)
         end
-        unbound_satisfied, sufficient, podvolumes.provisions = check_volume_provisions(to_provision, node, data) unless to_provision.empty?
+        unless to_provision.empty?
+          unbound_satisfied, sufficient, podvolumes.provisions, podvolumes.provision_capacities = check_volume_provisions(to_provision, node, data)
+        end
         reasons << REASON_BIND_CONFLICT unless unbound_satisfied
         reasons << REASON_NOT_ENOUGH_SPACE unless sufficient
         [podvolumes, reasons]
@@ -432,46 +448,6 @@ module Rubernetes
           smallest = [volume, size] if smallest.nil? || smallest.last > size
         end
         smallest&.first
-      end
-
-      # checkVolumeProvisions: [provision satisfied, sufficient storage, provisions].
-      def check_volume_provisions(claims, node, data)
-        provisions = []
-        claims.each do |claim|
-          class_name = claim_class(claim)
-          if class_name.empty?
-            raise BindingError,
-                  %(no class for claim "#{value(claim, "metadata", "namespace")}/#{value(claim, "metadata", "name")}")
-          end
-
-          storage_class = index(data)[:classes][class_name]
-          raise BindingError, %(failed to find storage class "#{class_name}") if storage_class.nil?
-
-          provisioner = Support.value(storage_class, "provisioner", "").to_s
-          return [false, true, []] if provisioner.empty? || provisioner == NOT_SUPPORTED_PROVISIONER
-          return [false, true, []] unless topology_matches?(Support.value(storage_class, "allowedTopologies", nil), node.labels)
-          return [true, false, []] unless enough_capacity?(provisioner, claim, class_name, node, data)
-
-          provisions << claim
-        end
-        [true, true, provisions]
-      end
-
-      # hasEnoughCapacity.
-      def enough_capacity?(provisioner, claim, class_name, node, data)
-        request = value(claim, "spec", "resources", "requests", "storage")
-        return true if request.nil?
-
-        driver = index(data)[:csi_drivers][provisioner]
-        return true if driver.nil? || value(driver, "spec", "storageCapacity") != true
-
-        size = storage(request)
-        index(data)[:capacities].any? do |capacity|
-          limit = Support.value(capacity, "maximumVolumeSize", nil) || Support.value(capacity, "capacity", nil)
-          topology = Support.value(capacity, "nodeTopology", nil)
-          Support.value(capacity, "storageClassName", "").to_s == class_name && !limit.nil? && storage(limit) >= size &&
-            !topology.nil? && label_selector_matches?(topology, node.labels)
-        end
       end
 
       # AssumePodVolumes: true when everything is already bound.
@@ -611,14 +587,6 @@ module Rubernetes
         !mine.nil? && !theirs.nil? && mine > theirs
       end
 
-      # The CSI topology key csi-translation-lib gives each migrated plugin's
-      # zone.
-      CSI_ZONE_KEYS = {"kubernetes.io/aws-ebs" => "topology.ebs.csi.aws.com/zone",
-                       "kubernetes.io/gce-pd" => "topology.gke.io/zone",
-                       "kubernetes.io/azure-disk" => "topology.disk.csi.azure.com/zone",
-                       "kubernetes.io/cinder" => "topology.cinder.csi.openstack.org/zone"}.freeze
-      ZONE_KEYS = %w[topology.kubernetes.io/zone failure-domain.beta.kubernetes.io/zone].freeze
-
       # tryTranslatePVToCSI: an in-tree PV whose plugin the node lists as
       # migrated (CSINode storage.alpha.kubernetes.io/migrated-plugins) is
       # checked with the CSI driver's topology: zone requirements (from its
@@ -629,25 +597,11 @@ module Rubernetes
 
         plugin = MIGRATED.fetch(source).first
         migrated = (value(csi_node, "metadata", "annotations") || {})[MIGRATED_PLUGINS_ANNOTATION].to_s.split(",")
-        zone_key = CSI_ZONE_KEYS[plugin]
-        return volume unless migrated.include?(plugin) && zone_key
+        return volume unless migrated.include?(plugin)
 
-        clone = deep_copy(volume)
-        terms = value(clone, "spec", "nodeAffinity", "required", "nodeSelectorTerms")
-        if terms.nil?
-          labels = value(volume, "metadata", "labels") || {}
-          zone = ZONE_KEYS.lazy.map { |key| labels[key] }.find { |item| !item.to_s.empty? }
-          return volume if zone.nil?
-
-          clone["spec"]["nodeAffinity"] = {"required" => {"nodeSelectorTerms" => [
-            {"matchExpressions" => [{"key" => zone_key, "operator" => "In", "values" => zone.to_s.split("__")}]}
-          ]}}
-          return clone
-        end
-        terms.each do |term|
-          Array(term["matchExpressions"]).each { |expression| expression["key"] = zone_key if ZONE_KEYS.include?(expression["key"]) }
-        end
-        clone
+        spec = value(volume, "spec")
+        labels = value(volume, "metadata", "labels") || {}
+        volume.merge("spec" => Volume::CSIMigration::Topology.translate(spec, source, labels))
       end
 
       # ------------------------------------------------------ cache access
@@ -764,19 +718,7 @@ module Rubernetes
       end
 
       def requirement_matches?(requirement, labels)
-        key = Support.value(requirement, "key", "").to_s
-        values = Array(Support.value(requirement, "values", [])).map(&:to_s)
-        present = labels.key?(key)
-        actual = labels[key].to_s
-        case Support.value(requirement, "operator", "").to_s
-        when "In" then present && values.include?(actual)
-        when "NotIn" then !present || !values.include?(actual)
-        when "Exists" then present
-        when "DoesNotExist" then !present
-        when "Gt" then present && Filters::Helpers.numeric_compare(actual, values.first, :>)
-        when "Lt" then present && Filters::Helpers.numeric_compare(actual, values.first, :<)
-        else false
-        end
+        Filters::Helpers.match_requirement_fields?(requirement, labels)
       end
 
       # v1helper.MatchTopologySelectorTerms.
@@ -799,23 +741,11 @@ module Rubernetes
           Array(Support.value(selector, "matchExpressions", [])).all? do |expression|
             key = Support.value(expression, "key", "").to_s
             values = Array(Support.value(expression, "values", [])).map(&:to_s)
-            case Support.value(expression, "operator", "").to_s
-            when "In" then labels.key?(key) && values.include?(labels[key].to_s)
-            when "NotIn" then !labels.key?(key) || !values.include?(labels[key].to_s)
-            when "Exists" then labels.key?(key)
-            when "DoesNotExist" then !labels.key?(key)
-            else false
-            end
+            LabelRequirement.matches?(Support.value(expression, "operator", "").to_s, labels[key].to_s, values, present: labels.key?(key))
           end
       end
 
-      def deep_copy(object)
-        case object
-        when Hash then object.each_with_object({}) { |(key, item), copy| copy[key.to_s] = deep_copy(item) }
-        when Array then object.map { |item| deep_copy(item) }
-        else object
-        end
-      end
+      def deep_copy(object) = ObjectTree.stringify_keys(object)
     end
   end
 end
