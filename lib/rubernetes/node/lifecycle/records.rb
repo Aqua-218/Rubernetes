@@ -20,7 +20,7 @@ module Rubernetes
               next unless record[:state].to_s == "Running" && record[:sandbox_id]
 
               {uid: record[:uid], state: record[:state], sandbox_id: record[:sandbox_id], pod: record[:pod],
-               started_at: record[:started_at], volume: record[:volume],
+               started_at: record[:started_at], volume: record[:volume], hosts_file: record.dig(:pod_files, "/etc/hosts"),
                containers: Array(record[:containers]).map { |entry| {id: entry[:id], name: entry[:name], started_at: entry[:started_at]} }}
             end
           end
@@ -50,6 +50,23 @@ module Rubernetes
           @mutex.synchronize { @records.values.filter_map { |record| record[:pod] unless record[:state].to_s == "Removed" } }
         end
 
+        def image_roots_in_use
+          @mutex.synchronize do
+            @records.values.flat_map do |record|
+              next [] if record[:state] == "Removed"
+
+              images = Array(record[:image_by_container]&.values) + Array(record[:volume_images]&.values)
+              # The sandbox retains its original lowerdirs after a container
+              # changes images. The resolver handles retain those paths.
+              handles = Array(record[:images]) + Array(record[:volume_image_handles])
+              images.concat(handles)
+              images.filter_map do |image|
+                value_reports?(image, :rootfs) ? image.rootfs : Helpers.key(image, "rootfs", nil)
+              end
+            end
+          end
+        end
+
         def records
           @mutex.synchronize do
             @records.transform_values { |value| immutable_record(value) }.freeze
@@ -60,6 +77,24 @@ module Rubernetes
           record(pod_or_uid)&.fetch(:state, nil)
         end
 
+        # An identical manifest can be withdrawn and re-added with the same
+        # static UID. Its next containers continue the previous attempt counts.
+        def static_restart_counts(uid)
+          current = record(uid)
+          return {} unless current
+
+          Array(current[:containers]).each_with_object({}) do |entry, counts|
+            name = entry[:name].to_s
+            next if entry[:started_at].nil?
+
+            counts[name] = [previous_restart_count(current, name), entry.dig(:status, "restartCount").to_i].max + 1
+          end
+        end
+
+        def seed_static_restart_counts(uid, counts)
+          counts.each { |name, count| @restarts.advance_restart_count("#{uid}/#{name}", to: count) }
+        end
+
         # Every record with a running workload, for the agent's relist thread.
         def running_pod_uids
           @mutex.synchronize { @records.select { |_uid, record| record[:state] == "Running" }.keys }
@@ -67,8 +102,11 @@ module Rubernetes
 
         # Pod IPs the network attached, in family order, for status and env.
         def pod_ips(record)
+          spec = Helpers.key(record[:pod], "spec", {})
+          return @host_ips if Helpers.key(spec, "hostNetwork", false) == true && !@host_ips.empty?
+
           network = record[:network]
-          return [] unless network.is_a?(Hash)
+          return Array(record[:runtime_pod_ips]) unless network.is_a?(Hash)
 
           ips = Helpers.key(network, "ips", nil)
           ips = [Helpers.key(network, "ip", nil)].compact if ips.nil?
@@ -112,8 +150,9 @@ module Rubernetes
           Helpers.key(metadata, "name", pod_uid(pod)).to_s
         end
 
-        def new_record(pod, request_id: nil)
+        def new_record(pod, request_id: nil, replacing: nil)
           uid = pod_uid(pod)
+          retained_volume = replacing[:volume] if replacing && preserve_sandbox_volume?(replacing)
           record = {
             uid: uid,
             pod: pod,
@@ -121,7 +160,9 @@ module Rubernetes
             state: "New",
             phase: "Pending",
             status: {},
-            volume: nil,
+            volume: retained_volume,
+            volume_boot_id: (replacing[:volume_boot_id] if retained_volume),
+            restarting_after_sandbox_loss: !replacing.nil?,
             sandbox_id: nil,
             sandbox_context: nil,
             network: nil,
@@ -129,8 +170,8 @@ module Rubernetes
             image_by_container: {},
             # spec.volumes[].image references -> the pinned image (digest,
             # unpacked rootfs), and the resolver handles to release with them.
-            volume_images: {},
-            volume_image_handles: [],
+            volume_images: retained_volume ? replacing.fetch(:volume_images, {}) : {},
+            volume_image_handles: retained_volume ? replacing.fetch(:volume_image_handles, []) : [],
             containers: [],
             events: [],
             resources: [],
@@ -141,7 +182,11 @@ module Rubernetes
             reason: nil,
             termination_message: nil
           }
-          @mutex.synchronize { @records[uid] = record }
+          @mutex.synchronize do
+            prior_removal = @pending_removals.delete(uid)
+            record[:config_removed] = true if prior_removal || @records[uid]&.fetch(:config_removed, false)
+            @records[uid] = record
+          end
           persist_state!
           record
         end
@@ -226,14 +271,14 @@ module Rubernetes
           identifier = uid.to_s
           return if identifier.empty?
 
+          @restarts.forget_pod(identifier)
+          remove_pod_directory(identifier)
           @mutex.synchronize do
             @finished.delete(identifier)
             @start_retries&.delete(identifier)
             @cleanup_retries&.delete(identifier)
+            @records.delete(identifier)
           end
-          @records.delete(identifier)
-          @restarts.forget_pod(identifier)
-          remove_pod_directory(identifier)
           nil
         end
 
