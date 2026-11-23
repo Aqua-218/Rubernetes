@@ -32,7 +32,7 @@ module Rubernetes
           HELPER_TIMEOUT = 30.0
 
           Handle = Data.define(:id, :identity, :pid, :pidfd, :supervisor_pid, :namespaces, :plan,
-                               :start_time, :namespace_links, :creation_method, :clone_flags, :user_mapping) do
+                               :start_time, :namespace_links, :creation_method, :clone_flags, :user_mapping, :commit_channel) do
             def to_h
               {
                 "id" => id,
@@ -60,17 +60,19 @@ module Rubernetes
 
           NAMESPACE_TYPES = Setns::NAMESPACE_TYPES
 
-          def initialize(pidfd: Pidfd.new, mount: Mount.new, proc_root: "/proc", clone3: Clone3.new, setns: Setns.new)
+          def initialize(pidfd: Pidfd.new, mount: Mount.new, proc_root: "/proc", clone3: Clone3.new, setns: Setns.new,
+                         supervisor_cgroup_root: nil)
             @pidfd = pidfd
             @mount = mount
             @proc_root = File.expand_path(String(proc_root))
             @clone3 = clone3
             @setns = setns
+            @supervisor_cgroup = File.join(File.expand_path(supervisor_cgroup_root), "rubernetes-supervisors") if supervisor_cgroup_root
             @handles = {}
             @mutex = Mutex.new
           end
 
-          attr_reader :handles
+          attr_reader :handles, :supervisor_cgroup
 
           def native_capabilities
             {
@@ -95,8 +97,10 @@ module Rubernetes
           # has other Ruby threads (the child inherits a held VM lock). Route
           # threaded callers through a single-threaded supervisor process;
           # the supervisor owns the clone3 child until the pidfd is closed.
-          def create(plan:, id:, identity:)
-            return create_through_exec_supervisor(plan: plan, id: id, identity: identity) if Thread.list.count(&:alive?) > 1 && @clone3.instance_of?(Clone3)
+          def create(plan:, id:, identity:, durable: false)
+            if @clone3.instance_of?(Clone3) && (durable || Thread.list.count(&:alive?) > 1)
+              return create_through_exec_supervisor(plan: plan, id: id, identity: identity, durable: durable)
+            end
 
             create_direct(plan: plan, id: id, identity: identity)
           end
@@ -118,6 +122,9 @@ module Rubernetes
             return true if owned.nil?
 
             value = owned
+            if (channel = value.commit_channel)
+              [channel.writer, channel.reader].reject(&:closed?).each(&:close)
+            end
             begin
               @pidfd.send_signal(pidfd: value.pidfd, signal: SIGTERM, resource_id: value.identity)
               wait_for_exit(value.pidfd, timeout: 2.0, resource_id: value.identity)
@@ -174,7 +181,7 @@ module Rubernetes
                                 start_time: actual_start, namespace_links: links.freeze,
                                 creation_method: value.fetch("creation_method", "clone3"),
                                 clone_flags: Integer(value.fetch("clone_flags", Clone3::CLONE_PIDFD)),
-                                user_mapping: value["user_mapping"])
+                                user_mapping: value["user_mapping"], commit_channel: nil)
             @mutex.synchronize do
               existing = @handles[handle.id]
               return existing if existing
