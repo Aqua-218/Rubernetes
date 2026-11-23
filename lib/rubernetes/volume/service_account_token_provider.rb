@@ -13,6 +13,14 @@ module Rubernetes
     class ServiceAccountTokenProvider
       DEFAULT_TTL_SECONDS = 3600
 
+      def self.pod_context(pod)
+        metadata = Types.key(pod, "metadata", {})
+        spec = Types.key(pod, "spec", {})
+        {"metadata" => {"namespace" => Types.key(metadata, "namespace", "default"), "name" => Types.key(metadata, "name", ""),
+                        "uid" => Types.key(metadata, "uid")},
+         "spec" => {"serviceAccountName" => Types.key(spec, "serviceAccountName", Types.key(spec, "serviceAccount", "default"))}}
+      end
+
       def initialize(client:, default_ttl: DEFAULT_TTL_SECONDS)
         @client = client
         @default_ttl = Integer(default_ttl)
@@ -25,9 +33,9 @@ module Rubernetes
         context = pod || @pod
         raise UnsupportedError, "service account token requires the owning pod" unless context
 
-        namespace = Types.key(Types.key(context, "metadata", {}), "namespace", "default").to_s
-        spec = Types.key(context, "spec", {})
-        service_account = Types.key(spec, "serviceAccountName", Types.key(spec, "serviceAccount", "default")).to_s
+        context = ServiceAccountTokenProvider.pod_context(context)
+        namespace = context.dig("metadata", "namespace").to_s
+        service_account = context.dig("spec", "serviceAccountName").to_s
         request = {
           "apiVersion" => "authentication.k8s.io/v1",
           "kind" => "TokenRequest",
@@ -36,7 +44,7 @@ module Rubernetes
             "audiences" => audience.to_s.empty? ? [] : [audience.to_s],
             "expirationSeconds" => Integer(ttl || @default_ttl),
             "boundObjectRef" => {"kind" => "Pod", "apiVersion" => "v1",
-                                 "name" => Types.key(Types.key(context, "metadata", {}), "name", "").to_s,
+                                 "name" => context.dig("metadata", "name").to_s,
                                  "uid" => pod_uid.to_s}
           }
         }
