@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "object_copy"
+
 module Rubernetes
   module API
     # Kubernetes-compatible Status payloads and request failures.
@@ -163,6 +165,8 @@ module Rubernetes
       end
 
       class << self
+        include ObjectCopy
+
         # Build a successful Status object. Kubernetes generally uses this for
         # collection deletion and explicit status subresource responses.
         def success(message: "", details: nil)
@@ -221,17 +225,6 @@ module Rubernetes
             payload["details"]["retryAfterSeconds"] = Integer(retry_after_seconds)
           end
           payload
-        end
-
-        def deep_copy(value)
-          case value
-          when Hash
-            value.each_with_object({}) { |(key, item), copy| copy[key.to_s] = deep_copy(item) }
-          when Array
-            value.map { |item| deep_copy(item) }
-          else
-            value
-          end
         end
       end
     end
