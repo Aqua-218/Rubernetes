@@ -3,6 +3,8 @@
 require_relative "target"
 
 require_relative "exposition"
+require_relative "protobuf_exposition"
+require_relative "classic_histogram_conversion"
 require_relative "../tsdb/store"
 
 module Prom
@@ -26,11 +28,14 @@ module Prom
 
     attr_reader :statuses
 
-    def initialize(store, timeout_seconds: 10, clock: -> { (Time.now.to_f * 1000).to_i }, logger: nil)
+    def initialize(store, timeout_seconds: 10, clock: -> { (Time.now.to_f * 1000).to_i }, logger: nil,
+                   convert_classic_histograms_to_nhcb: false, keep_classic_histograms: true)
       @store = store
       @timeout = timeout_seconds
       @clock = clock
       @logger = logger
+      @convert_classic_histograms_to_nhcb = convert_classic_histograms_to_nhcb
+      @keep_classic_histograms = keep_classic_histograms
       @previous = {}   # target key -> { fingerprint => labels }
       @statuses = {}   # target key -> Status
       @metadata = {}   # metric family name -> [{"type","help","unit"}]
@@ -48,10 +53,11 @@ module Prom
       scrape_time = @clock.call
       status = 0
       body = nil
+      content_type = nil
       error = nil
       begin
         Timeout.timeout(@timeout) do
-          status, body = target.fetch.call
+          status, body, content_type = target.fetch.call
         end
         error = "server returned HTTP status #{status}" unless status.to_i == 200
       rescue Timeout::Error
@@ -62,10 +68,16 @@ module Prom
       samples = []
       if error.nil?
         begin
-          families = Exposition.parse(utf8(body.to_s))
-          samples = families.flat_map(&:samples)
+          families = parse_exposition(body.to_s, content_type)
+          samples = if @convert_classic_histograms_to_nhcb || !@keep_classic_histograms
+                      families.flat_map do |family|
+                        ClassicHistogramConversion.samples(family, convert: @convert_classic_histograms_to_nhcb, keep_classic: @keep_classic_histograms)
+                      end
+                    else
+                      families.flat_map(&:samples)
+                    end
           @mutex.synchronize do
-            families.each { |family| @metadata[family.name] = [{"type" => family.type, "help" => family.help.to_s, "unit" => ""}] }
+            families.each { |family| @metadata[family.name] = [{"type" => family.type, "help" => family.help.to_s, "unit" => family.unit.to_s}] }
           end
         rescue Exposition::ParseError => e
           error = "parse error: #{e.message}"
@@ -135,6 +147,14 @@ module Prom
     end
 
     private
+
+    def parse_exposition(body, content_type)
+      if content_type.to_s.partition(";").first.strip.downcase == ProtobufExposition::MEDIA_TYPE
+        ProtobufExposition.parse(body)
+      else
+        Exposition.parse(utf8(body))
+      end
+    end
 
     # The text exposition format is UTF-8; Net::HTTP returns bodies as
     # ASCII-8BIT and binary strings would reach the store as BLOB labels.
