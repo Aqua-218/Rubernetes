@@ -46,6 +46,20 @@ class FrozenSharingHelpersTest < Minitest::Test
     end
   end
 
+  def test_watch_and_controller_preserve_cycles_and_shared_children
+    [Rubernetes::Watch::Support, Rubernetes::Controller::Support].each do |support|
+      child = []
+      root = [child, child]
+      child << root
+      copy = support.immutable_copy(root)
+
+      assert_same copy[0], copy[1]
+      assert_same copy, copy[0][0]
+      assert_predicate copy[0], :frozen?
+      refute_predicate child, :frozen?
+    end
+  end
+
   def test_a_foreign_frozen_object_is_still_copied
     MODULES.each do |label, (mod, method)|
       shallow = {"metadata" => {"name" => "n"}}.freeze
