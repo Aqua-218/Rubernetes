@@ -74,19 +74,21 @@ module Rubernetes
         end
 
         def decrypt(envelope, _associated_data)
-          raise Error, "envelope is not an aescbc envelope" unless envelope.start_with?(PREFIX)
+          raise UnreadableEnvelope, "envelope is not an aescbc envelope" unless envelope.start_with?(PREFIX)
 
           key_name, payload = envelope.delete_prefix(PREFIX).split(":", 2)
           key = @keys.find { |candidate| candidate.name == key_name }
-          raise Error, "no aescbc key named #{key_name.inspect}" unless key
+          raise UnreadableEnvelope, "no aescbc key named #{key_name.inspect}" unless key
 
           bytes = Base64.strict_decode64(payload.to_s)
+          raise UnreadableEnvelope, "aescbc envelope is truncated" if bytes.bytesize < 32
+
           cipher = OpenSSL::Cipher.new("aes-256-cbc").decrypt
           cipher.key = key.secret
           cipher.iv = bytes.byteslice(0, 16)
           cipher.update(bytes.byteslice(16, bytes.bytesize - 16)) + cipher.final
         rescue OpenSSL::Cipher::CipherError, ArgumentError => error
-          raise Error, "aescbc decryption failed: #{error.message}"
+          raise UnreadableEnvelope, "aescbc decryption failed: #{error.message}"
         end
 
         def current_key?(envelope)
@@ -206,9 +208,10 @@ module Rubernetes
         end
 
         # The store behind every resource group, encrypted.
-        def wrap(store)
+        def wrap(store, corrupt_deletion: false)
           @groups.reverse.reduce(store) do |inner, group|
-            EncryptedStore.new(inner, transformer: group.transformer, resources: group.names, key_matcher: group.matcher)
+            EncryptedStore.new(inner, transformer: group.transformer, resources: group.names, key_matcher: group.matcher,
+                                      corrupt_deletion: corrupt_deletion)
           end
         end
 
