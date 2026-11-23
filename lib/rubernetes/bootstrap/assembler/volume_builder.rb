@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../volume/project_quota"
+
 module Rubernetes
   module Bootstrap
     class Assembler
@@ -18,7 +20,8 @@ module Rubernetes
           config = options.to_h
           runtime_profile = process.fetch("runtime_profile", "pure").to_s.downcase.tr("-", "_").to_sym
           volume_profile = config["profile"]&.then { |value| value.to_s.downcase.tr("-", "_") }
-          native_profile = %i[host_integration kernel_isolation l3].include?(runtime_profile) || volume_profile == "native"
+          native_runtime = %i[host_integration kernel_isolation l3].include?(runtime_profile)
+          native_profile = native_runtime || volume_profile == "native"
           raise Config::Error, "native runtime profiles require the native volume profile" if native_profile && %w[test fake_io].include?(volume_profile)
 
           mount_adapter = adapters[:mount_adapter] || adapters["mount_adapter"]
@@ -39,20 +42,44 @@ module Rubernetes
           csi = build_volume_csi(config["csi"], adapters: adapters)
           path_security = adapters[:volume_path_security] || adapters["volume_path_security"] ||
                           volume_path_security(config, adapters[:volume_resolver] || adapters["volume_resolver"])
+          root = config.fetch("root", File.join(config.fetch("data_dir"), "volumes"))
+          quota = build_project_quota(process, root, path_security) if native_runtime
           Volume::Manager.new(
             data_dir: config.fetch("data_dir"),
-            root: config.fetch("root", File.join(config.fetch("data_dir"), "volumes")),
+            root: root,
+            project_quota: quota,
             adapter: volume_adapter,
             mount_adapter: mount_adapter,
             device_adapter: device_adapter,
             path_security: path_security,
             csi: csi,
-            secret_resolver: adapters[:csi_secret_resolver] || adapters["csi_secret_resolver"],
+            secret_resolver: csi_secret_resolver(adapters, client),
+            storage_devices: adapters[:storage_devices] || adapters["storage_devices"],
             token_provider: adapters[:volume_token_provider] || adapters["volume_token_provider"] ||
                             (client && Volume::ServiceAccountTokenProvider.new(client: client)),
             require_real_readback: native_profile,
             fsync: config.fetch("fsync", true)
           )
+        end
+
+        def build_project_quota(process, root, path_security)
+          return unless process.dig("feature_gates", Volume::ProjectQuota::FEATURE_GATE) == true
+
+          quota = Volume::ProjectQuota.new(root: root)
+          return unless quota.supported?
+
+          # The configured volume root is a separate mount. Native targets
+          # beneath it, including Memory emptyDir mounts, need this boundary.
+          path_security.allow_mount_boundary!(root) unless path_security.root == File.expand_path(root)
+          quota
+        end
+
+        def csi_secret_resolver(adapters, client)
+          injected = adapters[:csi_secret_resolver] || adapters["csi_secret_resolver"]
+          return injected if injected || !client
+
+          reader = Node::ResourceReader.new(client: client, ttl: 0)
+          Volume::KubernetesCSISecretResolver.new(reader: reader)
         end
 
         def volume_path_security(config, resolver)
