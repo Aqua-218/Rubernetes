@@ -1,57 +1,152 @@
 # frozen_string_literal: true
 
+require_relative "../../label_requirement"
+
 module Rubernetes
   module Schema
-    # apps workload controllers and PodDisruptionBudget: selector/template
+    # apps workload controllers: selector/template
     # agreement, the fields each Update function freezes, and the PDB spec.
     module KubernetesValidator
       module_function
 
-      def selector_errors(root, kind)
-        return [] unless %w[Deployment DaemonSet ReplicaSet StatefulSet ReplicationController].include?(kind)
-
-        issues = []
+      def replication_controller_count_errors(root)
         spec = fetch(root, "spec")
-        if spec.is_a?(Hash)
-          selector = fetch(spec, "selector")
-          template = fetch(spec, "template")
-          issues << issue(%w[spec selector], :required, "") if selector.nil? && !(kind == "DaemonSet" && (spec.key?("updateStrategy") || spec.key?("template")))
-          if template.nil?
-            if kind == "ReplicationController"
-              issues << issue(%w[spec template], :required, "")
-            else
-              issues << issue(%w[spec template metadata labels], :invalid,
-                              "`selector` does not match template `labels`")
-              issues << issue(%w[spec template spec containers], :required, "")
-            end
-          end
+        replicas = fetch(spec, "replicas")
+        fields = []
+        ready_seconds = fetch(spec, "minReadySeconds")
+        fields << issue(%w[spec minReadySeconds], :invalid, IS_NEGATIVE_ERROR_MSG) if ready_seconds.is_a?(Integer) && ready_seconds.negative?
+        if replicas.nil?
+          fields << issue(%w[spec replicas], :required, "")
+        elsif replicas.is_a?(Integer) && replicas.negative?
+          fields << issue(%w[spec replicas], :invalid, IS_NEGATIVE_ERROR_MSG)
         end
-        walk(root) do |value, path|
-          next unless value.is_a?(Hash)
+        fields
+      end
 
-          selector = fetch(value, "selector")
-          template = fetch(value, "template")
-          if selector.is_a?(Hash) && selector.empty?
-            detail = if kind == "ReplicaSet"
-                       "empty selector is invalid for deployment"
-                     else
-                       "empty selector is invalid for #{kind.downcase}"
-                     end
-            issues << issue(path + ["selector"], :invalid, detail)
-            next
-          end
-          next unless selector.is_a?(Hash) && template.is_a?(Hash)
+      def deployment_replica_errors(root)
+        replicas = fetch(fetch(root, "spec"), "replicas")
+        return [] unless replicas.is_a?(Integer) && replicas.negative?
 
-          labels = fetch(fetch(template, "metadata"), "labels")
-          next unless labels.is_a?(Hash)
+        [issue(%w[spec replicas], :invalid, IS_NEGATIVE_ERROR_MSG)]
+      end
 
-          match_labels = fetch(selector, "matchLabels")
-          next unless match_labels.is_a?(Hash)
-          next if match_labels.all? { |key, val| labels[key.to_s] == val }
+      WORKLOAD_SELECTOR_PATH = %w[spec selector].freeze
+      WORKLOAD_TEMPLATE_PATH = %w[spec template].freeze
+      WORKLOAD_TEMPLATE_LABELS_PATH = %w[spec template metadata labels].freeze
+      WORKLOAD_SELECTOR_NAMES = {"Deployment" => "deployment", "ReplicaSet" => "deployment",
+                                 "StatefulSet" => "statefulset", "DaemonSet" => "daemonset"}.freeze
 
-          issues << issue(path + %w[selector], :invalid, "`selector` does not match template `labels`")
-        end
+      def selector_errors(root, kind, old: nil)
+        return [] unless kind == "ReplicationController" || WORKLOAD_SELECTOR_NAMES.key?(kind)
+
+        spec = fetch(root, "spec")
+        return [] unless spec.is_a?(Hash)
+
+        selector = fetch(spec, "selector")
+        return [] unless selector.nil? || selector.is_a?(Hash)
+
+        template = fetch(spec, "template")
+        labels = workload_label_map(value_at_path(template, %w[metadata labels]))
+        return replication_controller_selector_errors(selector, template, labels) if kind == "ReplicationController"
+
+        parsed = workload_selector_value(selector)
+        issues, convertible = apps_selector_validation(kind, parsed, old: old)
+        issues << valued_issue(WORKLOAD_TEMPLATE_LABELS_PATH, labels, SELECTOR_LABELS_MISMATCH) if convertible && !workload_selector_matches?(parsed, labels)
+        issues << issue(%w[spec template spec containers], :required, "") if fetch(template, "spec").nil? && (convertible || kind == "DaemonSet")
         issues
+      end
+
+      def skip_app_template_validation?(kind, issues)
+        return false if kind == "DaemonSet" || !WORKLOAD_SELECTOR_NAMES.key?(kind)
+
+        # An invalid parsed selector has specific syntax causes below
+        # spec.selector. The nil and empty selector cases still validate the template.
+        issues.any? { |candidate| candidate.path.length > 2 && candidate.path[0, 2] == WORKLOAD_SELECTOR_PATH }
+      end
+
+      def replication_controller_selector_errors(selector, template, labels)
+        selector = workload_label_map(selector) || {}
+        issues = []
+        issues << issue(WORKLOAD_SELECTOR_PATH, :required, "") if selector.empty?
+        if template.nil?
+          issues << issue(%w[spec template], :required, "")
+        elsif !workload_label_map_matches?(selector, labels || {})
+          issues << valued_issue(WORKLOAD_TEMPLATE_LABELS_PATH, labels, SELECTOR_LABELS_MISMATCH)
+        end
+        issues << issue(%w[spec template spec containers], :required, "") if template.is_a?(Hash) && fetch(template, "spec").nil?
+        issues
+      end
+
+      def apps_selector_validation(kind, selector, old:)
+        if selector.nil?
+          # ValidateDaemonSetSpec reports only template mismatch for a nil selector.
+          errors = kind == "DaemonSet" ? [] : [issue(WORKLOAD_SELECTOR_PATH, :required, "")]
+          return [errors, true]
+        end
+        if selector.empty?
+          kind_name = WORKLOAD_SELECTOR_NAMES.fetch(kind)
+          return [[valued_issue(WORKLOAD_SELECTOR_PATH, selector, "empty selector is invalid for #{kind_name}")], true]
+        end
+
+        syntax = label_selector_errors(selector, WORKLOAD_SELECTOR_PATH)
+        return [syntax, true] if syntax.empty?
+
+        if kind == "DaemonSet"
+          old_selector = value_at_path(old, WORKLOAD_SELECTOR_PATH)
+          if workload_selector_has_invalid_expression_value?(old_selector)
+            syntax = label_selector_errors(selector, WORKLOAD_SELECTOR_PATH, allow_invalid_expression_values: true)
+          end
+        else
+          message = kind == "StatefulSet" ? "" : "invalid label selector"
+          syntax << valued_issue(WORKLOAD_SELECTOR_PATH, selector, message)
+        end
+        [syntax, false]
+      end
+
+      # The API's typed metav1.LabelSelector omits empty slices and maps when
+      # field.Invalid renders its BadValue. Map keys are serialized in order.
+      def workload_selector_value(selector)
+        return nil unless selector.is_a?(Hash)
+
+        canonical = {}
+        labels = workload_label_map(fetch(selector, "matchLabels"))
+        canonical["matchLabels"] = labels if labels && !labels.empty?
+        expressions = Array(fetch(selector, "matchExpressions")).map do |entry|
+          expression = {"key" => fetch(entry, "key").to_s, "operator" => fetch(entry, "operator").to_s}
+          values = Array(fetch(entry, "values")).map(&:to_s)
+          expression["values"] = values unless values.empty?
+          expression
+        end
+        canonical["matchExpressions"] = expressions unless expressions.empty?
+        canonical
+      end
+
+      def workload_selector_matches?(selector, labels)
+        return false unless selector.is_a?(Hash)
+
+        labels = workload_label_map(labels) || {}
+        matching = workload_label_map(fetch(selector, "matchLabels")) || {}
+        workload_label_map_matches?(matching, labels) && Array(fetch(selector, "matchExpressions")).all? do |expression|
+          key = fetch(expression, "key").to_s
+          values = Array(fetch(expression, "values")).map(&:to_s)
+          LabelRequirement.matches?(fetch(expression, "operator").to_s, labels[key], values, present: labels.key?(key))
+        end
+      end
+
+      def workload_label_map(labels)
+        return nil unless labels.is_a?(Hash)
+
+        labels.to_h { |key, value| [key.to_s, value.to_s] }.sort.to_h
+      end
+
+      def workload_label_map_matches?(selector, labels)
+        selector.all? { |key, value| labels.key?(key) && labels[key] == value }
+      end
+
+      def workload_selector_has_invalid_expression_value?(selector)
+        Array(fetch(selector, "matchExpressions")).any? do |expression|
+          Array(fetch(expression, "values")).any? { |value| !label_value_messages(value).empty? }
+        end
       end
 
       # ValidateStatefulSetUpdate: only replicas, ordinals, template,
@@ -96,9 +191,6 @@ module Rubernetes
       # in place, which upstream refuses.
       IMMUTABLE_FIELDS = {
         "StorageClass" => [%w[provisioner], %w[parameters], %w[reclaimPolicy], %w[volumeBindingMode]],
-        # ValidateJobUpdate (pkg/apis/batch/validation/validation.go:627-633).
-        "Job" => [%w[spec selector], %w[spec completionMode], %w[spec podFailurePolicy],
-                  %w[spec backoffLimitPerIndex], %w[spec managedBy], %w[spec successPolicy]],
         # ValidateDaemonSetSpecUpdate / ValidateDeploymentUpdate /
         # ValidateReplicaSetUpdate: the selector is immutable
         # (pkg/apis/apps/validation/validation.go:403,712,767), and a
@@ -121,22 +213,6 @@ module Rubernetes
 
           issue(path, :invalid, "field is immutable")
         end
-      end
-
-      # pkg/apis/policy/validation ValidatePodDisruptionBudgetSpec
-      def pod_disruption_budget_errors(root)
-        spec = fetch(root, "spec")
-        return [] unless spec.is_a?(Hash)
-
-        issues = []
-        if !fetch(spec, "minAvailable").nil? && !fetch(spec, "maxUnavailable").nil?
-          issues << issue(%w[spec], :invalid, "minAvailable and maxUnavailable cannot be both set")
-        end
-        policy = fetch(spec, "unhealthyPodEvictionPolicy")
-        if !policy.nil? && !%w[AlwaysAllow IfHealthyBudget].include?(policy.to_s)
-          issues << issue(%w[spec unhealthyPodEvictionPolicy], :unsupported, unsupported_detail(%w[AlwaysAllow IfHealthyBudget]))
-        end
-        issues
       end
     end
   end
