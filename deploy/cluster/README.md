@@ -73,6 +73,151 @@ worker node runs `agent` and `proxy`. A node may be both.
    rubectl get --raw /readyz
    ```
 
+## Cluster DNS
+
+Clusters created by `rubectl cluster up` publish the integrated DNS listeners as
+`kube-system/kube-dns`. Applications can use the node resolver from
+`/etc/resolv.conf` or resolve `kube-dns.kube-system.svc.cluster.local` and send
+queries to the Service on UDP or TCP port 53. An EndpointSlice for each enabled
+IP family lists the worker gateways. The Service routes queries to the local
+worker. Starting an existing cluster preserves a DNS Service installed by the
+operator.
+
+## LoadBalancer Services
+
+### Routed addresses on bare metal
+
+Reserve one or more IPv4 or IPv6 CIDRs for Service addresses. Keep the pool
+outside the Pod, ClusterIP and node subnets. Route each CIDR from your router
+or clients to a node running an attached Service proxy. For example, on a
+Linux router with the node reachable at `192.0.2.10`:
+
+```sh
+ip route add 198.51.100.0/28 via 192.0.2.10
+```
+
+`rubectl cluster up --load-balancer-pool 198.51.100.0/28` configures the
+controller for the local cluster. Repeat the flag for additional pools.
+To also serve charts that omit `spec.loadBalancerClass`, opt in when bringing up
+a new cluster:
+
+```sh
+rubectl cluster up --load-balancer-pool 198.51.100.0/28 --default-routed-load-balancer
+```
+
+The `rubernetes.io/routed` class works in either mode.
+For a cluster deployed from per-process YAML, apply the controller's RBAC
+and add the pool to the controller-manager configuration:
+
+```sh
+rubectl apply -f config/addons/routed-load-balancer-rbac.yml
+```
+
+```yaml
+processes:
+  rubernetes-controller-manager:
+    load_balancer_pool: [198.51.100.0/28]
+    # Enable to also handle classless LoadBalancer Services.
+    # default_routed_load_balancer: true
+```
+
+Include `service-lb-controller` if you set an explicit `controllers` list.
+For an existing local cluster with a routed pool, bring it down, add
+`default_routed_load_balancer: true` to `config/controller-manager.yml` in the
+cluster directory, and use `rubectl cluster start` to reload the saved settings.
+Service classes and ingress already published by other controllers are preserved.
+
+Use the `rubernetes.io/routed` class to request an address for a Service:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: LoadBalancer
+  loadBalancerClass: rubernetes.io/routed
+  allocateLoadBalancerNodePorts: false
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+```
+
+The controller reserves an address for each available Service address family
+and publishes the VIP in `status.loadBalancer.ingress`. `RequireDualStack`
+waits for both addresses. A Service can request a particular address with
+`spec.loadBalancerIP`. If the pool runs out, the controller reports a warning
+event and retries. The node proxy forwards VIP traffic to EndpointSlices and
+applies the Service's traffic policy and source ranges. With
+`externalTrafficPolicy: Local`, route traffic to nodes that have ready local
+endpoints. Static routing owned by the operator provides the path to the node.
+
+Keep the `kube-system/rubernetes-load-balancer-allocations` ConfigMap with the
+cluster's state. The controller uses it to preserve reservations across
+restarts and to prevent concurrent allocations of the same address. Deleting
+a routed Service or changing its type withdraws its ingress and releases its
+reservation. Delete or convert routed Services before disabling the controller.
+
+### Cloud load balancers
+
+Deploy the cloud provider's Kubernetes-compatible external Cloud Controller
+Manager (CCM) with its own credentials, Kubernetes RBAC and provider-specific
+configuration. Point it at the Rubernetes API using the normal in-cluster
+credentials or a kubeconfig. A Service with `type: LoadBalancer` and no
+`loadBalancerClass` is managed by the external CCM's default Service controller.
+Leave `default_routed_load_balancer` disabled when an external CCM manages
+classless Services. Explicit `rubernetes.io/routed` Services can still use the
+local pool alongside the external CCM.
+Use the provider's documented annotations, backend routing and firewall settings.
+The provider creates its cloud resources and writes ingress status and the
+cleanup finalizer through the Kubernetes Service API.
+
+On a standalone Rubernetes controller manager, set
+`cloud_controller_manager: external` to delegate cloud responsibilities. This
+setting can be combined with `load_balancer_pool` for classed, routed Services.
+The local `rubectl cluster up` profile already excludes cloud-only controllers.
+
+When the external CCM also initializes Nodes, configure each joining agent with
+`cloud_provider: external`. It registers the Node with the standard
+`node.cloudprovider.kubernetes.io/uninitialized:NoSchedule` taint so the CCM
+can initialize it before scheduling. Set `provider_id` if the provider requires
+a preconfigured instance ID. Configured InternalIP entries in `addresses`
+are sent as the upstream `alpha.kubernetes.io/provided-node-ip` hint. The CCM
+owns subsequent updates to Node addresses. For a provider running only the
+Service controller, use already initialized cloud nodes with the required
+provider IDs and omit the initialization taint.
+
+Set `CloudControllerManagerWatchBasedRoutesReconciliation` and
+`CloudControllerManagerWebhook` through the external CCM's `--feature-gates`
+flag. Watch-based reconciliation uses the Node API watch to maintain cloud
+PodCIDR routes when the provider publishes a Routes implementation and route
+management is enabled. A provider webhook also needs a handler registered in
+its CCM, a TLS listener reachable by the API server, and the matching webhook
+configuration containing its CA bundle.
+
+## Kubelet Pods API
+
+Enable the alpha `PodsAPI` gate on the agent to let local clients use
+`v1alpha1.Pods` over the `pods-api/pods-api.sock` Unix socket. By default the
+directory is under the agent's kubelet root. Set `pods_api_directory` to an
+absolute path to place it elsewhere:
+
+```yaml
+processes:
+  rubernetes-agent:
+    feature_gates:
+      PodsAPI: true
+    pods_api_directory: /var/lib/rubernetes/pods-api
+```
+
+`ListPods` and `GetPod` return each desired local Pod's spec and the latest
+status observed by the agent. `WatchPods` streams the initial set in UID order,
+an initial-sync marker and subsequent changes. The agent restricts the socket
+to its owner. Install the Ruby `grpc` and `google-protobuf` dependencies when
+enabling this gate.
+
 ## Graceful node shutdown
 
 The agent can delay a host shutdown until it has stopped the node's Pods, as
@@ -197,6 +342,50 @@ systemctl restart rubernetes-apiserver rubernetes-scheduler rubernetes-controlle
 
 If the upgrade has already written objects of a version the previous release
 does not serve, restore from the backup taken before the upgrade instead.
+
+## Watch history retention
+
+The memory and Raft datastores default to `longer_window`. The store compacts
+the oldest consecutive revisions once they fall outside both the last 24
+hours and the latest 100,000 revisions. WATCH can replay retained revisions,
+and LIST with `resourceVersionMatch=Exact` can use retained snapshots.
+
+Paginated LIST gives each listing five minutes to finish. Every page in
+that listing shares the first page's deadline. After the deadline or after
+snapshot compaction, the API returns HTTP 410 with a replacement token in
+`Status.metadata.continue`. Use that token to resume after the same key
+against the latest snapshot, or start from the first page for a consistent
+list. Recognized tokens from previous releases also return a replacement
+token.
+
+Set `compatibility` to compact history outside either the five-minute window
+or the latest 100,000 revisions.
+
+```yaml
+processes:
+  rubernetes-apiserver:
+    datastore:
+      history_retention_policy: compatibility
+```
+
+To adjust the two history windows, set `watch_history_limit` under
+`rubernetes-apiserver` and `compaction_interval_seconds` under `datastore`.
+With `longer_window`, set one of these values to `null` to disable that
+window. Leaving both unbounded retains all history.
+
+For Raft, configure identical retention settings on every replica, including
+joining replicas. The longer window may increase memory use and Raft snapshot
+size. History already compacted in a snapshot cannot be recovered by changing
+retention settings. Set `compatibility` on upgraded replicas during a rolling
+upgrade if the previous release used five-minute history. Set `longer_window`
+on all replicas after upgrading.
+
+In an upgraded Raft cluster, the first elected upgraded leader replicates a
+signing key used to enforce the five-minute deadline. Until a replica has the
+key, it uses the previous cursor format and follows snapshot availability.
+Older replicas can read cursors from upgraded replicas. If an older replica
+issues the next cursor, an upgraded replica with the key returns HTTP 410
+with a replacement cursor because the older cursor carries no deadline.
 
 ## Moving from the in-memory datastore to raft
 
