@@ -3,13 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/node"
 
-# An init container that keeps failing under a restarting policy is the same
-# container restarting, and kubelet numbers it that way: restartCount climbs
-# and lastState carries the previous termination.  Ours rolled the Pod back and
-# started it again from a fresh record, so every attempt looked like the first
-# one -- restartCount 0 and no lastState, for ever.  "[sig-node] InitContainer
-# should not start app containers if init containers fail on a RestartAlways
-# pod" waits for restartCount 3 and a terminated lastState.
+# Each init retry keeps the existing sandbox and reports the previous run.
 class InitContainerRestartCountTest < Minitest::Test
   class Runtime
     def initialize = @counter = 0
@@ -39,7 +33,9 @@ class InitContainerRestartCountTest < Minitest::Test
   end
 
   def lifecycle
-    Rubernetes::Node::Lifecycle.new(runtime: Runtime.new, sleeper: ->(_seconds) {})
+    @now = 0
+    restarts = Rubernetes::Node::RestartManager.new(clock: -> { @now })
+    Rubernetes::Node::Lifecycle.new(runtime: Runtime.new, restart_manager: restarts)
   end
 
   def init_status(subject)
@@ -47,15 +43,10 @@ class InitContainerRestartCountTest < Minitest::Test
     Array(record[:containers]).find { |entry| entry[:name] == "init1" }
   end
 
-  # Each retry is a restart of the same container, not a new first attempt.
   def attempt_starts(subject, times)
     times.times do
-      subject.send(:clear_start_retry, "pod-1")
-      begin
-        subject.start(pod)
-      rescue StandardError
-        nil
-      end
+      subject.reconcile(pod)
+      @now += 30
     end
   end
 
@@ -79,33 +70,29 @@ class InitContainerRestartCountTest < Minitest::Test
 
   def test_a_pod_waiting_to_be_started_again_keeps_its_restart_history
     subject = lifecycle
-    begin
-      subject.start(pod)
-    rescue StandardError
-      nil
-    end
+    wakeups = []
+    subject.wakeup = ->(uid, delay) { wakeups << [uid, delay] }
+    subject.reconcile(pod)
+    subject.reconcile(pod)
 
-    assert subject.send(:start_retry_scheduled?, "pod-1"),
-           "a failed start schedules a retry"
-    record = subject.send(:record, "pod-1")
-    subject.send(:forget_terminated_probe_and_restart_state, record)
+    assert_equal [["pod-1", 10.0]], wakeups
+    waiting = init_status(subject)
 
-    assert_operator subject.instance_variable_get(:@restarts).restart_count("pod-1/init1").to_i, :>=, 0
-    refute_empty subject.instance_variable_get(:@restarts).all,
-                 "the restart history of a Pod that is coming back must not be dropped"
+    assert_equal "CrashLoopBackOff", waiting.dig(:status, "waiting", "reason")
+    assert_equal 1, waiting.dig(:status, "restartCount")
+    assert_equal 1, waiting.dig(:status, "lastState", "terminated", "exitCode")
+    assert_equal "sandbox-1", subject.record("pod-1").fetch(:sandbox_id)
+
+    subject.reconcile(pod)
+
+    assert_equal waiting[:id], init_status(subject)[:id]
+    assert_equal [["pod-1", 10.0]], wakeups
   end
 
   def test_a_pod_that_is_really_gone_still_releases_its_restart_history
     subject = lifecycle
-    begin
-      subject.start(pod)
-    rescue StandardError
-      nil
-    end
-    record = subject.send(:record, "pod-1")
-    subject.send(:clear_start_retry, "pod-1")
-
-    subject.send(:forget_terminated_probe_and_restart_state, record)
+    subject.reconcile(pod)
+    subject.terminate(pod)
 
     assert_empty subject.instance_variable_get(:@restarts).all
   end
