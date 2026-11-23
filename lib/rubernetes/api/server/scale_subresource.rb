@@ -153,10 +153,24 @@ module Rubernetes
           object
         end
 
+        def validate_scale_wire!(request, scale, apply: false)
+          raise Status::BadRequest.new("Scale must be an object") unless scale.is_a?(Hash)
+
+          resource = @scale_resource ||= typed_subresource("autoscaling", "v1", "Scale", "scales")
+          if apply
+            validator = resource.schema.validator
+            error = validator.wire_type_error(validator.errors(scale, unknown_fields: :preserve))
+            raise Status::Error.new(message: "failed to create typed patch object: #{error}", code: 500, reason: nil) if error
+          end
+          enforce_field_validation(resource, scale, request, duplicates: request_duplicate_fields(request), apply: apply)
+        end
+
         # A PUT or non-apply PATCH of /scale: the Scale field manager records
         # the write against the Scale the parent projects, and its entries go
         # back onto the parent (ScaleHandler ToParent).
         def scale_update_response(request, route, existing, namespace, scale)
+          validate_scale_wire!(request, scale)
+          check_storage_uid!(route, existing, scale) if request.method.to_s == "PUT"
           live = live_scale(route, existing)
           entries = @field_managers.scale_field_manager.update(live: live, new_object: scale, manager: update_manager(request))
           scale_write_response(route, existing, namespace, scale, entries, dry_run: dry_run?(request))
@@ -166,6 +180,7 @@ module Rubernetes
         def scale_apply_response(request, route, existing, namespace, document)
           raise Status::BadRequest.new("error decoding YAML: apply patch must be an object") unless document.is_a?(Hash)
 
+          validate_scale_wire!(request, document, apply: true)
           live = live_scale(route, existing)
           merged, entries = begin
             @field_managers.scale_field_manager.apply(live: live, config: stringify_keys(document),
@@ -178,9 +193,19 @@ module Rubernetes
         end
 
         def scale_write_response(route, existing, namespace, scale, entries, dry_run: false)
+          if scale.is_a?(Hash)
+            match_request_namespace!(scale, route)
+            check_update_name!(scale, route)
+          end
+          if !route.resource.custom? && route.resource.group.to_s.empty? && route.resource.kind == "ReplicationController" &&
+             scale.is_a?(Hash) && scale["spec"].is_a?(Hash) && scale.dig("spec", "replicas").is_a?(Integer)
+            previous_scale = scale_view(existing, route.resource, for_update: true)
+            observe_declarative_comparison("scale_scale_update", Schema::DeclarativeValidation::SCALE, scale, previous_scale, :update)
+          end
           replicas = scale_body!(scale, route)
+          check_scale_uid!(route, existing, scale) unless route.resource.custom?
           expected = scale.dig("metadata", "resourceVersion")
-          ensure_expected_version!(existing, expected) unless expected.to_s.empty?
+          checked_update_version!(route, existing, parse_update_version(expected)) unless expected.to_s.empty?
           object = scale_update(existing, replicas, route.resource)
           object = apply_schema(route.resource, object, operation: :update, old: existing)
           parent = begin
