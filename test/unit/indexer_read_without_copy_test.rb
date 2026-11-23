@@ -40,6 +40,30 @@ class IndexerReadWithoutCopyTest < Minitest::Test
     assert_equal "a", idx.get("ns/p1").dig("metadata", "labels", "app")
   end
 
+  def test_snapshot_keeps_the_old_values_after_replacement_and_deletion
+    idx = indexer
+    snapshot = idx.snapshot
+    idx.update(pod("p1", {"app" => "b"}))
+    idx.delete("ns/p2")
+
+    assert_predicate snapshot, :frozen?
+    assert_equal %w[ns/p1 ns/p2], snapshot.keys.sort
+    assert_equal "a", snapshot.fetch("ns/p1").dig("metadata", "labels", "app")
+    assert_equal "b", idx.get("ns/p1").dig("metadata", "labels", "app")
+  end
+
+  def test_an_index_registered_during_replacement_indexes_the_whole_new_list
+    idx = Rubernetes::Watch::Indexer.new
+    idx.add_index("app") do |object|
+      idx.add_index("name") { |pod| pod.dig("metadata", "name") } unless idx.index_names.include?("name")
+      object.dig("metadata", "labels", "app")
+    end
+    idx.replace_all([pod("p1"), pod("p2")])
+
+    assert_equal [pod("p1")], idx.by_index("name", "p1")
+    assert_equal idx.list, idx.by_index("app", "a")
+  end
+
   def test_a_caller_mutating_its_input_after_add_does_not_reach_the_cache
     idx = Rubernetes::Watch::Indexer.new
     input = pod("p1")
