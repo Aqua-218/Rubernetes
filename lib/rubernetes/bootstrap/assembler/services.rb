@@ -50,12 +50,18 @@ module Rubernetes
         end
 
         def agent_service(dependencies, config, logger)
+          runtime = dependencies.resolve(:runtime)
+          node_agent = dependencies.resolve(:node_agent)
+          network = dependencies.resolve(:lifecycle_network)
           AgentService.new(
             config: config,
             logger: logger,
-            runtime: dependencies.resolve(:runtime),
+            runtime: runtime,
+            image_staging_root: image_staging_root(config),
+            live_image_roots: -> { native_image_roots(runtime) + node_agent.lifecycle.image_roots_in_use },
             api_adapter: dependencies.resolve(:api_adapter),
-            node_agent: dependencies.resolve(:node_agent),
+            node_agent: node_agent,
+            policy_lifecycle: network.is_a?(LifecycleNetworkAdapter) ? network : nil,
             runtime_observer: dependencies.resolve(:runtime_observer),
             runtime_cleaner: dependencies.resolve(:runtime_cleaner),
             node_resolver: adapter_for(:node_resolver, :api_node_resolver),
