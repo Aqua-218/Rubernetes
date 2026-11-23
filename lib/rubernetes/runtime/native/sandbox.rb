@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../platform/linux/kubelet_cgroup_layout"
+
 module Rubernetes
   module Runtime
     class Native
@@ -30,7 +32,7 @@ module Rubernetes
         PLAN_HASHES = ObjectSpace::WeakMap.new
         PLAN_HASHES_MUTEX = Mutex.new
 
-        Container = Data.define(:id, :spec, :state, :process, :security_plan, :cgroup, :created_at, :workspace) do
+        Container = Data.define(:id, :spec, :state, :process, :security_plan, :cgroup, :created_at, :workspace, :exit_lock) do
           def security_plan_hash
             return security_plan unless security_plan.respond_to?(:to_h)
 
@@ -73,6 +75,8 @@ module Rubernetes
           # log directories can be removed with the sandbox by exact name.
           @removed_container_ids = []
           @container_sequence = 0
+          @legacy_container_id_prefix = "#{@id}.container-"
+          @container_id_prefix = @legacy_container_id_prefix
           @events = []
           @resources_cleaned = false
           @mutex = Mutex.new
@@ -97,7 +101,7 @@ module Rubernetes
           @mutex.synchronize do
             @namespace = namespace if namespace
             @workspace = workspace if workspace
-            @cgroup = cgroup if cgroup
+            assign_cgroup(cgroup) if cgroup
             @security_plan = security_plan if security_plan
           end
           self
@@ -110,8 +114,36 @@ module Rubernetes
         # with "unknown container" and the Pod stayed in CrashLoopBackOff for
         # ever.  The sequence only ever moves forward.
         def next_container_id
-          @mutex.synchronize { "#{@id}.container-#{@container_sequence += 1}" }
+          @mutex.synchronize { "#{@container_id_prefix}#{@container_sequence += 1}" }
         end
+
+        def restore_container_sequence(ids)
+          prefixes = [@container_id_prefix, @legacy_container_id_prefix]
+          sequence = ids.filter_map do |value|
+            prefix = prefixes.find { |candidate| value.start_with?(candidate) }
+            Integer(value.delete_prefix(prefix), 10, exception: false) if prefix
+          end.max
+          @mutex.synchronize { @container_sequence = [@container_sequence, sequence.to_i].max }
+        end
+
+        def cgroup_container_id(container_id)
+          return container_id.delete_prefix(@kubelet_cgroup_prefix) if @kubelet_cgroup_prefix && container_id.start_with?(@container_id_prefix)
+
+          container_id.delete_prefix("#{@id}.")
+        end
+
+        # The kubelet cgroupfs leaf is the ID in Pod status. Include the
+        # generation prefix added by the layout, and keep the raw Pod UID
+        # in the parent directory only.
+        def assign_cgroup(cgroup)
+          @cgroup = cgroup
+          @kubelet_cgroup_prefix = Platform::Linux::KubeletCgroupLayout.container_leaf_prefix(cgroup)
+          @container_id_prefix = @legacy_container_id_prefix
+          return unless @kubelet_cgroup_prefix
+
+          @container_id_prefix = "#{@kubelet_cgroup_prefix}#{Digest::SHA256.hexdigest(@id)[0, 24]}-container-"
+        end
+        private :assign_cgroup
 
         def create_container(spec:, id: nil)
           input = spec.respond_to?(:to_h) ? spec.to_h : {}
@@ -122,7 +154,7 @@ module Rubernetes
           container_id = String(id || input[:id] || input["id"] || next_container_id)
           raise Error, "container id is invalid" unless container_id.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
 
-          container = Container.new(id: container_id.freeze, spec: immutable(input), state: :created, process: nil,
+          container = Container.new(id: container_id.freeze, spec: immutable(input), state: :created, process: nil, exit_lock: Mutex.new,
                                     security_plan: nil, cgroup: nil, created_at: @clock.call.utc, workspace: nil)
           @mutex.synchronize do
             raise Error, "container #{container_id} already exists" if @containers.key?(container_id)
