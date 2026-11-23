@@ -36,4 +36,32 @@ class ConformanceLanesNetnsTest < Minitest::Test
       assert_equal "out\n", result.fetch("stdout")
     end
   end
+
+  def test_hydrophone_keeps_both_byte_streams_in_compressed_artifacts
+    with_env(nil) do
+      Dir.mktmpdir do |directory|
+        stdout = ("payload\n" * 40_000).b + "• [FAILED] [1.25 seconds]\nspec \xff\n•\n".b
+        stderr = "diagnostic\n" * 8000
+        command = [RbConfig.ruby, "-e", 'STDOUT.binmode; print "payload\n" * 40_000, "• [FAILED] [1.25 seconds]\nspec \xff\n•\n".b;
+                                         warn "diagnostic\n" * 8000; exit 1']
+        receipt = Lanes.capture_archived(command, directory: directory, basename: "hydrophone", timeout: 30)
+
+        assert_equal 1, receipt.fetch("exit_status")
+        refute receipt.key?("stdout")
+        assert_operator JSON.generate(receipt).bytesize, :<, 4096
+        [stdout, stderr].zip(%w[stdout stderr]).each do |original, name|
+          path = File.join(directory, receipt.fetch("#{name}_artifact"))
+
+          assert_equal original.bytesize, receipt.fetch("#{name}_bytes")
+          assert_equal original.b, Zlib::GzipReader.open(path, &:read).b
+          assert_operator File.size(path), :<, original.bytesize / 10
+        end
+        path = File.join(directory, receipt.fetch("stdout_artifact"))
+        progress = Zlib::GzipReader.open(path) { |log| Lanes.ginkgo_progress(log) }
+
+        assert_equal [2, 1, 1], progress.values_at("completed", "passed", "failed")
+        assert_equal [{"seconds" => 1.25, "spec" => "spec ?"}], progress.fetch("failures")
+      end
+    end
+  end
 end
