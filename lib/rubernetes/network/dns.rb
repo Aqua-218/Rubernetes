@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "fileutils"
 require "ipaddr"
 require "securerandom"
 require "socket"
 
+require_relative "dns_projection"
 require_relative "errors"
 require_relative "support"
 
@@ -64,8 +64,9 @@ module Rubernetes
 
       Endpoint = Struct.new(:ip, :ready, :serving, :terminating, :hostname,
                             :pod_name, :pod_uid, :ports, :service_name,
-                            :namespace, keyword_init: true) do
+                            :namespace, :api_slice, keyword_init: true) do
         def available?(publish_not_ready: false)
+          return ready != false if api_slice
           return true if publish_not_ready
           return false if terminating
 
@@ -83,11 +84,12 @@ module Rubernetes
       # resolver consumes watch-shaped objects, invalidates its cache on every
       # revision, and never shares mutable records with callers.
       class Resolver
+        include Projection
+
         DEFAULT_DOMAIN = "cluster.local"
         DEFAULT_TTL = 5
         MAX_PACKET_BYTES = 4096
         SUPPORTED_TYPES = %w[A AAAA SRV PTR CNAME].freeze
-
         def initialize(domain: DEFAULT_DOMAIN, cluster_ip: "10.96.0.10", nameserver: nil,
                        positive_ttl: DEFAULT_TTL, negative_ttl: DEFAULT_TTL,
                        upstream: nil, upstreams: nil, adapter: nil, upstream_adapter: nil,
@@ -144,7 +146,7 @@ module Rubernetes
         end
 
         def add_endpoint_slice(slice)
-          hash = slice.respond_to?(:to_h) ? slice.to_h : slice
+          hash = object_fields(slice)
           metadata = Support.fetch(hash, "metadata", default: {})
           labels = Support.fetch(metadata, "labels", default: {})
           service_name = Support.fetch(labels, "kubernetes.io/service-name", "service-name", default: nil) ||
@@ -154,9 +156,10 @@ module Rubernetes
           namespace = Support.string(Support.fetch(metadata, "namespace", default: "default"), "EndpointSlice namespace")
           slice_name = Support.string(Support.fetch(metadata, "name", default: nil), "EndpointSlice name")
           key = [namespace, String(service_name)]
+          api_slice = Support.fetch(hash, "kind", default: nil) == "EndpointSlice" || Support.fetch(hash, "addressType", default: nil)
           endpoints = Array(Support.fetch(hash, "endpoints", default: [])).flat_map do |entry|
             normalize_endpoint(entry, service_name: service_name, namespace: namespace,
-                                      ports: Support.fetch(hash, "ports", default: []))
+                                      ports: Support.fetch(hash, "ports", default: []), api_slice: api_slice)
           end
           @mutex.synchronize do
             @endpoint_slices[[namespace, slice_name]] = {"service" => key, "endpoints" => endpoints.freeze}.freeze
@@ -201,7 +204,7 @@ module Rubernetes
 
         # Consume Service/EndpointSlice/Pod watch events directly.
         def watch(event)
-          hash = event.respond_to?(:to_h) ? event.to_h : event
+          hash = object_fields(event)
           type = String(Support.fetch(hash, "type", "event_type", default: "MODIFIED")).upcase
           object = Support.fetch(hash, "object", "resource", default: hash)
           kind = String(Support.fetch(object, "kind", default: Support.fetch(hash, "kind", default: ""))).downcase
@@ -336,34 +339,14 @@ module Rubernetes
         alias forward_query forward
         alias resolve_external forward
 
-        # Render the pod's resolv.conf in a temporary file and atomically swap
-        # it into place.  The target itself may not be a symlink.
-        def project_resolv_conf(path:, namespace: "default", dns_policy: "ClusterFirst",
-                                dns_config: nil, host_network: false, host_resolv_conf: "/etc/resolv.conf",
-                                cluster_ip: @cluster_ip, fsync: true, **_options)
-          target = safe_projection_path(path)
-          policy = String(dns_policy || "ClusterFirst")
-          policy = "ClusterFirstWithHostNet" if host_network && policy == "ClusterFirst"
-          nameservers, search, options = resolv_components(policy, namespace: namespace, dns_config: dns_config,
-                                                                   host_resolv_conf: host_resolv_conf, cluster_ip: cluster_ip)
-          content = (nameservers.map { |server| "nameserver #{server}" } +
-                     (search.empty? ? [] : ["search #{search.join(" ")}"]) +
-                     (options.empty? ? [] : ["options #{options.join(" ")}"])).join("\n") << "\n"
-          atomic_write(target, content, fsync: fsync)
-          content
-        rescue DNSProjectionError
-          raise
-        rescue StandardError => error
-          raise DNSProjectionError, "resolv.conf projection failed: #{error.message}"
-        end
-
-        alias project_resolv_conf! project_resolv_conf
-        alias write_resolv_conf project_resolv_conf
-
         private
 
+        def object_fields(object)
+          object.respond_to?(:to_h) ? object.to_h : object
+        end
+
         def normalize_service(service)
-          hash = service.respond_to?(:to_h) ? service.to_h : service
+          hash = object_fields(service)
           metadata = Support.fetch(hash, "metadata", default: {})
           spec = Support.fetch(hash, "spec", default: hash)
           service_name = Support.fetch(metadata, "name", default: nil) || Support.fetch(spec, "name")
@@ -407,7 +390,7 @@ module Rubernetes
         end
 
         def normalize_service_port(port)
-          hash = port.respond_to?(:to_h) ? port.to_h : port
+          hash = object_fields(port)
           name = Support.fetch(hash, "name", default: nil)&.to_s
           protocol = String(Support.fetch(hash, "protocol", default: "TCP")).downcase
           port_number = Support.integer(Support.fetch(hash, "port"), "service port", min: 1, max: 65_535)
@@ -415,9 +398,12 @@ module Rubernetes
           {"name" => name, "protocol" => protocol, "port" => port_number, "target_port" => target}.compact.freeze
         end
 
-        def normalize_endpoint(endpoint, service_name:, namespace:, ports:)
-          hash = endpoint.respond_to?(:to_h) ? endpoint.to_h : endpoint
-          conditions = Support.fetch(hash, "conditions", default: {})
+        def normalize_endpoint(endpoint, service_name:, namespace:, ports:, api_slice:)
+          hash = object_fields(endpoint)
+          conditions = Support.fetch(hash, "conditions", default: nil)
+          # CoreDNS consumes readiness from the EndpointSlice; the endpoint
+          # controller has already accounted for publishNotReadyAddresses.
+          api_slice = !!(api_slice || conditions)
           addresses = Array(Support.fetch(hash, "addresses", default: Support.fetch(hash, "ip", default: nil)))
           raise DNSQueryError, "EndpointSlice endpoint has no address" if addresses.empty?
 
@@ -429,7 +415,7 @@ module Rubernetes
                          hostname: Support.fetch(hash, "hostname", default: nil),
                          pod_name: Support.fetch(Support.fetch(hash, "targetRef", default: {}), "name", default: Support.fetch(hash, "pod_name", default: nil)),
                          pod_uid: Support.fetch(Support.fetch(hash, "targetRef", default: {}), "uid", default: nil),
-                         ports: normalize_endpoint_ports(ports), service_name: String(service_name), namespace: namespace).freeze
+                         ports: normalize_endpoint_ports(ports), service_name: String(service_name), namespace: namespace, api_slice: api_slice).freeze
           end
         rescue KeyError, ValidationError => error
           raise DNSQueryError, "invalid EndpointSlice: #{error.message}"
@@ -437,7 +423,7 @@ module Rubernetes
 
         def normalize_endpoint_ports(ports)
           Array(ports).filter_map do |port|
-            hash = port.respond_to?(:to_h) ? port.to_h : port
+            hash = object_fields(port)
             number = Support.fetch(hash, "port", default: nil)
             next if number.nil?
 
@@ -448,7 +434,7 @@ module Rubernetes
         end
 
         def normalize_pod(pod)
-          hash = pod.respond_to?(:to_h) ? pod.to_h : pod
+          hash = object_fields(pod)
           metadata = Support.fetch(hash, "metadata", default: {})
           spec = Support.fetch(hash, "spec", default: {})
           status = Support.fetch(hash, "status", default: {})
@@ -526,14 +512,12 @@ module Rubernetes
           service = @services[[namespace, service_name]]
           return [].freeze unless service
 
-          endpoints_for(service).select do |endpoint|
-            endpoint.available?(publish_not_ready: service.publish_not_ready)
-          end.filter_map do |endpoint|
+          endpoints_for(service, ready_only: true).filter_map do |endpoint|
             next unless endpoint_host_label(endpoint) == host_label
             next unless (type == "A" && IPAddr.new(endpoint.ip).ipv4?) || (type == "AAAA" && IPAddr.new(endpoint.ip).ipv6?)
 
             Record.new(name: name, type: type, data: endpoint.ip, ttl: @positive_ttl).freeze
-          end.freeze
+          end.uniq(&:data).freeze
         end
 
         def endpoint_host_label(endpoint)
@@ -591,7 +575,8 @@ module Rubernetes
             when 1
               return @services.each_key.any? { |(namespace, _service)| namespace == labels[0] }
             when 2
-              return @services.key?([labels[1], labels[0]])
+              service = @services[[labels[1], labels[0]]]
+              return !!service && (!service.headless || endpoints_for(service, ready_only: true).any?)
             when 3
               service = @services[[labels[2], labels[1]]]
               return false unless service
@@ -600,7 +585,7 @@ module Rubernetes
               return endpoints_for(service).any? { |endpoint| endpoint_host_label(endpoint) == labels[0] }
             when 4
               srv = parse_srv(name)
-              return srv ? service_port_exists?(srv) : false
+              return srv ? !resolve_srv(srv).empty? : false
             end
             return false
           end
@@ -622,16 +607,11 @@ module Rubernetes
           false
         end
 
-        def service_port_exists?(srv)
-          service = @services[[srv.fetch("namespace"), srv.fetch("service")]]
-          return false unless service
-
-          service.ports.any? { |entry| entry["name"] == srv.fetch("port_name") && entry["protocol"] == srv.fetch("protocol") }
-        end
-
         def known_address_locked?(ip)
           return true if @services.each_value.any? { |service| service.cluster_ips.include?(ip) }
-          return true if @endpoint_slices.each_value.any? { |slice| slice.fetch("endpoints").any? { |endpoint| endpoint.ip == ip } }
+          return true if @endpoint_slices.each_value.any? do |slice|
+            slice.fetch("endpoints").any? { |endpoint| endpoint.ip == ip && (!endpoint.api_slice || endpoint.available?) }
+          end
 
           @pods.each_value.any? { |pod| pod.fetch("ips").include?(ip) }
         end
@@ -639,21 +619,23 @@ module Rubernetes
         def resolve_headless(service, type)
           return [] unless %w[A AAAA].include?(type)
 
-          endpoints_for(service).select do |endpoint|
-            endpoint.available?(publish_not_ready: service.publish_not_ready)
-          end.filter_map do |endpoint|
+          endpoints_for(service, ready_only: true).filter_map do |endpoint|
             next unless (type == "A" && IPAddr.new(endpoint.ip).ipv4?) || (type == "AAAA" && IPAddr.new(endpoint.ip).ipv6?)
 
             Record.new(name: service.fqdn, type: type, data: endpoint.ip, ttl: @positive_ttl).freeze
-          end.freeze
+          end.uniq(&:data).freeze
         end
 
-        def endpoints_for(service)
+        def endpoints_for(service, ready_only: false)
           key = [service.namespace, service.name]
           @endpoint_slices.each_with_object([]) do |(_slice_key, slice), result|
             next unless slice.fetch("service") == key
 
-            result.concat(slice.fetch("endpoints"))
+            slice.fetch("endpoints").each do |endpoint|
+              next if (ready_only || endpoint.api_slice) && !endpoint.available?(publish_not_ready: service.publish_not_ready)
+
+              result << endpoint
+            end
           end
         end
 
@@ -661,22 +643,20 @@ module Rubernetes
           service = @services[[srv.fetch("namespace"), srv.fetch("service")]]
           return [] unless service
 
-          port = service.ports.find { |entry| entry["name"] == srv.fetch("port_name") && entry["protocol"] == srv.fetch("protocol") }
-          return [] unless port
+          targets = if service.headless
+                      endpoints_for(service, ready_only: true).map do |endpoint|
+                        [endpoint_target_name(endpoint, service), endpoint.api_slice ? endpoint.ports : service.ports]
+                      end
+                    else
+                      [[service.fqdn, service.ports]]
+                    end
+          targets.filter_map do |target, ports|
+            port = ports.find { |entry| entry["name"] == srv.fetch("port_name") && entry["protocol"] == srv.fetch("protocol") }
+            next unless port
 
-          endpoints = endpoints_for(service).select { |endpoint| endpoint.available?(publish_not_ready: service.publish_not_ready) }
-          if service.headless
-            # Kubernetes DNS spec §2.4.1: a headless SRV target is the
-            # endpoint's `<hostname>.<svc>.<ns>.svc.<domain>` name, which the
-            # A/AAAA path above resolves to that single endpoint address.
-            endpoints.map do |endpoint|
-              Record.new(name: srv.fetch("name"), type: "SRV", data: endpoint_target_name(endpoint, service), ttl: @positive_ttl,
-                         priority: 0, weight: 0, port: port.fetch("port")).freeze
-            end.freeze
-          else
-            [Record.new(name: srv.fetch("name"), type: "SRV", data: service.fqdn, ttl: @positive_ttl,
-                        priority: 0, weight: 0, port: port.fetch("port"))].freeze
-          end
+            Record.new(name: srv.fetch("name"), type: "SRV", data: target, ttl: @positive_ttl,
+                       priority: 0, weight: 0, port: port.fetch("port")).freeze
+          end.uniq { |record| [record.data, record.port] }.freeze
         end
 
         def resolve_ptr(name)
@@ -706,12 +686,7 @@ module Rubernetes
           return [].freeze unless %w[A AAAA].include?(type)
 
           @pods.each_value.filter_map do |pod|
-            names = []
-            if pod.fetch("hostname") && pod.fetch("subdomain")
-              names << "#{pod.fetch("hostname")}.#{pod.fetch("subdomain")}.#{pod.fetch("namespace")}.svc.#{@domain}"
-            end
-            names << "#{pod.fetch("name")}.#{pod.fetch("namespace")}.pod.#{@domain}"
-            next unless names.include?(name)
+            next unless "#{pod.fetch("name")}.#{pod.fetch("namespace")}.pod.#{@domain}" == name
 
             pod.fetch("ips").filter_map do |ip|
               next unless (type == "A" && IPAddr.new(ip).ipv4?) || (type == "AAAA" && IPAddr.new(ip).ipv6?)
@@ -880,103 +855,6 @@ module Rubernetes
 
         def invalidate!
           @cache.clear
-        end
-
-        def safe_projection_path(path)
-          target = File.expand_path(String(path))
-          raise DNSProjectionError, "resolv.conf target is a directory" if File.directory?(target)
-          raise DNSProjectionError, "resolv.conf target must not be a symlink" if File.symlink?(target)
-
-          relative = target.delete_prefix("/").split("/")
-          current = "/"
-          relative[0...-1].each do |component|
-            current = File.join(current, component)
-            raise DNSProjectionError, "resolv.conf parent path must not contain symlinks" if File.symlink?(current)
-          end
-          target
-        rescue TypeError
-          raise DNSProjectionError, "resolv.conf path must be a string"
-        end
-
-        def resolv_components(policy, namespace:, dns_config:, host_resolv_conf:, cluster_ip:)
-          config = dns_config.respond_to?(:to_h) ? dns_config.to_h : (dns_config || {})
-          nameservers = Array(Support.fetch(config, "nameservers", default: [])).map { |server| validate_upstream(server) }
-          search = Array(Support.fetch(config, "searches", "search", default: [])).map { |entry| normalize_domain(entry) }
-          options = Array(Support.fetch(config, "options", default: [])).map do |entry|
-            hash = entry.respond_to?(:to_h) ? entry.to_h : entry
-            name = Support.string(Support.fetch(hash, "name"), "resolv.conf option")
-            value = Support.fetch(hash, "value", default: nil)
-            value ? "#{name}:#{Support.string(value, "resolv.conf option value")}" : name
-          end
-          case policy
-          when "None"
-            raise DNSProjectionError, "dnsConfig.nameservers is required for dnsPolicy None" if nameservers.empty?
-          when "Default"
-            nameservers, search, options = parse_host_resolv(host_resolv_conf) if nameservers.empty?
-          when "ClusterFirst", "ClusterFirstWithHostNet"
-            nameservers.unshift(Support.ip(cluster_ip, name: "cluster DNS IP").to_s) unless nameservers.include?(cluster_ip.to_s)
-            search = ["#{namespace}.svc.#{@domain}", "svc.#{@domain}", @domain] + search
-          else
-            raise DNSProjectionError, "unsupported dnsPolicy #{policy.inspect}"
-          end
-          nameservers = nameservers.uniq
-          raise DNSProjectionError, "resolv.conf supports at most three nameservers" if nameservers.length > 3
-          raise DNSProjectionError, "resolv.conf supports at most six search domains" if search.uniq.length > 6
-          raise DNSProjectionError, "resolv.conf search list is too large" if search.join(" ").bytesize > 2048
-
-          [nameservers, search.uniq, options.uniq]
-        end
-
-        def parse_host_resolv(path)
-          source = File.expand_path(String(path))
-          raise DNSProjectionError, "host resolv.conf must not be a symlink" if File.symlink?(source)
-
-          validate_parent_path!(File.dirname(source))
-          nameservers = []
-          search = []
-          options = []
-          File.foreach(source) do |line|
-            fields = line.strip.split
-            next if fields.empty? || fields.first.start_with?("#", ";")
-
-            nameservers.concat(fields.drop(1).filter_map { |value| validate_upstream(value) }) if fields.first == "nameserver"
-            search.concat(fields.drop(1)) if fields.first == "search"
-            options.concat(fields.drop(1)) if fields.first == "options"
-          end
-          [nameservers.uniq.first(3), search, options]
-        rescue SystemCallError => error
-          raise DNSProjectionError, "cannot read host resolv.conf: #{error.message}"
-        end
-
-        def atomic_write(path, content, fsync:)
-          directory = File.dirname(path)
-          FileUtils.mkdir_p(directory)
-          validate_parent_path!(directory)
-          raise DNSProjectionError, "resolv.conf target must not be a symlink" if File.symlink?(path)
-
-          temporary = "#{path}.tmp-#{Process.pid}-#{SecureRandom.hex(8)}"
-          File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
-            file.write(content)
-            file.flush
-            file.fsync if fsync
-          end
-          File.rename(temporary, path)
-          directory_handle = File.open(directory, File::RDONLY)
-          directory_handle.fsync if fsync
-          true
-        ensure
-          directory_handle&.close
-          File.delete(temporary) if temporary && File.exist?(temporary)
-        end
-
-        def validate_parent_path!(directory)
-          absolute = File.expand_path(directory)
-          components = absolute.delete_prefix("/").split("/")
-          current = "/"
-          components.each do |component|
-            current = File.join(current, component)
-            raise DNSProjectionError, "resolv.conf parent path must not contain symlinks" if File.symlink?(current)
-          end
         end
       end
     end
