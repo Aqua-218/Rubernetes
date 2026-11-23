@@ -6,67 +6,140 @@ module Rubernetes
       # DELETE of a resource or a collection: delete options and preconditions,
       # graceful deletion, finalizers, and the removal itself.
       module DeleteHandler
+        UNSAFE_DELETE_OPTION = "ignoreStoreReadErrorWithClusterBreakingPotential"
+        UNSAFE_DELETE_VERB = "unsafe-delete-ignore-read-errors"
+        UNSAFE_DELETE_ANNOTATION = "apiserver.k8s.io/unsafe-delete-ignore-read-error"
+
         private
 
         def delete_response(request, route)
           namespace = storage_namespace(route, operation: :delete)
-          existing = @store.get(resource: route.resource, namespace: namespace, name: route.name)
           delete_options = delete_options_for(request)
-          expected = ensure_delete_preconditions!(request, existing, delete_options)
-          admit_mutating(request, route, "DELETE", nil, existing, namespace)
-          admit_validating(request, route, "DELETE", nil, existing, namespace)
-          if @crd_manager && crd_resource?(route.resource)
-            marked = mark_crd_terminating(route, existing, namespace)
-            schedule_crd_finalizer(metadata_value(existing, "name"))
-            return json_response(marked)
-          end
-          # A dry-run DELETE reports what would go without removing anything.
-          return json_response(deletion_status(route, existing)) if dry_run?(request) || !Array(delete_options["dryRun"]).empty?
+          return unsafe_delete_response(request, route, namespace, delete_options) if unsafe_delete?(delete_options)
 
-          pending = deferred_deletion(route, namespace, existing, delete_options)
-          return json_response(pending) if pending
-
-          existing, expected, waiting = propagate_deletion(route, namespace, existing, expected, delete_options)
-          return json_response(existing) if waiting
-
-          remove_deleted_object(route, namespace, existing, expected)
-          json_response(deletion_status(route, existing))
+          delete_member(request, route, namespace, delete_options)
         rescue MemoryStore::NotFound
-          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                     details: resource_details(route))
+          raise missing_resource(route)
+        end
+
+        # A UID-only precondition follows the same object through concurrent
+        # writes. Bind the final remove to its observed revision and check the
+        # UID again after a conflict so a replacement cannot be removed.
+        def delete_member(request, route, namespace, options, collection: false)
+          attempts = 0
+          begin
+            attempts += 1
+            existing = @store.get(resource: route.resource, namespace: namespace, name: route.name)
+            expected = ensure_delete_preconditions!(request, existing, options, collection: collection)
+            uid_only = !options.dig("preconditions", "uid").nil? && expected.to_s.empty?
+            expected = metadata_value(existing, "resourceVersion") if uid_only
+            delete_existing(request, route, namespace, existing, options, expected, uid_only: uid_only)
+          rescue MemoryStore::Conflict
+            retry if uid_only && attempts < MARK_DELETION_ATTEMPTS
+
+            raise
+          end
+        end
+
+        def delete_existing(request, route, namespace, existing, options, expected, uid_only:)
+          preview = Array(options["dryRun"]).include?("All")
+          admit_mutating(request, route, "DELETE", nil, existing, namespace, dry_run: preview)
+          admit_validating(request, route, "DELETE", nil, existing, namespace, dry_run: preview)
+          pending_status = options["orphanDependents"] == false ? 202 : 200
+          if @crd_manager && crd_resource?(route.resource) && !metadata_value(existing, "deletionTimestamp")
+            marked = mark_crd_terminating(route, existing, namespace, dry_run: preview)
+            schedule_crd_finalizer(route.name) unless preview
+            return json_response(marked, status: pending_status)
+          end
+
+          newly_deleting = !metadata_value(existing, "deletionTimestamp")
+          existing, pending = prepare_deletion(route, namespace, existing, options, dry_run: preview, expected: expected)
+          if pending
+            process_gc_dependents(route, namespace, existing) if newly_deleting && !preview
+            return json_response(existing, status: pending_status)
+          end
+          return json_response(deleted_view(route, existing)) if preview
+
+          expected = repin_after_mark(expected, existing)
+          existing, expected = propagate_background_deletion(route, namespace, existing, expected)
+
+          removed = remove_deleted_object(route, namespace, existing, expected, uid_only: uid_only)
+          json_response(deleted_view(route, removed, from_storage: true))
         end
 
         def delete_collection_response(request, route)
+          options = delete_options_for(request)
+          raise invalid_unsafe_delete("is not allowed with DELETECOLLECTION, try again after removing the option") if unsafe_delete?(options)
+
           namespace = storage_namespace(route, operation: :list)
           selectors = selectors_from(request)
-          result = @store.list(resource: route.resource, namespace: namespace, selectors: selectors)
-          deleted = []
+          validate_list_options!(request)
+          result = list_page(request, route, namespace, selectors)
           result.items.each do |object|
-            name = metadata_value(object, "name")
+            member = route.dup
+            member.name = metadata_value(object, "name")
+            member_namespace = route.resource.namespaced? ? metadata_value(object, "namespace") : namespace
             begin
-              admit_mutating(request, route, "DELETE", nil, object, namespace, name: name)
-              admit_validating(request, route, "DELETE", nil, object, namespace, name: name)
-              deleted << delete_one(route.resource, namespace, name, object, pin_version: false)
+              delete_member(request, member, member_namespace, options, collection: true)
             rescue MemoryStore::NotFound
-              # A concurrent delete has already achieved the requested state.
+              # A concurrent delete has already removed this member.
             end
           end
-          json_response(Status.success(
-            message: "deleted #{deleted.length} #{route.resource.resource}",
-            details: {"group" => route.resource.group, "kind" => route.resource.kind,
-                      "names" => deleted.map { |object| metadata_value(object, "name") }}
-          ))
+          json_response(list_payload(route, result, selectors))
+        end
+
+        def unsafe_delete?(options)
+          return false unless feature_gate_enabled?("AllowUnsafeMalformedObjectDeletion")
+
+          value = options[UNSAFE_DELETE_OPTION]
+          raise Status::BadRequest.new("#{UNSAFE_DELETE_OPTION} must be a boolean") if !value.nil? && value != true && value != false
+
+          value == true
+        end
+
+        def unsafe_delete_response(request, route, namespace, options)
+          conflicts = %w[propagationPolicy orphanDependents gracePeriodSeconds preconditions].reject { |key| options[key].nil? }
+          conflicts << "dryRun" unless Array(options["dryRun"]).empty?
+          conflicts << "resourceVersion" unless query(request, "resourceVersion").to_s.empty?
+          raise invalid_unsafe_delete(conflicts.map { |field| "cannot be set together with .#{field}" }) unless conflicts.empty?
+
+          Thread.current[AUDIT_KEY]&.annotate(UNSAFE_DELETE_ANNOTATION, "")
+          authorize_unsafe_delete!(request)
+          @store.delete_corrupt(resource: route.resource, namespace: namespace, name: route.name)
+          json_response(Status.success(details: resource_details(route)))
+        rescue Rubernetes::Storage::ObjectNotCorrupt
+          raise invalid_unsafe_delete("is exclusively used to delete corrupt object(s), try again by removing this option", route: route)
+        end
+
+        def authorize_unsafe_delete!(request)
+          attributes = request.attributes
+          authorizer = @security&.authorizer
+          decision = if authorizer && attributes&.resource_request? && attributes.subresource.empty?
+                       best_effort { authorizer.authorize(attributes.with_verb(UNSAFE_DELETE_VERB)) }
+                     end
+          return if decision&.allowed?
+
+          raise Status::Forbidden.new(%(not permitted to do "#{UNSAFE_DELETE_VERB}" on this resource))
+        end
+
+        def invalid_unsafe_delete(messages, route: nil)
+          details = route ? resource_details(route).merge("name" => route.name) : {"group" => "meta.k8s.io", "kind" => "DeleteOptions"}
+          causes = Array(messages).map do |message|
+            {"reason" => "FieldValueInvalid", "field" => UNSAFE_DELETE_OPTION, "message" => "Invalid value: true: #{message}"}
+          end
+          message = causes.map { |cause| "#{cause.fetch("field")}: #{cause.fetch("message")}" }.join(", ")
+          Status::Invalid.new(message, details: details.merge("causes" => causes))
         end
 
         # The resourceVersion and UID preconditions of the query string and
         # DeleteOptions.  Returns the resourceVersion the client pinned, if any.
-        def ensure_delete_preconditions!(request, existing, delete_options)
+        def ensure_delete_preconditions!(request, existing, delete_options, collection:)
           preconditions = hash_value(delete_options, "preconditions")
-          expected = query(request, "resourceVersion")
+          expected = query(request, "resourceVersion") unless collection
           expected = hash_value(preconditions, "resourceVersion") if expected.to_s.empty?
           ensure_expected_version!(existing, expected) unless expected.to_s.empty?
           expected_uid = hash_value(preconditions, "uid")
-          unless expected_uid.to_s.empty? || expected_uid.to_s == metadata_value(existing, "uid").to_s
+          unless expected_uid.nil? || expected_uid == metadata_value(existing, "uid")
             raise Status::Conflict.new(
               "Precondition failed: UID in precondition: #{expected_uid}, " \
               "UID in object meta: #{metadata_value(existing, "uid")}"
@@ -75,44 +148,93 @@ module Rubernetes
           expected
         end
 
-        def deletion_status(route, existing)
+        # Registry stores with ReturnDeletedObject set return the removed API
+        # object even for an immediate delete. Other stores return a Status.
+        RETURN_DELETED_OBJECT = {
+          "" => %w[namespaces persistentvolumeclaims persistentvolumes pods podtemplates resourcequotas serviceaccounts services],
+          "resource.k8s.io" => %w[deviceclasses devicetaintrules resourceclaims resourceclaimtemplates resourcepoolstatusrequests resourceslices],
+          "storage.k8s.io" => %w[csidrivers csinodes storageclasses volumeattachments volumeattributesclasses]
+        }.freeze
+
+        def deleted_view(route, existing, from_storage: false)
+          if RETURN_DELETED_OBJECT.fetch(route.resource.group.to_s, []).include?(route.resource.resource)
+            return from_storage ? @store.convert_out(route.resource, existing) : existing
+          end
+
           Status.success(details: resource_details(route).merge("uid" => metadata_value(existing, "uid").to_s))
         end
 
-        # Graceful deletion (registry/core/pod/strategy.go#CheckGracefulDelete):
-        # a scheduled, non-terminal Pod is not removed on DELETE.  Its
-        # deletionTimestamp and deletionGracePeriodSeconds are set, the kubelet
-        # stops the containers, and only then is the object removed -- which is
-        # why the DELETED watch event carries a deletionTimestamp, as
-        # "[sig-node] Pods should be submitted and removed" requires
-        # (pods.go:333).  Deleting the object outright skipped all of that.
-        #
-        # An object with finalizers is likewise only marked.  Returns the
-        # object a DELETE that does not remove it yet answers with, nil when
-        # it is to be removed now.
-        def deferred_deletion(route, namespace, existing, delete_options)
-          grace = graceful_deletion_seconds(route.resource, existing, delete_options)
-          if grace&.positive? && !metadata_value(existing, "deletionTimestamp")
-            object = deep_copy(existing)
-            object["metadata"]["deletionTimestamp"] = (@clock.call.utc + grace).iso8601(6)
-            object["metadata"]["deletionGracePeriodSeconds"] = grace
-            bump_pod_generation_on_delete(route.resource, object)
-            return marked_for_deletion(route, namespace, object, existing)
+        # The registry's two phases are visible to both ordinary and dry-run
+        # clients. A force delete still returns the newly marked Pod.
+        def prepare_deletion(route, namespace, existing, options, dry_run:, expected:)
+          attempts = 0
+          original_uid = metadata_value(existing, "uid")
+          begin
+            attempts += 1
+            candidate, pending = deletion_state(route.resource, existing, options)
+            return [candidate, pending] if dry_run || candidate.equal?(existing)
+
+            updated = @store.update(resource: route.resource, namespace: namespace, name: route.name, object: candidate,
+                                    resource_version: metadata_value(existing, "resourceVersion"))
+            after_commit(route.resource, updated)
+            [updated, pending]
+          rescue MemoryStore::Conflict
+            raise if attempts >= MARK_DELETION_ATTEMPTS || !expected.to_s.empty?
+
+            existing = @store.get(resource: route.resource, namespace: namespace, name: route.name)
+            raise Status::Conflict.new("object was replaced during deletion") unless metadata_value(existing, "uid") == original_uid
+
+            retry
           end
-
-          return nil unless blocking_finalizers(route.resource, existing).any?
-          return existing if metadata_value(existing, "deletionTimestamp")
-
-          object = deep_copy(existing)
-          object["metadata"]["deletionTimestamp"] ||= @clock.call.utc.iso8601(6)
-          object["status"] = (object["status"] || {}).merge("phase" => "Terminating") if namespace_resource?(route.resource)
-          marked_for_deletion(route, namespace, object, existing)
         end
 
-        def marked_for_deletion(route, namespace, object, existing)
-          updated = mark_for_deletion_with_retry(route, namespace, object, existing)
-          after_commit(route.resource, updated)
-          updated
+        def deletion_state(resource, existing, options)
+          existing = with_gc_finalizers(resource, existing, options) unless metadata_value(existing, "deletionTimestamp")
+          protected = blocking_finalizers(resource, existing).any?
+          if GRACEFUL_DELETION_KINDS.include?(resource.kind.to_s) && resource.group.to_s.empty?
+            object, waiting = pod_deletion_state(resource, existing, options)
+            return [object, waiting || protected]
+          end
+          return [existing, false] unless protected
+          return [existing, true] if metadata_value(existing, "deletionTimestamp")
+
+          object = deep_copy(existing)
+          metadata = object.fetch("metadata")
+          metadata["deletionTimestamp"] = @clock.call.utc.iso8601
+          if namespace_resource?(resource)
+            object["status"] = (object["status"] || {}).merge("phase" => "Terminating")
+          else
+            metadata["deletionGracePeriodSeconds"] = 0
+            metadata["generation"] += 1 if metadata["generation"].to_i.positive?
+          end
+          [object, true]
+        end
+
+        def pod_deletion_state(resource, existing, options)
+          now = @clock.call.utc
+          timestamp = metadata_value(existing, "deletionTimestamp")
+          if timestamp
+            original = metadata_value(existing, "deletionGracePeriodSeconds").to_i
+            return [existing, false] if original.zero?
+
+            requested = options["gracePeriodSeconds"]
+            return [existing, true] if requested.nil? || requested >= original
+
+            period = requested.negative? ? 1 : requested
+            deadline = Time.iso8601(timestamp) - original + period
+            if deadline < now
+              deadline = now
+              period = 1 if period.positive?
+            end
+          else
+            period = graceful_deletion_seconds(resource, existing, options)
+            deadline = now + period
+          end
+          object = deep_copy(existing)
+          object["metadata"]["deletionTimestamp"] = deadline.iso8601
+          object["metadata"]["deletionGracePeriodSeconds"] = period
+          bump_pod_generation_on_delete(resource, object) unless timestamp
+          [object, period.positive?]
         end
 
         # Upstream pins the stored resourceVersion ONLY when the client sent
@@ -122,21 +244,36 @@ module Rubernetes
         # controller is writing, a Pod whose status the kubelet is writing --
         # into "expected resourceVersion N, current is M", which is not an
         # error the client can act on and which no upstream cluster returns.
-        def remove_deleted_object(route, namespace, existing, expected)
+        def remove_deleted_object(route, namespace, existing, expected, uid_only: false)
+          removed = delete_pinned_object(route, namespace, existing, expected, uid_only: uid_only)
+          after_commit(route.resource, removed, deleted: true)
+          release_registry_allocations(route.resource, removed)
+          removed
+        end
+
+        def delete_pinned_object(route, namespace, existing, expected, uid_only:)
+          attempts = 0
           begin
+            attempts += 1
             @store.delete(resource: route.resource, namespace: namespace, name: route.name,
                           resource_version: expected.to_s.empty? ? nil : expected)
-          rescue MemoryStore::NotFound
-            # Once marked as being deleted (before its dependents were
-            # released or removed), the object has a deletionTimestamp and no
-            # finalizers, so the next write to it -- its own controller's status
-            # update, typically -- completes the removal.  This request asked
-            # for exactly that; reporting 404 for it made the client believe the
-            # delete failed ("failed to delete the rc: ... not found").
-            raise unless metadata_value(existing, "deletionTimestamp")
+          rescue MemoryStore::Conflict
+            raise unless uid_only && metadata_value(existing, "deletionTimestamp") && attempts < MARK_DELETION_ATTEMPTS
+
+            current = @store.get(resource: route.resource, namespace: namespace, name: route.name)
+            raise unless metadata_value(current, "uid") == metadata_value(existing, "uid") && blocking_finalizers(route.resource, current).empty?
+
+            expected = metadata_value(current, "resourceVersion")
+            retry
           end
-          after_commit(route.resource, existing, deleted: true)
-          release_registry_allocations(route.resource, existing)
+        rescue MemoryStore::NotFound
+          # A status write can move the revision and then finish removing
+          # the marked owner before this request re-reads it. The original
+          # deletion has completed, even when the first storage attempt
+          # reported a conflict rather than NotFound.
+          raise unless metadata_value(existing, "deletionTimestamp")
+
+          existing
         end
 
         # DeleteOptions as the client sent them.  A body wins; a DELETE without
@@ -149,28 +286,72 @@ module Rubernetes
         DELETE_OPTION_PARAMETERS = %w[gracePeriodSeconds propagationPolicy orphanDependents dryRun].freeze
 
         def delete_options_for(request)
-          # A body or a parameter that cannot be decoded leaves the DELETE
-          # without any options.
-          best_effort { decoded_delete_options(request) } || {}
+          options = if request.body.nil? || request.body == ""
+                      delete_query_options(request)
+                    else
+                      body = request_body(request)
+                      raise Status::BadRequest.new("request body must be a DeleteOptions object") unless body.is_a?(Hash)
+
+                      stringify_keys(body)
+                    end
+          options.delete(UNSAFE_DELETE_OPTION) unless feature_gate_enabled?("AllowUnsafeMalformedObjectDeletion")
+          validate_delete_options!(options)
+          options
         end
 
-        def decoded_delete_options(request)
-          body = request_body(request)
-          options = body.is_a?(Hash) ? stringify_keys(body) : {}
-          DELETE_OPTION_PARAMETERS.each do |name|
-            next if options.key?(name)
+        def validate_delete_options!(options)
+          validate_delete_option_types!(options)
+          issues = Schema::KubernetesValidator.delete_options_errors(options)
+          invalid_write_options!("DeleteOptions", issues.map { |issue| delete_options_cause(options, issue) })
+        end
 
+        def validate_delete_option_types!(options)
+          version = options["apiVersion"]
+          raise Status::BadRequest.new("apiVersion must be a string") unless version.nil? || version.is_a?(String)
+
+          kind = options["kind"]
+          raise Status::BadRequest.new("decoded object cannot be converted to DeleteOptions") unless kind.nil? || kind == "" || kind == "DeleteOptions"
+
+          dry_run = options["dryRun"]
+          raise Status::BadRequest.new("dryRun must be an array of strings") unless dry_run.nil? || (dry_run.is_a?(Array) && dry_run.all?(String))
+
+          policy = options["propagationPolicy"]
+          raise Status::BadRequest.new("propagationPolicy must be a string") unless policy.nil? || policy.is_a?(String)
+
+          grace = options["gracePeriodSeconds"]
+          unless grace.nil? || (grace.is_a?(Integer) && grace.between?(-(2**63), (2**63) - 1))
+            raise Status::BadRequest.new("gracePeriodSeconds must be an int64")
+          end
+
+          orphan = options["orphanDependents"]
+          raise Status::BadRequest.new("orphanDependents must be a boolean") unless [nil, true, false].include?(orphan)
+
+          preconditions = options["preconditions"]
+          return if preconditions.nil?
+          return if preconditions.is_a?(Hash) && preconditions.values_at("uid", "resourceVersion").all? { |value| value.nil? || value.is_a?(String) }
+
+          raise Status::BadRequest.new("preconditions must be an object with string uid and resourceVersion")
+        end
+
+        def delete_query_options(request)
+          parameters = DELETE_OPTION_PARAMETERS
+          parameters = [*parameters, UNSAFE_DELETE_OPTION] if feature_gate_enabled?("AllowUnsafeMalformedObjectDeletion")
+          parameters.each_with_object({}) do |name, options|
             value = query(request, name)
-            next if value.nil? || value.to_s.empty?
+            next if value.nil?
 
             options[name] = case name
-                            when "gracePeriodSeconds" then Integer(value)
-                            when "orphanDependents" then %w[true 1].include?(value.to_s.downcase)
-                            when "dryRun" then value.to_s.split(",")
+                            when "gracePeriodSeconds" then Integer(value, 10)
+                            when "orphanDependents", UNSAFE_DELETE_OPTION
+                              raise Status::BadRequest.new("#{name} must be a boolean") unless WriteOptions::GO_BOOLS.include?(value.to_s)
+
+                              %w[1 t true].include?(value.to_s.downcase)
+                            when "dryRun" then Array(request.query_values(name))
                             else value.to_s
                             end
           end
-          options
+        rescue ArgumentError
+          raise Status::BadRequest.new("gracePeriodSeconds must be an integer")
         end
 
         # nil when the kind has no graceful deletion at all; otherwise the number
@@ -182,14 +363,14 @@ module Rubernetes
 
           requested = hash_value(options, "gracePeriodSeconds")
           period = if requested.nil?
-                     value = Controller::Support.value(Controller::Support.spec(existing), "terminationGracePeriodSeconds", nil)
+                     value = existing.dig("spec", "terminationGracePeriodSeconds")
                      value.nil? ? 0 : Integer(value)
                    else
                      Integer(requested)
                    end
           # An unscheduled or already terminal Pod goes immediately.
-          period = 0 if Controller::Support.value(Controller::Support.spec(existing), "nodeName", "").to_s.empty?
-          phase = Controller::Support.value(Controller::Support.status(existing), "phase", "").to_s
+          period = 0 if existing.dig("spec", "nodeName").to_s.empty?
+          phase = existing.dig("status", "phase").to_s
           period = 0 if %w[Succeeded Failed].include?(phase)
           period = 1 if period.negative?
           period
@@ -202,13 +383,13 @@ module Rubernetes
         # cycle on a conflict; surfacing it would fail an ordinary DELETE.
         MARK_DELETION_ATTEMPTS = 5
 
-        def mark_owner_deleting(route, namespace, existing, finalizer: nil)
+        def mark_owner_deleting(route, namespace, existing, expected:, finalizer: nil)
           return existing if metadata_value(existing, "deletionTimestamp")
 
           object = deep_copy(existing)
           object["metadata"]["deletionTimestamp"] = @clock.call.utc.iso8601(6)
           add_finalizer(object, finalizer)
-          updated = mark_for_deletion_with_retry(route, namespace, object, existing)
+          updated = mark_for_deletion_with_retry(route, namespace, object, existing, expected: expected)
           after_commit(route.resource, updated)
           updated
         end
@@ -231,7 +412,7 @@ module Rubernetes
           object["metadata"]["finalizers"] = finalizers + [finalizer] unless finalizers.include?(finalizer)
         end
 
-        def mark_for_deletion_with_retry(route, namespace, object, existing)
+        def mark_for_deletion_with_retry(route, namespace, object, existing, expected:)
           attempts = 0
           current = existing
           candidate = object
@@ -240,9 +421,12 @@ module Rubernetes
             @store.update(resource: route.resource, namespace: namespace, name: route.name,
                           object: candidate, resource_version: metadata_value(current, "resourceVersion"))
           rescue MemoryStore::Conflict
-            raise if attempts >= MARK_DELETION_ATTEMPTS
+            # UID-pinned requests re-enter delete_member, where the UID is
+            # checked again. An explicit version is never advanced by a retry.
+            raise if attempts >= MARK_DELETION_ATTEMPTS || !expected.to_s.empty?
 
             current = @store.get(resource: route.resource, namespace: namespace, name: route.name)
+            raise Status::Conflict.new("object was replaced during deletion") unless metadata_value(current, "uid") == metadata_value(existing, "uid")
             return current if metadata_value(current, "deletionTimestamp")
 
             candidate = deep_copy(current)
@@ -318,14 +502,16 @@ module Rubernetes
         # PersistentVolumeClaim whose pvc-protection finalizer had been removed
         # stayed Terminating, and every spec that waits for one to disappear
         # timed out.
-        def finalize_object_removal(resource, namespace, updated)
-          return updated unless metadata_value(updated, "deletionTimestamp")
+        def finalize_object_removal(resource, namespace, updated, existing)
+          return updated unless metadata_value(existing, "deletionTimestamp")
+          return updated if metadata_value(existing, "deletionGracePeriodSeconds").to_i.positive?
           return updated unless blocking_finalizers(resource, updated).empty?
 
           begin
-            @store.delete(resource: resource, namespace: namespace, name: metadata_value(updated, "name"),
-                          resource_version: metadata_value(updated, "resourceVersion"))
+            removed = @store.delete(resource: resource, namespace: namespace, name: metadata_value(updated, "name"),
+                                    resource_version: metadata_value(updated, "resourceVersion"))
             after_commit(resource, updated, deleted: true)
+            release_registry_allocations(resource, removed)
           rescue MemoryStore::NotFound, MemoryStore::Conflict
             nil
           end
