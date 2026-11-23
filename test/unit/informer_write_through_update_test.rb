@@ -64,6 +64,24 @@ class InformerWriteThroughUpdateTest < Minitest::Test
     assert_equal ["7"], cached
   end
 
+  def test_namespace_status_write_preserves_the_object_while_its_spec_finalizer_remains
+    namespace = {"apiVersion" => "v1", "kind" => "Namespace",
+                 "metadata" => {"name" => "shop", "resourceVersion" => "5"},
+                 "spec" => {"finalizers" => ["kubernetes"]}}
+    @indexer.add(namespace)
+    terminating = namespace.merge("metadata" => namespace.fetch("metadata").merge(
+      "resourceVersion" => "6", "deletionTimestamp" => "2026-11-11T16:21:07Z"
+    ))
+    @cache.update(terminating)
+
+    assert_equal ["6"], cached
+
+    @cache.update(terminating.merge("metadata" => terminating.fetch("metadata").merge("resourceVersion" => "7"),
+                                    "spec" => {"finalizers" => []}))
+
+    assert_empty cached
+  end
+
   # A created object is not in the cache yet; that is what `add` is for.
   def test_a_created_object_is_still_written_through
     @cache.add(claim("5"))
