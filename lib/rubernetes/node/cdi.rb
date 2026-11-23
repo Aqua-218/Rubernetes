@@ -3,6 +3,7 @@
 require "json"
 require "psych"
 require_relative "../runtime/native/hooks"
+require_relative "cdi_device_node"
 
 module Rubernetes
   module Node
@@ -18,8 +19,8 @@ module Rubernetes
     #
     # The native runtime applies the edits through the container spec:
     # environment variables are set (replacing a value of the same name),
-    # mounts and device nodes become bind mounts of the host paths (the
-    # device node bind is what runc does in a user namespace), hooks run at
+    # mounts and device nodes become bind mounts. Fully specified CDI device
+    # nodes without a host path are staged in the Pod directory. Hooks run at
     # their OCI stage with the state on stdin (Runtime::Native::Hooks).
     module CDI
       DEFAULT_SPEC_DIRS = %w[/etc/cdi /var/run/cdi].freeze
@@ -131,7 +132,7 @@ module Rubernetes
       end
 
       # Apply +edits+ to a container definition built by ContainerSpec.
-      def apply(definition, edits)
+      def apply(definition, edits, pod_directory: nil)
         return definition if edits.nil? || edits.empty?
 
         env = Array(definition["env"]).map(&:dup)
@@ -146,21 +147,7 @@ module Rubernetes
           mounts << {"name" => "cdi-mount-#{index}", "source" => mount["hostPath"].to_s, "destination" => mount["containerPath"].to_s,
                      "readonly" => options.include?("ro"), "propagation" => "None"}
         end
-        edits.device_nodes.each_with_index do |node, index|
-          host = (node["hostPath"] || node["path"]).to_s
-          raise Error, "CDI device node #{node["path"]}: host device #{host} does not exist" unless File.exist?(host)
-
-          # Cgroup access as CDI's container-edits: the node's permissions,
-          # "rwm" when it names none; type/major/minor only when the spec
-          # gives them (fillMissingInfo stats the host path otherwise).
-          mount = {"name" => "cdi-device-#{index}", "source" => host, "destination" => node["path"].to_s,
-                   "readonly" => false, "propagation" => "None", "device" => true,
-                   "permissions" => node["permissions"].to_s.empty? ? "rwm" : node["permissions"].to_s}
-          if !node["type"].to_s.empty? && Integer(node["major"] || 0) != 0
-            mount.merge!("device_type" => node["type"].to_s, "major" => Integer(node["major"]), "minor" => Integer(node["minor"] || 0))
-          end
-          mounts << mount
-        end
+        edits.device_nodes.each_with_index { |node, index| mounts << device_mount(node, index, pod_directory) }
         definition["mounts"] = mounts
         unless edits.hooks.empty?
           begin
@@ -175,6 +162,32 @@ module Rubernetes
           context["supplementalGroups"] = (Array(context["supplementalGroups"]) + edits.additional_gids).uniq
         end
         definition
+      end
+
+      def device_mount(node, index, pod_directory)
+        destination = node["path"].to_s
+        if !destination.start_with?("/") || destination.include?("\0") || destination.split("/").include?("..") || File.expand_path(destination) == "/"
+          raise Error, "invalid CDI device node path #{destination.inspect}"
+        end
+
+        host = node["hostPath"].to_s
+        type = node["type"].to_s
+        major = Integer(node["major"] || 0)
+        minor = Integer(node["minor"] || 0)
+        if host.empty? && %w[b c].include?(type) && major.positive? && pod_directory
+          host = CDIDeviceNode.stage(pod_directory, type, major, minor, node)
+        else
+          host = destination if host.empty?
+          raise Error, "CDI device node #{destination}: host device #{host} does not exist" unless File.exist?(host)
+        end
+
+        permissions = node["permissions"].to_s
+        mount = {"name" => "cdi-device-#{index}", "source" => host, "destination" => destination,
+                 "readonly" => false, "propagation" => "None", "device" => true, "permissions" => permissions.empty? ? "rwm" : permissions}
+        mount.merge!("device_type" => type, "major" => major, "minor" => minor) unless type.empty? || major.zero?
+        mount
+      rescue ArgumentError, TypeError, SystemCallError => error
+        raise Error, "CDI device node #{destination}: #{error.message}"
       end
     end
   end
