@@ -44,18 +44,49 @@ fault-injection simulation and the M5 probes.  Apalache symbolic BMC over the
 same model at the same scope found no counterexample to depth 3; mutation
 testing on the model showed that depth is too shallow to establish the
 invariants, and the detection gaps measured at depth 8 are recorded in the
-claims' assumptions.  `M5-RAFT-LOG-MATCHING-PROOF` remains `proved` in Lean and
-is unaffected.
+claims' assumptions.
 
-`lean/RaftLog.lean` proves LogMatching for all log lengths after an accepted
-AppendEntries and that committed prefixes are never modified;
-`lean/BoundedFraming.lean` proves that the transport never allocates more than
-the frame bound; `lean/KVSequential.lean` is the executable sequential
+`lean/RaftLog.lean` proves that a contiguous AppendEntries batch on an
+uncompacted log preserves the existing LogMatching invariant and that
+successful appends preserve committed entries. The executable oracle drives
+the Ruby follower's message handler, including partial batches, heartbeats
+and conflicts. `lean/KVSequential.lean` is the executable sequential
 key/value reference used only as the linearizability oracle (design decision
 D4).  `tools/verification/kv_sequential_oracle.rb` compares the Ruby model in
 `tools/verification/linearizability.rb` with `lean --run` output on a random
-corpus before any history is judged.  None of the Lean sources use `sorry`,
-`admit` or `native_decide`.
+corpus before any history is judged.
+
+## Lean and Ruby implementation checks
+
+Run `ruby tools/milestones/m9_formal_probe.rb` to check the Lean files with
+Lean 4.16.0 and run the executable comparisons. Set `RUBERNETES_LEAN` to
+the executable if that version is installed outside the default elan location.
+
+| Source | Proven behavior | Ruby verification boundary |
+| --- | --- | --- |
+| `RaftLog.lean` | LogMatching and commit preservation for a contiguous batch | The uncompacted follower log path through `Node#handle` |
+| `Seccomp.lean` | 64-bit argument comparisons and ordered rule branches | Pinned x86_64 and aarch64 syscall tables and the emitted cBPF interpreted in Ruby |
+| `RuntimeAlgorithms.lean` | IPAM reservation and subnet disjointness, reverse rollback order, per-field identity freshness, path precedence, ancestry bounds, Filter and Score composition | Production allocator, cleanup executor, identity ledger and scheduler pipeline, plus the OverlayFS and cgroup adapter configuration |
+| `SchemaFields.lean` | Exact membership parity accepted by the semantic field-set checker | All pinned schema definitions, independently checked against emitted Ruby, RBS, codec, OpenAPI and patch artifacts |
+| `BoundedFraming.lean` | Raft and vsock payload reads stay within the validated frame length | Actual header decoding and requested lengths through instrumented Ruby IO |
+
+The Raft theorem assumes the invariant already holds for both logs and leaves
+snapshot installation and leader election to their own tests. Seccomp opcode
+layout and action encodings are covered by the interpreter comparison.
+Cgroup cap enforcement and overlay rendering rely on the Linux kernel.
+The overlay theorem models edits at a single path. Identity checks cover
+ledger-issued rotated fields. A released Pod IP can be reused under the
+network lease rules. The scheduler proof takes plugin results as inputs and
+does not cover plugin termination or randomized tie-breaking. Schema parity
+checks semantic names, including fields accessed through the generic Ruby
+accessor. The frame bound covers payload bytes and read requests.
+
+Mutation checks detected a changed committed Raft overwrite guard, missing
+seccomp accumulator reload, reuse of an unknown IPAM lease, forward rollback,
+reuse of a previously issued request ID, reversed filter rejection and ignored
+score weights, altered overlay layer order, cgroup limits written to the wrong
+level, and an off-by-one frame length check. The schema oracle also rejects
+one missing and one extra field on each of the five surfaces.
 
 `claims.yml` is the assurance-level ledger required by section 7.7.
 
