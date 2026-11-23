@@ -34,6 +34,43 @@ module Rubernetes
       attr_reader :retry_after_seconds
     end
 
+    # A particular stored object cannot be decoded. Availability failures
+    # are reported separately and never qualify for administrative deletion.
+    class CorruptObject < Error
+      def initialize(key, resource_version: nil, decode_error: true, message: nil)
+        @decode_error = decode_error
+        description = message || "Internal error occurred: StorageError: corrupt object #{key.inspect} at revision #{resource_version}"
+        super(description, status: 500, reason: "InternalError", key: key, resource_version: resource_version)
+      end
+
+      def decode_error? = @decode_error
+
+      def watch_event(revision, unreadable_delete: false)
+        details = if unreadable_delete
+                    {"reason" => "StoreReadError", "message" => "saw a DELETED event, but object data is corrupt - #{message}"}
+                  else
+                    {"reason" => reason, "message" => message}
+                  end
+        object = {"kind" => "Status", "apiVersion" => "v1", "status" => "Failure", "code" => status}.merge(details)
+        Event.new(type: "ERROR", object: object, revision: revision, key: key)
+      end
+    end
+
+    class ObjectNotCorrupt < Error; end
+
+    class ReadErrors < Error
+      attr_reader :failures
+
+      def initialize(resource, failures)
+        @failures = failures.freeze
+        causes = failures.map do |failure|
+          {"reason" => "UnexpectedServerResponse", "field" => failure.key, "message" => failure.message}
+        end
+        super("failed to read one or more #{resource} from the storage", status: 500, reason: "StoreReadError",
+                                                                         details: {"causes" => causes}, causes: causes)
+      end
+    end
+
     class NotFound < Error
       def initialize(key, message = nil)
         super(message || "resource not found: #{key}", status: 404, reason: "NotFound", key: key)
@@ -99,16 +136,23 @@ module Rubernetes
       end
     end
 
-    # Returned when a watch starts before the retained history boundary.
+    # Returned when a snapshot, watch starting revision or continue token expires.
     class Gone < Error
-      def initialize(resource_version, compacted_revision)
+      def initialize(resource_version, compacted_revision, continue_token: nil)
+        details = {"resourceVersion" => resource_version.to_s}
+        details["compactedRevision"] = compacted_revision.to_s if compacted_revision
+        details["continue"] = continue_token if continue_token
+        message = if compacted_revision
+                    "resource version #{resource_version} is no longer available; compacted through #{compacted_revision}"
+                  else
+                    "the continue token has expired; restart the list for a consistent snapshot or use the replacement continue token"
+                  end
         super(
-          "resource version #{resource_version} is no longer available; compacted through #{compacted_revision}",
+          message,
           status: 410,
           reason: "Expired",
           resource_version: resource_version,
-          details: {"resourceVersion" => resource_version.to_s,
-                    "compactedRevision" => compacted_revision.to_s}
+          details: details
         )
         @compacted_revision = compacted_revision
       end
