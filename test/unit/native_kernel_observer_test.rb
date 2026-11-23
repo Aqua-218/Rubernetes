@@ -79,6 +79,25 @@ class NativeKernelObserverTest < Minitest::Test
                  "absent evidence is not reuse evidence: the identity must be unchanged")
   end
 
+  def test_a_workspace_mount_must_match_the_claimed_holder_and_mount_id
+    mount = File.readlines("/proc/self/mountinfo").find { |line| line.split[4] == "/proc" }
+    mount_id = Integer(mount.split.first)
+    fields = File.stat("/proc")
+    workspace = path_claim("/proc", device: fields.dev, inode: fields.ino)
+    workspace["metadata"].merge!("root" => "/proc", "mounted" => true,
+                                 "mount_identity" => {"mountpoint" => "/proc", "filesystem" => "proc", "mount_id" => mount_id})
+    namespace = {"kind" => "namespace", "id" => "holder", "identity" => "holder-identity", "owner" => "op-1",
+                 "metadata" => {"kernel_identity" => {"pid" => @pid, "start_time" => @start_time,
+                                                      "namespace_links" => {"mount" => File.readlink("/proc/self/ns/mnt")}}}}
+
+    assert_equal workspace["identity"], observe([namespace, workspace]).last["identity"]
+    assert_equal true, observe([namespace, workspace]).last.dig("metadata", "live")
+
+    workspace["metadata"]["mount_identity"]["mount_id"] += 1
+
+    assert_equal true, observe([namespace, workspace]).last.dig("metadata", "identity_mismatch")
+  end
+
   def test_declares_itself_external
     assert_predicate(Observer.new(ledger: FakeLedger.new([])), :external_observer?)
   end
