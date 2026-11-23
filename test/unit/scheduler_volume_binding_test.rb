@@ -101,6 +101,34 @@ class SchedulerVolumeBindingTest < Minitest::Test
 
   def plugin(api = nil) = VB.new(api: api, sleeper: ->(_seconds) {}, bind_timeout: 5)
 
+  def test_storage_capacity_scoring_prefers_the_lower_csi_utilization_with_the_gate_enabled
+    target = pod(uses("data"))
+    pvc = claim("data", size: "2Gi")
+    nodes = [node, node("node-b", labels: {"zone" => "b"})].map do |item|
+      item.with("status" => item.status.merge("conditions" => [{"type" => "Ready", "status" => "True"}]))
+    end
+    capacities = {"a" => "2Gi", "b" => "10Gi"}.map do |zone, capacity|
+      {"storageClassName" => "wffc", "capacity" => capacity, "nodeTopology" => {"matchLabels" => {"zone" => zone}}}
+    end
+    drivers = [{"metadata" => {"name" => "csi.example.com"}, "spec" => {"storageCapacity" => true}}]
+    data = context(claims: [pvc], drivers: drivers, capacities: capacities).volume_data
+
+    [false, true].each do |enabled|
+      api = FakeAPI.new({"pod/ns/web" => target.to_h, "pvc/ns/data" => pvc}.merge(nodes.to_h { |item| ["node/#{item.name}", item.to_h] }))
+      subject = S::Framework.new(volume_binding: plugin(api), feature_gates: {"StorageCapacityScoring" => enabled})
+      result = subject.schedule(target, nodes, volume_data: data)
+
+      assert_predicate result, :scheduled?, result.inspect
+      scores = result.scores.to_h do |entry|
+        volume_score = entry.plugins.find { |score| score["plugin"] == "VolumeBinding" }
+        [entry.node.name, volume_score&.fetch("score")]
+      end
+
+      assert_equal(enabled ? {"node-a" => 0, "node-b" => 80} : {"node-a" => nil, "node-b" => nil}, scores)
+      assert_equal "node-b", result.node.name if enabled
+    end
+  end
+
   def test_prefilter_rejections
     vb = plugin
 
