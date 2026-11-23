@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../durable_process"
+
 module Rubernetes
   module Platform
     module Linux
@@ -50,7 +52,7 @@ module Rubernetes
               id: String(id).freeze, identity: String(identity).freeze, pid: clone_result.pid, pidfd: clone_result.pidfd,
               supervisor_pid: clone_result.pid, namespaces: namespaces.freeze, plan: plan, start_time: start_time,
               namespace_links: namespace_links.freeze, creation_method: "clone3", clone_flags: clone_flags,
-              user_mapping: user_mapping&.to_h
+              user_mapping: user_mapping&.to_h, commit_channel: nil
             ))
           rescue SystemCallError, UserNamespace::Error => error
             abandon_holder(clone_result)
@@ -83,6 +85,7 @@ module Rubernetes
             pipes.reader.close
             pipes.map_writer.close
             begin
+              DurableProcess.redirect_standard_io
               set_parent_death_signal(expected_parent_pid: agent.fetch(:pid),
                                       expected_parent_start_time: agent.fetch(:start_time),
                                       pid_namespace_pid1: namespaces.include?(:pid))
