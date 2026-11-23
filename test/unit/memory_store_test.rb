@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/storage/memory_store"
 require "rubernetes/api"
+require "timeout"
 
 class MemoryStoreTest < Minitest::Test
   Store = Rubernetes::Storage::MemoryStore
@@ -65,6 +66,41 @@ class MemoryStoreTest < Minitest::Test
 
     assert_equal(updated, replayed_update)
     assert_equal(2, @store.revision)
+  end
+
+  def test_migration_snapshot_blocks_uncommitted_writes_until_the_owner_resumes_them
+    created = @store.create("pods/a", object(name: "a"), request_uid: "create-a")
+    update_started = Queue.new
+    continue_update = Queue.new
+    update = Thread.new do
+      @store.guaranteed_update("pods/a", request_uid: "update-a") do |current|
+        update_started << true
+        continue_update.pop
+        current.merge("spec" => {"ready" => true})
+      end
+    rescue Rubernetes::Storage::Unavailable => error
+      error
+    end
+    update_started.pop
+
+    snapshot = @store.export_state(write_pause: "migration")
+
+    assert_equal 1, snapshot.fetch("revision")
+    assert_equal ["create-a"], snapshot.fetch("requests").keys
+    assert_equal created, @store.get("pods/a")
+    assert_raises(Rubernetes::Storage::Unavailable) { @store.export_state(write_pause: "another-migration") }
+
+    @store.resume_writes!(write_pause: "another-migration")
+    continue_update << true
+
+    assert_instance_of Rubernetes::Storage::Unavailable, update.value
+    assert_equal snapshot, @store.export_state
+
+    @store.resume_writes!(write_pause: "migration")
+
+    assert_equal "2", @store.delete("pods/a").dig("metadata", "resourceVersion")
+  ensure
+    update&.kill if update&.alive?
   end
 
   def test_list_selectors_and_continue_token_pin_a_snapshot
@@ -192,6 +228,92 @@ class MemoryStoreTest < Minitest::Test
     assert_equal(1, store.get("counter").dig("spec", "count"))
     assert_equal(2, store.revision)
     assert(results.all?(results.first))
+    assert_empty store.instance_variable_get(:@request_locks)
+  end
+
+  def test_request_locks_are_released_after_success_and_exceptions
+    @store.create("pods/a", object(name: "a"))
+    20.times do |i|
+      uid = "request-#{i}"
+      @store.guaranteed_update("pods/a", request_uid: uid) do |current|
+        uid << "-changed"
+        current
+      end
+    end
+    assert_raises(ArgumentError) do
+      @store.guaranteed_update("pods/a", request_uid: "invalid") { nil }
+    end
+    assert_empty @store.instance_variable_get(:@request_locks)
+  end
+
+  def test_update_rechecks_request_uid_when_a_different_write_commits_during_its_block
+    @store.create("pods/a", object(name: "a", spec: {"count" => 0}))
+    create_b = -> { @store.create("pods/b", object(name: "b"), request_uid: "create-b") }
+    delete_b = -> { @store.delete("pods/b", request_uid: "delete-b") }
+
+    {"create-b" => create_b, "delete-b" => delete_b}.each do |uid, write|
+      committed = nil
+      assert_raises(Rubernetes::Storage::RequestUIDConflict) do
+        @store.guaranteed_update("pods/a", request_uid: uid) do |pod|
+          committed = write.call
+          pod.merge("spec" => {"count" => 1})
+        end
+      end
+      assert_equal committed, write.call
+    end
+    assert_equal 3, @store.revision
+    assert_equal 0, @store.get("pods/a").dig("spec", "count")
+  end
+
+  def test_request_lock_handoff_preserves_a_waiting_retry_when_the_first_call_fails
+    @store.create("pods/a", object(name: "a"))
+    entered = Queue.new
+    release = Queue.new
+    retrying = Queue.new
+    calls = []
+    update = ->(&block) { @store.guaranteed_update("pods/a", request_uid: "shared", &block) }
+    first = Thread.new do
+      update.call do
+        entered << :first
+        release.pop
+        raise ArgumentError, "interrupted update"
+      end
+    rescue ArgumentError => error
+      error.message
+    end
+
+    assert_equal :first, entered.pop(timeout: 5)
+    second = Thread.new do
+      update.call do |current|
+        entered << :second
+        release.pop
+        calls << :second
+        current
+      end
+    end
+    wait_until_sleeping(second)
+    release << true
+
+    assert_equal :second, entered.pop(timeout: 5)
+    third = Thread.new do
+      retrying << true
+      update.call do |current|
+        calls << :third
+        current
+      end
+    end
+
+    assert retrying.pop(timeout: 5)
+    wait_until_sleeping(third)
+    release << true
+
+    assert_equal "interrupted update", first.value
+    assert_equal second.value, third.value
+    assert_equal [:second], calls
+    assert_empty @store.instance_variable_get(:@request_locks)
+  ensure
+    2.times { release << true }
+    [first, second, third].compact.each(&:join)
   end
 
   def test_field_selector_and_selector_transition_are_applied_to_watch
@@ -215,7 +337,11 @@ class MemoryStoreTest < Minitest::Test
       current
     end
 
-    assert_equal("DELETED", watcher.next.type)
+    removed = watcher.next
+
+    assert_equal "DELETED", removed.type
+    assert_equal @store.revision.to_s, removed.object.dig("metadata", "resourceVersion")
+    assert_equal "web", removed.object.dig("metadata", "labels", "app")
   ensure
     watcher&.close
   end
@@ -230,6 +356,37 @@ class MemoryStoreTest < Minitest::Test
 
     assert_equal(2, store.compacted_revision)
     assert_raises(Gone) { store.watch("pods/", since: 1) }
+  end
+
+  def test_compaction_after_clock_rollback_keeps_a_contiguous_window_across_restore
+    now = 1000
+    clock = -> { now }
+    store = Store.new(history_retention_policy: "compatibility", history_seconds: 300, clock: clock)
+    [1000, 1010, 900, 920].each_with_index do |timestamp, index|
+      now = timestamp
+      store.create("pods/#{index}", object(name: index.to_s))
+    end
+    restored = Store.new(history_retention_policy: "compatibility", history_seconds: 300, clock: clock)
+    restored.import_state(store.export_state)
+
+    [store, restored].each do |replica|
+      now = 1250
+      replica.create("pods/4", object(name: "4"))
+      page = replica.list("pods/", resource_version: "2", resource_version_match: "Exact")
+
+      assert_equal 0, replica.compacted_revision
+      assert_equal(%w[0 1], page.items.map { |item| item.dig("metadata", "name") })
+      watcher = replica.watch("pods/", since: 1)
+      begin
+        assert_equal [2, 3, 4, 5], Array.new(4) { watcher.next(timeout: 0)&.revision }
+      ensure
+        watcher.close
+      end
+
+      assert_equal 1, replica.compact!(now: 1310)
+      assert_equal 4, replica.compact!(now: 1311)
+      assert_raises(Gone) { replica.watch("pods/", since: 1) }
+    end
   end
 
   def test_stale_precondition_cannot_commit_after_delete_and_recreate_aba
@@ -348,6 +505,23 @@ class MemoryStoreTest < Minitest::Test
     watcher&.close
   end
 
+  def test_initial_watch_evaluates_each_live_key_once_in_order
+    %w[pods/b pods/a pods/gone other/c].each { |key| @store.create(key, object(name: key)) }
+    @store.delete("pods/gone")
+    seen = []
+    selector = lambda do |pod|
+      seen << pod.dig("metadata", "name")
+      true
+    end
+    watch = @store.watch("pods/", selector: selector)
+
+    assert_equal %w[pods/a pods/b], seen
+    assert_equal seen, watch.to_a.map(&:key)
+    watch.close
+    assert_raises(ArgumentError) { @store.watch("pods/", selector: ->(_) { raise ArgumentError, "selector failed" }) }
+    assert_equal 0, @store.watcher_count
+  end
+
   def test_watch_at_zero_replays_the_current_state_rather_than_history
     @store.create("pods/base", object(name: "base"))
     @store.update("pods/base", object(name: "base", labels: {"round" => "two"}))
@@ -446,7 +620,7 @@ class MemoryStoreTest < Minitest::Test
   # ever compacted and no continue token or watch resourceVersion ever expired.
   def test_the_time_window_compacts_even_under_a_large_revision_cap
     now = 1_000.0
-    store = Store.new(history_revisions: 100_000, history_seconds: 300, clock: -> { now })
+    store = Store.new(history_retention_policy: "compatibility", history_revisions: 100_000, history_seconds: 300, clock: -> { now })
     5.times { |index| store.create("pods/#{index}", object(name: index.to_s)) }
     page = store.list("pods/", limit: 2)
 
@@ -824,6 +998,12 @@ class MemoryStoreTest < Minitest::Test
   end
 
   private
+
+  def wait_until_sleeping(thread)
+    Timeout.timeout(5) { Thread.pass until thread.stop? }
+
+    assert_equal "sleep", thread.status
+  end
 
   def api_server(store)
     Rubernetes::API::Server.new(registry: Rubernetes::API::Registry.new, store: store)
