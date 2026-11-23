@@ -12,10 +12,22 @@
 require "open3"
 require "yaml"
 require_relative "m9_probe_support"
+require_relative "../verification/framing_oracle"
+require_relative "../verification/raft_log_oracle"
+require_relative "../verification/runtime_algorithms_oracle"
+require_relative "../verification/schema_fields_oracle"
+require_relative "../verification/seccomp_oracle"
 
 module M9FormalProbe
   S = M9ProbeSupport
   LEAN_ROOT = File.join(S::ROOT, "verification/lean")
+  LEAN_ORACLES = {
+    "framing" => FramingOracle,
+    "raft_log" => RaftLogOracle,
+    "runtime_algorithms" => RuntimeAlgorithmsOracle,
+    "schema_fields" => SchemaFieldsOracle,
+    "seccomp" => SeccompOracle
+  }.freeze
   # Escape hatches that would let a proof pass without proving anything.
   FORBIDDEN = %w[sorry admit native_decide].freeze
   # `native_decide` trusts the compiler rather than the kernel; `sorry`/`admit`
@@ -43,19 +55,22 @@ module M9FormalProbe
               "forbidden" => FORBIDDEN, "occurrences" => offenders.first(10), "count" => offenders.length}
 
     lake = File.join(S::ROOT, "verification/lean/lakefile.lean")
-    lean = ENV["RUBERNETES_LEAN"] || "/root/.elan/bin/lean"
-    if File.executable?(lean)
+    lean = LeanOracle.executable
+    version, version_error, version_status = lean_version(lean)
+    if version_status&.success? && version.start_with?("Lean (version #{LeanOracle::VERSION},")
       results = files.map do |path|
-        _out, err, status = Open3.capture3(lean, path, chdir: LEAN_ROOT)
+        out, err, status = Open3.capture3(lean, path, chdir: LEAN_ROOT)
         {"file" => path.delete_prefix("#{S::ROOT}/"), "ok" => status.success?,
-         "error" => status.success? ? nil : err.lines.first(2).join.strip}
+         "error" => status.success? ? nil : (out + err).lines.first(2).join.strip}
       end
       cases << {"id" => "lean_proofs_compile", "passed" => results.all? { |entry| entry.fetch("ok") },
                 "checked" => results.length,
                 "failures" => results.reject { |entry| entry.fetch("ok") }.first(5)}
+      cases << implementation_parity(lean)
     else
       cases << {"id" => "lean_proofs_compile", "passed" => false,
-                "detail" => "lean is not installed at #{lean}; a release cannot claim proof status without checking it"}
+                "detail" => "expected Lean #{LeanOracle::VERSION}, got #{(version + version_error).strip}"}
+      cases << {"id" => "lean_implementation_parity", "passed" => false, "detail" => "pinned Lean version unavailable"}
     end
 
     claims_path = File.join(S::ROOT, "verification/claims.yml")
@@ -71,6 +86,22 @@ module M9FormalProbe
     S.emit(S.report(kind: "m9_formal_verification", measurement_level: "integration_tested",
                     started_at: started_at, cases: cases, extra: {"lakefile" => File.file?(lake)}))
     cases.all? { |entry| entry.fetch("passed") } ? 0 : 1
+  end
+
+  def lean_version(lean)
+    Open3.capture3(lean, "--version")
+  rescue Errno::ENOENT, Errno::EACCES => error
+    ["", error.message, nil]
+  end
+
+  def implementation_parity(lean)
+    results = LEAN_ORACLES.transform_values do |oracle|
+      oracle.run(lean: lean)
+    rescue StandardError => error
+      {"passed" => false, "error" => error.message}
+    end
+    {"id" => "lean_implementation_parity", "passed" => results.values.all? { |result| result.fetch("passed") },
+     "oracles" => results}
   end
 end
 
