@@ -39,13 +39,13 @@ claims:
     tests: [test/unit/consensus_node_simulation_test.rb, tools/milestones/m5_fault_matrix_probe.rb]
     implementation: [lib/rubernetes/consensus/node.rb, lib/rubernetes/consensus/log.rb]
   - id: M5-RAFT-LOG-MATCHING-PROOF
-    subject: LogMatching holds for all log lengths after an accepted AppendEntries; committed prefixes are never modified
+    subject: An uncompacted follower preserves LogMatching with the leader after an accepted contiguous AppendEntries batch
     level: proved
-    method: Lean 4 theorems logMatching_after_append, entries_agree_after_append, committed_prefix_preserved in verification/lean/RaftLog.lean
-    assumptions: [the follower's accepted prefix equals the leader's prefix, as guaranteed by the prevLogIndex/prevLogTerm check]
+    method: Lean 4 theorems logMatching_after_append and committed_prefix_preserved in verification/lean/RaftLog.lean
+    assumptions: [the two logs already satisfy LogMatching, the leader sends a contiguous slice of its own log after a valid anchor, snapshot installation is handled separately]
     tcb: [Lean 4.16.0 kernel]
     counterexample: none
-    tests: [test/unit/consensus_log_snapshot_test.rb]
+    tests: [tools/verification/raft_log_oracle.rb, test/unit/consensus_log_snapshot_test.rb]
     implementation: [lib/rubernetes/consensus/log.rb, lib/rubernetes/consensus/node.rb]
   - id: M5-RAFT-LEADER-COMPLETENESS
     subject: Committed entries appear in every later leader's log; applied prefixes never diverge
@@ -121,13 +121,13 @@ claims:
     tests: [tools/milestones/m5_ownership_probe.rb]
     implementation: [lib/rubernetes/consensus/operation_journal.rb, lib/rubernetes/runtime/ownership.rb, lib/rubernetes/controller/effect_journal.rb, lib/rubernetes/volume/ledger.rb, lib/rubernetes/network/durable_state.rb]
   - id: M5-TRANSPORT-BOUNDED-FRAMING
-    subject: A frame length above 16 MiB is rejected before any allocation; allocations never exceed the bound
+    subject: A Raft frame length above 16 MiB is rejected before any payload read, and payload read requests and bytes remain within the bound
     level: proved
     method: Lean 4 theorems allocation_le_bound, reject_of_gt, allocate_exact, total_le in verification/lean/BoundedFraming.lean; the Ruby transport implements the same decision procedure
-    assumptions: [the Ruby Framing.read follows the modelled decision procedure (checked by test/unit/consensus_transport_test.rb)]
+    assumptions: [the IO object returns at most the requested byte count, fixed headers and Ruby allocator overhead are outside the payload budget]
     tcb: [Lean 4.16.0 kernel]
     counterexample: none
-    tests: [test/unit/consensus_transport_test.rb]
+    tests: [tools/verification/framing_oracle.rb, test/unit/consensus_transport_test.rb]
     implementation: [lib/rubernetes/consensus/transport.rb]
   - id: M5-PEER-IDENTITY
     subject: Peer identity is taken from the verified TLS certificate; a message whose payload claims another node or cluster is rejected
@@ -259,6 +259,87 @@ claims:
     counterexample: none
     tests: [test/unit/m9_gate_test.rb]
     implementation: [verification/lean]
+  - id: LEAN-SECCOMP-RULE-SEMANTICS
+    subject: Word comparisons and first-match branching preserve the result of an ordered seccomp profile
+    level: proved
+    method: Lean 4 theorems word_checks_preserve_argument_matching and compilation_preserves_ordered_rule_semantics in verification/lean/Seccomp.lean
+    assumptions: [unsigned 64-bit comparison operands, resolved syscall numbers for the active ABI, return values already encoded, compiler byte layout exercised by the differential corpus]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/seccomp_oracle.rb]
+    implementation: [lib/rubernetes/platform/linux/security.rb, lib/rubernetes/platform/linux/seccomp_profile.rb]
+  - id: LEAN-IPAM-ADDRESS-SELECTION
+    subject: First-free reservation preserves live address uniqueness in a node pool, aligned node pools are disjoint, and an old operation does not release a newer lease
+    level: proved
+    method: Lean 4 theorems reservation_preserves_uniqueness, different_node_blocks_disjoint and stale_release_preserves_current_owner in verification/lean/RuntimeAlgorithms.lean
+    assumptions: [per-family node prefixes are fixed and assigned uniquely in one allocator, serialized allocator state, IPAddr maps each numeric address to one canonical key]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/m4_network_test.rb, test/property/m4_network_property_test.rb]
+    implementation: [lib/rubernetes/network/ipam.rb]
+  - id: LEAN-ROLLBACK-ORDER
+    subject: The rollback plan contains every remaining claim in reverse acquisition order, and cleanup stops at the first failed release
+    level: proved
+    method: Lean 4 reverse-order and coverage theorems in verification/lean/RuntimeAlgorithms.lean, with differential runs checking the successful prefix before a failure
+    assumptions: [claims are uniquely sequenced in acquisition order, every dependency was acquired before its dependent resource]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/native_runtime_rollback_dependency_test.rb]
+    implementation: [lib/rubernetes/runtime/common/rollback.rb, lib/rubernetes/runtime/common/ownership.rb, lib/rubernetes/runtime/native/teardown.rb]
+  - id: LEAN-IDENTITY-ROTATED-FIELDS
+    subject: Issuance rejects a previously issued value for any tagged rotated field and retains the prior history
+    level: proved
+    method: Lean 4 theorems issued_identity_disjoint and issuance_retains_history in verification/lean/RuntimeAlgorithms.lean
+    assumptions: [the ledger provides a complete serialized history of its rotated fields, Pod IP and externally supplied secrets are outside the ledger's rotated fields]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/microvm_protocol_test.rb]
+    implementation: [lib/rubernetes/runtime/microvm/identity.rb]
+  - id: LEAN-OVERLAY-PATH-PRECEDENCE
+    subject: Pointwise composition is associative and the highest present edit or tombstone takes precedence
+    level: proved
+    method: Lean 4 theorems compose_assoc and first_edit_wins in verification/lean/RuntimeAlgorithms.lean
+    assumptions: [the kernel resolves one path against a fixed priority order, ancestor opacity and copy-up are outside this model]
+    tcb: [Lean 4.16.0 kernel, Linux OverlayFS]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/oci_puller_test.rb]
+    implementation: [lib/rubernetes/platform/linux/native_adapters/overlay_filesystem_adapter.rb]
+  - id: LEAN-CGROUP-SCALAR-LIMITS
+    subject: An effective scalar hard cap computed from a cgroup ancestry is no larger than any ancestor cap
+    level: proved
+    method: Lean 4 theorem at_most_every_ancestor in verification/lean/RuntimeAlgorithms.lean
+    assumptions: [the kernel enforces hard limits by cgroup ancestry, only scalar hard caps are modelled]
+    tcb: [Lean 4.16.0 kernel, Linux cgroup v2]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/qos_cgroup_manager_test.rb]
+    implementation: [lib/rubernetes/platform/linux/cgroup_v2.rb]
+  - id: LEAN-SCHEDULER-FILTER-SCORE-COMPOSITION
+    subject: The finite filter pipeline only accepts unanimous approval and Score gives one weighted total for fixed plugin outputs
+    level: proved
+    method: Lean 4 theorems filter_accepts_iff_all_approve and score_matches_evaluation in verification/lean/RuntimeAlgorithms.lean
+    assumptions: [plugins terminate and supply fixed outputs, equal-score node selection is a separate operation]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/runtime_algorithms_oracle.rb, test/unit/m3_scheduler_test.rb]
+    implementation: [lib/rubernetes/scheduler/framework.rb]
+  - id: LEAN-SCHEMA-FIELD-SET-CHECKER
+    subject: The checker accepts exactly the schema field sets matching each of Ruby, RBS, codec, OpenAPI and patch
+    level: proved
+    method: Lean 4 theorem check_agrees_with_all_projections in verification/lean/SchemaFields.lean and independent generated-artifact parity checks
+    assumptions: [the checker receives extracted semantic field sets, literal RBS accessor names may be mapped or omitted for reserved field names, field type and encoding invariants are outside the theorem]
+    tcb: [Lean 4.16.0 kernel, Ruby artifact extraction]
+    counterexample: none in the model
+    tests: [tools/verification/schema_fields_oracle.rb, tools/schema/field_parity.rb, test/unit/schema_generator_test.rb]
+    implementation: [tools/schema/generate.rb, tools/schema/field_parity.rb]
+  - id: LEAN-VSOCK-PAYLOAD-BOUND
+    subject: A vsock frame above 1 MiB or with an empty payload is rejected before a payload read
+    level: proved
+    method: Lean 4 vsock_allocation_le_bound in verification/lean/BoundedFraming.lean and instrumented Ruby header reads
+    assumptions: [the IO object respects requested lengths, CBOR decoder and runtime metadata allocations are outside the frame payload bound]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none in the model
+    tests: [tools/verification/framing_oracle.rb, test/unit/microvm_protocol_test.rb]
+    implementation: [lib/rubernetes/runtime/microvm/framing.rb]
   - id: TCB-KERNEL-FILESYSTEM
     subject: Correctness of the Linux kernel, the filesystem's fsync semantics and the CPU
     level: assumed_tcb
