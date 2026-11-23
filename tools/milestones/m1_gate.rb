@@ -7,11 +7,13 @@
 # schema compiler, API server, and kubectl adapters are supplied by the evidence
 # runner, which keeps this command deterministic and independent of Git metadata.
 
+require_relative "report_output"
 require "digest"
 require "json"
 require "open3"
 require "rbconfig"
 require "time"
+require_relative "m0_source_inventory"
 
 require_relative "m1_probe_support"
 
@@ -307,8 +309,8 @@ module M1Gate
       "reason" => "protocol upgrade is transport-specific"
     }
   }.freeze
-  SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
-  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
+  SOURCE_EXCLUDED_ROOTS = M0SourceInventory::EXCLUDED_ROOTS
+  SOURCE_EXCLUDED_PATTERNS = M0SourceInventory::EXCLUDED_PATTERNS
   KUBERNETES_VERSION = "v1.36.2"
   KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
   KUBE_APISERVER_IMAGE = "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8"
@@ -373,6 +375,7 @@ module M1Gate
 
       validate_manifest_shape(manifest, errors)
       artifacts = validate_entries(manifest.fetch("artifacts", []), directory, errors, "artifact")
+      MilestoneReportOutput.validate(manifest["commands"], artifacts, errors)
       subjects = validate_entries(manifest.fetch("subjects", []), directory, errors, "subject")
       artifact_index = index_artifacts(artifacts, errors)
 
@@ -2787,8 +2790,7 @@ module M1Gate
     def excluded_source_path?(path)
       return false unless path.is_a?(String)
 
-      SOURCE_EXCLUDED_ROOTS.include?(path.split("/", 2).first) ||
-        SOURCE_EXCLUDED_PATTERNS.any? { |pattern| pattern.match?(path) }
+      M0SourceInventory.excluded?(path)
     end
 
     def canonical_value(value, excluded_keys = [])
