@@ -728,7 +728,7 @@ module Rubernetes
         end
 
         def quantity_string(value)
-          Quantity.from_json(value).to_s
+          Quantity.from_json(value).to_s.encode(Encoding::UTF_8)
         rescue Quantity::ParseError => error
           raise EncodeError, error.message
         end
