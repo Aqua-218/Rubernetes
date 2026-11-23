@@ -13,6 +13,8 @@ module Rubernetes
       MIN_SHARES = 2
       MIN_MILLI_CPU_LIMIT = 10
       SHARES_PER_CPU = 1024
+      EXCLUSIVE_CPU_RESIZE = "InPlacePodVerticalScalingExclusiveCPUs"
+      EXCLUSIVE_MEMORY_RESIZE = "InPlacePodVerticalScalingExclusiveMemory"
 
       module_function
 
@@ -169,18 +171,17 @@ module Rubernetes
         end
       end
 
-      # podResizesAdmitHandler with the default gates (InPlacePodVerticalScaling
-      # and InPlacePodLevelResourcesVerticalScaling on, the Exclusive CPU /
-      # memory ones off): [reason_detail, message] for a resize that can
-      # never be applied, nil otherwise.
-      def infeasible(allocated, desired, cpu_policy:, memory_policy:)
+      # podResizesAdmitHandler keeps a Guaranteed Pod's container requests
+      # unchanged under the corresponding static policy unless its exclusive
+      # resize gate is enabled.
+      def infeasible(allocated, desired, cpu_policy:, memory_policy:, feature_gates: {})
         return nil unless ResourceHelpers.pod_qos(desired) == "Guaranteed"
 
-        if cpu_policy.to_s == "static" && container_request_changed?(allocated, desired, "cpu")
+        if feature_gates[EXCLUSIVE_CPU_RESIZE] != true && cpu_policy.to_s == "static" && container_request_changed?(allocated, desired, "cpu")
           return ["guaranteed_pod_cpu_manager_static_policy",
                   %(Resize is infeasible for Guaranteed Pods alongside CPU Manager policy "static")]
         end
-        if memory_policy.to_s == "Static" && container_request_changed?(allocated, desired, "memory")
+        if feature_gates[EXCLUSIVE_MEMORY_RESIZE] != true && memory_policy.to_s == "Static" && container_request_changed?(allocated, desired, "memory")
           return ["guaranteed_pod_memory_manager_static_policy",
                   %(Resize is infeasible for Guaranteed Pods alongside Memory Manager policy "Static")]
         end
