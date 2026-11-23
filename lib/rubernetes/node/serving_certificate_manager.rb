@@ -23,16 +23,10 @@ module Rubernetes
         @addresses = addresses
       end
 
-      def current_path
-        File.join(@cert_dir, "#{PAIR_PREFIX}-current.pem")
-      end
-
       # The key stored beside the current certificate (the pair file).
       def current_private_key
-        return nil unless File.exist?(current_path)
-
-        OpenSSL::PKey.read(File.read(current_path))
-      rescue OpenSSL::PKey::PKeyError, SystemCallError
+        OpenSSL::PKey.read(current_pair)
+      rescue OpenSSL::PKey::PKeyError, Error
         nil
       end
 
@@ -88,21 +82,6 @@ module Rubernetes
         raise Error, "the CertificateSigningRequest was created without a name" if name.empty?
 
         name
-      end
-
-      def store!(pem, key)
-        certificate = OpenSSL::X509::Certificate.new(pem)
-        raise Error, "issued certificate does not match the requested key" unless certificate.check_private_key(key)
-
-        FileUtils.mkdir_p(@cert_dir, mode: 0o700)
-        stamp = @clock.call.utc.strftime("%Y-%m-%d-%H-%M-%S")
-        path = File.join(@cert_dir, "#{PAIR_PREFIX}-#{stamp}.pem")
-        File.write(path, pem.to_s.strip + "\n" + key.private_to_pem, perm: 0o600)
-        link = File.join(@cert_dir, ".#{PAIR_PREFIX}-current.#{Process.pid}")
-        File.unlink(link) if File.symlink?(link) || File.exist?(link)
-        File.symlink(File.basename(path), link)
-        File.rename(link, current_path)
-        certificate
       end
     end
   end
