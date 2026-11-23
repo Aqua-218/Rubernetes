@@ -30,6 +30,20 @@ class StatefulSetClaimTemplateMountsTest < Minitest::Test
     assert_empty mount_causes(stateful_set(mount_name: "data"))
   end
 
+  def test_claim_template_overrides_a_same_name_volume_when_validating_the_pod
+    object = stateful_set(mount_name: "data")
+    volumes = [{"name" => "data", "emptyDir" => {}}, {"name" => "cache", "emptyDir" => {}}]
+    object.dig("spec", "template", "spec")["volumes"] = volumes
+
+    assert_empty Validation.validate("StatefulSet", object)
+    assert_equal "emptyDir", volumes.first.keys.last
+
+    volumes << {"name" => "cache", "emptyDir" => {}}
+    duplicates = Validation.validate("StatefulSet", object).select { |cause| cause.reason == "FieldValueDuplicate" }
+
+    assert_equal ["spec.template.spec.volumes[2].name"], duplicates.map(&:field)
+  end
+
   def test_a_mount_of_an_unknown_name_is_still_rejected
     causes = mount_causes(stateful_set(mount_name: "missing"))
 
