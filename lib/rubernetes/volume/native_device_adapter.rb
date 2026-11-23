@@ -11,6 +11,7 @@ require "monitor"
 require_relative "../platform/linux/error"
 require_relative "errors"
 require_relative "types"
+require_relative "native_device_adapter/mapper_nodes"
 
 module Rubernetes
   module Volume
@@ -259,6 +260,7 @@ module Rubernetes
         raise ArgumentError, "max_size_bytes exceeds the signed kernel limit" if @max_size_bytes > MAX_SIZE_BYTES
 
         @require_device_node = require_device_node == true
+        @created_mapper_nodes = {}
         @devices = {}
         @volume_devices = {}
         @mutex = Monitor.new
@@ -854,30 +856,18 @@ module Rubernetes
         end
         raise MountIdentityError, "#{label} node #{path.inspect} did not appear" if @require_device_node
 
-        create_device_node!(path, dev)
+        created = create_device_node!(path, dev)
         node_stat = @io.stat(path)
         unless node_stat.respond_to?(:rdev) && Integer(node_stat.rdev) == Integer(dev)
           raise MountIdentityError, "#{label} node #{path.inspect} does not match kernel readback"
         end
 
+        @created_mapper_nodes[path] = node_stat if created
         true
-      end
-
-      def create_device_node!(path, dev)
-        raise Unsupported, "mknod(2) binding is unavailable" unless MKNOD
-
-        mode = S_IFBLK | 0o600
-        result = MKNOD.call(Fiddle::Pointer["#{path}\0"], mode, Integer(dev))
-        errno = Fiddle.last_error
-        return true unless result == -1
-        return true if errno == Errno::EEXIST::Errno
-
-        raise Rubernetes::Platform::Linux::Error.new(errno: errno, operation: "mknod", resource_id: "linux-device:#{path}")
       end
 
       def destroy_dm(identity, identifier)
         name = identity["name"] || mapper_name(identifier)
-        identity["uuid"] || ""
         with_mapper_control do |control|
           status = begin
             verify_dm_version!(control)
@@ -885,7 +875,7 @@ module Rubernetes
             # against the readback below.
             dm_status(control, name, "")
           rescue Rubernetes::Platform::Linux::Error => error
-            return true if dm_absent_error?(error)
+            break if dm_absent_error?(error)
 
             raise
           end
@@ -897,6 +887,7 @@ module Rubernetes
 
           remove_dm(control, name, status[:uuid])
         end
+        unlink_created_mapper_node(File.join(@mapper_directory, name))
         true
       rescue Unsupported => error
         cause = error.cause
