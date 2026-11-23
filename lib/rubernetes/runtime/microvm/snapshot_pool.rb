@@ -21,14 +21,17 @@ module Rubernetes
       # verifies the digests before the VMM ever opens the files, and a
       # mismatch is SnapshotCorruption (fail-closed, nothing started).
       class SnapshotPool
+        SCHEMA_VERSION = 2
         MANIFEST = "manifest.json"
+        ARTIFACT_BINDING = "artifact-digest.json"
+        MAX_BINDING_BYTES = 512
         MEM = "mem"
         VMSTATE = "vmstate"
 
-        Base = Struct.new(:id, :runtime_class, :directory, :manifest, keyword_init: true) do
+        Base = Struct.new(:id, :runtime_class, :directory, :manifest, :artifact_binding, keyword_init: true) do
           def mem_path = File.join(directory, MEM)
           def vmstate_path = File.join(directory, VMSTATE)
-          def artifact_digest = manifest.fetch("artifact_digest")
+          def artifact_digest = manifest["artifact_digest"]
           def drive_layout = manifest.fetch("drive_layout")
           def machine = manifest.fetch("machine")
 
@@ -64,7 +67,7 @@ module Rubernetes
             File.open(path, File::RDONLY, &:fsync)
           end
           manifest = {
-            "schema_version" => 1,
+            "schema_version" => SCHEMA_VERSION,
             "id" => id,
             "runtime_class" => runtime_class,
             "created_at" => @clock.call.iso8601(6),
@@ -75,12 +78,13 @@ module Rubernetes
             "pause_ack" => pause_ack,
             "files" => {MEM => file_record(File.join(staging, MEM)), VMSTATE => file_record(File.join(staging, VMSTATE))}
           }
-          File.write(File.join(staging, MANIFEST), JSON.pretty_generate(manifest) + "\n")
-          File.open(File.join(staging, MANIFEST), File::RDONLY, &:fsync)
+          write_metadata(File.join(staging, MANIFEST), manifest)
+          write_metadata(File.join(staging, ARTIFACT_BINDING), artifact_digest)
+          File.open(staging, File::RDONLY, &:fsync)
           FileUtils.mkdir_p(File.dirname(directory), mode: 0o700)
           File.rename(staging, directory)
           File.open(File.dirname(directory), File::RDONLY, &:fsync)
-          Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest)
+          Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest, artifact_binding: artifact_digest)
         end
 
         def bases(runtime_class)
@@ -96,8 +100,14 @@ module Rubernetes
           end
         end
 
-        def latest(runtime_class)
-          bases(runtime_class).max_by { |base| base.manifest.fetch("created_at") }
+        def latest(runtime_class, artifact_digest: nil)
+          candidates = bases(runtime_class)
+          if artifact_digest
+            # A disagreement involving this release must reach verify!, so a
+            # damaged current base cannot be mistaken for an older release.
+            candidates.select! { |base| base.artifact_binding == artifact_digest || base.artifact_digest == artifact_digest }
+          end
+          candidates.max_by { |base| base.manifest.fetch("created_at") }
         end
 
         def load_base(runtime_class, id)
@@ -107,29 +117,23 @@ module Rubernetes
           raise SnapshotCorruption, "base snapshot #{id} has no manifest" unless File.file?(manifest_path)
 
           manifest = JSON.parse(File.read(manifest_path))
-          unless manifest.is_a?(Hash) && manifest["schema_version"] == 1 && manifest["files"].is_a?(Hash)
+          unless manifest.is_a?(Hash) && [1, SCHEMA_VERSION].include?(manifest["schema_version"]) && manifest["files"].is_a?(Hash)
             raise SnapshotCorruption,
                   "base snapshot #{id} manifest is malformed"
           end
 
-          Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest)
+          Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest, artifact_binding: read_artifact_binding(directory))
         rescue JSON::ParserError => error
           raise SnapshotCorruption, "base snapshot #{id} manifest is not JSON: #{error.message}"
         end
 
-        # Full digest verification of both files against the manifest and of
-        # the artifact binding; called before every restore.
         # Full digest verification of both files against the manifest and of
         # the artifact binding; called before every restore.  A file whose
         # digest was verified in this process and whose inode, size and
         # mtime are unchanged since is not re-hashed (any write, even in
         # place, moves mtime); pass force: true to re-hash anyway.
         def verify!(base, artifact_digest:, force: false)
-          unless base.artifact_digest == artifact_digest
-            raise SnapshotCorruption,
-                  "base snapshot #{base.id} was built from artifacts #{base.artifact_digest}, current #{artifact_digest}"
-          end
-
+          verify_artifact_binding!(base, artifact_digest)
           @verified ||= {}
           [MEM, VMSTATE].each do |name|
             path = File.join(base.directory, name)
@@ -181,6 +185,39 @@ module Rubernetes
         end
 
         private
+
+        def write_metadata(path, document)
+          File.open(path, "wb") do |file|
+            file.write(JSON.pretty_generate(document) + "\n")
+            file.fsync
+          end
+        end
+
+        def read_artifact_binding(directory)
+          path = File.join(directory, ARTIFACT_BINDING)
+          bytes = File.open(path, File::RDONLY | File::NONBLOCK | File::NOFOLLOW) do |file|
+            file.read(MAX_BINDING_BYTES + 1) if file.stat.file?
+          end
+          return unless bytes && bytes.bytesize <= MAX_BINDING_BYTES
+
+          binding = JSON.parse(bytes)
+          binding if binding.is_a?(String) && !binding.empty?
+        rescue SystemCallError, JSON::ParserError
+          nil
+        end
+
+        def verify_artifact_binding!(base, expected)
+          binding = read_artifact_binding(base.directory)
+          if binding.nil? && base.manifest["schema_version"] == SCHEMA_VERSION
+            raise SnapshotCorruption, "base snapshot #{base.id} is missing its artifact binding"
+          end
+          if binding && binding != base.artifact_digest
+            raise SnapshotCorruption, "base snapshot #{base.id} manifest declares artifacts #{base.artifact_digest}, bound to #{binding}"
+          end
+          return if base.artifact_digest == expected
+
+          raise SnapshotCorruption, "base snapshot #{base.id} was built from artifacts #{base.artifact_digest}, current #{expected}"
+        end
 
         def file_record(path)
           {"sha256" => self.class.file_digest(path), "bytes" => File.size(path)}
