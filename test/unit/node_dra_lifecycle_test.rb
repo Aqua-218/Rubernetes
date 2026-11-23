@@ -65,12 +65,6 @@ class NodeDRALifecycleTest < Minitest::Test
     def allocated_resources_status(_pod, _container) = []
   end
 
-  # A ContainerSpec stand-in: the definition as the runtime spec.
-  class Spec
-    def build(container:, **) = Marshal.load(Marshal.dump(container)).merge("env" => [], "mounts" => [])
-    def pod_hostname(pod) = pod.dig("metadata", "name")
-  end
-
   class Sink
     attr_reader :events
 
@@ -91,7 +85,8 @@ class NodeDRALifecycleTest < Minitest::Test
     ))
     @runtime = Runtime.new
     @dra = DRA.new(@runtime)
-    @lifecycle = Rubernetes::Node::Lifecycle.new(runtime: @runtime, sleeper: ->(_) {}, container_spec: Spec.new, dra_manager: @dra,
+    spec = Rubernetes::Node::ContainerSpec.new(swap_controller: false)
+    @lifecycle = Rubernetes::Node::Lifecycle.new(runtime: @runtime, sleeper: ->(_) {}, container_spec: spec, dra_manager: @dra,
                                                  cdi_spec_dirs: [File.join(@dir, "cdi")])
   end
 
@@ -110,15 +105,32 @@ class NodeDRALifecycleTest < Minitest::Test
     assert_equal :prepare, @runtime.calls.first
     assert_equal :sandbox, @runtime.calls[1], "prepared before the sandbox"
     app = @runtime.specs.fetch("app")
+    app_environment = app.fetch("env").last(3).map { |entry| entry.values_at("name", "value") }
+    plain_environment = @runtime.specs.fetch("plain").fetch("env").map { |entry| entry.fetch("name") }
 
-    assert_equal [{"name" => "VENDOR", "value" => "example"}, {"name" => "GPU", "value" => "gpu-0"}], app["env"]
+    assert_equal [["VENDOR", "example"], ["GPU", "gpu-0"], ["HOME", "/"]], app_environment
     assert_equal [{"name" => "cdi-mount-0", "source" => @dir, "destination" => "/opt/gpu", "readonly" => true, "propagation" => "None"}],
                  app["mounts"]
-    assert_empty @runtime.specs.fetch("plain")["env"], "a container that names no claim gets nothing"
+    assert_equal %w[HOSTNAME HOME], plain_environment
 
     @lifecycle.terminate(pod)
 
     assert_equal [[:prepare, "p"], [:unprepare, "p"]], @dra.calls
+  end
+
+  def test_a_cdi_home_keeps_its_value_and_order_in_the_final_environment
+    cdi_path = File.join(@dir, "cdi", "gpu.json")
+    device = JSON.parse(File.read(cdi_path))
+    device.fetch("devices").first.fetch("containerEdits").fetch("env").push("HOME=/from-cdi", "MARKER=last")
+    File.write(cdi_path, JSON.generate(device))
+    workload = pod
+    workload.dig("spec", "containers", 0)["env"] = [{"name" => "HOME", "value" => "/from-pod"}]
+    @lifecycle.start(workload)
+
+    env = @runtime.specs.fetch("app").fetch("env").map { |entry| entry.values_at("name", "value") }
+
+    assert_equal [["HOME", "/from-cdi"], ["MARKER", "last"]], env.last(2)
+    assert_equal(1, env.count { |name, _value| name == "HOME" })
   end
 
   def test_a_preparation_failure_keeps_the_pod_creating_and_is_reported
