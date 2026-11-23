@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: curl
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+spec:
+  selector:
+    app: httpbin
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        istio.io/rev: default
+    spec:
+      serviceAccountName: httpbin
+      containers:
+        - name: httpbin
+          image: docker.io/mccutchen/go-httpbin:v2.15.0@sha256:24528cf5229d0b70065ac27e6c9e4d96f5452a84a3ce4433e56573c18d96827a
+          ports:
+            - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: curl
+  template:
+    metadata:
+      labels:
+        app: curl
+        istio.io/rev: default
+    spec:
+      serviceAccountName: curl
+      containers:
+        - name: curl
+          image: docker.io/curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+          command: [/bin/sleep, infinity]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: k6-plaintext
+  labels:
+    sidecar.istio.io/inject: "false"
+spec:
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: curl
+      image: docker.io/curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+      command: [/bin/sleep, infinity]
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: k6-strict
+spec:
+  mtls:
+    mode: STRICT
