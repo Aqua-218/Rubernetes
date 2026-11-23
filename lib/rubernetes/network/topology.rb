@@ -211,8 +211,14 @@ module Rubernetes
         # deriving it from the bare peer name breaks the moment the id is
         # scoped, and the plan then tries to read the state of an interface it
         # has not created yet.
+        # The host end gets its address from us at creation.  Left to the
+        # kernel it is random, and udev's MACAddressPolicy=persistent rewrites
+        # a random address moments later: the link's recorded identity then
+        # no longer matched the device, and an agent restarted next to its
+        # running Pods could not confirm any of their attachments.
         operations << op("link_add", "link:#{host_ifname}", "#{host_ifname}:#{id}", "name" => host_ifname, "kind" => "veth",
                                                                                     "peer" => pod_ifname, "peer_resource" => pod_link_resource,
+                                                                                    "address" => default_host_mac(id),
                                                                                     "mtu" => effective_mtu, **namespace_options)
         operations << op("link_set", "link:#{host_ifname}", "#{host_ifname}:#{id}", "name" => host_ifname,
                                                                                     "master" => bridge, "up" => true, "bridge_hairpin" => true)
@@ -581,6 +587,12 @@ module Rubernetes
       # whole id keeps the name short, stable for a given sandbox, and distinct.
       def default_host_ifname(id)
         "veth#{Digest::SHA256.hexdigest(String(id))[0, 10]}"
+      end
+
+      # Locally administered, unicast, and stable for a given sandbox.
+      def default_host_mac(id)
+        digest = Digest::SHA256.digest(String(id)).bytes.first(5)
+        ([0x02] + digest).map { |byte| format("%02x", byte) }.join(":")
       end
 
       def valid_ifname(value)
