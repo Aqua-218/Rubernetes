@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../../dra/legacy_device_request"
+require_relative "../declarative_rules"
+
 module Rubernetes
   module Schema
     # resource.k8s.io ResourceClaim and ResourceClaimTemplate specs
@@ -74,10 +77,8 @@ module Rubernetes
 
         # v1beta1 carries the exact request fields inline on the request;
         # conversion materializes Exactly when any of them is set.
-        inline = request.select do |key, _value|
-          %w[deviceClassName selectors allocationMode count adminAccess tolerations capacity].include?(key.to_s)
-        end
-        inline.empty? ? nil : inline
+        inline = request.transform_keys(&:to_s).slice(*DRA::LegacyDeviceRequest::FIELDS)
+        inline if DRA::LegacyDeviceRequest.fields_set?(inline)
       end
 
       def dra_subrequest_list_errors(first_available, path)
@@ -143,8 +144,10 @@ module Rubernetes
         parts = name.split("/", -1)
         return [issue(path, :invalid, "a fully qualified name must be a domain and a name separated by a slash")] unless parts.length == 2
 
-        issues = invalid_messages(path, dns1123_subdomain_messages(parts[0]))
-        issues.concat(invalid_messages(path, dns1123_label_messages(parts[1])))
+        domain, identifier = parts
+        issues = invalid_messages(path, dns1123_subdomain_messages(domain))
+        issues << issue(path, :too_long, "may not be more than 32 bytes") if identifier.bytesize > 32
+        issues << issue(path, :invalid, DeclarativeRules::C_IDENTIFIER_MESSAGE) unless identifier.match?(DeclarativeRules::C_IDENTIFIER)
         issues
       end
 
