@@ -4,6 +4,7 @@ require "fileutils"
 require "tmpdir"
 require_relative "../test_helper"
 require "rubernetes/node"
+require "rubernetes/schema"
 
 # Two Beta (default-on) kubelet features the node ignored:
 # EnvFiles -- env[].valueFrom.fileKeyRef reads a variable from a file in a Pod
@@ -34,6 +35,38 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
     Array(built["env"] || built["environment"]).to_h { |entry| [entry["name"], entry["value"]] }
   end
 
+  def test_an_empty_argv_override_keeps_both_native_image_defaults
+    image = {"entrypoint" => ["/bin/entry"], "cmd" => ["default-arg"]}
+    container = {"name" => "app", "image" => "x", "command" => [], "args" => []}
+    result = @spec.build(pod: pod, container: container, category: :application, resolved_image: image)
+
+    assert_equal ["/bin/entry", "default-arg"], result.fetch("command")
+  end
+
+  def test_default_command_is_used_when_the_image_clears_its_entrypoint
+    image = {"entrypoint" => [""], "cmd" => ["/bin/app", "default-arg"]}
+    container = {"name" => "app", "image" => "x"}
+    result = @spec.build(pod: pod, container: container, category: :application, resolved_image: image)
+
+    assert_equal ["/bin/app", "default-arg"], result.fetch("command")
+  end
+
+  def test_argv_expansion_uses_pod_values_before_runtime_adds_image_env_and_hostname
+    image = {"entrypoint" => ["/bin/entry"], "env" => {"IMAGE_ONLY" => "runtime-image-value"}}
+    values = ["$(SET)", "$$(SET)", "$(IMAGE_ONLY)", "$(HOSTNAME)", "$(MISSING)", "$(PARTIAL"]
+    expected = ["pod-value", "$(SET)", "$(IMAGE_ONLY)", "declared-host", "$(MISSING)", "$(PARTIAL"]
+    container = {"name" => "app", "image" => "x", "args" => values,
+                 "env" => [{"name" => "SET", "value" => "pod-value"}, {"name" => "HOSTNAME", "value" => "declared-host"}]}
+    native = @spec.build(pod: pod, container: container, category: :application, resolved_image: image)
+    cri = @spec.build(pod: pod, container: container, category: :init, resolved_image: image, resolve_image_command: false)
+    env = native.fetch("env").to_h { |entry| entry.values_at("name", "value") }
+
+    assert_equal ["/bin/entry", *expected], native.fetch("command")
+    assert_empty cri.fetch("command")
+    assert_equal expected, cri.fetch("args")
+    assert_equal %w[runtime-image-value web-0], env.values_at("IMAGE_ONLY", "HOSTNAME")
+  end
+
   def file_ref(key, path: "vars.env", volume: "config", optional: nil)
     reference = {"volumeName" => volume, "path" => path, "key" => key}
     reference["optional"] = optional unless optional.nil?
@@ -53,6 +86,22 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
     error = assert_raises(Node::ContainerSpec::ConfigError) { environment([file_ref("ABSENT")]) }
     assert_match(/environment variable key "ABSENT" not found in file/, error.message)
     refute environment([file_ref("ABSENT", optional: true)]).key?("ABSENT")
+  end
+
+  def test_the_api_requires_a_file_key_reference_to_point_to_an_empty_dir
+    container = {"name" => "app", "image" => "x", "env" => [file_ref("KEY")]}
+    volume = {"name" => "config", "secret" => {"secretName" => "example"}}
+    candidate = pod("containers" => [container], "volumes" => [volume])
+    path = %w[spec containers 0 env 0 valueFrom fileKeyRef volumeName]
+    validator = Rubernetes::Schema::KubernetesValidator
+    causes = validator.pod_nested_errors(candidate)
+
+    assert(causes.any? { |cause| cause.path == path && cause.message == "referenced volume must be of type emptyDir" })
+
+    volume.delete("secret")
+    volume["emptyDir"] = {}
+
+    refute(validator.pod_nested_errors(candidate).any? { |cause| cause.path == path })
   end
 
   def test_a_malformed_or_missing_file_and_an_unknown_volume_fail
@@ -134,6 +183,21 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
     hosts = files.hosts_content(overridden, pod_ips: ["10.0.0.5"], host_network: false)
 
     assert_includes hosts, "10.0.0.5\tcustom.example\n"
+  end
+
+  def test_pod_files_remain_readable_with_a_restrictive_agent_umask
+    directory = File.join(@dir, "etc")
+    pid = fork do
+      File.umask(0o077)
+      Node::PodFiles.new(cluster_dns: ["10.96.0.10"]).write(pod, directory: directory)
+    end
+    _, status = Process.wait2(pid)
+
+    assert_predicate status, :success?
+    assert_equal 0o700, File.stat(directory).mode & 0o777
+    %w[hosts hostname resolv.conf].each do |file|
+      assert_equal 0o644, File.stat(File.join(directory, file)).mode & 0o777, file
+    end
   end
 
   def test_set_hostname_as_fqdn_sets_the_uts_name_and_limits_it
