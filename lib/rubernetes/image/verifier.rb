@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 
+require_relative "../support/secure_compare"
 require_relative "digest"
 require_relative "errors"
 
@@ -44,13 +45,7 @@ module Rubernetes
         pinned.to_s
       end
 
-      def secure_compare(left, right)
-        return false unless left.bytesize == right.bytesize
-
-        result = 0
-        left.bytes.zip(right.bytes) { |a, b| result |= a ^ b }
-        result.zero?
-      end
+      def secure_compare(left, right) = SecureCompare.call(left, right)
     end
   end
 end
