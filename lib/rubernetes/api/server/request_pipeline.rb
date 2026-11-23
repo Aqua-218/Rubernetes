@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../schema/go_duration"
+
 module Rubernetes
   module API
     class Server
@@ -14,6 +16,32 @@ module Rubernetes
         # while the abandoned handler's later fate is
         # apiserver_request_post_timeout_total{source, status}.
         REQUEST_TIMEOUT_SECONDS = Float(ENV.fetch("RUBERNETES_REQUEST_TIMEOUT", "60"))
+
+        def with_request_execution(request, route, &)
+          return prepare_long_running_request(&) if long_running_request?(request, route) && feature_gate_enabled?("APIServingWithRoutine")
+
+          with_request_timeout(request, route, &)
+        end
+
+        # Like kube-apiserver's WithRoutine, the worker's preparation stack can
+        # terminate before the connection starts serving the long-lived body.
+        def prepare_long_running_request
+          parent = Thread.current
+          locals = parent.keys.to_h { |key| [key, parent[key]] }
+          response, error, returned = Thread.new do
+            Thread.current.name = "apiserver-stream-prepare"
+            locals.each { |key, value| Thread.current[key] = value }
+            begin
+              [yield, nil, REQUEST_THREAD_LOCALS.to_h { |key| [key, Thread.current[key]] }]
+            rescue Exception => failure # rubocop:disable Lint/RescueException -- re-raise on the connection thread
+              [nil, failure, REQUEST_THREAD_LOCALS.to_h { |key| [key, Thread.current[key]] }]
+            end
+          end.value
+          returned.each { |key, value| parent[key] = value }
+          raise error if error
+
+          response
+        end
 
         def with_request_timeout(request, route)
           deadline = request_timeout_seconds(request, route)
@@ -58,26 +86,25 @@ module Rubernetes
         # nil for a long-running request (watch, exec, attach, log, proxy,
         # portforward), else the effective deadline.
         def request_timeout_seconds(request, route)
-          return nil if route.nil? || watch_request?(request) || LONG_RUNNING_SUBRESOURCES.include?(route.subresource.to_s)
-          return nil unless REQUEST_TIMEOUT_SECONDS.positive?
+          return nil if long_running_request?(request, route)
 
           requested = request.query_value("timeout").to_s
           seconds = parse_go_duration_seconds(requested)
+          return nil unless REQUEST_TIMEOUT_SECONDS.positive?
+
           seconds && seconds.positive? ? [seconds, REQUEST_TIMEOUT_SECONDS].min : REQUEST_TIMEOUT_SECONDS
-        rescue StandardError
-          REQUEST_TIMEOUT_SECONDS
+        rescue Schema::GoDuration::ParseError => error
+          raise Status::BadRequest.new("invalid timeout specified in the request URL - #{error.message}")
+        end
+
+        def long_running_request?(request, route)
+          route && (route.watch_request?(request) || LONG_RUNNING_SUBRESOURCES.include?(route.subresource.to_s))
         end
 
         def parse_go_duration_seconds(text)
           return nil if text.empty?
-          return Float(text) if text.match?(/\A\d+(\.\d+)?\z/)
 
-          total = 0.0
-          text.scan(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/) do |number, unit|
-            total += Float(number) * {"ns" => 1e-9, "us" => 1e-6, "µs" => 1e-6, "ms" => 1e-3, "s" => 1.0, "m" => 60.0,
-                                      "h" => 3600.0}.fetch(unit)
-          end
-          total.positive? ? total : nil
+          Schema::GoDuration.parse(text).fdiv(Schema::GoDuration::SECOND)
         end
 
         # The transport hands in a Request or a Rack-like environment; anything
@@ -100,7 +127,7 @@ module Rubernetes
           Thread.current[REQUEST_PHASES_KEY] = {} if pattern && pattern.match?(request.path.to_s)
           response = with_request_read_barrier do
             route = catch_up_dynamic_route(request, route)
-            with_request_timeout(request, route) do
+            with_request_execution(request, route) do
               if @security
                 secured_call(request, route)
               else
@@ -179,6 +206,7 @@ module Rubernetes
           begin
             response = dispatch_secured(secured, route)
             response = response.with_header("audit-id", entry.request.request_id) if response && entry.request.request_id
+            response = attach_flow_control_headers(response, entry.ticket&.response_headers)
             response
           rescue StandardError => unexpected
             error = unexpected
@@ -187,6 +215,13 @@ module Rubernetes
             Thread.current[AUDIT_KEY] = previous_audit
             phase("security.exit") { exit_security_pipeline(entry, request, response, error) }
           end
+        end
+
+        def attach_flow_control_headers(response, headers)
+          return response unless response && headers
+
+          headers.each { |name, value| response = response.with_header(name, value) }
+          response
         end
 
         # endpoints/deprecation + installer: a request to a deprecated built-in
@@ -250,8 +285,9 @@ module Rubernetes
           if route.resource_route? && route.resource
             resource = route.resource
             target = route.subresource.to_s.empty? ? resource.resource : "#{resource.resource}/#{route.subresource}"
-            verb = Security::Authorization::Attributes.verb_for(method: request.method, collection: route.collection,
-                                                                watch: watch_request?(request), name_present: !route.name.to_s.empty?)
+            verb = forbidden.attributes&.verb || Security::Authorization::Attributes.verb_for(
+              method: request.method, collection: route.collection, watch: route.watch_request?(request), name_present: !route.name.to_s.empty?
+            )
             scope = route.namespace.to_s.empty? ? " at the cluster scope" : " in the namespace \"#{route.namespace}\""
             "#{target} is forbidden: User \"#{identity}\" cannot #{verb} resource \"#{target}\" in API group \"#{resource.group}\"#{scope}"
           else
@@ -293,9 +329,9 @@ module Rubernetes
           [nil, finalize_response(request, error_response(forbidden_status(forbidden, request, route)))]
         rescue Security::FlowControl::RejectedError => rejected
           record_request_termination(request, route, 429)
-          [nil, finalize_response(request,
-                                  error_response(Status::TooManyRequests.new("too many requests, please try again later",
-                                                                             retry_after_seconds: rejected.retry_after)))]
+          response = error_response(Status::TooManyRequests.new("too many requests, please try again later",
+                                                                retry_after_seconds: rejected.retry_after))
+          [nil, finalize_response(request, attach_flow_control_headers(response, rejected.response_headers))]
         end
 
         def forbidden_status(forbidden, request, route)
@@ -309,6 +345,9 @@ module Rubernetes
         # Routing, decode, admission and the store, for a request the pipeline
         # let in; whatever is raised becomes the Status response it describes.
         def dispatch_secured(secured, route)
+          peer_response = peer_proxy_response(secured, route)
+          return peer_response if peer_response
+
           dispatched = dispatch(secured, route)
           phase("finalize") { finalize_response(secured, dispatched, route: route) }
         rescue Status::Error => status_error
@@ -320,10 +359,37 @@ module Rubernetes
                             error_response(Status::BadRequest.new("request could not be processed: #{safe_error_message(encoding_error)}")))
         end
 
+        def peer_proxy_response(request, route)
+          return unless @peer_proxy
+
+          attributes = request.attributes
+          return unless attributes&.resource_request?
+          return if route.resource && resource_enabled?(route.resource)
+
+          group = attributes.api_group
+          version = attributes.api_version
+          return if @aggregator&.claims?(group, version)
+
+          resource = @registry.find_gvr(group: group, version: version, resource: attributes.resource)
+          return if resource && resource_enabled?(resource)
+
+          @peer_proxy.forward(request)
+        end
+
         # The audit ResponseComplete stage, with the request object as the
         # client sent it when the request was for a resource.
         def exit_security_pipeline(entry, request, response, error)
-          request_object = (safe_json(request.body) if entry.attributes.resource_request? && request.body.is_a?(String) && !request.body.empty?)
+          if entry.attributes.resource_request? && request.body.is_a?(String) && !request.body.empty?
+            media_type = request.content_type.to_s.split(";", 2).first.to_s.strip.downcase
+            request_object = if cbor_request_media_type?(media_type) && feature_gate_enabled?("CBORServingAndStorage")
+                               best_effort do
+                                 decoded = decode_cbor_body(request.body)
+                                 decoded if decoded.is_a?(Hash)
+                               end
+                             else
+                               safe_json(request.body)
+                             end
+          end
           @security.exit(entry, response, error: error, response_object: response&.body.is_a?(Hash) ? response.body : nil,
                                           request_object: request_object)
         end
