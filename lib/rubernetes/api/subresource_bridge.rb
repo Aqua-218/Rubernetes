@@ -6,6 +6,7 @@ require "digest/sha1"
 require "openssl"
 require "securerandom"
 require_relative "../security/authorization/attributes"
+require_relative "pod_log_options"
 
 module Rubernetes
   module API
@@ -129,11 +130,12 @@ module Rubernetes
         end
       end
 
-      def initialize(node_resolver: nil, authorizer: nil, trusted_mode: false,
+      def initialize(node_resolver: nil, authorizer: nil, trusted_mode: false, split_log_streams: false,
                      request_id_generator: -> { SecureRandom.uuid })
         @node_resolver = node_resolver
         @authorizer = authorizer
         @trusted_mode = !!trusted_mode
+        @split_log_streams = split_log_streams
         @request_id_generator = request_id_generator
       end
 
@@ -152,17 +154,26 @@ module Rubernetes
         identity = request.respond_to?(:identity) ? request.identity : nil
         correlation_id = request_id(request)
         authorize!(request, route, identity, correlation_id)
-        refuse_waiting_container!(pod, request) if route.subresource.to_s == "log"
-        node = resolve_node(pod, request)
         operation = route.subresource.to_s
+        if operation == "log"
+          log_stream = PodLogOptions.stream(request, route.name, enabled: @split_log_streams)
+          previous = boolean_query(request, "previous", default: false)
+          refuse_waiting_container!(pod, request) unless previous
+        end
+        node = resolve_node(pod, request)
         if DUPLEX_SUBRESOURCES.include?(operation) && upgrade_requested?(request) && node.respond_to?(:upgrade_proxy)
           return proxy_upgrade(node, operation, request)
         end
 
         service = resolve_service(node, route.subresource)
-        container_id = resolve_container_id(node, pod, request)
-        operation = route.subresource.to_s
-        result = invoke_service(service, operation, container_id, request, identity, correlation_id)
+        result = if previous && !PodLogOptions.remote_endpoint?(node)
+                   record = node_pod_record(node, pod)
+                   target = PodLogOptions.previous_target(record, node_record_containers(record), pod, request.query_value("container"))
+                   invoke_log(service, target.fetch(:id), request, identity, correlation_id, log_stream, **target.except(:id))
+                 else
+                   container_id = resolve_container_id(node, pod, request)
+                   invoke_service(service, operation, container_id, request, identity, correlation_id, log_stream: log_stream)
+                 end
         response_for(result, operation, request)
       rescue Status::Error
         raise
@@ -444,34 +455,34 @@ module Rubernetes
           return ensure_container_id(value)
         end
 
-        lifecycle = if node.respond_to?(:lifecycle)
-                      node.lifecycle
-                    elsif node.respond_to?(:node_agent) && node.node_agent.respond_to?(:lifecycle)
-                      node.node_agent.lifecycle
-                    end
-        record = lifecycle&.record(pod)
-        containers = if record.is_a?(Hash)
-                       record[:containers] || record["containers"]
-                     elsif record.respond_to?(:containers)
-                       record.containers
-                     end
-        containers = Array(containers)
+        record = node_pod_record(node, pod)
+        containers = node_record_containers(record)
         raise Status::ServiceUnavailable.new("Pod has no running container record on its node") if containers.empty?
 
-        requested_name = name.to_s
-        default_name = Array(pod.dig("spec", "containers")).first
-        default_name = default_name.is_a?(Hash) ? (default_name["name"] || default_name[:name]).to_s : ""
-        selected_name = requested_name.empty? ? default_name : requested_name
-        selected = if selected_name.empty?
-                     containers.first
-                   else
-                     containers.find { |entry| entry[:name].to_s == selected_name || entry["name"].to_s == selected_name }
-                   end
+        selected = PodLogOptions.node_container(containers, pod, name)
         raise Status::NotFound.new("container #{name.inspect} was not found in Pod") if selected.nil?
 
         ensure_container_id(selected[:id] || selected["id"])
       rescue NoMethodError
         raise Status::ServiceUnavailable.new("node endpoint cannot resolve Pod containers")
+      end
+
+      def node_pod_record(node, pod)
+        lifecycle = if node.respond_to?(:lifecycle)
+                      node.lifecycle
+                    elsif node.respond_to?(:node_agent) && node.node_agent.respond_to?(:lifecycle)
+                      node.node_agent.lifecycle
+                    end
+        lifecycle&.record(pod)
+      end
+
+      def node_record_containers(record)
+        containers = if record.is_a?(Hash)
+                       record[:containers] || record["containers"]
+                     elsif record.respond_to?(:containers)
+                       record.containers
+                     end
+        Array(containers)
       end
 
       def invoke_container_resolver(node, pod, name)
@@ -498,10 +509,10 @@ module Rubernetes
         raise Status::ServiceUnavailable.new("Pod container identity is unavailable")
       end
 
-      def invoke_service(service, operation, container_id, request, identity, correlation_id)
+      def invoke_service(service, operation, container_id, request, identity, correlation_id, log_stream: nil)
         case operation
         when "log"
-          invoke_log(service, container_id, request, identity, correlation_id)
+          invoke_log(service, container_id, request, identity, correlation_id, log_stream)
         when "exec", "attach"
           invoke_duplex(service, operation, container_id, request, identity, correlation_id)
         when "portforward"
@@ -511,17 +522,19 @@ module Rubernetes
         end
       end
 
-      def invoke_log(service, container_id, request, identity, correlation_id)
+      def invoke_log(service, container_id, request, identity, correlation_id, stream, **runtime_scope)
         callable = service.respond_to?(:logs) ? service.method(:logs) : service.method(:call)
         invoke_with_keywords(callable, [container_id], {
                                follow: boolean_query(request, "follow", default: false),
+                               previous: boolean_query(request, "previous", default: false),
                                since: log_since(request),
                                tail: request.query_value("tailLines"),
                                timestamps: boolean_query(request, "timestamps", default: false),
                                limit_bytes: request.query_value("limitBytes"),
-                               stream: normalize_log_stream(request.query_value("stream")),
+                               stream: stream,
                                request_id: correlation_id,
-                               identity: identity
+                               identity: identity,
+                               **runtime_scope
                              })
       end
 
@@ -774,22 +787,6 @@ module Rubernetes
         return false if %w[0 false no].include?(value.to_s.downcase)
 
         raise Status::BadRequest.new("query parameter #{name} must be boolean")
-      end
-
-      # PodLogOptions.Stream defaults to "All" (core/v1 types.go): a
-      # container's log is BOTH of its streams, and kubelet returns whatever
-      # the container wrote to either.  Defaulting to Stdout instead dropped
-      # every diagnostic a workload writes to stderr -- "[sig-node] Security
-      # Context should run the container as unprivileged when false" reads the
-      # log for the "Operation not permitted" that `ip link add` prints there,
-      # and read an empty log.
-      def normalize_log_stream(value)
-        normalized = value.to_s.downcase
-        return :all if normalized.empty? || normalized == "all"
-        return :stdout if normalized == "stdout"
-        return :stderr if normalized == "stderr"
-
-        raise Status::BadRequest.new("query parameter stream must be All, Stdout, or Stderr")
       end
 
       def validate_argument!(value, name)
