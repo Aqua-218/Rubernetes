@@ -1,14 +1,23 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "securerandom"
 require "base64"
 require "json"
 require "time"
+require_relative "../watch/event_stream"
+require_relative "object_copy"
+require_relative "memory_store/sharding"
+require_relative "memory_store/history"
 
 module Rubernetes
   module API
     # In-process MVCC Store used by the API core and deterministic tests.
     class MemoryStore
+      include ObjectCopy
+      include Sharding
+
       class Error < StandardError
         attr_reader :reason, :code, :details, :resource_version, :compacted_revision
 
@@ -84,9 +93,12 @@ module Rubernetes
         end
       end
 
-      Event = Struct.new(:type, :object, :key, keyword_init: true) do
-        def initialize(type:, object:, key: nil)
-          super(type: type.to_s, object: deep_freeze(deep_copy(object)), key: key&.to_s&.freeze)
+      Event = Struct.new(:type, :object, :key, :old_object, keyword_init: true) do
+        def initialize(type:, object:, key: nil, old_object: nil, stringify_keys: false)
+          copy = self.class.deep_copy(object, stringify_keys: stringify_keys)
+          yield copy if block_given?
+          super(type: type.to_s, object: self.class.deep_freeze(copy), key: key&.to_s&.freeze,
+                old_object: self.class.deep_freeze(old_object))
           freeze
         end
 
@@ -98,37 +110,22 @@ module Rubernetes
         end
 
         def to_h
-          {"type" => type, "object" => deep_copy(object)}
+          {"type" => type, "object" => self.class.deep_copy(object)}
         end
 
-        def self.deep_copy(value)
+        def self.deep_copy(value, stringify_keys: false)
           case value
-          when Hash then value.each_with_object({}) { |(key, item), copy| copy[key] = deep_copy(item) }
-          when Array then value.map { |item| deep_copy(item) }
+          when Hash
+            copy = {}
+            value.each_pair { |key, item| copy[stringify_keys ? key.to_s : key] = deep_copy(item, stringify_keys: stringify_keys) }
+            copy
+          when Array then value.map { |item| deep_copy(item, stringify_keys: stringify_keys) }
+          when String then value.frozen? ? value : value.dup
           else value
           end
         end
 
-        def self.deep_freeze(value)
-          case value
-          when Hash then value.each do |key, item|
-            deep_freeze(key)
-            deep_freeze(item)
-          end
-          when Array then value.each { |item| deep_freeze(item) }
-          end
-          value.freeze
-        end
-
-        private
-
-        def deep_copy(value)
-          self.class.deep_copy(value)
-        end
-
-        def deep_freeze(value)
-          self.class.deep_freeze(value)
-        end
+        def self.deep_freeze(value) = ObjectTree.deep_freeze(value)
       end
 
       ListResult = Struct.new(:items, :resource_version, :continue_token, :remaining_item_count, keyword_init: true) do
@@ -168,6 +165,7 @@ module Rubernetes
       # already available; `next` can block for a newly committed event.
       class Watcher
         include Enumerable
+        include Rubernetes::Watch::EventStream
 
         def initialize(store:, queue:, condition:, mutex:, subscription:, timeout_seconds: nil)
           @store = store
@@ -175,7 +173,8 @@ module Rubernetes
           @condition = condition
           @mutex = mutex
           @subscription = subscription
-          @timeout_seconds = timeout_seconds
+          @timeout_seconds = Float(timeout_seconds) unless timeout_seconds.nil?
+          @watch_deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout_seconds if @timeout_seconds&.positive?
           @closed = false
         end
 
@@ -186,8 +185,10 @@ module Rubernetes
                      else
                        Process.clock_gettime(Process::CLOCK_MONOTONIC) + effective_timeout.to_f
                      end
+          deadline = @watch_deadline if @watch_deadline && @watch_deadline < deadline
           @mutex.synchronize do
             loop do
+              return nil if @watch_deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= @watch_deadline
               return @queue.shift unless @queue.empty?
               return nil if @closed
 
@@ -199,33 +200,9 @@ module Rubernetes
           end
         end
 
-        def each(timeout: :default, &block)
-          return enum_for(:each, timeout: timeout) unless block
-
-          effective_timeout = timeout == :default ? (@timeout_seconds || 0) : timeout
-          loop do
-            event = self.next(timeout: effective_timeout)
-            break if event.nil?
-
-            yield(event)
-          end
-          self
+        def each(timeout: :default, &)
+          super(timeout: drain_timeout(timeout), &)
         end
-
-        def to_a(timeout: :default)
-          events = []
-          each(timeout: timeout) { |event| events << event }
-          events
-        end
-
-        def each_json_line(timeout: :default)
-          return enum_for(:each_json_line, timeout: timeout) unless block_given?
-
-          each(timeout: timeout) { |event| yield JSON.generate(event.to_h) << "\n" }
-          self
-        end
-
-        alias events to_a
 
         def close
           @mutex.synchronize do
@@ -264,6 +241,7 @@ module Rubernetes
         @mutex = Mutex.new
         @revision = 0
         @objects = {}
+        @collection_keys = {}
         @history = []
         @watchers = {}
         @compacted_revision = 0
@@ -283,10 +261,7 @@ module Rubernetes
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name)
         @mutex.synchronize do
           ensure_resource_version(resource_version)
-          object = @objects[normalized_key]
-          raise NotFound, "resource #{normalized_key.inspect} was not found" if object.nil?
-
-          deep_freeze(deep_copy(object))
+          @objects.fetch(normalized_key) { raise NotFound, "resource #{normalized_key.inspect} was not found" }
         end
       end
 
@@ -299,12 +274,12 @@ module Rubernetes
           snapshot_revision = resolve_list_revision(resource_version, normalized_match, limit: normalized_limit)
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
           normalized_gvr = gvr && gvr_key(gvr)
-          normalized_prefix = prefix && prefix.to_s.delete_prefix("/")
-          objects = @objects.filter_map do |key, object|
-            next unless key_matches?(key, normalized_prefix, normalized_gvr, namespace)
-            next unless selector.nil? || selector.matches?(object)
+          normalized_prefix = prefix && prefix.to_s.delete_prefix("/").delete_suffix("/")
+          return list_shard(normalized_prefix, normalized_gvr, namespace, selector, normalized_limit, continue_token, snapshot_revision) if sharded?(selector)
 
-            object
+          objects = scoped_keys(normalized_prefix, normalized_gvr, namespace).filter_map do |key|
+            object = @objects.fetch(key)
+            object if selector.nil? || selector.matches?(object)
           end.sort_by { |object| [metadata_value(object, "namespace").to_s, metadata_value(object, "name").to_s] }
           compact_if_due!
           continuation = decode_continue(continue_token)
@@ -321,28 +296,29 @@ module Rubernetes
               .tap { |error| error.details["continue"] = encode_continue_token(start) if error.details })
           end
           snapshot_revision = continuation[:revision] if continuation[:revision] && normalized_limit
-          objects = objects.drop(start) if start.positive?
-          selected = normalized_limit.nil? ? objects : objects.first(normalized_limit)
-          next_token = (encode_continue_token(start + selected.length, snapshot_revision) if normalized_limit && objects.length > selected.length)
-          remaining = (objects.length - selected.length if normalized_limit && objects.length > selected.length && !selector_filtered?(selector))
-          ListResult.new(items: selected.map { |object| deep_freeze(deep_copy(object)) },
-                         resource_version: snapshot_revision, continue_token: next_token,
-                         remaining_item_count: remaining)
+          selected = objects
+          selected = objects.slice(start, normalized_limit || objects.length) || [] if normalized_limit || start.positive?
+          offset = start + selected.length
+          more = offset < objects.length
+          ListResult.new(items: selected, resource_version: snapshot_revision,
+                         continue_token: (encode_continue_token(offset, snapshot_revision) if more),
+                         remaining_item_count: (objects.length - offset if more && !selector_filtered?(selector)))
         end
       end
 
-      def create(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, **options)
+      def create(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, related_versions: nil, **options)
         object = object || options.delete(:object) || options.delete(:resource) || options.delete(:body)
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name, object: object)
         @mutex.synchronize do
           raise AlreadyExists, "resource #{normalized_key.inspect} already exists" if @objects.key?(normalized_key)
 
-          stored = prepare_object(object, normalized_key)
-          commit(normalized_key, stored, "ADDED")
+          check_related_versions!(related_versions)
+
+          commit(normalized_key, object, "ADDED")
         end
       end
 
-      def update(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, **options)
+      def update(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, related_versions: nil, **options)
         object = object || options.delete(:object) || options.delete(:resource) || options.delete(:body)
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name, object: object)
         @mutex.synchronize do
@@ -351,8 +327,8 @@ module Rubernetes
 
           expected = resource_version || metadata_value(object, "resourceVersion")
           check_expected_version!(existing, expected)
-          stored = prepare_object(object, normalized_key, existing: existing)
-          commit(normalized_key, stored, "MODIFIED")
+          check_related_versions!(related_versions)
+          commit(normalized_key, object, "MODIFIED")
         end
       end
 
@@ -375,21 +351,15 @@ module Rubernetes
         end
       end
 
-      def delete(key = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, **_options)
+      def delete(key = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, related_versions: nil, **_options)
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name)
         @mutex.synchronize do
           existing = @objects[normalized_key]
           raise NotFound, "resource #{normalized_key.inspect} was not found" if existing.nil?
 
           check_expected_version!(existing, resource_version)
-          @objects.delete(normalized_key)
-          deleted = deep_copy(existing)
-          deleted["metadata"] ||= {}
-          deleted["metadata"]["resourceVersion"] = next_revision.to_s
-          event = Event.new(type: "DELETED", object: deleted, key: normalized_key)
-          append_event(event)
-          notify_watchers(event)
-          deep_freeze(deep_copy(deleted))
+          check_related_versions!(related_versions)
+          commit(normalized_key, existing, "DELETED")
         end
       end
 
@@ -397,72 +367,46 @@ module Rubernetes
         keys = @mutex.synchronize do
           normalized_gvr = gvr_key(gvr)
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
-          @objects.filter_map do |key, object|
-            next unless key_matches?(key, nil, normalized_gvr, namespace)
-            next unless selector.nil? || selector.matches?(object)
-
-            key
-          end
+          scoped_keys(nil, normalized_gvr, namespace).select { |key| selector.nil? || selector.matches?(@objects.fetch(key)) }
         end
         keys.map { |key| delete(key) }
       end
 
       def watch(prefix = nil, gvr: nil, namespace: :all, resource_version: nil, selector: nil,
                 label_selector: nil, field_selector: nil, allow_bookmarks: false,
-                send_initial_events: false, resource_version_match: nil, timeout_seconds: nil, resource: nil, **_options)
+                send_initial_events: nil, resource_version_match: nil, timeout_seconds: nil, resource: nil, **_options)
         @mutex.synchronize do
-          normalized_match = normalize_resource_version_match(resource_version_match)
+          normalize_resource_version_match(resource_version_match)
           unset_resource_version = resource_version.nil? || resource_version.to_s.empty?
           since = unset_resource_version ? @revision : Integer(resource_version)
           raise InvalidResourceVersion, "resourceVersion must be a non-negative integer" if since.negative?
           raise InvalidResourceVersion, "resourceVersion #{since} is ahead of current revision #{@revision}" if since > @revision
 
-          # "Get State and Start at Any": an unset or zero resourceVersion asks
-          # for the current state as synthetic ADDED events before the stream.
-          initial_state = send_initial_events || unset_resource_version || since.zero?
-          since = @revision if normalized_match == "NotOlderThan" || initial_state
+          # An unset or zero resourceVersion replays current state for legacy
+          # watches. An explicit sendInitialEvents value controls that replay.
+          initial_state = send_initial_events.nil? ? (unset_resource_version || since.zero?) : send_initial_events
+          since = @revision if initial_state || since.zero?
           if since < @compacted_revision
             raise Gone.new("resource version #{since} is older than compacted revision #{@compacted_revision}",
                            resource_version: since, compacted_revision: @compacted_revision)
           end
           normalized_gvr = gvr && gvr_key(gvr)
-          normalized_prefix = prefix && prefix.to_s.delete_prefix("/")
+          normalized_prefix = prefix && prefix.to_s.delete_prefix("/").delete_suffix("/")
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
+          metric_labels = shard_metric_labels(gvr, selector)
+          shard_mismatch = -> { @metrics.increment("apiserver_watch_filtered_events_total", metric_labels) } if metric_labels
           condition = ConditionVariable.new
           subscription = Object.new
-          if initial_state
-            # The synthetic ADDED set replaces history replay; replaying both
-            # would deliver every retained object twice when resourceVersion=0.
-            # The "initial events end" bookmark belongs to sendInitialEvents
-            # alone; a plain unset-resourceVersion watch never carries one.
-            queue = []
-            @objects.keys.sort.each do |key|
-              object = @objects.fetch(key)
-              next unless key_matches?(key, normalized_prefix, normalized_gvr, namespace)
-              next unless selector.nil? || selector.matches?(object)
-
-              queue << Event.new(type: "ADDED", object: object, key: key)
-            end
-            queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource, initial_events_end: true)) if send_initial_events && allow_bookmarks
-            since = @revision
-          elsif allow_bookmarks
-            queue = @history.filter_map do |event|
-              next unless event.object.fetch("metadata", {}).fetch("resourceVersion", "0").to_i > since
-              next unless event_matches?(event, normalized_prefix, normalized_gvr, namespace, selector)
-
-              event
-            end
-            queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource)) if @revision > since
-          else
-            queue = @history.filter_map do |event|
-              next unless event.object.fetch("metadata", {}).fetch("resourceVersion", "0").to_i > since
-              next unless event_matches?(event, normalized_prefix, normalized_gvr, namespace, selector)
-
-              event
-            end
-          end
+          watch_scope = [normalized_prefix, normalized_gvr, namespace, selector]
+          queue = if initial_state
+                    initial_watch_events(*watch_scope, resource, send_initial_events && allow_bookmarks)
+                  else
+                    retained_watch_events(since, *watch_scope, resource, allow_bookmarks, &shard_mismatch)
+                  end
           @watchers[subscription] = {condition: condition, queue: queue, prefix: normalized_prefix,
-                                     gvr: normalized_gvr, namespace: namespace, selector: selector}
+                                     gvr: normalized_gvr, namespace: namespace, selector: selector,
+                                     metric_labels: metric_labels, shard_mismatch: shard_mismatch}
+          @metrics.increment("apiserver_watch_shards_total", metric_labels) if metric_labels
           Watcher.new(store: self, queue: queue, condition: condition, mutex: @mutex, subscription: subscription,
                       timeout_seconds: timeout_seconds)
         end
@@ -486,7 +430,10 @@ module Rubernetes
       end
 
       def remove_watcher(subscription)
-        @mutex.synchronize { @watchers.delete(subscription) }
+        @mutex.synchronize do
+          labels = @watchers.delete(subscription)&.fetch(:metric_labels)
+          @metrics.increment("apiserver_watch_shards_total", labels, by: -1) if labels
+        end
       end
 
       # Stored objects per resource key space, as Storage::MemoryStore
@@ -504,83 +451,111 @@ module Rubernetes
 
       private
 
+      def initial_watch_events(prefix, gvr, namespace, selector, resource, send_bookmark)
+        queue = scoped_keys(prefix, gvr, namespace).sort.filter_map do |key|
+          object = @objects.fetch(key)
+          next unless selector.nil? || selector.matches?(object)
+
+          Event.new(type: "ADDED", object: object, key: key)
+        end
+        queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource, initial_events_end: true)) if send_bookmark
+        queue
+      end
+
+      def retained_watch_events(since, prefix, gvr, namespace, selector, resource, allow_bookmarks, &)
+        first = @history.bsearch_index { |event| event_revision(event) > since } || @history.size
+        queue = (first...@history.size).filter_map do |index|
+          matching_watch_event(@history[index], prefix, gvr, namespace, selector, &)
+        end
+        queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource)) if allow_bookmarks && @revision > since
+        queue
+      end
+
       def commit(key, object, event_type)
-        revision = next_revision
-        object = deep_copy(object)
-        object["metadata"] ||= {}
-        object["metadata"]["resourceVersion"] = revision.to_s
-        @objects[key] = object
-        event = Event.new(type: event_type, object: object, key: key)
+        raise ArgumentError, "resource object must be a Hash" unless object.is_a?(Hash)
+
+        revision = @revision + 1
+        existing = @objects[key]
+        parts = key.split("/")
+        event = Event.new(type: event_type, object: object, key: key, old_object: existing, stringify_keys: true) do |copy|
+          prepare_metadata(copy, parts, existing) unless event_type == "DELETED"
+          copy.fetch("metadata")["resourceVersion"] = revision.to_s
+        end
+        @revision = revision
+        # The event owns the frozen revision shared by history, readers and watchers.
+        if event_type == "DELETED"
+          @objects.delete(key)
+          collection_scopes(parts).each do |scope|
+            keys = @collection_keys.fetch(scope)
+            keys.delete(key)
+            @collection_keys.delete(scope) if keys.empty?
+          end
+        else
+          collection_scopes(parts).each { |scope| (@collection_keys[scope] ||= {})[key] = true } unless event.old_object
+          @objects[key] = event.object
+        end
         append_event(event)
         notify_watchers(event)
-        deep_freeze(deep_copy(object))
+        event.object
       end
 
       def monotonic_now
         Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
 
-      # Advance the compaction floor once per interval to the revision that
-      # was current at the previous tick, so a revision stays addressable for
-      # between one and two intervals, as etcd's periodic compaction does.
-      # Called with the store mutex held.
-      def compact_if_due!
-        return unless @compaction_interval
-
-        now = monotonic_now
-        return if now - @last_compaction_at < @compaction_interval
-
-        @last_compaction_at = now
-        @compacted_revision = [@compacted_revision, @compaction_floor_candidate].max
-        @compaction_floor_candidate = @revision
-        @history.shift while @history.first && event_revision(@history.first) <= @compacted_revision
-      end
-
       def event_revision(event)
-        object = event.respond_to?(:object) ? event.object : nil
-        return 0 unless object.is_a?(Hash)
-
-        object.fetch("metadata", {}).fetch("resourceVersion", "0").to_i
-      end
-
-      def append_event(event)
-        @history << event
-        while @history.length > @history_limit
-          dropped = @history.shift
-          @compacted_revision = [@compacted_revision, dropped.object.fetch("metadata", {}).fetch("resourceVersion", "0").to_i].max
-        end
+        event.object.fetch("metadata").fetch("resourceVersion").to_i
       end
 
       def notify_watchers(event)
         @watchers.each_value do |watcher|
-          watcher[:queue] << event if event_matches?(event, watcher[:prefix], watcher[:gvr], watcher[:namespace], watcher[:selector])
+          selected = matching_watch_event(event, watcher[:prefix], watcher[:gvr], watcher[:namespace], watcher[:selector],
+                                          &watcher[:shard_mismatch])
+          next unless selected
+
+          watcher[:queue] << selected
           watcher[:condition].broadcast
         end
       end
 
-      def next_revision
-        @revision += 1
+      # Keys in both indexes keep insertion order, including delete-then-create.
+      # The namespace index bounds a Pod LIST even if every other key is a Pod.
+      def collection_scopes(parts)
+        return [] unless parts.length >= 4 && parts.first == "registry"
+
+        gvr = parts[1...-2].join("/")
+        [gvr, [gvr, parts[-2]]]
       end
 
-      def event_matches?(event, prefix, normalized_gvr, namespace, selector)
-        return false if event.type == "BOOKMARK"
+      def scoped_keys(prefix, gvr, namespace)
+        return enum_for(__method__, prefix, gvr, namespace) unless block_given?
 
-        key = event.key || key_for_object(event.object)
-        key_matches?(key, prefix, normalized_gvr, namespace) && (selector.nil? || selector.matches?(event.object))
+        if gvr
+          scope = collection_scope(gvr, namespace)
+          @collection_keys[scope]&.each_key { |key| yield key if prefix_matches?(key, prefix) }
+        else
+          @objects.each_key { |key| yield key if key_matches?(key, prefix, nil, namespace) }
+        end
       end
 
-      def key_matches?(key, prefix, normalized_gvr, namespace)
-        parts = key.to_s.split("/")
-        return false unless parts.length >= 4 && parts[0] == "registry"
-        return false if prefix && !(key == prefix || key.start_with?("#{prefix}/"))
+      def collection_scope(gvr, namespace)
+        return gvr if namespace == :all || namespace.nil?
 
-        stored_gvr = parts[1...-2].join("/")
-        return false if normalized_gvr && stored_gvr != normalized_gvr
+        [gvr, namespace == :cluster ? "_cluster" : namespace.to_s]
+      end
 
-        expected_namespace = namespace == :cluster ? "_cluster" : namespace.to_s
-        return false unless namespace == :all || namespace.nil? || parts[-2] == expected_namespace
+      def prefix_matches?(key, prefix)
+        !prefix || key == prefix || key.start_with?("#{prefix}/")
+      end
 
-        true
+      def key_matches?(key, prefix, gvr, namespace)
+        return false unless prefix_matches?(key, prefix)
+
+        parts = key.split("/")
+        return false unless parts.length >= 4 && parts.first == "registry"
+        return false if gvr && parts[1...-2].join("/") != gvr
+
+        namespace == :all || namespace.nil? || parts[-2] == (namespace == :cluster ? "_cluster" : namespace.to_s)
       end
 
       def key_for(key = nil, gvr: nil, namespace: nil, name: nil, object: nil)
@@ -596,14 +571,6 @@ module Rubernetes
         raise ArgumentError, "storage key requires resource and name" if resource_key.empty? || name.to_s.empty?
 
         "registry/#{resource_key}/#{namespace}/#{name}"
-      end
-
-      def key_for_object(object)
-        metadata = object.fetch("metadata", {})
-        resource = object.fetch("_rubernetes_resource", nil)
-        resource ||= object.fetch("apiVersion", "v1")
-        resource = resource.to_s
-        key_for("registry/#{resource}/#{metadata.fetch("namespace", "_cluster")}/#{metadata.fetch("name")}")
       end
 
       def gvr_key(value)
@@ -625,15 +592,9 @@ module Rubernetes
         value.to_s.delete_prefix("/").delete_prefix("registry/").delete_suffix("/")
       end
 
-      def prepare_object(object, key, existing: nil)
-        raise ArgumentError, "resource object must be a Hash" unless object.is_a?(Hash)
-
-        prepared = deep_copy(object)
-        prepared.delete("_rubernetes_resource")
-        metadata = prepared["metadata"] ||= {}
-        metadata = metadata.transform_keys(&:to_s)
-        prepared["metadata"] = metadata
-        key_parts = key.split("/")
+      def prepare_metadata(object, key_parts, existing)
+        object.delete("_rubernetes_resource")
+        metadata = object["metadata"] ||= {}
         metadata["name"] ||= key_parts.last
         metadata["namespace"] ||= key_parts[-2] unless key_parts[-2] == "_cluster"
         if existing
@@ -643,8 +604,14 @@ module Rubernetes
           metadata["uid"] ||= @uid_generator.call.to_s
           metadata["creationTimestamp"] ||= @clock.call.utc.iso8601(6)
         end
-        metadata.delete("resourceVersion") if existing.nil?
-        prepared
+      end
+
+      def check_related_versions!(versions)
+        versions&.each do |key, expected|
+          next if @objects[key]&.dig("metadata", "resourceVersion") == expected
+
+          raise Conflict, "related key #{key} changed"
+        end
       end
 
       def check_expected_version!(existing, expected)
@@ -727,10 +694,6 @@ module Rubernetes
         Base64.urlsafe_encode64(payload, padding: false)
       end
 
-      def decode_continue_token(token)
-        decode_continue(token).fetch(:offset)
-      end
-
       # [offset, revision] for a token; revision is nil for the legacy form
       # and for an inconsistent token (one that resumes at a position but
       # against a fresh snapshot).
@@ -759,27 +722,6 @@ module Rubernetes
         [encoded].pack("H*").unpack1("N")
       rescue ArgumentError, TypeError
         raise InvalidContinueToken
-      end
-
-      def deep_copy(value)
-        case value
-        when Hash then value.each_with_object({}) { |(key, item), copy| copy[key.to_s] = deep_copy(item) }
-        when Array then value.map { |item| deep_copy(item) }
-        else value
-        end
-      end
-
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, item|
-            deep_freeze(key)
-            deep_freeze(item)
-          end
-        when Array
-          value.each { |item| deep_freeze(item) }
-        end
-        value.freeze
       end
     end
   end
