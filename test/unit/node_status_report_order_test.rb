@@ -57,4 +57,23 @@ class NodeStatusReportOrderTest < Minitest::Test
     assert_equal 1, delivered.length, "the stale in-progress status is dropped, not sent late"
     assert_equal [], resize_types(status["u"].to_h)
   end
+
+  def test_only_conflicts_from_a_replaced_pod_are_discarded
+    reporter = Reporter.new
+    status = Status.new(reporter: reporter)
+    reporter.stub(:report, ->(*) { raise "HTTP 409: Precondition failed: UID in precondition: u, UID in object meta: replacement" }) do
+      snapshot = aggregate(status, false)
+
+      assert_equal "Running", snapshot.phase
+    end
+    cause = {"field" => "metadata.uid", "reason" => "FieldValueInvalid"}
+    error = Rubernetes::Client::APIError.new("Pod is invalid", response: Struct.new(:status).new(422), status_object: {"details" => {"causes" => [cause]}})
+
+    reporter.stub(:report, ->(*) { raise error }) do
+      assert_equal "Running", aggregate(status, true).phase
+    end
+    reporter.stub(:report, ->(*) { raise "HTTP 409: an unrelated conflict" }) do
+      assert_raises(RuntimeError) { aggregate(status, false) }
+    end
+  end
 end
