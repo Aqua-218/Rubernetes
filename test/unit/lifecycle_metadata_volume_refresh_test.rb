@@ -75,4 +75,27 @@ class LifecycleMetadataVolumeRefreshTest < Minitest::Test
     assert_equal before + 1, @volumes.refreshes.length
     assert_equal({"a" => "2"}, @volumes.refreshes.last)
   end
+
+  def test_the_pod_ip_is_published_and_volumes_are_refreshed_while_an_init_container_waits
+    runtime = Runtime.new
+    network = Object.new
+    network.define_singleton_method(:add) { |*, **| {"ip" => "192.0.2.11"} }
+    volumes = FakeVolumes.new
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, network: network, pod_volumes: volumes)
+    subject = pod({"cert" => "requested"})
+    subject["spec"]["initContainers"] = [{"name" => "certificates", "image" => "img"}]
+    observations = []
+    runtime.define_singleton_method(:wait_container) do |_id, timeout:|
+      observations << lifecycle.status.status_for("u1")
+      observations.length == 1 ? {"state" => "running"} : {"state" => "terminated", "exitCode" => 0}
+    end
+
+    lifecycle.start(subject)
+
+    assert_equal("192.0.2.11", observations.first.fetch("podIP"))
+    assert_equal("Pending", observations.first.fetch("phase"))
+    assert(observations.first.fetch("initContainerStatuses").first.fetch("state").key?("running"))
+    assert_equal([{"cert" => "requested"}], volumes.refreshes)
+    assert_equal("Running", lifecycle.status.status_for("u1").fetch("phase"))
+  end
 end
