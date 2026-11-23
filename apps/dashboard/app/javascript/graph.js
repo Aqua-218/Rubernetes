@@ -19,6 +19,15 @@ function formatValue(v) {
   return Number.isInteger(n) ? String(n) : n.toPrecision(5).replace(/\.?0+$/, "");
 }
 
+function formatHistogram(histogram) {
+  const boundaries = [["(", "]"], ["[", ")"], ["(", ")"], ["[", "]"]];
+  const buckets = (histogram.buckets || []).map(([code, low, high, count]) => {
+    const [left, right] = boundaries[code];
+    return `${left}${low}, ${high}${right} ${formatValue(count)}`;
+  });
+  return [`count ${formatValue(histogram.count)}`, `sum ${formatValue(histogram.sum)}`, ...buckets].join(" · ");
+}
+
 function formatTime(seconds, spanSeconds) {
   const d = new Date(seconds * 1000);
   const pad = (x) => String(x).padStart(2, "0");
@@ -84,7 +93,8 @@ export class GraphPanel {
         return;
       }
       const count = Array.isArray(data.data.result) ? data.data.result.length : 1;
-      this.status.textContent = `Load time: ${elapsed}s · Result series: ${count}${data.warnings ? " · " + data.warnings.join("; ") : ""}`;
+      const annotations = [...(data.warnings || []), ...(data.infos || [])];
+      this.status.textContent = [`Load time: ${elapsed}s`, `Result series: ${count}`, ...annotations].join(" · ");
       if (this.tab === "graph") this.renderGraph(data.data); else this.renderTable(data.data);
     } catch (error) {
       this.output.innerHTML = `<div class="graph-error">${escapeHtml(String(error))}</div>`;
@@ -116,9 +126,18 @@ export class GraphPanel {
     if (data.resultType === "scalar" || data.resultType === "string") {
       rows = [`<tr><td class="metric-cell">scalar</td><td class="num">${escapeHtml(String(data.result[1]))}</td></tr>`];
     } else if (data.resultType === "vector") {
-      rows = data.result.map((s) => `<tr><td class="metric-cell">${escapeHtml(seriesName(s.metric))}</td><td class="num">${escapeHtml(formatValue(s.value[1]))}</td></tr>`);
+      rows = data.result.map((s) => {
+        const value = s.histogram ? formatHistogram(s.histogram[1]) : formatValue(s.value[1]);
+        return `<tr><td class="metric-cell">${escapeHtml(seriesName(s.metric))}</td><td class="num">${escapeHtml(value)}</td></tr>`;
+      });
     } else {
-      rows = data.result.map((s) => `<tr><td class="metric-cell">${escapeHtml(seriesName(s.metric))}</td><td class="mono">${s.values.map((v) => `${formatValue(v[1])} @${v[0]}`).join("<br>")}</td></tr>`);
+      rows = data.result.map((s) => {
+        const floats = (s.values || []).map(([t, v]) => [t, formatValue(v)]);
+        const histograms = (s.histograms || []).map(([t, v]) => [t, formatHistogram(v)]);
+        const values = [...floats, ...histograms].sort(([a], [b]) => a - b);
+        const cells = values.map(([t, v]) => escapeHtml(`${v} @${t}`)).join("<br>");
+        return `<tr><td class="metric-cell">${escapeHtml(seriesName(s.metric))}</td><td class="mono">${cells}</td></tr>`;
+      });
     }
     if (rows.length === 0) rows = ['<tr><td colspan="2" class="muted">Empty query result</td></tr>'];
     this.output.innerHTML = `<table><thead><tr><th>Element</th><th class="num">Value</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
@@ -126,8 +145,12 @@ export class GraphPanel {
 
   renderGraph(data) {
     if (data.resultType !== "matrix") { this.renderTable(data); return; }
-    const series = data.result.map((s, i) => ({ name: seriesName(s.metric), color: COLORS[i % COLORS.length], points: s.values.map(([t, v]) => [t, parseFloat(v)]) }));
-    if (series.length === 0) { this.output.innerHTML = '<div class="muted">Empty query result</div>'; return; }
+    const series = data.result.filter((s) => s.values?.length).map((s, i) => {
+      const floats = s.values.map(([t, v]) => [t, parseFloat(v)]);
+      const gaps = (s.histograms || []).map(([t]) => [t, NaN]);
+      return { name: seriesName(s.metric), color: COLORS[i % COLORS.length], points: [...floats, ...gaps].sort(([a], [b]) => a - b) };
+    });
+    if (series.length === 0) { this.renderTable(data); return; }
     const width = Math.max(this.output.clientWidth || 1000, 400);
     const height = 360;
     const pad = { l: 64, r: 16, t: 12, b: 28 };
