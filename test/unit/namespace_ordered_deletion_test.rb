@@ -50,6 +50,17 @@ class NamespaceOrderedDeletionTest < Minitest::Test
     result = plan([object("ConfigMap", "cm"), object("Secret", "s")])
 
     assert_equal(%w[ConfigMap Secret], deleted_kinds(result).sort)
+    assert_equal(Controller::NamespaceController::CONTENT_RECHECK_SECONDS, result.requeue_after)
+  end
+
+  def test_an_empty_namespace_can_finalize_without_requeueing
+    result = plan([])
+    finalization = result.operations.find { |operation| operation.action == :update }
+
+    assert_equal :status_update, result.operations.first.action
+    assert_equal "finalize", finalization.subresource
+    assert_empty(finalization.object.fetch("spec").fetch("finalizers"))
+    assert_nil(result.requeue_after)
   end
 
   def test_every_deletion_condition_is_published
