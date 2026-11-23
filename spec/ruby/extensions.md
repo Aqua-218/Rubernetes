@@ -164,6 +164,18 @@ APIサーバは、保存されているExtensionの一覧を最大1秒ごとに�
 | `event(object, reason:, message:, type:)` | オブジェクトについてのEventを記録する |
 | `log(message, **fields)` | コンポーネントのログに書く |
 
+## 配置ルールを適用する前に試す
+
+`rubectl extension preview FILE.rb NAMESPACE/POD` はファイル内の `filter` と `score` を本番と同じプラグインとして読み込み、各 Node の除外理由と重み付きの点数を表示する。除外された Node では該当ブロックのファイル名と行番号も表示する。クラスタから読むのは Pod と Node の一覧で、Pod の割り当ては行わない。
+
+```sh
+kubectl get pods,nodes -A -o json > cluster.json
+rubectl extension preview team_rules.rb default/crunch cluster.json
+rubectl extension diff before.rb team_rules.rb default/crunch cluster.json
+```
+
+一覧を渡すとクラスタに接続せずに再現できる。`diff` は同じ入力を両方の Ruby ファイルに渡し、採否、除外理由、ルールごとの点数・重みが変わった Node を表示する。複数の変更が相殺されて合計点が同じ場合も、該当の Ruby ブロックを行番号付きで表示する。組み込みプラグインや別の Extension はこの評価に含めない。
+
 ## status
 
 各コンポーネントは、読み込みの結果を`status.components.<名前>`に書く。
