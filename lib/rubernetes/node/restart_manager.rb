@@ -12,6 +12,8 @@ module Rubernetes
     class RestartManager
       BASE_DELAY_SECONDS = 10
       MAX_DELAY_SECONDS = 300
+      REDUCED_BASE_DELAY_SECONDS = 1
+      REDUCED_MAX_DELAY_SECONDS = 60
       RESET_AFTER_SECONDS = 600
       POLICIES = %w[Always OnFailure Never].freeze
 
@@ -19,6 +21,8 @@ module Rubernetes
         :key, :policy, :failure_count, :delay_seconds, :state,
         :last_failure_at, :running_since, :restart_count
       ) do
+        def restart_pending? = %w[WaitingForRestart CrashLoopBackOff].include?(state)
+
         def to_h
           {
             "key" => key,
@@ -39,8 +43,8 @@ module Rubernetes
                      reset_after: RESET_AFTER_SECONDS, policy: "Always")
         @clock = clock
         @sleeper = sleeper
-        @base_delay = Integer(base_delay)
-        @max_delay = Integer(max_delay)
+        @base_delay = delay_value(base_delay)
+        @max_delay = delay_value(max_delay)
         @reset_after = Float(reset_after)
         @default_policy = normalize_policy(policy)
         raise ArgumentError, "base_delay must be positive" unless @base_delay.positive?
@@ -137,7 +141,7 @@ module Rubernetes
       # caller decides whether to execute the restart after checking policy.
       def record_exit(key, exit_code: 0, reason: nil, policy: @default_policy,
                       at: nil, liveness_failure: false, startup_failure: false,
-                      container_id: nil)
+                      container_id: nil, rules: nil)
         identifier = normalize_key(key, container_id: container_id)
         timestamp = time_value(at)
         normalized = normalize_policy(policy)
@@ -150,7 +154,8 @@ module Rubernetes
             exit_code: exit_code,
             reason: reason,
             liveness_failure: liveness_failure,
-            startup_failure: startup_failure
+            startup_failure: startup_failure,
+            rules: rules
           )
           count = should_restart ? current.failure_count + 1 : current.failure_count
           delay = should_restart ? delay_for(count) : 0
@@ -195,7 +200,7 @@ module Rubernetes
       end
 
       def backoff(key, container_id: nil)
-        attempt(key, container_id: container_id)&.delay_seconds.to_i
+        attempt(key, container_id: container_id)&.delay_seconds || 0
       end
 
       alias delay backoff
@@ -281,7 +286,7 @@ module Rubernetes
               key: key,
               policy: normalize_policy(item.fetch("policy", @default_policy)),
               failure_count: Integer(item.fetch("failureCount", item.fetch("failure_count", 0))),
-              delay_seconds: Integer(item.fetch("delaySeconds", item.fetch("delay_seconds", 0))),
+              delay_seconds: delay_value(item.fetch("delaySeconds", item.fetch("delay_seconds", 0))),
               state: String(item.fetch("state", "New")),
               last_failure_at: item["lastFailureAt"] || item["last_failure_at"],
               running_since: item["runningSince"] || item["running_since"],
@@ -295,6 +300,15 @@ module Rubernetes
       end
 
       private
+
+      def delay_value(value)
+        return value if value.is_a?(Integer)
+
+        seconds = Float(value)
+        raise ArgumentError, "delay must be finite" unless seconds.finite?
+
+        seconds == seconds.to_i ? seconds.to_i : seconds
+      end
 
       def normalize_key(key, container_id: nil)
         value = container_id || key
