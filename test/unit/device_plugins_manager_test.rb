@@ -119,6 +119,16 @@ class DevicePluginsManagerTest < Minitest::Test
     assert_equal "d2", @manager.container_allocation("u1", "app")["envs"]["GPUS"], "the init container's device goes to the app container"
   end
 
+  def test_restartable_init_keeps_the_device_it_reused_from_an_ordinary_init
+    register
+    init = [container("init", 1), container("sidecar", 1, restart: "Always")]
+    @manager.allocate_pod(pod("u1", [container("app", 1)], init: init))
+
+    assert_equal({"example.com/gpu" => %w[d1]}, @manager.container_devices("u1", "init"))
+    assert_equal({"example.com/gpu" => %w[d1]}, @manager.container_devices("u1", "sidecar"))
+    assert_equal({"example.com/gpu" => %w[d2]}, @manager.container_devices("u1", "app"))
+  end
+
   def test_a_stopped_plugin_goes_unhealthy_then_away_and_allocations_survive_a_restart
     register
     @manager.allocate_pod(pod("u1", [container("app", 1)]))
@@ -128,9 +138,15 @@ class DevicePluginsManagerTest < Minitest::Test
     restarted = DP::Manager.new(directory: @dir, broker: FakeBroker.new, clock: -> { @now })
 
     assert_equal "d1", restarted.container_allocation("u1", "app")["envs"]["GPUS"], "kubelet_internal_checkpoint"
+    assert_equal [{"example.com/gpu" => 0}, {"example.com/gpu" => 0}], restarted.capacity
     @now += DP::Manager::STOP_GRACE_PERIOD + 1
 
-    assert_equal [{}, {}], @manager.capacity
+    zero = [{"example.com/gpu" => 0}, {"example.com/gpu" => 0}]
+
+    assert_equal zero, @manager.capacity
+    retired = DP::Manager.new(directory: @dir, broker: FakeBroker.new, clock: -> { @now })
+
+    assert_equal zero, retired.capacity
     error = assert_raises(DP::Manager::Error) { restarted.allocate_pod(pod("u9", [container("app", 1)])) }
     assert_match(/no healthy devices present|cannot allocate unregistered device/, error.message)
   end
