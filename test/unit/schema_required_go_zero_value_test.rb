@@ -13,6 +13,19 @@ class SchemaRequiredGoZeroValueTest < Minitest::Test
     Rubernetes::Generated.definition_for(schema).validator.errors(object, operation: :create).map(&:to_s)
   end
 
+  def test_wrong_wire_shapes_name_the_generated_go_types
+    validator = Rubernetes::Generated.definition_for("io.k8s.api.core.v1.Pod").validator
+    [
+      [{"spec" => {"containers" => false}}, "PodSpec.spec.containers of type []v1.Container"],
+      [{"spec" => {"containers" => [1]}}, "PodSpec.spec.containers of type v1.Container"],
+      [{"metadata" => {"labels" => []}}, "ObjectMeta.metadata.labels of type map[string]string"]
+    ].each do |object, expected|
+      error = validator.wire_type_error(validator.errors(object, unknown_fields: :preserve))
+
+      assert_includes error, expected
+    end
+  end
+
   def test_a_null_or_absent_required_list_is_the_zero_value
     [{"drivers" => nil}, {}, {"drivers" => []}].each do |spec|
       object = {"apiVersion" => "storage.k8s.io/v1", "kind" => "CSINode", "metadata" => {"name" => "n1"}, "spec" => spec}
