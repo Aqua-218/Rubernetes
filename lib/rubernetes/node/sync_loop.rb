@@ -43,14 +43,15 @@ module Rubernetes
                      housekeeping_period: DEFAULT_HOUSEKEEPING_PERIOD_SECONDS,
                      watch_timeout: 30, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      sleeper: ->(seconds) { sleep(seconds) }, error_handler: nil,
-                     removed: nil, auto_start: false, &block)
+                     removed: nil, resynced: nil, auto_start: false, &block)
         @source = source || api || source_value
         raise ArgumentError, "source or api is required" unless @source
 
         @reconcile = reconcile || block
-        # Told at once, from the watch thread, when a Pod leaves the API --
-        # before its worker gets to the DELETED (it may be busy killing it).
+        # Tell the lifecycle about removal before a possibly busy Pod worker
+        # reaches the terminating sync.
         @removed = removed
+        @resynced = resynced
         raise ArgumentError, "reconcile callback or worker_pool is required" unless @reconcile || worker_pool || workers
 
         @node_name = node_name&.to_s
@@ -64,7 +65,11 @@ module Rubernetes
         @clock = clock
         @sleeper = sleeper
         @error_handler = error_handler
-        @workers = worker_pool || workers || PodWorkerPool.new(reconcile: @reconcile, error_handler: error_handler)
+        worker_error_handler = ->(uid, error) { error_handler.call(error, uid) } if error_handler
+        # The event loop reconciles every Pod continually and publishes its
+        # status and errors separately. Retaining each snapshot grows with uptime.
+        @workers = worker_pool || workers || PodWorkerPool.new(reconcile: @reconcile, error_handler: worker_error_handler,
+                                                               retain_history: false)
         @mutex = Mutex.new
         @cache = {}
         @resource_version = nil
@@ -83,6 +88,7 @@ module Rubernetes
       end
 
       attr_reader :resource_version, :last_resync_at, :last_watch_at
+      attr_writer :pods_changed
 
       def start
         @mutex.synchronize do
@@ -205,6 +211,10 @@ module Rubernetes
         @mutex.synchronize { @cache.transform_values { |pod| Helpers.immutable(pod) }.freeze }
       end
 
+      def cached_pod(uid)
+        @mutex.synchronize { @cache[uid.to_s] }
+      end
+
       def pods
         cache.values
       end
@@ -245,10 +255,11 @@ module Rubernetes
         in_scope = pod_in_scope?(pod)
         if (type == "DELETED" && (in_scope || previous)) || (!in_scope && previous)
           @mutex.synchronize { @cache.delete(uid) }
-          notify_removed(uid)
+          @pods_changed&.call
           enqueue_pod(previous || pod, action: "DELETED", request_id: normalized.resource_version)
         elsif in_scope
           @mutex.synchronize { @cache[uid] = Helpers.immutable(pod) }
+          @pods_changed&.call
           enqueue_pod(pod, action: type, request_id: normalized.resource_version)
         end
         update_resource_version(normalized.resource_version)
@@ -292,9 +303,10 @@ module Rubernetes
         # with FrozenError. The returned snapshot remains immutable without
         # freezing the live cache used by process_event.
         @mutex.synchronize { @cache = current.dup }
+        @pods_changed&.call
         update_resource_version(listed_rv)
         @mutex.synchronize { @last_resync_at = timestamp }
-        current.freeze
+        current.freeze.tap { |pods| @resynced&.call(pods, listed_rv) }
       rescue StandardError => error
         record_error(error, event: "resync")
         raise
@@ -312,11 +324,16 @@ module Rubernetes
         record_error(error, event: "removed_hook")
       end
 
-      def enqueue_pod(pod, action:, request_id: nil)
+      def enqueue_pod(pod, action:, request_id: nil, worker_key: nil)
+        metadata = Helpers.key(pod, "metadata", {})
+        deletion_timestamp = Helpers.key(metadata, "deletionTimestamp", nil)
+        notify_removed(pod_uid(pod)) if action.to_s.upcase == "DELETED" || !deletion_timestamp.to_s.empty?
+        options = {action: action, request_id: request_id}
+        options[:worker_key] = worker_key if worker_key
         if @workers.respond_to?(:enqueue)
-          @workers.enqueue(pod, action: action, request_id: request_id)
+          @workers.enqueue(pod, **options)
         elsif @workers.respond_to?(:submit)
-          @workers.submit(pod, action: action, request_id: request_id)
+          @workers.submit(pod, **options)
         else
           raise ArgumentError, "worker pool must implement enqueue or submit"
         end
@@ -563,5 +580,7 @@ module Rubernetes
         @watcher.close
       end
     end
+
+    PodSyncLoop = SyncLoop
   end
 end
