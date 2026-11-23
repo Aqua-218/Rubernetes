@@ -31,6 +31,15 @@ module Rubernetes
 
         def dialer(kind) = selector&.dialer(kind)
 
+        def kubernetes_cert_store(bundle)
+          store = OpenSSL::X509::Store.new
+          # Go's x509.CertPool accepts every explicitly configured certificate
+          # as an anchor, including a pinned serving leaf or intermediate.
+          store.flags = OpenSSL::X509::V_FLAG_PARTIAL_CHAIN
+          OpenSSL::X509::Certificate.load(bundle.unpack1("m0")).each { |certificate| store.add_cert(certificate) }
+          store
+        end
+
         # Net::HTTP for +uri+ that dials through the kind's proxy when one is
         # configured (a plain Net::HTTP otherwise).  +ipaddr+: the resolved
         # address to connect to instead of the host name.
