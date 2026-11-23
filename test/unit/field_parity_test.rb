@@ -79,13 +79,11 @@ class FieldParityTest < Minitest::Test
 
   def test_reserved_accessor_is_rejected
     with_generated_copy do |generated_root|
-      path = File.join(generated_root, "ruby/kubernetes_types.rb")
-      source = File.binread(path)
-      marker = "      def nullable\n        field(\"nullable\")\n      end\n"
-      replacement = marker + "      def not\n        field(\"not\")\n      end\n"
-
-      assert_includes(source, marker)
-      File.binwrite(path, source.sub(marker, replacement))
+      path = Dir[File.join(generated_root, "ruby/types/*.rb")].find do |file|
+        File.read(file).include?('"nullable"')
+      end
+      source = File.read(path)
+      File.write(path, source.sub('"nullable"', '"nullable", "not"'))
 
       report = verifier(generated_root: generated_root).verify
 
