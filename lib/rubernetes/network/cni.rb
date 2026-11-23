@@ -43,8 +43,9 @@ module Rubernetes
       # Attaches the sandbox to the network and answers with its addresses.
       # A Pod on the host network has nothing to attach.
       def add(sandbox, pod = nil, **)
-        context = context_for(sandbox)
-        return {"sandbox_id" => context.fetch(:id), "ips" => [], "backend" => "cni", "state" => "committed"} if host_network?(pod)
+        host_network = host_network?(pod)
+        context = context_for(sandbox, require_netns: !host_network)
+        return {"sandbox_id" => context.fetch(:id), "ips" => [], "backend" => "cni", "state" => "committed"} if host_network
 
         network = load_network
         # A plugin that is not installed is found out before the first one runs.
@@ -72,12 +73,12 @@ module Rubernetes
       # Detaches the sandbox.  DEL is given the network ADD used, not the one
       # configured now, and a sandbox that was never attached (or already
       # detached) is done.
-      def delete(sandbox, pod = nil, **)
+      def delete(sandbox, pod = nil, namespace_gone: false, **)
         context = context_for(sandbox, require_netns: false)
         stored = load(context.fetch(:id))
         return {"sandbox_id" => context.fetch(:id), "state" => "removed"} if stored.nil?
 
-        context[:netns] ||= stored["netns"]
+        context[:netns] = namespace_gone ? nil : context[:netns] || stored["netns"]
         detach(stored.fetch("network"), context, pod, stored["result"])
         FileUtils.rm_f(state_path(context.fetch(:id)))
         {"sandbox_id" => context.fetch(:id), "state" => "removed"}
@@ -85,7 +86,10 @@ module Rubernetes
 
       # CHECK, for plugins of a network that speaks 0.4.0 or later.
       def check(sandbox, pod = nil, **)
-        context = context_for(sandbox)
+        host_network = host_network?(pod)
+        context = context_for(sandbox, require_netns: !host_network)
+        return true if host_network
+
         stored = load(context.fetch(:id)) || raise(ValidationError, "sandbox #{context.fetch(:id)} is not attached")
         network = stored.fetch("network")
         return true if Gem::Version.new(network.fetch("cniVersion")) < Gem::Version.new("0.4.0")
