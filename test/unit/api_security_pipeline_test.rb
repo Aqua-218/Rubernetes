@@ -68,6 +68,53 @@ class APISecurityPipelineTest < Minitest::Test
     assert_equal "forbidden-pod", refused.dig("annotations", "reject-named-pods.example.com/checked")
   end
 
+  def test_legacy_watch_authorizes_the_watch_verb_and_keeps_named_get_as_get
+    path = "/api/v1/watch/namespaces/default/pods/one"
+    denied = @server.call(request("GET", path, token: "alice-token"))
+
+    assert_equal 403, denied.status
+    assert_includes denied.body.fetch("message"), 'cannot watch resource "pods"'
+    ordinary = @server.call(request("GET", "/api/v1/namespaces/default/pods/one?watch=true", token: "alice-token"))
+
+    assert_equal 404, ordinary.status
+  end
+
+  def test_authorizer_sees_create_only_when_apply_inserts_an_object
+    checks = []
+    allow_create = false
+    authorizer = Object.new
+    authorizer.define_singleton_method(:authorize) do |attributes|
+      checks << [attributes.verb, attributes.name]
+      if attributes.verb == "create" && !allow_create
+        S::Authorization::Decision.deny("create permission required")
+      else
+        S::Authorization::Decision.allow
+      end
+    end
+    pipeline = S::Pipeline.new(authenticator: @pipeline.authenticator, authorizer: authorizer)
+    server = API::Server.new(store: @store, security: pipeline)
+    path = "/api/v1/namespaces/default/configmaps/settings?fieldManager=fixture"
+    body = {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "settings"}, "data" => {"mode" => "test"}}
+    apply = request("PATCH", path, token: "alice-token", body: body).with(
+      headers: {"authorization" => "Bearer alice-token", "content-type" => "application/apply-patch+yaml"}
+    )
+    refused = server.call(apply)
+
+    assert_equal 403, refused.status
+    assert_includes refused.body["message"], "cannot create"
+    assert_equal [%w[patch settings], %w[create settings]], checks
+    allow_create = true
+    checks.clear
+
+    assert_equal 201, server.call(apply).status
+    assert_equal [%w[patch settings], %w[create settings]], checks
+    checks.clear
+    allow_create = false
+
+    assert_equal 200, server.call(apply).status
+    assert_equal [%w[patch settings]], checks
+  end
+
   def test_subject_access_review_uses_the_configured_authorizer
     review = {"apiVersion" => "authorization.k8s.io/v1", "kind" => "SubjectAccessReview",
               "spec" => {"user" => "alice", "resourceAttributes" => {"verb" => "list", "resource" => "pods", "namespace" => "x"}}}
