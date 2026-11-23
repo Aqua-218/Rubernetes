@@ -42,16 +42,13 @@ module Rubernetes
         fingerprint = identifier(fingerprint, "request fingerprint")
         @mutex.synchronize do
           existing = @entries[[key, operation]]
-          if existing && existing.status == "failed" && existing.token != token
-            @entries.delete([key, operation])
-            existing = nil
-          end
           token_use = @tokens[[key, token]]
           if token_use && (token_use["operation"] != operation || token_use["fingerprint"] != fingerprint)
             raise OperationTokenConflict, "operation token #{token.inspect} was already used for a different volume request"
           end
 
-          if existing
+          replacing = existing && existing.status == "failed" && existing.token != token
+          if existing && !replacing
             return immutable(existing) if existing.token != token && existing.status == "succeeded" && existing.fingerprint == fingerprint
             unless existing.token == token && existing.fingerprint == fingerprint
               raise OperationTokenConflict, "operation #{operation} for #{key} was replayed with a different token or payload"
@@ -63,9 +60,10 @@ module Rubernetes
           entry = Entry.new(key: key, operation: operation, token: token, fingerprint: fingerprint,
                             payload: Types.deep_copy(payload),
                             status: "pending", result: nil, error: nil, timestamp: now)
+          persist!(entry)
+          @tokens.delete([key, existing.token]) if replacing
           @entries[[key, operation]] = entry
           @tokens[[key, token]] = {"operation" => operation, "fingerprint" => fingerprint}
-          persist!(entry)
           # The caller must distinguish a freshly reserved operation from a
           # recovered pending operation. Keep the durable status as pending,
           # but expose the one-shot reservation as "new".
@@ -104,16 +102,26 @@ module Rubernetes
         @mutex.synchronize { @entries[[String(key), String(operation)]].then { |entry| entry && immutable(entry) } }
       end
 
+      def fetch_token(key:, token:)
+        key = String(key)
+        @mutex.synchronize do
+          reservation = @tokens[[key, String(token)]]
+          immutable(@entries.fetch([key, reservation.fetch("operation")])) if reservation
+        end
+      end
+
       # Recovery retracts a succeeded operation whose kernel effect is proven
       # gone (the mount namespace that held it no longer exists), so the same
       # request can be driven again instead of replaying the stale result.
       def retract!(key:, operation:)
         @mutex.synchronize do
-          entry = @entries.delete([String(key), String(operation)])
+          pair = [String(key), String(operation)]
+          entry = @entries[pair]
           return nil unless entry
 
+          persist!(nil, removed: [pair])
+          @entries.delete(pair)
           @tokens.delete([String(key), entry.token])
-          persist!(nil, removed: [[entry.key, entry.operation]])
           immutable(entry)
         end
       end
@@ -134,18 +142,21 @@ module Rubernetes
 
       def update!(key:, operation:, token:, status:, result:, error:)
         @mutex.synchronize do
-          entry = @entries.fetch([String(key), String(operation)]) do
+          pair = [String(key), String(operation)]
+          entry = @entries.fetch(pair) do
             raise OperationUnknown, "operation #{operation} for #{key} is not recorded"
           end
           raise OperationTokenConflict, "operation token does not match the durable operation entry" unless entry.token == String(token)
 
-          entry.status = status
-          entry.result = Types.deep_copy(result)
-          entry.error = Types.deep_copy(error)
-          entry.timestamp = now
-          pruned = prune_finished_locked!
-          persist!(entry, removed: pruned, durable: DURABLE_STATUSES.include?(status.to_s))
-          immutable(entry)
+          updated = entry.dup
+          updated.status = status
+          updated.result = Types.deep_copy(result)
+          updated.error = Types.deep_copy(error)
+          updated.timestamp = now
+          persist!(updated, durable: DURABLE_STATUSES.include?(status.to_s))
+          @entries[pair] = updated
+          prune_finished_locked!
+          immutable(updated)
         end
       end
 
@@ -163,18 +174,16 @@ module Rubernetes
 
       def prune_finished_locked!
         finished = @entries.select { |_key, entry| FINISHED_STATUSES.include?(entry.status) }
-        return [] if finished.length <= MAX_FINISHED_ENTRIES && finished.all? { |_key, entry| fresh?(entry) }
+        return if finished.length <= MAX_FINISHED_ENTRIES && finished.all? { |_key, entry| fresh?(entry) }
 
-        pruned = []
         finished.sort_by { |_key, entry| entry.timestamp.to_s }.each do |key, entry|
           break if finished.length <= MAX_FINISHED_ENTRIES && fresh?(entry)
 
+          persist!(nil, removed: [key])
           @entries.delete(key)
           @tokens.delete([entry.key, entry.token])
           finished.delete(key)
-          pruned << key
         end
-        pruned
       end
 
       def fresh?(entry)
@@ -270,59 +279,7 @@ module Rubernetes
       LEGACY_IDENTITY_VERSION = 1
       IDENTITY_VERSION = 2
       UNSET = Object.new.freeze
-
-      Mount = Struct.new(:volume_id, :source, :target, :mount_id, :filesystem_uuid, :device_id,
-                         :owner, :stage_path, :generation, :secret, :root, :source_identity,
-                         :filesystem_uuid_available, :filesystem, :identity_version, :legacy, :bind,
-                         keyword_init: true) do
-        def identity_fields
-          {"mountId" => mount_id, "filesystemUuid" => filesystem_uuid, "deviceId" => device_id,
-           "target" => target, "root" => root, "sourceIdentity" => source_identity,
-           "filesystemUuidAvailable" => filesystem_uuid_available}
-        end
-
-        # The digest is recomputed only when an identity field changed: the
-        # ledger compares every record's identity on each registration, and
-        # re-deriving a canonical-JSON SHA-256 per record per call made
-        # registering the n-th mount O(n) digests -- a quarter of a node
-        # agent's CPU while a few hundred volumes were mounted.
-        def fingerprint
-          fields = identity_fields
-          return @fingerprint if @fingerprint && @fingerprint_fields == fields
-
-          @fingerprint_fields = fields
-          @fingerprint = MountIdentityLedger.identity_fingerprint(fields)
-        end
-
-        def legacy_identity
-          [mount_id, filesystem_uuid, device_id, target].join("/")
-        end
-
-        def identity
-          legacy? ? legacy_identity : fingerprint
-        end
-
-        def legacy?
-          legacy == true || identity_version.to_i < MountIdentityLedger::IDENTITY_VERSION
-        end
-
-        def bind?
-          bind == true
-        end
-
-        def to_h
-          {"volumeId" => volume_id, "source" => source, "target" => target, "mountId" => mount_id,
-           "filesystemUuid" => filesystem_uuid, "filesystemUuidAvailable" => filesystem_uuid_available,
-           "deviceId" => device_id, "root" => root, "sourceIdentity" => source_identity,
-           "filesystem" => filesystem, "owner" => owner, "stagePath" => stage_path,
-           "generation" => generation, "secret" => secret == true, "identityVersion" => identity_version,
-           "bind" => bind == true}
-        end
-      end
-
-      def self.identity_fingerprint(fields)
-        Types.digest(fields)
-      end
+      require_relative "ledger/mount"
 
       def initialize(path: nil, fsync: true, live_check: nil)
         @path = path && File.expand_path(path.to_s)
@@ -348,13 +305,13 @@ module Rubernetes
 
       def register(volume_id:, source:, target:, mount_id:, filesystem_uuid:, device_id:, owner:, stage_path: nil,
                    generation: nil, secret: false, root: nil, source_identity: nil,
-                   filesystem_uuid_available: UNSET, filesystem: nil, bind: false)
+                   filesystem_uuid_available: UNSET, filesystem: nil, bind: false, shared_source: nil)
         mount = build_mount(volume_id: volume_id, source: source, target: target, mount_id: mount_id,
                             filesystem_uuid: filesystem_uuid, device_id: device_id, owner: owner,
                             stage_path: stage_path, generation: generation, secret: secret,
                             root: root, source_identity: source_identity,
                             filesystem_uuid_available: filesystem_uuid_available, filesystem: filesystem,
-                            bind: bind)
+                            bind: bind, shared_source: shared_source)
         @mutex.synchronize do
           existing = @mounts[mount.identity]
           if existing
@@ -364,8 +321,7 @@ module Rubernetes
             conflict = conflicting_mount(mount)
             raise MountIdentityError, "mount identity conflicts with an existing attachment for #{conflict.volume_id}" if conflict
           end
-          @mounts[mount.identity] = mount
-          persist!(written: [mount])
+          store_mount!(mount)
           mount.to_h.freeze
         end
       end
@@ -376,8 +332,7 @@ module Rubernetes
           return false unless mount
           raise MountIdentityError, "refusing to remove mount #{identity}: stable identity changed" if expected && !identity_matches?(mount, expected)
 
-          @mounts.delete(mount.identity)
-          persist!(removed: [mount.identity])
+          forget_mount!(mount.identity)
           true
         end
       end
@@ -390,6 +345,19 @@ module Rubernetes
         @mutex.synchronize { Types.deep_freeze(@mounts.values.map(&:to_h)) }
       end
 
+      def published_bind_of?(identity)
+        root = identity["root"]
+        device_id = identity["deviceId"]
+        return false unless root && device_id
+
+        @mutex.synchronize do
+          @mounts.values.any? do |mount|
+            mount.bind? && mount.owner.to_s.start_with?("pod:") && mount.device_id == device_id && mount.root == root &&
+              (!@live_check || @live_check.call(mount) != false)
+          end
+        end
+      end
+
       # Drops every record whose target is `path`.  Used when an abandoned
       # mount at a fixed Pod path has been cleared from the kernel: the record
       # then names nothing, and leaving it makes the next mount at that path
@@ -398,8 +366,7 @@ module Rubernetes
         target = File.expand_path(path.to_s)
         @mutex.synchronize do
           removed = @mounts.select { |_identity, mount| File.expand_path(mount.target.to_s) == target }.keys
-          removed.each { |identity| @mounts.delete(identity) }
-          persist!(removed: removed)
+          removed.each { |identity| forget_mount!(identity) }
           removed.length
         end
       end
@@ -407,8 +374,7 @@ module Rubernetes
       def remove_volume(volume_id)
         @mutex.synchronize do
           removed = @mounts.select { |_identity, mount| mount.volume_id.to_s == volume_id.to_s }.keys
-          removed.each { |identity| @mounts.delete(identity) }
-          persist!(removed: removed)
+          removed.each { |identity| forget_mount!(identity) }
           removed.length
         end
       end
@@ -543,7 +509,7 @@ module Rubernetes
 
       def build_mount(volume_id:, source:, target:, mount_id:, filesystem_uuid:, device_id:, owner:, stage_path:,
                       generation:, secret:, root:, source_identity:, filesystem_uuid_available:, filesystem:,
-                      bind: false)
+                      bind: false, shared_source: nil)
         volume_id = Types.identifier(volume_id, "volume id")
         bind = bind == true
         source = text_value(source, "mount source")
@@ -582,7 +548,7 @@ module Rubernetes
                            stage_path: stage_path&.to_s, generation: generation, secret: secret == true,
                            root: root, source_identity: source_identity, filesystem_uuid_available: availability,
                            filesystem: filesystem&.to_s, identity_version: IDENTITY_VERSION, legacy: false,
-                           bind: bind)
+                           bind: bind, shared_source: optional_identifier(shared_source, "shared mount source"))
         end
 
         raise_mount_error("filesystem UUID is required for legacy mount identities") if filesystem_uuid.nil?
@@ -611,11 +577,10 @@ module Rubernetes
           end
           live == false
         end
-        return if stale.empty?
-
-        stale.each { |entry| @mounts.delete(entry.identity) }
-        @stale_dropped += stale.length
-        persist!(removed: stale.map(&:identity))
+        stale.each do |entry|
+          forget_mount!(entry.identity)
+          @stale_dropped += 1
+        end
       end
 
       def conflicting_mount(mount)
@@ -635,6 +600,15 @@ module Rubernetes
                                                     filesystem: left.filesystem, root: left.root, bind: left.bind?) &&
                             persistent_block_mount?(source: right.source, source_identity: right.source_identity,
                                                     filesystem: right.filesystem, root: right.root, bind: right.bind?)
+
+        # FC and iSCSI can give several Pods distinct mountpoints on the
+        # same node. That is safe only when both stages name the same
+        # storage source and the kernel proves the same device and UUID.
+        if left.shared_source && left.shared_source == right.shared_source &&
+           left.device_id == right.device_id && left.filesystem_uuid == right.filesystem_uuid &&
+           left.source == right.source && left.filesystem == right.filesystem
+          return false
+        end
 
         left.device_id.to_s == right.device_id.to_s ||
           (!left.filesystem_uuid.nil? && left.filesystem_uuid.to_s == right.filesystem_uuid.to_s)
@@ -697,7 +671,7 @@ module Rubernetes
                               secret: hash["secret"] == true, root: hash["root"],
                               source_identity: hash.key?("sourceIdentity") ? hash["sourceIdentity"] : nil,
                               filesystem_uuid_available: hash.key?("filesystemUuidAvailable") ? hash["filesystemUuidAvailable"] : UNSET,
-                              filesystem: hash["filesystem"], bind: hash["bind"] == true)
+                              filesystem: hash["filesystem"], bind: hash["bind"] == true, shared_source: hash["sharedSource"])
           mount.legacy = true if legacy
           mount.identity_version = LEGACY_IDENTITY_VERSION if legacy
           if (existing = @mounts[mount.identity]) && existing.to_h != mount.to_h
@@ -806,13 +780,16 @@ module Rubernetes
         raise error
       end
 
-      # Only the changed records are written or removed (RecordFiles).
-      def persist!(written: [], removed: [])
-        return true unless @files
+      def store_mount!(mount)
+        @files&.write(mount.identity, mount.to_h)
+        @mounts[mount.identity] = mount
+      rescue SystemCallError, IOError => error
+        raise JournalError, "mount identity ledger persist failed: #{error.message}"
+      end
 
-        written.each { |mount| @files.write(mount.identity, mount.to_h) }
-        removed.each { |identity| @files.delete(identity) }
-        true
+      def forget_mount!(identity)
+        @files&.delete(identity)
+        @mounts.delete(identity)
       rescue SystemCallError, IOError => error
         raise JournalError, "mount identity ledger persist failed: #{error.message}"
       end
