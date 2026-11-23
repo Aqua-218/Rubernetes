@@ -15,6 +15,10 @@ module Rubernetes
 
           apply FILE.rb...   load the file, store it as an Extension and report what each component did with it
           check FILE.rb...   load the file here and list what it declares; nothing is sent to the cluster
+          preview FILE.rb NAMESPACE/POD [LIST.json]
+                             run this file's filter and score blocks on live nodes or a saved Pod/Node List
+          diff OLD.rb NEW.rb NAMESPACE/POD [LIST.json]
+                             compare two rule files using the same Pods and Nodes
           list               the stored extensions and their state in each component
           delete NAME...     remove extensions; their plugins, hooks and controllers stop at once
       TEXT
@@ -34,6 +38,8 @@ module Rubernetes
         case command
         when "apply" then each_file(rest) { |name, source| apply(name, source) }
         when "check" then each_file(rest) { |name, source| check(name, source) }
+        when "preview" then preview(rest)
+        when "diff" then preview(rest, compare: true)
         when "list" then list
         when "delete" then delete(rest)
         else raise Client::UsageError, USAGE
@@ -44,6 +50,22 @@ module Rubernetes
 
       def client
         @client ||= @client_factory.call
+      end
+
+      def preview(arguments, compare: false)
+        require_relative "placement_preview"
+
+        old_file, *arguments = arguments if compare
+        file, pod, snapshot = arguments
+        raise Client::UsageError, USAGE unless (2..3).cover?(arguments.length) && pod.match?(%r{\A[^/]+/[^/]+\z})
+
+        name = File.basename(file, ".rb").tr("_", "-").downcase
+        preview = PlacementPreview.load(name, file)
+        previous = PlacementPreview.load(name, old_file) if compare
+        items = snapshot ? preview.read_snapshot(snapshot) : preview.read_cluster(client)
+        @stdout.puts(previous ? preview.compare(previous, pod, items) : preview.explain(pod, items))
+      rescue SystemCallError, Scheduler::Error => error
+        raise Client::UsageError, error.message
       end
 
       # team_rules.rb is the extension "team-rules".
