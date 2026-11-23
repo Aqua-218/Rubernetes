@@ -26,7 +26,8 @@ class PodStatusUidPreconditionTest < Minitest::Test
   def test_a_report_for_a_previous_incarnation_is_refused
     response = status_patch("00000000-dead-beef-0000-000000000000")
 
-    assert_equal 409, response.status
+    assert_equal 422, response.status
+    assert_equal "metadata.uid", response.body.dig("details", "causes", 0, "field")
     assert_equal "Pending", @server.call(method: "GET", path: "/api/v1/namespaces/dev/pods/ss-0").body.dig("status", "phase"),
                  "the stale Failed report must not land"
   end
