@@ -32,8 +32,7 @@ module Rubernetes
 
           served = @crd_manager.served_names
           pending = @store.list(resource: crd_resource, namespace: :all, selectors: nil).items.select do |crd|
-            crd.dig("spec",
-                    "group") == group && !served.include?(crd.dig("metadata", "name")) && crd.dig("metadata", "deletionTimestamp").nil?
+            crd.dig("spec", "group") == group && !served.include?(crd.dig("metadata", "name"))
           end
           return route if pending.empty?
 
@@ -65,6 +64,9 @@ module Rubernetes
         def after_commit(resource, object, deleted: false)
           if @crd_manager && crd_resource?(resource)
             sync_crd(object, deleted: deleted)
+          elsif deleted && resource.custom? && @crd_manager
+            name = "#{resource.resource}.#{resource.group}"
+            schedule_crd_finalizer(name) if @crd_manager.terminating?(name)
           elsif @aggregator && apiservice_resource?(resource)
             if deleted
               @aggregator.remove(metadata_value(object, "name"))
@@ -79,6 +81,7 @@ module Rubernetes
         # Available condition is recomputed when the object is written and
         # then periodically, off the request path.
         APISERVICE_AVAILABILITY_INTERVAL = 5
+        APISERVICE_AVAILABILITY_LOCK = Mutex.new
 
         def schedule_apiservice_availability(name)
           start_apiservice_availability_loop
@@ -102,7 +105,11 @@ module Rubernetes
                         @aggregator.availability_condition(backend, service: lookup_service(backend),
                                                                     endpoint_slices: lookup_endpoint_slices(backend))
                       end
-          @aggregator.mark_available(name, condition["status"] == "True") if backend
+          if backend
+            available = condition["status"] == "True"
+            @aggregator.mark_available(name, available)
+            @aggregator.refresh_openapi(backend) if available
+          end
           existing = Array(current.dig("status", "conditions"))
           previous = existing.find { |entry| entry["type"] == "Available" }
           observe_apiservice_availability(name, previous, condition)
@@ -144,17 +151,23 @@ module Rubernetes
         end
 
         def start_apiservice_availability_loop
-          return if @apiservice_availability_thread&.alive?
+          APISERVICE_AVAILABILITY_LOCK.synchronize do
+            return if @apiservice_availability_thread&.alive?
 
-          @apiservice_availability_thread = Thread.new do
-            loop do
-              sleep APISERVICE_AVAILABILITY_INTERVAL
-              # A round that fails (the store has no quorum, say) is tried
-              # again at the next interval.
-              best_effort { @aggregator.backends.each { |backend| refresh_apiservice_availability(backend.name) } }
+            @apiservice_availability_thread = Thread.new do
+              loop do
+                sleep APISERVICE_AVAILABILITY_INTERVAL
+                # A round that fails (the store has no quorum, say) is tried
+                # again at the next interval.
+                best_effort { @aggregator.backends.each { |backend| refresh_apiservice_availability(backend.name) } }
+              end
             end
+            @apiservice_availability_thread.name = "apiservice-availability"
           end
-          @apiservice_availability_thread.name = "apiservice-availability"
+        end
+
+        def stop_apiservice_availability_loop
+          APISERVICE_AVAILABILITY_LOCK.synchronize { @apiservice_availability_thread&.kill&.join }
         end
 
         def lookup_service(backend)
@@ -182,7 +195,7 @@ module Rubernetes
             return
           end
           conditions = @crd_manager.sync(object)
-          return if conditions.empty?
+          return if conditions.empty? || metadata_value(object, "deletionTimestamp")
 
           status = (object["status"] || {}).merge(
             "conditions" => conditions,
@@ -202,15 +215,19 @@ module Rubernetes
 
         # Deleting a CRD: finalize by deleting every custom resource, then let
         # the delete proceed once the finalizer is gone.
-        def mark_crd_terminating(route, existing, namespace)
+        def mark_crd_terminating(route, existing, namespace, dry_run:)
           object = deep_copy(existing)
           object["metadata"]["deletionTimestamp"] ||= @clock.call.utc.iso8601(6)
           finalizers = Array(object["metadata"]["finalizers"])
           object["metadata"]["finalizers"] = finalizers | [CRD::Manager::CLEANUP_FINALIZER]
           object["status"] = set_crd_condition(object["status"] || {}, "Terminating", "True", "InstanceDeletionPending",
                                                "CustomResourceDefinition marked for deletion; CustomResource deletion will begin soon")
-          @store.update(resource: route.resource, namespace: namespace, name: route.name, object: object,
-                        resource_version: metadata_value(existing, "resourceVersion"))
+          return object if dry_run
+
+          updated = @store.update(resource: route.resource, namespace: namespace, name: route.name, object: object,
+                                  resource_version: metadata_value(existing, "resourceVersion"))
+          @crd_manager.sync(updated)
+          updated
         end
 
         def set_crd_condition(status, type, value, reason, message)
@@ -224,24 +241,44 @@ module Rubernetes
         # apiextensions crd_finalizer controller: delete every custom resource,
         # then drop the cleanup finalizer so the CRD object disappears.
         def schedule_crd_finalizer(name)
-          # Nobody joins this thread: a finalization that fails leaves the
-          # CRD terminating, to be finalized by the next delete.
-          thread = Thread.new { best_effort { finalize_crd(name) } }
-          thread.name = "crd-finalizer-#{name}"
-          thread
+          # A held instance can be released after this pass. Its removal and
+          # the dynamic API relist both request another pass.
+          @crd_finalizers_lock.synchronize do
+            @crd_finalizers[name] = true
+            @crd_finalizer_thread ||= Thread.new { drain_crd_finalizers }
+          end
+        end
+
+        def drain_crd_finalizers
+          Thread.current.name = "crd-finalizer"
+          loop do
+            name = @crd_finalizers_lock.synchronize do
+              if @crd_finalizers.empty?
+                @crd_finalizer_thread = nil
+                return
+              end
+              @crd_finalizers.shift.first
+            end
+            best_effort { finalize_crd(name) }
+          end
         end
 
         def finalize_crd(name)
           crd_resource = @registry.find_gvr(group: CRD_GVR[0], version: CRD_GVR[1], resource: CRD_GVR[2])
           existing = @store.get(resource: crd_resource, namespace: :cluster, name: name)
           return unless metadata_value(existing, "deletionTimestamp")
+          return unless Array(metadata_value(existing, "finalizers")).include?(CRD::Manager::CLEANUP_FINALIZER)
 
           in_progress = deep_copy(existing)
           in_progress["status"] = set_crd_condition(in_progress["status"] || {}, "Terminating", "True", "InstanceDeletionInProgress",
                                                     "CustomResource deletion is in progress")
-          existing = @store.update(resource: crd_resource, namespace: :cluster, name: name, object: in_progress,
-                                   resource_version: metadata_value(existing, "resourceVersion"))
-          finalize_crd_resources(existing)
+          if in_progress != existing
+            existing = @store.update(resource: crd_resource, namespace: :cluster, name: name, object: in_progress,
+                                     resource_version: metadata_value(existing, "resourceVersion"))
+          end
+          reason, message = finalize_crd_resources(existing)
+          return unless reason
+
           remaining = Array(metadata_value(existing, "finalizers")) - [CRD::Manager::CLEANUP_FINALIZER]
           if remaining.empty?
             @store.delete(resource: crd_resource, namespace: :cluster, name: name,
@@ -250,10 +287,10 @@ module Rubernetes
           else
             released = deep_copy(existing)
             released["metadata"]["finalizers"] = remaining
-            released["status"] = set_crd_condition(released["status"] || {}, "Terminating", "True", "InstanceDeletionCompleted",
-                                                   "removed all instances")
-            @store.update(resource: crd_resource, namespace: :cluster, name: name, object: released,
-                          resource_version: metadata_value(existing, "resourceVersion"))
+            released["status"] = set_crd_condition(released["status"] || {}, "Terminating", "False", reason, message)
+            updated = @store.update(resource: crd_resource, namespace: :cluster, name: name, object: released,
+                                    resource_version: metadata_value(existing, "resourceVersion"))
+            @crd_manager.sync(updated)
           end
         rescue MemoryStore::NotFound, MemoryStore::Conflict
           nil
@@ -261,19 +298,35 @@ module Rubernetes
 
         def finalize_crd_resources(existing)
           spec = existing["spec"] || {}
-          storage_version = Array(spec["versions"]).find { |version| version["storage"] == true }&.fetch("name")
-          return if storage_version.nil?
+          if [CRD_GVR, APISERVICE_GVR].any? { |group, _, plural| group == spec["group"] && plural == spec.dig("names", "plural") }
+            return ["OverlappingBuiltInResource", "instances overlap with built-in resources in storage"]
+          end
+          unless Array(existing.dig("status", "conditions")).any? { |condition| condition.values_at("type", "status") == %w[Established True] }
+            return ["NeverEstablished", "resource was never established"]
+          end
 
-          custom = @registry.find_gvr(group: spec["group"], version: storage_version, resource: spec.dig("names", "plural"))
-          return if custom.nil?
-
-          @crd_manager.cleanup_resources(existing) do |object|
-            namespace = metadata_value(object, "namespace")
-            @store.delete(resource: custom, namespace: namespace.nil? || namespace.to_s.empty? ? :cluster : namespace, name: metadata_value(object, "name"),
-                          resource_version: metadata_value(object, "resourceVersion"))
+          # Only metadata changes during finalization. Address the common
+          # storage prefix even if the storage version is no longer served,
+          # preserving each instance's stored representation.
+          storage = spec.fetch("versions").find { |version| version["storage"] }.fetch("name")
+          custom = Resource.new(group: spec.fetch("group"), version: storage, resource: spec.dig("names", "plural"),
+                                kind: spec.dig("names", "kind"), scope: spec["scope"] == "Namespaced" ? :namespaced : :cluster, custom: true)
+          @store.list(resource: custom, namespace: :all, selectors: nil).items.each do |object|
+            namespace = custom.namespaced? ? metadata_value(object, "namespace") : :cluster
+            name = metadata_value(object, "name")
+            expected = metadata_value(object, "resourceVersion")
+            candidate, pending = deletion_state(custom, object, {})
+            if !pending
+              @store.delete(resource: custom, namespace: namespace, name: name, resource_version: expected)
+            elsif !candidate.equal?(object)
+              @store.update(resource: custom, namespace: namespace, name: name, object: candidate, resource_version: expected)
+            end
           rescue MemoryStore::NotFound, MemoryStore::Conflict
             nil
           end
+          return unless @store.list(resource: custom, namespace: :all, selectors: nil, limit: 1).items.empty?
+
+          ["InstanceDeletionCompleted", "removed all instances"]
         end
 
         # Requests for a group/version that no registered resource serves are
