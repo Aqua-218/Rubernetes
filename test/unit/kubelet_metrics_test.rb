@@ -10,7 +10,7 @@ require "rubernetes/node"
 
 class KubeletMetricsTest < Minitest::Test
   def record(uid, state: "Running", static: false)
-    annotations = static ? {"kubernetes.io/config.source" => "file", "kubernetes.io/config.mirror" => "x"} : {}
+    annotations = static ? {"kubernetes.io/config.source" => "file"} : {}
     {uid: uid, state: state, sandbox_id: "s-#{uid}",
      pod: {"metadata" => {"name" => uid, "namespace" => "ns", "uid" => uid, "annotations" => annotations}},
      containers: [{id: "#{uid}-init", name: "init", category: "init", started: true, exited: true},
@@ -31,7 +31,9 @@ class KubeletMetricsTest < Minitest::Test
     metrics.observe(a, {"type" => "state", "from" => "Pending", "to" => "Running"})
     metrics.observe(a, {"type" => "state", "from" => "Running", "to" => "Running"})
     metrics.eviction("memory.available")
-    text = metrics.render([a, record("b", static: true), record("gone", state: "Removed")])
+    b = record("b", static: true)
+    metrics.pod_inventory = -> { [[a.fetch(:pod), b.fetch(:pod)], 1] }
+    text = metrics.render([a, b, record("gone", state: "Removed")])
 
     assert_includes text, "kubelet_node_name{node=\"worker-0\"} 1"
     assert_includes text, "kubelet_started_pods_total 1"
@@ -48,8 +50,42 @@ class KubeletMetricsTest < Minitest::Test
     assert_includes text, "kubelet_running_containers{container_state=\"exited\"} 3"
     assert_includes text, "kubelet_running_containers{container_state=\"created\"} 3"
     assert_includes text, "kubelet_desired_pods{static=\"true\"} 1"
-    assert_includes text, "kubelet_active_pods{static=\"false\"} 1"
+    assert_includes text, "kubelet_active_pods{static=\"\"} 1"
     assert_includes text, "kubelet_mirror_pods 1"
+  end
+
+  def test_withdrawn_static_pod_remains_an_orphan_worker_while_mirror_exists
+    metrics = Rubernetes::Node::KubeletMetrics.new(node_name: "worker-0")
+    app = record("app")
+    static = record("static", static: true)
+    queued = record("queued").fetch(:pod)
+    done = record("done", state: "Removed")
+    desired = [app.fetch(:pod), static.fetch(:pod), queued, done.fetch(:pod)]
+    mirrors = 1
+    metrics.pod_inventory = -> { [desired, mirrors] }
+
+    running = metrics.render([app, static, done])
+
+    assert_includes running, %(kubelet_desired_pods{static=""} 3)
+    assert_includes running, %(kubelet_active_pods{static=""} 2)
+    assert_includes running, %(kubelet_working_pods{config="desired",lifecycle="sync",static="true"} 1)
+    assert_includes running, %(kubelet_working_pods{config="desired",lifecycle="terminated",static=""} 1)
+
+    desired.delete(static.fetch(:pod))
+    stopping = metrics.render([app, done, static.merge(state: "Stopping", config_removed: true)])
+
+    assert_includes stopping, %(kubelet_desired_pods{static="true"} 0)
+    assert_includes stopping, %(kubelet_active_pods{static="true"} 0)
+    assert_includes stopping, %(kubelet_mirror_pods 1)
+    assert_includes stopping, %(kubelet_working_pods{config="orphan",lifecycle="terminating",static="true"} 1)
+    assert_includes stopping, %(kubelet_working_pods{config="desired",lifecycle="terminating",static="true"} 0)
+
+    mirrors = 0
+    removed = metrics.render([app, done, static.merge(state: "Removed", source_gone: true)])
+
+    assert_includes removed, %(kubelet_mirror_pods 0)
+    assert_includes removed, %(kubelet_working_pods{config="orphan",lifecycle="terminating",static="true"} 0)
+    assert_includes removed, %(kubelet_working_pods{config="orphan",lifecycle="terminated",static="true"} 0)
   end
 
   def test_the_streaming_server_serves_them_with_volume_stats
