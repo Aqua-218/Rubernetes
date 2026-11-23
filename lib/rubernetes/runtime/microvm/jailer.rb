@@ -71,6 +71,9 @@ module Rubernetes
           root = chroot_for(id)
           raise JailerError, "jail root #{root} already exists" if File.exist?(root)
 
+          FileUtils.mkdir_p(File.dirname(root), mode: 0o700)
+          Dir.mkdir(root, 0o700)
+          created = true
           %w[. dev run drives snapshot].each do |directory|
             path = File.join(root, directory)
             FileUtils.mkdir_p(path, mode: 0o700)
@@ -84,30 +87,31 @@ module Rubernetes
           inputs.each do |jail_path, value|
             host_path = value.is_a?(Hash) ? value.fetch("path") : value
             writable = value.is_a?(Hash) && value["writable"] == true
-            install_input(root, jail_path, host_path, uid, gid, writable: writable)
+            rdev = value.is_a?(Hash) ? value["rdev"] : nil
+            install_input(root, jail_path, host_path, uid, gid, writable: writable, rdev: rdev)
           end
           root
+        rescue StandardError
+          remove_jail(id) if created
+          raise
         end
 
-        def install_input(root, jail_path, host_path, uid, gid, writable: false)
+        def install_input(root, jail_path, host_path, uid, gid, writable: false, rdev: nil)
           target = File.join(root, jail_path.delete_prefix("/"))
           FileUtils.mkdir_p(File.dirname(target), mode: 0o700)
           File.chown(uid, gid, File.dirname(target))
-          if File.blockdev?(host_path)
-            stat = File.stat(host_path)
+          stat = File.stat(host_path)
+          raise JailerError, "block device input #{host_path} changed before jail setup" if rdev && !(stat.blockdev? && stat.rdev == rdev)
+
+          if stat.blockdev?
             mknod(target, stat.rdev_major, stat.rdev_minor, block: true)
             File.chown(uid, gid, target)
             File.chmod(writable ? 0o600 : 0o400, target)
           elsif writable
-            begin
-              File.link(host_path, target)
-            rescue SystemCallError
-              FileUtils.cp(host_path, target)
-            end
+            link_or_copy_input(host_path, target)
             File.chown(uid, gid, target)
             File.chmod(0o600, target)
           else
-            stat = File.stat(host_path)
             raise JailerError, "read-only input #{host_path} is writable by group/other" unless stat.mode.nobits?(0o022)
             unless stat.mode.allbits?(0o004) || acl_grants_read?(
               host_path, uid
@@ -116,12 +120,7 @@ module Rubernetes
                     "read-only input #{host_path} is not readable by uid #{uid}"
             end
 
-            begin
-              File.link(host_path, target)
-            rescue SystemCallError
-              FileUtils.cp(host_path, target)
-              File.chmod(0o644, target)
-            end
+            link_or_copy_input(host_path, target) { File.chmod(0o644, target) }
           end
           target
         end
@@ -284,6 +283,25 @@ module Rubernetes
         end
 
         private
+
+        # A jail can live on a different filesystem from the artifact cache.
+        # Preserve holes in VM memory and drive images when a link is unavailable.
+        def link_or_copy_input(source, target)
+          File.link(source, target)
+        rescue Errno::EXDEV, Errno::EPERM, Errno::EMLINK, Errno::EOPNOTSUPP
+          File.open(target, "wbx", 0o600) do |destination|
+            installed = false
+            begin
+              output, status = Open3.capture2e("cp", "--reflink=auto", "--sparse=always", "--", source, "/proc/self/fd/3", 3 => destination)
+              raise JailerError, "cannot copy jail input: #{output.strip}" unless status.success?
+
+              yield if block_given?
+              installed = true
+            ensure
+              File.unlink(target) if !installed && File.identical?(target, destination)
+            end
+          end
+        end
 
         def wait_for_pid_file(root, jailer_pid, timeout: 10.0)
           path = File.join(root, "#{exec_name}.pid")
