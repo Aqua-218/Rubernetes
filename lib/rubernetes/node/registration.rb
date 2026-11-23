@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 # Node registration and heartbeat primitives.  The class intentionally does
 # not know about an HTTP transport or a particular storage implementation;
 # callers inject a small API client and can therefore exercise registration in
@@ -55,42 +57,11 @@ module Rubernetes
           stringify_keys(source || {})
         end
 
-        def stringify_keys(value)
-          case value
-          when Hash
-            value.each_with_object({}) do |(key, child), output|
-              output[key.to_s] = stringify_keys(child)
-            end
-          when Array
-            value.map { |child| stringify_keys(child) }
-          else
-            value
-          end
-        end
+        def stringify_keys(value) = ObjectTree.stringify_keys(value)
 
-        def deep_copy(value)
-          case value
-          when Hash
-            value.each_with_object({}) { |(key, child), output| output[key] = deep_copy(child) }
-          when Array
-            value.map { |child| deep_copy(child) }
-          else
-            value
-          end
-        end
+        def deep_copy(value) = ObjectTree.copy(value)
 
-        def deep_freeze(value)
-          case value
-          when Hash
-            value.each do |key, child|
-              deep_freeze(key)
-              deep_freeze(child)
-            end
-          when Array
-            value.each { |child| deep_freeze(child) }
-          end
-          value.freeze
-        end
+        def deep_freeze(value) = ObjectTree.deep_freeze(value)
 
         def merge_hashes(left, right)
           left = object_hash(left)
