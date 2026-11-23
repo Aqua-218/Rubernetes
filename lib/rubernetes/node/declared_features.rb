@@ -10,12 +10,8 @@ module Rubernetes
     # declares in Node.status.declaredFeatures, discovered once at start from
     # the feature gates and the runtime's features.
     #
-    # Upstream discovery is gate-only: a kubelet that has a feature's gate on
-    # implements it.  Here a gate may be on while the behaviour behind it is
-    # not built yet, and declaring such a feature would let the scheduler
-    # and the API server send this node Pods it would mishandle.  A feature
-    # is therefore declared only when its gate is on AND it is listed in
-    # IMPLEMENTED below, with the code that provides it.
+    # A node declares implemented features whose gates are enabled and whose
+    # runtime-specific requirements match the configured runtime.
     module DeclaredFeatures
       IMPLEMENTED = {
         # node/streaming_server.rb: exec/attach/portforward over WebSocket
@@ -29,14 +25,22 @@ module Rubernetes
         # node/lifecycle.rb resize_pod + Runtime::Native#update_pod_resources:
         # pod-level resources are applied to the Pod cgroup and resized in place.
         "InPlacePodLevelResourcesVerticalScaling" => true,
-        # The native runtime does not report user namespaces with host
-        # networking; discovery also requires the runtime feature.
-        "UserNamespacesHostNetworkSupport" => false
+        # CRI reports this only if the runtime and an available handler support it.
+        "UserNamespacesHostNetworkSupport" => true
       }.freeze
 
       CORPUS = File.expand_path("../../../schema/kubernetes/v1.36.2-defaults/features.json", __dir__)
 
       module_function
+
+      def discover_runtime_features(runtime)
+        if (defined?(Runtime::Multiplexer) && runtime.is_a?(Runtime::Multiplexer)) ||
+           (defined?(Runtime::CRI::Backend) && runtime.is_a?(Runtime::CRI::Backend))
+          runtime.runtime_features
+        else
+          {}
+        end
+      end
 
       def default_gates
         @default_gates ||= if File.file?(CORPUS)
