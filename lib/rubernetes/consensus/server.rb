@@ -50,20 +50,22 @@ module Rubernetes
 
       def initialize(id:, cluster_id:, data_directory:, bundle:, initial_voters:, peers: {}, host: "127.0.0.1", port: 0,
                      timing: Node::Timing.default, logger: nil, recover_torn_tail: true, device_factory: nil,
-                     history_revisions: nil, history_seconds: nil, pre_vote: true)
+                     history_revisions: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_REVISIONS, pre_vote: true,
+                     history_retention_policy: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_POLICY,
+                     history_seconds: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_SECONDS_BY_POLICY[history_retention_policy])
         @id = id
         @cluster_id = cluster_id
         @data_directory = data_directory
         @logger = logger
         @timing = timing
+        if history_retention_policy == Rubernetes::Storage::MemoryStore::COMPATIBILITY_HISTORY_POLICY
+          # Existing Server callers can pass nil to request the default.
+          history_revisions ||= Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_REVISIONS
+          history_seconds ||= Rubernetes::Storage::MemoryStore::COMPATIBILITY_HISTORY_SECONDS
+        end
+        @state_machine = KVStateMachine.new(history_revisions: history_revisions, history_seconds: history_seconds,
+                                            history_retention_policy: history_retention_policy, logger: logger)
         @storage = Storage.new(data_directory, recover_torn_tail: recover_torn_tail, device_factory: device_factory)
-        # history_seconds is kube-apiserver's --etcd-compaction-interval: how
-        # much history the datastore keeps before compacting it away.
-        @state_machine = KVStateMachine.new(
-          history_revisions: history_revisions || Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_REVISIONS,
-          history_seconds: history_seconds || Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_SECONDS,
-          logger: logger
-        )
         @mutex = Monitor.new
         @node = Node.new(id: id, cluster_id: cluster_id, log: @storage.log, snapshot_store: @storage.snapshots,
                          state_machine: @state_machine, initial_membership: Membership.simple(initial_voters),
@@ -255,6 +257,7 @@ module Rubernetes
             record_phase("propose.monitor", Process.clock_gettime(Process::CLOCK_MONOTONIC) - entered)
             @arrivals.synchronize { @waiting_proposers -= 1 }
             if @node.leader?
+              @transport.require_related_versions_support!(@node.peers) if Transport.guarded?(command)
               timed_phase("propose.append") { @node.propose(command, request_id: request_id) }
               position = @node.proposal_position(request_id)
               unless position
@@ -276,6 +279,7 @@ module Rubernetes
               record_phase("propose.apply", Process.clock_gettime(Process::CLOCK_MONOTONIC) - applied_started)
             end
           elsif leader && leader != @id
+            @transport.require_related_versions_support!([leader]) if Transport.guarded?(command)
             forward_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             result = begin
               forward(leader, command, request_id, [remaining, 2.0].min)
@@ -457,6 +461,8 @@ module Rubernetes
           when Messages::ForwardProposalResponse then resolve_forward(message)
           when Messages::ReadIndexResponse then resolve_forward_read(message)
           else
+            return if reject_incompatible_forward(message)
+
             route(@node.handle(message))
             # A forwarded proposal joins the next batch, flushed at once.
             request_flush if @node.batch_pending?
@@ -470,6 +476,16 @@ module Rubernetes
 
       def route(messages)
         messages.each { |message| @transport.send(message) }
+      end
+
+      def reject_incompatible_forward(message)
+        return false unless message.is_a?(Messages::ForwardProposal) && Transport.guarded?(message.command) && @node.leader?
+        return false if @transport.supports_related_versions?(@node.peers)
+
+        @transport.send(Messages::ForwardProposalResponse.new(cluster_id: @cluster_id, from: @id, to: message.from,
+                                                              term: @node.current_term, request_id: message.request_id,
+                                                              accepted: false, index: 0, entry_term: 0, leader_id: @id))
+        true
       end
 
       def flush_outbox
@@ -730,6 +746,8 @@ module Rubernetes
         @transport.send(Messages::ForwardProposal.new(cluster_id: @cluster_id, from: @id, to: leader, term: @node.current_term,
                                                       request_id: request_id, command: command))
         response = future.wait(timeout)
+        raise NotReady, "Raft leader could not accept the guarded write" if !response.accepted && Transport.guarded?(command)
+
         return nil unless response.accepted
 
         record_phase("propose.forward.leader", Process.clock_gettime(Process::CLOCK_MONOTONIC) - sent_at)
