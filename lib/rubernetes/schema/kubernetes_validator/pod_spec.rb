@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../probe_timing"
+
 module Rubernetes
   module Schema
     # PodSpec rules that apply wherever a Pod template is embedded (Pod, the
@@ -14,53 +16,103 @@ module Rubernetes
       SUPPORTED_APPARMOR = %w[Localhost RuntimeDefault Unconfined].freeze
       SUPPORTED_SECCOMP = %w[Localhost RuntimeDefault Unconfined].freeze
       SUPPORTED_OS = %w[linux windows].freeze
+      RECURSIVE_READ_ONLY_MODES = %w[Disabled Enabled IfPossible].freeze
+      HOSTNAME_OVERRIDE_GATE = "HostnameOverride"
 
-      def probe_errors(root)
+      def pod_hostname_override_errors(root, kind)
+        base = kind == "Pod" ? [] : POD_TEMPLATE_PATHS[kind]
+        return [] unless base
+
+        spec_path = base + ["spec"]
+        spec = dig_path(root, spec_path)
+        hostname = fetch(spec, "hostnameOverride")
+        return [] unless hostname.is_a?(String)
+
+        path = spec_path + ["hostnameOverride"]
+        errors = %w[setHostnameAsFQDN hostNetwork].filter_map do |field|
+          issue(path, :forbidden, "may not be specified when #{field} is true") if fetch(spec, field) == true
+        end
+        errors << issue(path, :too_long, "may not be more than 64 bytes") if hostname.bytesize > 64
+        errors.concat(invalid_messages(path, dns1123_subdomain_messages(hostname)))
+      end
+
+      def probe_errors(root, kind)
         issues = []
+        base = kind == "Pod" ? [] : POD_TEMPLATE_PATHS[kind]
+        spec_path = base + ["spec"] if base
         walk(root) do |value, path|
-          next if path.include?("status")
-          next unless value.is_a?(Hash)
-          # Probe handlers in status are observed state, not PodSpec input;
-          # normal resource create/update strategies do not validate them.
-          next if path.include?("status")
+          next unless value.is_a?(Hash) && !path.include?("status")
 
-          present = PROBE_HANDLERS.reject { |name| fetch(value, name).nil? }
-          next if present.empty?
-
-          if present.length > 1
-            # Kubernetes treats the first populated handler in the API
-            # struct's stable order as the selected handler and reports the
-            # remaining populated handlers as forbidden.
-            present.drop(1).each do |name|
-              issues << issue(path + [name], :forbidden, PROBE_HANDLER_DETAIL)
-            end
-          end
-          # Validate the selected handler only.  The upstream validator emits
-          # a single Forbidden error for every later handler and does not
-          # descend into those handlers.  Descending unconditionally makes a
-          # zero-value probe report spurious port/command errors alongside the
-          # expected one-of errors.
-          exec = fetch(value, "exec")
-          if present.first == "exec" && exec.is_a?(Hash) &&
-             (!exec.key?("command") || blank_array?(fetch(exec, "command")))
-            issues << issue(path + %w[exec command], :required, "")
-          end
-          http = fetch(value, "httpGet")
-          if present.first == "httpGet" && http.is_a?(Hash)
-            port = fetch(http, "port")
-            if port.nil? || (port.is_a?(Integer) && !(1..65_535).cover?(port))
-              issues << issue(path + %w[httpGet port], :invalid, "must be between 1 and 65535, inclusive")
-            elsif port.is_a?(String) && port.match?(/\A\d+\z/)
-              issues << issue(path + %w[httpGet port], :invalid, "must contain at least one letter (a-z)")
-            end
+          if path == spec_path
+            pod_spec_probe_errors(value, path, issues)
+          elsif !pod_container_probe_path?(path, spec_path)
+            probe_handler_errors(value, path, issues)
           end
         end
         issues
       end
 
+      def pod_container_probe_path?(path, spec_path)
+        spec_path && ProbeTiming::FIELDS.include?(path.last) && %w[containers initContainers].include?(path[-3]) &&
+          path.length == spec_path.length + 3 && path.take(spec_path.length) == spec_path
+      end
+
+      # Follow the order of ValidateContainers and ValidateInitContainers.
+      def pod_spec_probe_errors(spec, path, issues)
+        %w[containers initContainers].each do |field|
+          Array(fetch(spec, field)).each_with_index do |container, index|
+            allowed = field != "initContainers" || fetch(container, "restartPolicy") == "Always"
+            ProbeTiming::FIELDS.each do |name|
+              probe = fetch(container, name)
+              next unless probe.is_a?(Hash)
+
+              probe_path = path + [field, index, name]
+              if allowed
+                probe_handler_errors(probe, probe_path, issues, required: true)
+                ProbeTiming.errors(probe, probe_path).each do |error|
+                  issues << ValidationIssue.new(path: error.path, code: :invalid, value: error.value, message: error.message)
+                end
+              else
+                issues << issue(probe_path, :forbidden, ProbeTiming::INIT_CONTAINER_DETAIL)
+              end
+            end
+          end
+        end
+      end
+
+      def probe_handler_errors(value, path, issues, required: false)
+        present = PROBE_HANDLERS.reject { |name| fetch(value, name).nil? }
+        if present.empty?
+          issues << issue(path, :required, "must specify a handler type") if required
+          return
+        end
+
+        # The first populated handler is selected in the API struct's order.
+        # Do not descend into handlers that are rejected by this one-of check.
+        present.drop(1).each { |name| issues << issue(path + [name], :forbidden, PROBE_HANDLER_DETAIL) }
+        exec = fetch(value, "exec")
+        if present.first == "exec" && exec.is_a?(Hash) &&
+           (!exec.key?("command") || blank_array?(fetch(exec, "command")))
+          issues << issue(path + %w[exec command], :required, "")
+        end
+        http = fetch(value, "httpGet")
+        return unless present.first == "httpGet" && http.is_a?(Hash)
+
+        port = fetch(http, "port")
+        if port.nil? || (port.is_a?(Integer) && !(1..65_535).cover?(port))
+          issues << issue(path + %w[httpGet port], :invalid, "must be between 1 and 65535, inclusive")
+        elsif port.is_a?(String) && port.match?(/\A\d+\z/)
+          issues << issue(path + %w[httpGet port], :invalid, "must contain at least one letter (a-z)")
+        end
+      end
+
       def common_pod_errors(root, operation = :create, old = nil)
         issues = []
         walk(root) do |value, path|
+          if path.last == "volumeMounts" && %w[containers initContainers ephemeralContainers].include?(path[-3]) &&
+             value.is_a?(Array) && !path.include?("status")
+            recursive_mount_errors(value, path + ["recursiveReadOnly"], issues)
+          end
           next unless value.is_a?(Hash)
 
           # Status is validated by status strategies (when one exists), not
@@ -112,6 +164,25 @@ module Rubernetes
         issues
       end
 
+      # validateMountRecursiveReadOnly: the issue belongs to the mount list.
+      def recursive_mount_errors(mounts, path, issues)
+        mounts.each do |mount|
+          mode = fetch(mount, "recursiveReadOnly")
+          next if mode.nil? || mode == "Disabled"
+
+          unless RECURSIVE_READ_ONLY_MODES.include?(mode)
+            issues << ValidationIssue.new(path: path, code: :unsupported, value: mode, kubernetes_type: "Unsupported value",
+                                          message: unsupported_detail(RECURSIVE_READ_ONLY_MODES))
+            next
+          end
+          issues << issue(path, :forbidden, "may only be specified when readOnly is true") unless fetch(mount, "readOnly") == true
+          propagation = fetch(mount, "mountPropagation")
+          next if propagation.nil? || propagation == "None"
+
+          issues << issue(path, :forbidden, "may only be specified when mountPropagation is None or not specified")
+        end
+      end
+
       # validateObjectFieldSelector: a downward API fieldPath is either a
       # plain label from the set allowed in that position, or a subscripted
       # `metadata.labels['k']` / `metadata.annotations['k']` whose subscript
@@ -121,39 +192,6 @@ module Rubernetes
       ENV_FIELD_PATHS = %w[metadata.name metadata.namespace metadata.uid spec.nodeName spec.serviceAccountName
                            status.hostIP status.hostIPs status.podIP status.podIPs].freeze
       VOLUME_FIELD_PATHS = %w[metadata.name metadata.namespace metadata.uid metadata.labels metadata.annotations].freeze
-      SUBSCRIPTED_FIELD_PATH = /\A(?<path>[^\[]+)\['(?<subscript>.*)'\]\z/
-
-      def object_field_selector_issues(value, path)
-        issues = []
-        field_path = fetch(value, "fieldPath")
-        return issues unless field_path.is_a?(String) && !field_path.empty?
-
-        if (match = SUBSCRIPTED_FIELD_PATH.match(field_path))
-          base = match[:path]
-          subscript = match[:subscript]
-          case base
-          when "metadata.annotations"
-            issues.concat(qualified_name_messages(subscript.downcase).map { |message| issue(path, :invalid, message) })
-          when "metadata.labels"
-            issues.concat(qualified_name_messages(subscript).map { |message| issue(path, :invalid, message) })
-          else
-            issues << issue(path, :invalid, "does not support subscript")
-          end
-          return issues
-        end
-
-        allowed = downward_api_volume_context?(path) ? VOLUME_FIELD_PATHS : ENV_FIELD_PATHS
-        unless allowed.include?(field_path)
-          issues << issue(path + ["fieldPath"], :unsupported,
-                          "supported values: #{allowed.sort.map { |entry| JSON.generate(entry) }.join(", ")}")
-        end
-        issues
-      end
-
-      def downward_api_volume_context?(path)
-        path.any? { |segment| segment.to_s == "downwardAPI" } ||
-          (path.any? { |segment| segment.to_s == "volumes" } && path.none? { |segment| segment.to_s == "env" })
-      end
 
       # pkg/apis/core/validation ValidatePodCreate (ephemeral containers are a
       # subresource) and validateContainers (names are unique across the
