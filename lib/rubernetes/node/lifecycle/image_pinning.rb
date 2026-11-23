@@ -6,6 +6,8 @@ module Rubernetes
       # Resolves and pins every image of a Pod before any other effect, and
       # reports each pull the way kubelet's image manager does.
       module ImagePinning
+        IMAGE_PULL_REASONS = %w[ErrImagePull ErrImageNeverPull ImagePullBackOff].freeze
+
         private
 
         # Resolve every container image before the first volume, filesystem,
@@ -98,39 +100,193 @@ module Rubernetes
             cache[cache_key] = outcome
           end
           image_events(record, definitions, reports, failure) if reporting
-          raise_pull_failure(record, failure) if failure
+          raise_pull_failure(record, failure, container_name: pending[failure.first]) if failure
           cache
+        rescue StandardError
+          cache&.each_value { |image| best_effort { invoke(@image_resolver, :release, image) } if image }
+          raise
         end
 
-        def raise_pull_failure(record, failure)
+        def raise_pull_failure(record, failure, container_name:)
           cache_key, error = failure
           raise error if error.is_a?(LifecycleError)
 
           if defined?(::Rubernetes::Image::NeverPullError) && error.is_a?(::Rubernetes::Image::NeverPullError)
             # ErrImageNeverPull: pull policy Never and the image is not here.
             record[:reason] = "ErrImageNeverPull"
-            raise LifecycleError, error.message
+            message = error.message
+          else
+            record[:reason] = "ErrImagePull"
+            message = "Failed to pull image #{cache_key.inspect}: #{Helpers.failure_message(error)}"
           end
-          # kubelet: a pull that fails leaves the container Waiting with
-          # reason ErrImagePull (ImagePullBackOff while the retry waits)
-          # and the Pod Pending; e2e reads exactly that reason.
-          record[:reason] = "ErrImagePull"
-          raise LifecycleError, "Failed to pull image #{cache_key.inspect}: #{Helpers.failure_message(error)}"
+          record[:image_pull_failure] = {name: container_name, reference: cache_key, message: message}
+          raise LifecycleError, message
+        end
+
+        def mark_image_pull_backoff(record)
+          failure = record[:image_pull_failure]
+          return false unless failure && record[:reason] == "ErrImagePull"
+
+          record[:reason] = "ImagePullBackOff"
+          event(record, "image.pull_backoff", name: failure[:name], reference: failure[:reference])
+          true
         end
 
         # The pulled images become the record's, and each container is told
         # which one it runs.
         def pin_container_images(record, definitions, images)
+          record[:images].concat(images.values.compact)
           images.each do |cache_key, resolved|
             raise LifecycleError, "image resolver returned no image for #{cache_key.inspect}" if resolved.nil?
-
-            record[:images] << resolved
           end
           definitions.each do |category, index, definition|
             reference = Helpers.key(definition, "image", nil)
             image_hash = image_to_hash(images.fetch(reference.to_s), reference)
             record[:image_by_container][image_key(category, index)] = image_hash
           end
+        end
+
+        def updated_container_image_spec(pod, record, definition, index, category:)
+          source_category = category == "sidecar" ? "init" : category
+          image = record[:image_by_container][image_key(source_category, index)]
+          definition = definition.merge("resolved_image" => image) if image
+          build_container_spec(record.merge(pod: pod), definition, category: category, index: index)
+        end
+
+        def image_only_updates(record, pod, during_init: false)
+          # Firecracker's image lowerdirs are attached before the VM starts.
+          return if %w[rubernetes-firecracker rubernetes-firecracker-restricted].include?(pod_runtime_class(pod))
+
+          previous = record.fetch(:pod)
+          changes = container_image_definitions(pod).filter_map do |category, index, definition|
+            next if category == "init" && !during_init && !restartable_init?(definition)
+
+            field = category == "init" ? "initContainers" : "containers"
+            prior = previous.dig("spec", field, index)
+            next unless prior && prior["name"] == definition["name"] && prior["image"] != definition["image"]
+
+            [[category, index, definition], field, prior["image"]]
+          end
+          return if changes.empty?
+
+          unless during_init
+            names = record[:containers].map { |entry| entry[:name] }
+            return unless changes.all? { |(_category, _index, definition), _field, _image| names.include?(definition["name"]) }
+          end
+
+          unchanged = Helpers.deep_copy(pod)
+          changes.each do |(_category, index, _definition), field, image|
+            unchanged.dig("spec", field, index)["image"] = image
+          end
+          changes.map(&:first) if config_digest(unchanged) == config_digest(previous)
+        end
+
+        # The watch cache can advance while the Pod worker is blocked in an
+        # ordinary init container. Use its latest images before creating the
+        # next container, keeping the sandbox and completed init work.
+        def adopt_init_image_updates(record, sidecars_only: false)
+          loop do
+            check_start_cancelled!(record)
+            current = record.fetch(:pod)
+            desired = desired_during_initialization(record)
+            return current unless desired
+
+            updates = image_only_updates(record, desired, during_init: true) unless desired.equal?(current)
+            unless updates
+              clear_image_update_retry(record) if record[:image_update_retry_key]
+              return current
+            end
+
+            if sidecars_only
+              desired, updates = running_sidecar_image_updates(current, desired, record, updates)
+              return current if updates.empty?
+            end
+            return unless apply_init_image_updates(desired, record, updates)
+          end
+        end
+
+        def running_sidecar_image_updates(current, desired, record, updates)
+          names = record[:containers].filter_map { |entry| entry[:name] if entry[:category] == "sidecar" }
+          sidecars = updates.select { |category, _index, definition| category == "init" && names.include?(definition["name"]) }
+          return [desired, sidecars] if sidecars.empty? || sidecars == updates
+
+          partial = Helpers.deep_copy(current)
+          sidecars.each { |_category, index, definition| partial.dig("spec", "initContainers", index)["image"] = definition.fetch("image") }
+          [partial, sidecars]
+        end
+
+        def apply_init_image_updates(pod, record, updates)
+          entries = record[:containers].to_h { |entry| [entry[:name], entry] }
+          needed = updates.reject { |_category, _index, definition| entries[definition["name"]]&.fetch(:category) == "init" }
+          return false unless pin_image_updates(pod, record, needed)
+
+          updates.each do |category, index, definition|
+            check_start_cancelled!(record)
+            entry = entries[definition["name"]]
+            next unless category == "init" && entry && entry[:category] == "sidecar" && entry.dig(:spec, "image") != definition["image"]
+            return false unless apply_one_image_update(pod, record, entry, definition, index)
+            return false unless record[:state] == "WorkloadStopped"
+          end
+          record[:pod] = pod
+          clear_image_update_retry(record)
+          true
+        end
+
+        def apply_running_image_updates(pod, record, updates)
+          return result_for(record) unless pin_image_updates(pod, record, updates)
+
+          updates.each do |_category, index, definition|
+            entry = record[:containers].find { |candidate| candidate[:name] == definition["name"] }
+            next if entry.dig(:spec, "image") == definition["image"]
+            return result_for(record) unless apply_one_image_update(pod, record, entry, definition, index)
+            return result_for(record) unless record[:state] == "Running"
+          end
+          clear_image_update_retry(record)
+          refresh_running(pod, record)
+        end
+
+        def pin_image_updates(pod, record, updates)
+          return true if updates.empty? || @image_resolver.nil?
+
+          desired = updates.map { |_category, _index, definition| definition.values_at("name", "image") }
+          uid = record[:uid]
+          if record[:image_update_retry_key] == desired
+            return false if start_retry_pending?(uid)
+          else
+            clear_start_retry(uid)
+          end
+          images = pull_images(record, updates, image_keyring(pod))
+          pin_container_images(record, updates, images)
+          true
+        rescue LifecycleError => error
+          record[:image_update_retry_key] = desired
+          event(record, "container.restart_failed", message: Helpers.failure_message(error))
+          schedule_start_retry(uid)
+          update_status(pod, record)
+          persist_state!
+          false
+        end
+
+        def clear_image_update_retry(record)
+          record.delete(:image_update_retry_key)
+          record.delete(:image_pull_failure)
+          clear_start_retry(record[:uid])
+          record[:reason] = nil
+        end
+
+        def apply_one_image_update(pod, record, entry, definition, index)
+          spec = updated_container_image_spec(pod, record, definition, index, category: entry.fetch(:category))
+          apply_image_replacement(pod, record, entry, spec)
+        end
+
+        def apply_image_replacement(pod, record, entry, spec)
+          replace_container_image(pod, record, entry, spec)
+        rescue StartCancelled
+          false
+        rescue StandardError => error
+          record[:pod] = pod
+          fail_record(record, LifecycleError.new("Failed to replace container #{entry[:name].inspect}: #{Helpers.failure_message(error)}"))
+          false
         end
 
         # An image volume (spec.volumes[].image) is pulled and pinned like a
@@ -173,6 +329,7 @@ module Rubernetes
           keywords[:on_pull] = on_pull if on_pull && resolver_accepts?(:on_pull)
           keywords[:credentials] = credential.to_h if credential
           keywords[:pull_policy] = pull_policy.to_s unless pull_policy.to_s.empty?
+          keywords[:retain] = true if resolver_accepts?(:retain)
           if resolver_accepts?(:pull_secret)
             keywords[:pull_secret] = credential.pull_secret if credential&.pull_secret
             keywords[:pod_credentials] = lambda do
@@ -187,18 +344,14 @@ module Rubernetes
         def resolver_accepts?(keyword)
           @resolver_keywords ||= begin
             parameters = @image_resolver.method(:resolve).parameters
-            if parameters.any? { |kind, _| kind == :keyrest }
-              :any
-            else
-              parameters.filter_map do |kind, name|
-                name if %i[key keyreq].include?(kind)
-              end
+            parameters.filter_map do |kind, name|
+              name if %i[key keyreq].include?(kind)
             end
           rescue NameError
             # No resolver, or one without #resolve: it takes no keywords.
             []
           end
-          @resolver_keywords == :any ? false : @resolver_keywords.include?(keyword)
+          @resolver_keywords.include?(keyword)
         end
 
         # One image outside the Pod's start sweep (an ephemeral container, an
@@ -216,6 +369,9 @@ module Rubernetes
           raise outcome if outcome.is_a?(Exception)
 
           outcome
+        rescue StandardError
+          best_effort { invoke(@image_resolver, :release, outcome) } if outcome && !outcome.is_a?(Exception)
+          raise
         end
 
         # One image's pull as the resolver reports it (Image::Resolver#resolve
@@ -274,13 +430,12 @@ module Rubernetes
           end
         end
 
-        # imagePullSecrets (Pod + ServiceAccount) become the registry keyring
-        # for this Pod's pulls; without a resource reader there is nothing to
-        # read them from and pulls stay anonymous.
+        # Pod and ServiceAccount pull secrets precede the configured node
+        # Docker keyring and credential providers.
         def image_keyring(pod)
-          return nil unless @resource_reader || @credential_providers
+          return nil unless @resource_reader || @credential_providers || @node_image_config
 
-          keyring = ImageCredentials.for_pod(pod, reader: @resource_reader, providers: @credential_providers)
+          keyring = ImageCredentials.for_pod(pod, reader: @resource_reader, providers: @credential_providers, node_config: @node_image_config)
           keyring.empty? ? nil : keyring
         rescue StandardError => error
           raise LifecycleError, "imagePullSecrets could not be read: #{Helpers.failure_message(error)}"
