@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_graph"
+
 # Internal value and API-shape helpers shared by the watch pipeline.  The
 # helpers intentionally live inside the watch boundary so loading a single
 # component does not require the full Rubernetes package.
@@ -8,88 +10,32 @@ module Rubernetes
     module Support
       module_function
 
-      # Make a detached copy of API values.  Kubernetes objects are normally
-      # Hash/Array trees, but copying strings as well prevents a caller from
-      # changing a value after it crossed the cache boundary.
-      def deep_copy(value, seen = nil)
-        case value
-        when Hash
-          return seen.fetch(value) if seen&.key?(value)
-
-          copy = {}
-          (seen ||= {}.compare_by_identity)[value] = copy
-          value.each do |key, child|
-            copy[deep_copy(key, seen)] = deep_copy(child, seen)
-          end
-          copy
-        when Array
-          return seen.fetch(value) if seen&.key?(value)
-
-          copy = []
-          (seen ||= {}.compare_by_identity)[value] = copy
-          value.each { |child| copy << deep_copy(child, seen) }
-          copy
-        when String
-          value.dup
-        when Symbol, Numeric, TrueClass, FalseClass, NilClass
-          value
-        else
-          copy_object(value, seen)
-        end
-      end
-
-      # As in the store and the controller runtime: an object this module has
-      # already deep-frozen is handed back as it is.  Every informer event and
-      # every indexer read copied whole objects that nobody could mutate.
-      DEEP_FROZEN = ObjectSpace::WeakMap.new
-
-      def immutable_copy(value)
-        return value if DEEP_FROZEN.key?(value)
-
-        result = deep_freeze(deep_copy(value))
-        DEEP_FROZEN[result] = true if result.is_a?(Hash) || result.is_a?(Array)
-        result
-      end
-
-      def deep_frozen?(value)
-        DEEP_FROZEN.key?(value)
-      end
-
-      def deep_freeze(value, seen = nil)
-        return value if immutable_scalar?(value)
-        return value if seen&.key?(value)
-
-        (seen ||= {}.compare_by_identity)[value] = true
-        case value
-        when Hash
-          value.each do |key, child|
-            deep_freeze(key, seen)
-            deep_freeze(child, seen)
-          end
-        when Array
-          value.each { |child| deep_freeze(child, seen) }
-        end
-        value.freeze
-      end
-
       def immutable_scalar?(value)
         value.nil? || value == true || value == false || value.is_a?(Symbol) || value.is_a?(Numeric)
       end
 
-      def copy_object(value, seen)
+      def copy_object(value, seen, immutable: false)
         return value if value.frozen? && !value.respond_to?(:to_h) && !value.respond_to?(:to_a)
-        return value.dup if !value.respond_to?(:each) && !value.respond_to?(:to_h)
 
         if value.respond_to?(:to_h)
-          deep_copy(value.to_h, seen)
-        elsif value.respond_to?(:to_a)
-          deep_copy(value.to_a, seen)
-        else
-          value.dup
+          return ObjectGraph.copy(value.to_h, seen, immutable: immutable, &COPY_OBJECT)
+        elsif value.respond_to?(:each) && value.respond_to?(:to_a)
+          return ObjectGraph.copy(value.to_a, seen, immutable: immutable, &COPY_OBJECT)
         end
+
+        immutable ? value.dup.freeze : value.dup
       rescue TypeError, NoMethodError
-        value.dup
+        immutable ? value.dup.freeze : value.dup
       end
+
+      DEEP_FROZEN = ObjectSpace::WeakMap.new
+      COPY_OBJECT = method(:copy_object).to_proc
+      private_constant :COPY_OBJECT
+
+      def deep_copy(value, seen = nil) = ObjectGraph.copy(value, seen, &COPY_OBJECT)
+      def deep_freeze(value, seen = nil) = ObjectGraph.deep_freeze(value, seen)
+      def immutable_copy(value) = ObjectGraph.immutable_copy(value, DEEP_FROZEN, &COPY_OBJECT)
+      def deep_frozen?(value) = DEEP_FROZEN.key?(value)
 
       def value_at(value, *names)
         names.each do |name|
