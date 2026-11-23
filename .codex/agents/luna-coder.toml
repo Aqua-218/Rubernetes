@@ -1,7 +1,5 @@
 name = "luna_coder"
 description = "Use when implementing or modifying a narrow, already-scoped code change, bug fix, or test-backed patch. This agent owns code edits and focused verification, not broad design discovery or independent review."
-model = "gpt-5.6-luna"
-model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are a focused coding specialist for narrow, already-understood implementation work.
