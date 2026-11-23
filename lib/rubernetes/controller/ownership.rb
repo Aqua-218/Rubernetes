@@ -41,6 +41,14 @@ module Rubernetes
         end
       end
 
+      def self.dependents_by_uid(objects)
+        by_owner = Hash.new { |children, uid| children[uid] = [] }
+        objects.each do |object|
+          Support.owner_references(object).each { |ref| by_owner[Support.ref_value(ref, "uid").to_s] << object }
+        end
+        by_owner
+      end
+
       def index(objects)
         result = Hash.new { |hash, key| hash[key] = [] }
         Array(objects).each do |object|
@@ -78,13 +86,12 @@ module Rubernetes
       attr_reader :index, :known_kinds, :owner_lookup
 
       def initialize(store: nil, index: OwnerReferenceIndex.new, event_sink: nil,
-                     known_kinds: nil, owner_lookup: nil, dependent_lookup: nil)
-        @store = store
+                     known_kinds: nil, owner_lookup: nil, dependent_lookup: nil, descriptor_lookup: nil)
         @index = index
-        @event_sink = event_sink
         @known_kinds = normalize_known_kinds(known_kinds)
         @owner_lookup = owner_lookup
         @dependent_lookup = dependent_lookup
+        @descriptor_lookup = descriptor_lookup
       end
 
       # The kinds this collector is allowed to reason about the ABSENCE of.
@@ -100,50 +107,22 @@ module Rubernetes
       def normalize_known_kinds(value)
         return nil if value.nil?
 
-        Array(value).flat_map do |item|
+        Array(value).map do |item|
           if item.respond_to?(:kind) && item.respond_to?(:api_version)
-            ["#{item.api_version}/#{item.kind}", item.kind.to_s]
+            "#{item.api_version}/#{item.kind}"
           else
-            [item.to_s]
+            item.to_s
           end
         end.reject(&:empty?).uniq.freeze
       end
 
       def graph(objects)
         values = Array(objects)
-        by_uid = {}
-        values.each do |object|
-          by_uid[Support.uid(object)] = object if Support.uid(object) && !Support.uid(object).empty?
-        end
-        values.each_with_object({}) do |object, result|
-          key = node_key(object)
-          result[key] = Support.owner_references(object).filter_map do |reference|
-            owner = owner_for(reference, by_uid, dependent: object)
-            owner && node_key(owner)
-          end.freeze
-        end.freeze
+        owner_graph(values, owners_by_uid(values))
       end
 
       def cycles(objects)
-        adjacency = graph(objects)
-        visiting = {}
-        visited = {}
-        found = []
-        walk = lambda do |node, path|
-          if visiting[node]
-            start = path.index(node) || 0
-            found << path[start..].freeze
-            return
-          end
-          return if visited[node]
-
-          visiting[node] = true
-          adjacency.fetch(node, []).each { |parent| walk.call(parent, path + [parent]) }
-          visiting.delete(node)
-          visited[node] = true
-        end
-        adjacency.keys.each { |node| walk.call(node, [node]) }
-        found.uniq.freeze
+        cycle_paths(graph(objects))
       end
 
       def plan(objects, deleted: [], propagation_policy: :background)
@@ -152,74 +131,26 @@ module Rubernetes
         policy = propagation_policy.to_s.downcase.to_sym
         raise ArgumentError, "propagation policy must be :background, :foreground, or :orphan" unless %i[background foreground orphan].include?(policy)
 
-        cycle_paths = cycles(values)
-        events = cycle_paths.map do |path|
+        by_uid = owners_by_uid(values)
+        events = cycle_paths(owner_graph(values, by_uid)).map do |path|
           {"type" => "Warning", "reason" => "OwnerReferenceCycle",
            "message" => "ownership cycle prevents garbage collection: #{path.join(" -> ")}"}
         end
-        # An ownership cycle is REPORTED, not fatal: the objects inside it keep
-        # each other alive, but everything else in the cluster must still be
-        # collected.  Refusing the whole plan meant one deliberate cycle --
-        # "[sig-api-machinery] Garbage collector should not be blocked by
-        # dependency circle" creates one -- stopped garbage collection
-        # cluster-wide for the rest of the run, so orphaned EndpointSlices,
-        # ReplicaSets and Pods were never reclaimed.  Deleting one member of a
-        # cycle by hand breaks it, and the next sweep collects the rest.
-
-        # Orphan propagation deletes the requested owner while leaving its
-        # dependents in place.  Returning an empty plan here silently retains
-        # the owner and makes the policy indistinguishable from a no-op.
-        if policy == :orphan
-          operations = deleted_objects.map do |object|
-            Operation.new(action: :delete, resource: descriptor_for(object),
-                          key: object_key(object), object: object,
-                          reason: "orphan deletion")
-          end
-          return ReconcileResult.new(operations: operations, events: events,
-                                     controller: "garbage-collector-controller")
-        end
-
-        by_uid = {}
-        values.each do |object|
-          by_uid[Support.uid(object)] = object if Support.uid(object)
-        end
-        missing_owner_objects = values.select do |object|
-          refs = Support.owner_references(object)
-          # A dependent is collected only when it has owner references and
-          # every one of them is KNOWN to be gone; one live owner keeps it
-          # (the GC spec "should not delete dependents that have both a valid
-          # owner and an owner waiting for deletion"), and so does one owner
-          # whose kind this collector cannot observe -- an unverifiable owner
-          # is never assumed dead.
-          !refs.empty? && refs.all? do |reference|
-            owner_state(reference, by_uid, dependent: object) == :absent
+        targets = deleted_objects
+        unless policy == :orphan
+          dangling = values.select { |object| dangling?(object, by_uid) }
+          dangling.select! { |object| still_dangling?(object, by_uid) }
+          targets = (dangling + targets).uniq { |object| node_key(object) }
+          if policy == :foreground
+            descendants = descendants_of(targets, values)
+            targets = (descendants.reverse + targets).uniq { |object| node_key(object) }
           end
         end
-        # attemptToDeleteItem re-reads the dependent before acting on it.  The
-        # sweep's corpus is listed kind by kind, so a Pod can be read before an
-        # orphaning delete releases it and its owner read after the owner is
-        # gone: the stale copy still names the owner, and collecting it deleted
-        # Pods the delete had just promised to keep ("[sig-api-machinery]
-        # Garbage collector should orphan pods created by rc if delete options
-        # say so" kept 60 of 100).  Decide on the live object.
-        missing_owner_objects = missing_owner_objects.select do |object|
-          still_dangling?(object, by_uid)
-        end
-        targets = (missing_owner_objects + deleted_objects).uniq { |object| node_key(object) }
-        operations = []
-        if policy == :foreground
-          descendants = descendants_of(targets, values)
-          (descendants.reverse + targets).uniq { |object| node_key(object) }.each do |object|
-            operations << Operation.new(action: :delete, resource: descriptor_for(object),
-                                        key: object_key(object), object: object,
-                                        reason: "foreground deletion")
-          end
-        else
-          targets.each do |object|
-            operations << Operation.new(action: :delete, resource: descriptor_for(object),
-                                        key: object_key(object), object: object,
-                                        reason: "background deletion")
-          end
+        reason = "#{policy} deletion".freeze
+        operations = targets.map do |object|
+          descriptor = descriptor_for(object)
+          key = [Support.api_version(object) || "v1", descriptor.resource, Support.namespace(object) || "_cluster", Support.name(object)]
+          Operation.new(action: :delete, resource: descriptor, key: key.join("/"), object: object, reason: reason)
         end
         ReconcileResult.new(operations: operations, events: events,
                             controller: "garbage-collector-controller")
@@ -232,6 +163,57 @@ module Rubernetes
       end
 
       private
+
+      def owners_by_uid(objects)
+        objects.each_with_object({}) do |object, owners|
+          uid = Support.uid(object)
+          owners[uid] = object unless uid.to_s.empty?
+        end
+      end
+
+      def owner_graph(values, by_uid)
+        values.each_with_object({}) do |object, result|
+          key = node_key(object)
+          result[key] = Support.owner_references(object).filter_map do |reference|
+            owner = owner_for(reference, by_uid, dependent: object)
+            owner && node_key(owner)
+          end.freeze
+        end.freeze
+      end
+
+      # Track the current DFS path explicitly so deep ownership chains do not
+      # depend on the Ruby call stack. Only copy a path when reporting a cycle.
+      def cycle_paths(adjacency)
+        found = []
+        visited = {}
+        active = {}
+        path = []
+        adjacency.each_key do |root|
+          next if visited[root]
+
+          stack = [[root, :enter]]
+          until stack.empty?
+            node, step = stack.pop
+            if step == :leave
+              active.delete(path.pop)
+            elsif active.key?(node)
+              found << (path[active.fetch(node)..] + [node]).freeze
+            elsif !visited[node]
+              visited[node] = true
+              active[node] = path.size
+              path << node
+              stack << [node, :leave]
+              adjacency.fetch(node).reverse_each { |parent| stack << [parent, :enter] }
+            end
+          end
+        end
+        found.uniq.freeze
+      end
+
+      def dangling?(object, by_uid)
+        refs = Support.owner_references(object)
+        !refs.empty? && refs.all? { |reference| owner_state(reference, by_uid, dependent: object) == :absent }
+      end
 
       # :present, :absent or :unknown.  Only :absent lets the dependent be
       # collected.
@@ -282,8 +264,7 @@ module Rubernetes
         return false if live.nil? || live == false
         return false unless Support.uid(live).to_s == Support.uid(object).to_s
 
-        refs = Support.owner_references(live)
-        !refs.empty? && refs.all? { |reference| owner_state(reference, by_uid, dependent: live) == :absent }
+        dangling?(live, by_uid)
       rescue StandardError
         false
       end
@@ -324,19 +305,23 @@ module Rubernetes
       end
 
       def descendants_of(roots, objects)
-        result = []
-        pending = Array(roots).dup
-        until pending.empty?
-          root = pending.shift
-          children = Array(objects).select { |object| Support.owner_reference_matches?(root, object) }
-          children.each do |child|
-            next if result.any? { |known| node_key(known) == node_key(child) }
+        return [] if roots.empty?
 
-            result << child
+        by_owner = OwnerReferenceIndex.dependents_by_uid(objects)
+        descendants = {}
+        pending = roots.dup
+        pending.each do |parent|
+          by_owner.fetch(Support.uid(parent), []).each do |child|
+            next unless Support.owner_reference_matches?(parent, child)
+
+            key = node_key(child)
+            next if descendants.key?(key)
+
+            descendants[key] = child
             pending << child
           end
         end
-        result
+        descendants.values
       end
 
       def node_key(object)
@@ -344,12 +329,7 @@ module Rubernetes
       end
 
       def descriptor_for(object)
-        ResourceDescriptor.parse(object)
-      end
-
-      def object_key(object)
-        [Support.api_version(object) || "v1", descriptor_for(object).resource,
-         Support.namespace(object) || "_cluster", Support.name(object)].join("/")
+        @descriptor_lookup&.call(object) || ResourceDescriptor.parse(object)
       end
     end
   end
