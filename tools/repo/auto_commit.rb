@@ -195,6 +195,7 @@ module Rubernetes
         package-lock.json yarn.lock pnpm-lock.yaml go.mod go.sum setup.py pyproject.toml
         requirements.txt build.gradle pom.xml cmakelists.txt meson.build dockerfile
       ].freeze
+      MAX_ANNOTATED_HUNKS = 2_000
       LOCK_FILES = %w[gemfile.lock cargo.lock package-lock.json yarn.lock pnpm-lock.yaml go.sum].freeze
       VENDOR_DIRS = %w[vendor third_party third-party node_modules external].freeze
       GENERIC_DIRS = %w[src lib app apps pkg internal cmd source sources main java kotlin].freeze
@@ -1089,6 +1090,10 @@ module Rubernetes
             entry.new_size = @blobs.size(entry.new_sha)
           end
           return if language.nil? || entry.hunks.empty? || new_lines.nil? || old_lines.nil?
+          # Naming the declaration around each hunk walks back through the
+          # file; a regenerated ledger with thousands of hunks took minutes
+          # and its message names the file, not the hunks.
+          return if entry.hunks.length > MAX_ANNOTATED_HUNKS
 
           entry.hunks.each do |hunk|
             if hunk.added.positive?
