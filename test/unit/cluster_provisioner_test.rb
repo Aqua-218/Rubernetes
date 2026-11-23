@@ -4,6 +4,7 @@ require_relative "../test_helper"
 require "rubernetes/cluster/cli"
 require "rubernetes/rubectl"
 require "rubernetes/bootstrap/config"
+require_relative "../../tools/conformance/cluster"
 require "stringio"
 require "tmpdir"
 
@@ -20,6 +21,92 @@ class ClusterProvisionerTest < Minitest::Test
     YAML.safe_load_file(path).fetch("processes").fetch(process)
   end
 
+  def test_dead_component_reports_the_last_lines_from_a_large_log
+    Dir.mktmpdir do |root|
+      path = File.join(root, "scheduler.log")
+      File.open(path, "wb") do |io|
+        io.seek(16 * 1024 * 1024)
+        io.write("older event\nflush failed\nprocess exited\n")
+      end
+      process = {"pid" => 999_999_999, "name" => "scheduler", "log" => path}
+      cluster = provisioner(root)
+      error = assert_raises(C::Error) { cluster.send(:raise_on_dead!, [process], "start") }
+
+      assert_equal "cluster processes exited during start: scheduler: flush failed\nprocess exited", error.message
+      File.unlink(path)
+      missing = assert_raises(C::Error) { cluster.send(:raise_on_dead!, [process], "start") }
+
+      assert_match(/scheduler: no log/, missing.message)
+    end
+  end
+
+  def test_default_routed_load_balancer_requires_the_pool_and_is_saved_only_on_opt_in
+    Dir.mktmpdir do |root|
+      pool = ["198.51.100.0/28"]
+      process = "rubernetes-controller-manager"
+      error = assert_raises(C::Error) { provisioner(root, default_routed_load_balancer: true) }
+
+      assert_match(/requires --load-balancer-pool/, error.message)
+      [false, true].each do |enabled|
+        cluster = provisioner(root, load_balancer_pool: pool, default_routed_load_balancer: enabled)
+        cluster.stub(:selected_controllers, ["service-lb-controller"]) do
+          path = cluster.send(:write_controller_config, "kubeconfig", serving_port: 10_257)
+          saved = Rubernetes::Bootstrap::Config.load(process_name: process, path: path).process
+
+          assert_equal pool, saved.fetch("load_balancer_pool")
+          assert_equal enabled, saved.fetch("default_routed_load_balancer", false)
+          refute saved.key?("default_routed_load_balancer") unless enabled
+        end
+      end
+    end
+  end
+
+  def test_default_routed_load_balancer_cli_checks_before_provisioning
+    cli = lambda do |*argv|
+      error = StringIO.new
+      status = C::CLI.run(argv, stdout: StringIO.new, stderr: error)
+      [status, error.string]
+    end
+    missing = cli.call("up", "--default-routed-load-balancer")
+    wrong_command = cli.call("start", "--default-routed-load-balancer")
+
+    assert_equal 64, missing.first
+    assert_match(/requires --load-balancer-pool/, missing.last)
+    assert_equal 64, wrong_command.first
+    assert_match(/only available for up/, wrong_command.last)
+  end
+
+  def test_default_routed_load_balancer_cli_passes_the_pool_and_opt_in_together
+    Dir.mktmpdir do |root|
+      cli = C::CLI.new(stdout: StringIO.new, stderr: StringIO.new)
+      observe_up = lambda do |cluster, _options|
+        assert_equal({"load_balancer_pool" => ["198.51.100.0/28"], "default_routed_load_balancer" => true},
+                     cluster.send(:routed_load_balancer_section))
+        0
+      end
+
+      cli.stub(:up, observe_up) do
+        assert_equal 0, cli.run(["up", "--root", root, "--default-routed-load-balancer", "--load-balancer-pool", "198.51.100.0/28"])
+      end
+    end
+  end
+
+  def test_manual_config_reserves_classless_services_for_an_external_cloud_controller
+    process = "rubernetes-controller-manager"
+    section = {"cloud_controller_manager" => "external", "load_balancer_pool" => ["198.51.100.0/28"]}
+    config = lambda do |settings|
+      Rubernetes::Bootstrap::Config.new(process_name: process,
+                                        data: {"version" => 1, "logging" => {"level" => "warn"}, "processes" => {process => settings}}).process
+    end
+
+    assert_equal "external", config.call(section).fetch("cloud_controller_manager")
+    conflict = assert_raises(Rubernetes::Bootstrap::Config::Error) { config.call(section.merge("default_routed_load_balancer" => true)) }
+    invalid = assert_raises(Rubernetes::Bootstrap::Config::Error) { config.call(section.merge("default_routed_load_balancer" => "true")) }
+
+    assert_match(/conflicts with cloud_controller_manager/, conflict.message)
+    assert_match(/must be true or false/, invalid.message)
+  end
+
   def test_a_single_control_node_is_a_raft_cluster_of_one
     Dir.mktmpdir do |root|
       cluster = provisioner(root, controls: 1, workers: 1)
@@ -30,6 +117,27 @@ class ClusterProvisionerTest < Minitest::Test
       assert_equal %w[control-0], datastore.fetch("voters")
       assert_empty datastore.fetch("peers")
       assert_equal "unit", datastore.fetch("cluster_id")
+    end
+  end
+
+  def test_bootstrap_certificates_pass_strict_x509_validation
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, controls: 1, workers: 1, identities: :components)
+      pki = cluster.send(:issue_pki)
+      kubelet = pki.fetch(:identities).fetch("kubelet-serving-worker-0").fetch(:cert)
+      verify = lambda do |ca, *leaves|
+        trust = OpenSSL::X509::Store.new
+        trust.flags = OpenSSL::X509::V_FLAG_X509_STRICT
+        trust.add_file(ca)
+        leaves.each do |path|
+          leaf = OpenSSL::X509::Certificate.new(File.binread(path))
+
+          assert trust.verify(leaf), "#{File.basename(path)}: #{trust.error_string}"
+        end
+      end
+
+      verify.call(pki.fetch(:ca), pki.fetch(:server), pki.fetch(:admin), kubelet)
+      verify.call(pki.fetch(:front_proxy_ca), pki.fetch(:front_proxy))
     end
   end
 
@@ -51,6 +159,125 @@ class ClusterProvisionerTest < Minitest::Test
       assert_equal %w[10.241.0.1 fd00:d8:1::1], cluster.send(:node_advertise_addresses, 1)
       assert_equal %w[10.96.0.1 fd00:d8:5::1], cluster.send(:service_cluster_ips)
     end
+  end
+
+  def test_cluster_dns_publishes_a_local_listener_for_each_node_and_family
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, workers: 2, ip_families: %w[ipv4 ipv6])
+      service = cluster.send(:cluster_dns_service)
+
+      assert_equal "kube-dns", service.dig("metadata", "name")
+      assert_equal "Local", service.dig("spec", "internalTrafficPolicy")
+      assert_equal %w[IPv4 IPv6], service.dig("spec", "ipFamilies")
+      assert_equal(%w[UDP TCP], service.dig("spec", "ports").map { |p| p.fetch("protocol") })
+      slice = cluster.send(:cluster_dns_endpoints, "ipv6", "uid")
+
+      assert_equal "uid", slice.dig("metadata", "ownerReferences", 0, "uid")
+      assert_equal "worker-1", slice.dig("endpoints", 1, "nodeName")
+      assert_equal ["fd00:d8:1::1"], slice.dig("endpoints", 1, "addresses")
+    end
+  end
+
+  def test_nat64_prefix_is_passed_to_ipv6_only_workers
+    Dir.mktmpdir do |root|
+      prefix = "64:ff9b:1::/96"
+      assert_raises(C::Error) { provisioner(root, nat64_prefix: prefix) }
+      cluster = provisioner(root, ip_families: %w[ipv6], nat64_prefix: prefix)
+      path = cluster.send(:write_agent_config, "worker-0", 0, File::NULL, dns_kubeconfig: "/dns/kubeconfig")
+      agent = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: path).process
+
+      assert_equal prefix, agent.dig("dns", "nat64_prefix")
+      assert_equal "/dns/kubeconfig", agent.dig("dns", "kubeconfig")
+    end
+  end
+
+  def test_conformance_resolver_is_recorded_and_passed_to_every_worker
+    Dir.mktmpdir do |root|
+      resolver = File.join(File.realpath(root), "worker-resolv.conf")
+      link = File.join(root, "resolver")
+      File.write(resolver, "nameserver 192.0.2.53\n")
+      File.symlink(resolver, link)
+      worker_resolver = Conformance::Cluster.resolver_identity(link)
+      profile = Conformance::Lock.profiles.fetch("profiles").first
+      cluster = Conformance::Cluster.provisioner(File.join(root, "cluster"), profile, worker_resolver: worker_resolver)
+
+      assert_equal({"path" => resolver, "sha256" => Digest::SHA256.file(resolver).hexdigest}, worker_resolver)
+      assert_raises(ArgumentError) { Conformance::Cluster.resolver_identity(root) }
+      cluster.worker_ids.each_with_index do |id, index|
+        path = cluster.send(:write_agent_config, id, index, File::NULL, dns_kubeconfig: "/dns/kubeconfig")
+        agent = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: path).process
+
+        assert_equal resolver, agent.dig("dns", "resolv_conf")
+      end
+    end
+  end
+
+  def test_isolated_workers_get_individual_proxy_and_api_endpoint_configuration
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, identities: :components, isolated_worker_networks: true, ip_families: %w[ipv4 ipv6])
+      path = cluster.send(:write_proxy_config, "worker-2", 2, File::NULL)
+      proxy = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-proxy", path: path).process
+      networks = cluster.send(:worker_networks)
+
+      assert proxy.fetch("attach")
+      assert_equal({"enabled" => true, "bind_address" => "127.0.0.1", "port" => 10_249,
+                    "healthz_bind_address" => "0.0.0.0", "healthz_port" => 10_256}, proxy.fetch("serving"))
+      assert_equal %w[10.242.0.1 fd00:d8:2::1], proxy.fetch("node_addresses")
+      agent_path = cluster.send(:write_agent_config, "worker-2", 2, File::NULL)
+      agent = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: agent_path).process
+
+      assert_equal 10_248, agent.fetch("healthz_port")
+      assert_equal 10_250, agent.dig("streaming", "port")
+      assert_equal "https://[fd00:d8:ffff:2::1]:6443", networks.endpoint(2, "ipv6", "https://127.0.0.1:6443")
+      refute_equal networks.command(0), networks.command(2)
+    end
+  end
+
+  def test_ipv6_proxy_binds_status_to_loopback_and_health_to_the_node
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, identities: :components, isolated_worker_networks: true, ip_families: ["ipv6"])
+      path = cluster.send(:write_proxy_config, "worker-0", 0, File::NULL)
+      proxy = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-proxy", path: path).process
+
+      assert_equal({"enabled" => true, "bind_address" => "::1", "port" => 10_249,
+                    "healthz_bind_address" => "::", "healthz_port" => 10_256}, proxy.fetch("serving"))
+    end
+  end
+
+  def test_isolated_workers_keep_kubeconfigs_for_their_own_control_address
+    Dir.mktmpdir do |root|
+      cluster = provisioner(root, identities: :components, isolated_worker_networks: true)
+      pki = cluster.send(:issue_pki)
+      addresses = %w[https://169.254.128.1:6443 https://169.254.128.5:6443]
+      paths = addresses.each_with_index.map do |address, index|
+        cluster.send(:component_kubeconfig, address, pki, "kube-proxy", nil, instance: "worker-#{index}")
+      end
+      configured = paths.map { |path| YAML.safe_load_file(path).dig("clusters", 0, "cluster", "server") }
+
+      assert_equal addresses, configured
+    end
+  end
+
+  def test_native_release_profiles_isolate_worker_networks_by_default
+    profiles = Conformance::Lock.profiles.fetch("profiles")
+    cluster = Conformance::Cluster
+
+    profiles.each do |profile|
+      assert cluster.isolated_worker_networks?({}, profile)
+      refute cluster.isolated_worker_networks?({isolated_worker_networks: false}, profile)
+      refute cluster.isolated_worker_networks?({k7_bootstrap: true}, profile)
+      refute cluster.isolated_worker_networks?({external_cni_bin_dir: "/opt/cni/bin"}, profile)
+    end
+  end
+
+  def test_isolated_processes_bypass_inherited_proxy_for_cluster_networks
+    networks = C::WorkerNetworks.new("/test/one", [["10.240.0.0/16", "fd00:d8::/48"]])
+    inherited = {"NO_PROXY" => "localhost,.example.org", "no_proxy" => "localhost,.example.net"}
+    variables = networks.proxy_environment(api_addresses: ["10.250.3.2"], service_cidrs: ["10.96.0.0/12"], environment: inherited)
+
+    assert_equal variables.fetch("NO_PROXY"), variables.fetch("no_proxy")
+    assert_equal %w[localhost .example.org .example.net 169.254.128.1 fd00:d8:ffff::1 10.250.3.2 10.240.0.0/16 fd00:d8::/48 10.96.0.0/12],
+                 variables.fetch("NO_PROXY").split(",")
   end
 
   # `up` replaces the cluster directory.  Pointed at a directory that holds
@@ -76,6 +303,37 @@ class ClusterProvisionerTest < Minitest::Test
       assert_empty cluster.down
       assert_raises(C::Error) { cluster.start }
     end
+  end
+
+  def test_terminate_pins_a_cluster_process_until_it_is_reaped
+    marker = "cluster-process-#{SecureRandom.hex(8)}"
+    pid = Process.spawn(RbConfig.ruby, "-e", "sleep 30", "--", marker)
+
+    assert_nil C::Processes.terminate(pid, "example", "#{marker}-another")
+    assert_equal({"name" => "example", "pid" => pid}, C::Processes.terminate(pid, "example", marker))
+    refute C::Processes.alive?(pid)
+  ensure
+    Process.waitpid(pid) if pid && C::Processes.alive?(pid)
+  end
+
+  def test_terminate_treats_exit_after_identification_as_complete
+    marker = "cluster-process-#{SecureRandom.hex(8)}"
+    pid = Process.spawn(RbConfig.ruby, "-e", "sleep 30", "--", marker)
+    pidfd_class = Rubernetes::Platform::Linux::Pidfd
+    probe = pidfd_class.new
+    probe.define_singleton_method(:send_signal) do |**arguments|
+      # The remembered process exits while the stopper has it identified.
+      Process.kill("TERM", pid)
+      Process.waitpid(pid)
+      super(**arguments)
+    end
+
+    pidfd_class.stub(:new, probe) do
+      assert_equal({"name" => "example", "pid" => pid}, C::Processes.terminate(pid, "example", marker))
+    end
+    refute C::Processes.alive?(pid)
+  ensure
+    Process.waitpid(pid) if pid && C::Processes.alive?(pid)
   end
 
   def test_delete_refuses_a_directory_that_is_not_a_cluster_directory
