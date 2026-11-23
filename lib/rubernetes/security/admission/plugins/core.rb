@@ -4,6 +4,7 @@ require "time"
 
 require_relative "../framework"
 require_relative "../registry"
+require_relative "priority_admission"
 require_relative "../../../node_declared_features"
 
 module Rubernetes
@@ -41,6 +42,14 @@ module Rubernetes
 
           def resource?(attributes, group, resource)
             attributes.group == group && attributes.resource == resource
+          end
+
+          def pod_object?(attributes)
+            resource?(attributes, "", "pods") && !%w[Binding Eviction].include?(attributes.kind)
+          end
+
+          def pod_resize?(attributes)
+            pod_object?(attributes) && attributes.operation == "UPDATE" && attributes.subresource == "resize"
           end
 
           def quantity(value)
@@ -143,10 +152,15 @@ module Rubernetes
           include Helpers
 
           def admit(attributes)
-            return if attributes.namespace.empty? || resource?(attributes, "", "namespaces") || attributes.operation == "DELETE"
+            return if attributes.dry_run || attributes.operation != "CREATE"
+            return if attributes.namespace.empty? || resource?(attributes, "", "namespaces")
             return if @context.namespace(attributes.namespace)
 
             @context.create_namespace(attributes.namespace) if @context.respond_to?(:create_namespace)
+          rescue API::Status::Error => error
+            reject!(error.message, details: error.details) if error.code == 403
+
+            reject!("#{group_resource(attributes)} #{attributes.name.inspect} is forbidden: #{error.message}")
           end
         end
         Registry.register("NamespaceAutoProvision") do |context, config|
@@ -159,7 +173,7 @@ module Rubernetes
           include Helpers
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object
+            return unless pod_object?(attributes) && attributes.object
 
             terms = Array(spec(attributes.object).dig("affinity", "podAntiAffinity", "requiredDuringSchedulingIgnoredDuringExecution"))
             terms.each do |term|
@@ -189,7 +203,7 @@ module Rubernetes
           # SetDefaults_Pod has already run, so a limit the container set is
           # its request; a defaulted limit never becomes the request.
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless attributes.object && pod_object?(attributes) && limit_range_request?(attributes)
 
             ranges = limit_ranges(attributes.namespace)
             return if ranges.empty?
@@ -236,35 +250,46 @@ module Rubernetes
           end
 
           def validate(attributes)
-            return unless attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless attributes.object && limit_range_request?(attributes)
 
             ranges = limit_ranges(attributes.namespace)
             return if ranges.empty?
 
             ranges.each do |range|
-              Array(range.dig("spec", "limits")).each do |item|
+              errors = Array(range.dig("spec", "limits")).flat_map do |item|
                 case item["type"]
                 when "Container"
-                  if resource?(attributes, "", "pods")
-                    pod_containers(attributes.object).each do |container|
-                      check_limits(attributes, item, container["resources"] || {}, "container #{container["name"]}")
-                    end
-                  end
+                  next [] unless pod_object?(attributes)
+
+                  containers = spec(attributes.object).values_at("containers", "initContainers").flatten.compact
+                  containers.flat_map { |container| limit_errors(item, container["resources"] || {}) }
                 when "Pod"
-                  check_limits(attributes, item, pod_totals(attributes.object), "pod") if resource?(attributes, "", "pods")
+                  pod_object?(attributes) ? limit_errors(item, pod_totals(attributes.object)) : []
                 when "PersistentVolumeClaim"
-                  if resource?(
-                    attributes, "", "persistentvolumeclaims"
-                  )
-                    check_limits(attributes, item, {"requests" => spec(attributes.object).dig("resources", "requests") || {}},
-                                 "persistentvolumeclaim")
-                  end
+                  next [] unless resource?(attributes, "", "persistentvolumeclaims")
+
+                  limit_errors(item, {"requests" => spec(attributes.object).dig("resources", "requests") || {}})
+                else
+                  []
                 end
-              end
+              end.uniq
+              next if errors.empty?
+
+              message = errors.one? ? errors.first : "[#{errors.join(", ")}]"
+              reject!("#{group_resource(attributes)} #{attributes.name.to_s.inspect} is forbidden: #{message}")
             end
           end
 
           private
+
+          def limit_range_request?(attributes)
+            return true if pod_resize?(attributes)
+            return false unless attributes.subresource.empty?
+
+            return attributes.operation == "CREATE" if pod_object?(attributes)
+
+            resource?(attributes, "", "persistentvolumeclaims") && %w[CREATE UPDATE].include?(attributes.operation)
+          end
 
           def limit_ranges(namespace)
             return [] if namespace.empty?
@@ -301,42 +326,48 @@ module Rubernetes
           # as well as the limit.  Skipping the check when the value was absent
           # let a Pod asking for 600Gi through a max of 500Mi, because it
           # specified no limit at all.
-          def check_limits(attributes, item, resources, _label)
+          def limit_errors(item, resources)
+            errors = []
             (item["min"] || {}).each do |resource, minimum|
               request = resources.dig("requests", resource)
               limit = resources.dig("limits", resource)
+              message = "minimum #{resource} usage per #{item["type"]} is #{minimum}"
               if request.nil?
-                reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}.  No request is specified")
-                next
-              end
-              reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}, but request is #{request}") if quantity(request) < quantity(minimum)
-              if !limit.nil? && quantity(limit) < quantity(minimum)
-                reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}, but limit is #{limit}")
+                errors << "#{message}.  No request is specified"
+              elsif quantity(request) < quantity(minimum)
+                errors << "#{message}, but request is #{request}"
+              elsif !limit.nil? && quantity(limit) < quantity(minimum)
+                errors << "#{message}, but limit is #{limit}"
               end
             end
+            claim = item["type"] == "PersistentVolumeClaim"
             (item["max"] || {}).each do |resource, maximum|
-              limit = resources.dig("limits", resource)
               request = resources.dig("requests", resource)
-              if limit.nil?
-                reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}.  No limit is specified")
-                next
-              end
-              reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}, but limit is #{limit}") if quantity(limit) > quantity(maximum)
-              if !request.nil? && quantity(request) > quantity(maximum)
-                reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}, but request is #{request}")
+              value, measure = claim ? [request, "request"] : [resources.dig("limits", resource), "limit"]
+              message = "maximum #{resource} usage per #{item["type"]} is #{maximum}"
+              if value.nil?
+                errors << "#{message}.  No #{measure} is specified"
+              elsif quantity(value) > quantity(maximum)
+                errors << "#{message}, but #{measure} is #{value}"
+              elsif !request.nil? && quantity(request) > quantity(maximum)
+                errors << "#{message}, but request is #{request}"
               end
             end
+            return errors if claim
+
             (item["maxLimitRequestRatio"] || {}).each do |resource, ratio|
               request = resources.dig("requests", resource)
               limit = resources.dig("limits", resource)
-              next if request.nil? || limit.nil? || quantity(request).zero?
-
-              if quantity(limit) / quantity(request) > quantity(ratio)
-                reject!("#{resource} max limit to request ratio per #{item["type"]} is #{ratio}, but provided ratio is " \
-                        "#{(quantity(limit) / quantity(request)).to_f}")
+              message = "#{resource} max limit to request ratio per #{item["type"]} is #{ratio}"
+              if request.nil? || quantity(request).zero?
+                errors << "#{message}, but no request is specified or request is 0"
+              elsif limit.nil? || quantity(limit).zero?
+                errors << "#{message}, but no limit is specified or limit is 0"
+              elsif (actual = quantity(limit) / quantity(request)) > quantity(ratio)
+                errors << "#{message}, but provided ratio is #{format("%<ratio>.6f", ratio: actual)}"
               end
             end
-            attributes
+            errors
           end
         end
         Registry.register("LimitRanger") { |context, config| LimitRanger.new("LimitRanger", context: context, config: config) }
@@ -352,7 +383,7 @@ module Rubernetes
           MOUNT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount"
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             pod = attributes.object
             # A mirror Pod is a static Pod's API object: no service account
@@ -361,7 +392,7 @@ module Rubernetes
 
             pod_spec = pod["spec"] ||= {}
             pod_spec["serviceAccountName"] = DEFAULT_NAME if pod_spec["serviceAccountName"].to_s.empty?
-            account = @context.get("serviceaccounts", attributes.namespace, pod_spec["serviceAccountName"])
+            account = account_for_create(attributes.namespace, pod_spec["serviceAccountName"])
             if account.nil?
               unless pod_spec["serviceAccountName"] == DEFAULT_NAME && @config["allow_missing_default"] == true
                 return reject!("pods #{attributes.name.inspect} is forbidden: error looking up service account " \
@@ -369,6 +400,13 @@ module Rubernetes
               end
 
               return
+            end
+
+            # Pull secret defaults are independent of token mounting. The Pod's
+            # references let the node authorizer grant access to these Secrets.
+            pull_secrets = Array(account["imagePullSecrets"])
+            if Array(pod_spec["imagePullSecrets"]).empty? && !pull_secrets.empty?
+              pod_spec["imagePullSecrets"] = pull_secrets.map { |reference| reference.slice("name") }
             end
             automount = if pod_spec.key?("automountServiceAccountToken")
                           pod_spec["automountServiceAccountToken"]
@@ -429,7 +467,7 @@ module Rubernetes
           end
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             pod = attributes.object
             return mirror_pod_errors(pod, attributes.name) if mirror_pod?(pod)
@@ -449,6 +487,20 @@ module Rubernetes
           end
 
           private
+
+          # Upstream getServiceAccount retries the asynchronously created default.
+          def account_for_create(namespace, account_name)
+            account = @context.get("serviceaccounts", namespace, account_name)
+            return account if account || account_name != DEFAULT_NAME || @config["allow_missing_default"] == true
+
+            interval = rand(100..199) / 1000.0
+            9.times do
+              sleep(interval)
+              account = @context.get("serviceaccounts", namespace, account_name)
+              return account if account
+            end
+            nil
+          end
 
           def random_suffix
             @context.respond_to?(:random_suffix) ? @context.random_suffix : SecureRandom.alphanumeric(5).downcase
@@ -478,13 +530,13 @@ module Rubernetes
           include Helpers
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless pod_object?(attributes) && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
 
             pod_containers(attributes.object).each { |container| container["imagePullPolicy"] = "Always" }
           end
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless pod_object?(attributes) && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
 
             pod_containers(attributes.object).each do |container|
               unless container["imagePullPolicy"] == "Always"
@@ -502,7 +554,7 @@ module Rubernetes
           include Helpers
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless pod_object?(attributes) && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
 
             transport = @config["transport"]
             reject!("ImagePolicyWebhook is enabled without a backend") if transport.nil? && @config["default_allow"] != true
@@ -533,7 +585,7 @@ module Rubernetes
           ANNOTATION = "scheduler.alpha.kubernetes.io/node-selector"
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             selector = namespace_selector(attributes.namespace)
             return if selector.empty?
@@ -543,7 +595,7 @@ module Rubernetes
           end
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             selector = namespace_selector(attributes.namespace)
             pod_selector = spec(attributes.object)["nodeSelector"] || {}
@@ -568,48 +620,7 @@ module Rubernetes
         class Priority < Plugin
           include Helpers
 
-          SYSTEM_CLASSES = {"system-cluster-critical" => 2_000_000_000, "system-node-critical" => 2_000_001_000}.freeze
-
-          def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
-
-            pod_spec = attributes.object["spec"] ||= {}
-            class_name = pod_spec["priorityClassName"].to_s
-            if class_name.empty?
-              default = @context.list("priorityclasses", nil, group: "scheduling.k8s.io").find { |klass| klass["globalDefault"] == true }
-              if default
-                pod_spec["priorityClassName"] = default.dig("metadata", "name")
-                pod_spec["priority"] = default["value"]
-                pod_spec["preemptionPolicy"] = default["preemptionPolicy"] || "PreemptLowerPriority"
-              else
-                pod_spec["priority"] = 0
-                pod_spec["preemptionPolicy"] ||= "PreemptLowerPriority"
-              end
-              return
-            end
-            # Upstream's Priority plugin resolves the two system classes for any
-            # namespace (the kube-system-only rule left in 1.17); local-path's
-            # helper Pods use system-node-critical in local-path-storage.
-            if SYSTEM_CLASSES.key?(class_name)
-              pod_spec["priority"] = SYSTEM_CLASSES[class_name]
-              pod_spec["preemptionPolicy"] ||= "PreemptLowerPriority"
-              return
-            end
-            klass = @context.get("priorityclasses", nil, class_name, group: "scheduling.k8s.io")
-            reject!("no PriorityClass with name #{class_name} was found") if klass.nil?
-            pod_spec["priority"] = klass["value"]
-            pod_spec["preemptionPolicy"] = klass["preemptionPolicy"] || "PreemptLowerPriority"
-          end
-
-          def validate(attributes)
-            return unless resource?(attributes, "scheduling.k8s.io",
-                                    "priorityclasses") && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
-
-            value = attributes.object["value"].to_i
-            return unless value >= 1_000_000_000 && !attributes.name.start_with?("system-")
-
-            reject!("PriorityClass value must be lower than 1000000000 (system reserved)")
-          end
+          include PriorityAdmission
         end
         Registry.register("Priority") { |context, config| Priority.new("Priority", context: context, config: config) }
 
@@ -620,16 +631,31 @@ module Rubernetes
           KEYS = %w[node.kubernetes.io/not-ready node.kubernetes.io/unreachable].freeze
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless pod_object?(attributes) && attributes.object && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless attributes.subresource.to_s.empty?
 
-            pod_spec = attributes.object["spec"] ||= {}
-            tolerations = pod_spec["tolerations"] ||= []
+            pod_spec = attributes.object["spec"]
+            return unless pod_spec.is_a?(Hash)
+
+            tolerations = pod_spec["tolerations"]
+            tolerations = pod_spec["tolerations"] = [] if tolerations.nil?
+            return unless tolerations.is_a?(Array)
+
             KEYS.each do |key|
-              next if tolerations.any? { |toleration| toleration["key"] == key && toleration["effect"] == "NoExecute" }
+              next if tolerations.any? { |toleration| tolerates?(toleration, key) }
 
               tolerations << {"key" => key, "operator" => "Exists", "effect" => "NoExecute",
                               "tolerationSeconds" => @config.fetch("default_seconds", DEFAULT_SECONDS)}
             end
+          end
+
+          private
+
+          def tolerates?(toleration, key)
+            return false unless toleration.is_a?(Hash)
+
+            taint_key, effect = toleration.values_at("key", "effect").map(&:to_s)
+            (taint_key.empty? || taint_key == key) && (effect.empty? || effect == "NoExecute")
           end
         end
         Registry.register("DefaultTolerationSeconds") do |context, config|
@@ -644,7 +670,7 @@ module Rubernetes
           WHITELIST_ANNOTATION = "scheduler.alpha.kubernetes.io/tolerationsWhitelist"
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             defaults = annotation(attributes.namespace, DEFAULT_ANNOTATION) || @config["default_tolerations"] || []
             pod_spec = attributes.object["spec"] ||= {}
@@ -654,7 +680,7 @@ module Rubernetes
           end
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             whitelist = annotation(attributes.namespace, WHITELIST_ANNOTATION) || @config["whitelist"]
             return if whitelist.nil?
@@ -722,7 +748,7 @@ module Rubernetes
           include Helpers
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             extended = pod_containers(attributes.object).flat_map do |container|
               (container.dig("resources", "requests") || {}).keys + (container.dig("resources", "limits") || {}).keys
@@ -747,39 +773,20 @@ module Rubernetes
           ExtendedResourceToleration.new("ExtendedResourceToleration", context: context, config: config)
         end
 
-        class DefaultStorageClass < Plugin
-          include Helpers
-
-          def admit(attributes)
-            return unless resource?(attributes, "", "persistentvolumeclaims") && attributes.object && attributes.operation == "CREATE"
-
-            claim_spec = attributes.object["spec"] ||= {}
-            return if claim_spec.key?("storageClassName") || !claim_spec["volumeName"].to_s.empty?
-
-            defaults = @context.list("storageclasses", nil, group: "storage.k8s.io").select do |klass|
-              klass.dig("metadata", "annotations", "storageclass.kubernetes.io/is-default-class") == "true"
-            end
-            return if defaults.empty?
-
-            chosen = defaults.max_by { |klass| [klass.dig("metadata", "creationTimestamp").to_s, klass.dig("metadata", "name").to_s] }
-            claim_spec["storageClassName"] = chosen.dig("metadata", "name")
-          end
-        end
-        Registry.register("DefaultStorageClass") do |context, config|
-          DefaultStorageClass.new("DefaultStorageClass", context: context, config: config)
-        end
-
         class StorageObjectInUseProtection < Plugin
           include Helpers
 
           PVC_FINALIZER = "kubernetes.io/pvc-protection"
           PV_FINALIZER = "kubernetes.io/pv-protection"
+          VAC_FINALIZER = "kubernetes.io/vac-protection"
 
           def admit(attributes)
-            return unless attributes.object && attributes.operation == "CREATE"
+            return unless attributes.object && attributes.operation == "CREATE" && attributes.subresource.to_s.empty?
 
             finalizer = if resource?(attributes, "", "persistentvolumeclaims") then PVC_FINALIZER
                         elsif resource?(attributes, "", "persistentvolumes") then PV_FINALIZER
+                        elsif resource?(attributes, "storage.k8s.io", "volumeattributesclasses") && @context.feature_enabled?("VolumeAttributesClass")
+                          VAC_FINALIZER
                         end
             return if finalizer.nil?
 
@@ -876,7 +883,7 @@ module Rubernetes
           include Helpers
 
           def admit(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             pod_spec = attributes.object["spec"] ||= {}
             name = pod_spec["runtimeClassName"].to_s
@@ -904,7 +911,7 @@ module Rubernetes
           end
 
           def validate(attributes)
-            return unless resource?(attributes, "", "pods") && attributes.object && attributes.operation == "CREATE"
+            return unless pod_object?(attributes) && attributes.object && attributes.operation == "CREATE"
 
             name = spec(attributes.object)["runtimeClassName"].to_s
             return if name.empty?
@@ -916,28 +923,6 @@ module Rubernetes
           end
         end
         Registry.register("RuntimeClass") { |context, config| RuntimeClass.new("RuntimeClass", context: context, config: config) }
-
-        class DefaultIngressClass < Plugin
-          include Helpers
-
-          def admit(attributes)
-            return unless resource?(attributes, "networking.k8s.io", "ingresses") && attributes.object && attributes.operation == "CREATE"
-
-            ingress_spec = attributes.object["spec"] ||= {}
-            return if ingress_spec.key?("ingressClassName") || metadata(attributes.object).dig("annotations", "kubernetes.io/ingress.class")
-
-            defaults = @context.list("ingressclasses", nil, group: "networking.k8s.io").select do |klass|
-              klass.dig("metadata", "annotations", "ingressclass.kubernetes.io/is-default-class") == "true"
-            end
-            return if defaults.empty?
-
-            chosen = defaults.max_by { |klass| [klass.dig("metadata", "creationTimestamp").to_s, klass.dig("metadata", "name").to_s] }
-            ingress_spec["ingressClassName"] = chosen.dig("metadata", "name")
-          end
-        end
-        Registry.register("DefaultIngressClass") do |context, config|
-          DefaultIngressClass.new("DefaultIngressClass", context: context, config: config)
-        end
 
         class DenyServiceExternalIPs < Plugin
           include Helpers
@@ -1060,23 +1045,7 @@ module Rubernetes
           NodeDeclaredFeatureValidator.new("NodeDeclaredFeatureValidator", context: context, config: config)
         end
 
-        class JobValidation < Plugin
-          include Helpers
-
-          def validate(attributes)
-            return unless resource?(attributes, "batch", "jobs") && attributes.object && attributes.operation == "CREATE"
-            return unless @context.feature_enabled?("WorkloadWithJob")
-
-            workload = spec(attributes.object).dig("workloadRef", "name")
-            return if workload.nil?
-
-            reject!("Job #{attributes.name.inspect} refers to a Workload that does not exist") if @context.get("workloads",
-                                                                                                               attributes.namespace, workload,
-                                                                                                               group: "scheduling.k8s.io",
-                                                                                                               version: "v1alpha2").nil?
-          end
-        end
-        Registry.register("JobValidation") { |context, config| JobValidation.new("JobValidation", context: context, config: config) }
+        require_relative "job_validation"
 
         # plugin/pkg/admission/podresize: a resize of a bound Pod (pods/resize,
         # generation moved) is refused on a non-linux Node and when the Pod's
@@ -1131,3 +1100,5 @@ module Rubernetes
     end
   end
 end
+
+require_relative "default_classes"
