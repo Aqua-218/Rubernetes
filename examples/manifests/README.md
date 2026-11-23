@@ -8,7 +8,7 @@ the real `kubectl` takes them as they are. The rules are in the
 
 | File | What it declares |
 |---|---|
-| [web.rb](web.rb) | A ConfigMap, a Deployment and a Service; an environment variable switches between production and development |
+| [web.rb](web.rb) | A ConfigMap, a Deployment and a Service. Production also scales from 3 to 8 replicas at 70% CPU utilization |
 | [tenants.rb](tenants.rb) | A namespace, a ResourceQuota and a Deployment for each tenant in a list |
 | [nightly_report.rb](nightly_report.rb) | A CronJob with a Secret and a scratch volume |
 
@@ -41,10 +41,10 @@ deployment "web" do
   replicas 3
 
   container "nginx", image: "nginx:1.27" do
-    port 80
+    port 80, name: :http
     cpu request: "100m", limit: "500m"
     env from: configmap("web-config")
-    readiness_probe http_get: {path: "/", port: 80}, period_seconds: 5
+    http_probe :readiness, port: :http, period_seconds: 5
   end
 end
 ```
