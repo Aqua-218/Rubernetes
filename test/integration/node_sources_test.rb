@@ -40,6 +40,25 @@ class NodeSourcesTest < Minitest::Test
     end
   end
 
+  def test_explicit_file_with_custom_parser_is_removed_from_source_on_delete
+    Dir.mktmpdir("rubernetes-static") do |directory|
+      path = File.join(directory, "manifest")
+      File.write(path, "local")
+      parser = ->(name) { {"kind" => "Pod", "metadata" => {"name" => name}} }
+      manager = Rubernetes::Node::SourceManager.new(node_name: "node-a", manifest_dir: path, parser: parser)
+
+      assert_equal(["local"], manager.load_static.map { |pod| pod.dig("metadata", "name") })
+      File.truncate(path, Rubernetes::Node::SourceManager::MAX_MANIFEST_BYTES + 1)
+
+      assert_raises(ArgumentError) { manager.load_static }
+      assert_equal 1, manager.static_pods.length
+      File.unlink(path)
+
+      assert_empty manager.load_static
+      assert_empty manager.static_pods
+    end
+  end
+
   def test_multi_document_yaml_and_mirror_writer_reconcile
     calls = []
     writer = Object.new
