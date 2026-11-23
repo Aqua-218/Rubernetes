@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
-require_relative "../resource_helpers"
 require_relative "quantity"
+require_relative "job_selector"
+require_relative "service_fields"
 
 require "digest"
 
@@ -17,6 +18,14 @@ module Rubernetes
 
       def self.apply(definition, value = nil, **options)
         new(definition, unknown_fields: options.delete(:unknown_fields, :preserve)).apply(value, **options)
+      end
+
+      def self.default_pod_service_account(spec, annotations)
+        return spec if annotations.is_a?(Hash) && annotations.key?("kubernetes.io/config.mirror")
+
+        name = spec["serviceAccountName"]
+        name = "default" if name.to_s.empty?
+        spec.merge("serviceAccountName" => name, "serviceAccount" => name)
       end
 
       class << self
@@ -174,7 +183,8 @@ module Rubernetes
           result["port"] = 443
         end
 
-        apply_kubernetes_admission_defaults(result, object_definition) if kubernetes_admission_defaults
+        normalize_service_account_alias(result) if object_definition.group.to_s.empty? && object_definition.kind == "PodSpec"
+        apply_kubernetes_admission_defaults(result, object_definition, kubernetes_admission_defaults) if kubernetes_admission_defaults
         apply_group_defaults(result, object_definition) if kubernetes_admission_defaults
         apply_kubernetes_scheme_defaults(result, object_definition)
       end
@@ -197,7 +207,7 @@ module Rubernetes
       # `+default=` markers that survive only in the Go types.  They are keyed by
       # schema kind so the same rule fires for a root object, a nested value and
       # a list item alike.
-      def apply_kubernetes_admission_defaults(result, object_definition)
+      def apply_kubernetes_admission_defaults(result, object_definition, operation)
         # Only a top-level kind carries its full API group; a nested schema type
         # is named after the Go package ("storage", "rbac"), so match on the
         # first label, which both spellings share.
@@ -208,25 +218,17 @@ module Rubernetes
           # than represented as OpenAPI field defaults. Controllers observe
           # the defaulted pod template, so retain the same wire shape here.
           result["imagePullPolicy"] ||= image_pull_policy(result["image"].to_s)
-          result["resources"] = {} unless result.key?("resources")
+          result["resources"] = {} if result["resources"].nil?
           result["terminationMessagePath"] ||= "/dev/termination-log"
           result["terminationMessagePolicy"] ||= "File"
         when "/ContainerPort"
           # staging/src/k8s.io/api/core/v1/types.go ContainerPort.Protocol
           # carries `+default="TCP"`.
           result["protocol"] = "TCP" if result["protocol"].to_s.empty?
+        when "/ServiceSpec"
+          ServiceFields.default_spec(result)
         when "/ServicePort"
-          # pkg/apis/core/v1/defaults.go SetDefaults_ServicePort: an unset
-          # targetPort means "the same as port".  intstr's zero value is the
-          # integer 0, so an omitted targetPort is stored as 0 unless it is
-          # defaulted -- and a Service port of 0 is not a port at all.  A
-          # StatefulSet's headless governing Service declares `port: 80` and no
-          # targetPort, so every one of them was stored with targetPort 0, and
-          # kube-proxy refused the whole Service list over it: every Service
-          # created after the first such one was unreachable.
-          result["protocol"] = "TCP" if result["protocol"].to_s.empty?
-          target = result["targetPort"]
-          result["targetPort"] = result["port"] if (target.nil? || target == 0 || target == "") && !result["port"].nil?
+          ServiceFields.default_port(result)
         when "/Volume"
           result["emptyDir"] = {} unless VOLUME_SOURCE_FIELDS.any? { |name| !result[name].nil? }
           image = result["image"]
@@ -291,7 +293,10 @@ module Rubernetes
           result["securityContext"] = {} unless result.key?("securityContext")
           result["terminationGracePeriodSeconds"] = 30 unless result.key?("terminationGracePeriodSeconds")
         when "/Pod"
-          apply_pod_defaults(result)
+          apply_pod_defaults(result, default_service_account: !%i[update decode_create].include?(operation))
+        when "/TopologySpreadConstraint"
+          result["maxSkew"] = 0 if result["maxSkew"].nil?
+          %w[topologyKey whenUnsatisfiable].each { |name| result[name] = "" if result[name].nil? }
         when "apps/DeploymentSpec"
           result["replicas"] = 1 if result["replicas"].nil?
           result["progressDeadlineSeconds"] = 600 if result["progressDeadlineSeconds"].nil?
@@ -315,7 +320,7 @@ module Rubernetes
           result["updateStrategy"] = rolling_update_strategy(result["updateStrategy"], "maxUnavailable" => 1,
                                                                                        "maxSurge" => 0)
         when "batch/Job"
-          apply_job_defaults(result)
+          apply_job_defaults(result, operation)
         when "batch/PodFailurePolicyOnPodConditionsPattern"
           result["status"] = "True" if result["status"].to_s.empty?
         when "batch/CronJobSpec"
@@ -406,39 +411,6 @@ module Rubernetes
         strategy
       end
 
-      def default_pod_level_resources(pod, spec)
-        resources = spec["resources"]
-        requests = resources["requests"].is_a?(Hash) ? resources["requests"] : nil
-        limits = resources["limits"].is_a?(Hash) ? resources["limits"] : nil
-        return if (limits.nil? || limits.empty?) && (requests.nil? || requests.empty?)
-
-        helpers = Rubernetes::ResourceHelpers
-        # defaultHugePagePodLimits: a hugepage limit set only on containers
-        # becomes the pod's, unless the pod requests that hugepage size.
-        pod_limits = limits ? limits.dup : {}
-        helpers.aggregate_container_limits(pod).each do |name, quantity|
-          next unless name.start_with?(helpers::HUGE_PAGES_PREFIX)
-          next if requests&.key?(name) || pod_limits.key?(name)
-
-          pod_limits[name] = quantity.to_s
-        end
-        resources["limits"] = pod_limits unless pod_limits.empty?
-        return if pod_limits.empty?
-
-        # defaultPodRequests: overcommittable requests default to the
-        # containers' aggregate, anything else to the pod-level limit.
-        pod_requests = requests ? requests.dup : {}
-        helpers.aggregate_container_requests(pod).each do |name, quantity|
-          next unless helpers.supported_pod_level_resource?(name) && !name.start_with?(helpers::HUGE_PAGES_PREFIX)
-
-          pod_requests[name] = quantity.to_s unless pod_requests.key?(name)
-        end
-        pod_limits.each do |name, value|
-          pod_requests[name] = value if !pod_requests.key?(name) && helpers.supported_pod_level_resource?(name)
-        end
-        resources["requests"] = pod_requests unless pod_requests.empty?
-      end
-
       # SetDefaults_LimitRangeItem: container limits cascade max -> default ->
       # defaultRequest, with min filling any request the default did not.
       def apply_limit_range_item_defaults(result)
@@ -475,6 +447,7 @@ module Rubernetes
       # SetDefaults_ReplicationController: the template's labels stand in for
       # both an absent selector and absent object labels.
       def apply_replication_controller_defaults(result)
+        result["spec"] = {"replicas" => 1} if result["spec"].nil?
         labels = result.dig("spec", "template", "metadata", "labels")
         return unless labels.is_a?(Hash) && !labels.empty?
 
@@ -492,20 +465,14 @@ module Rubernetes
         result["metadata"] = metadata
       end
 
-      # SetDefaults_Job plus the batch strategy's generateSelectorIfNeeded.
-      # Upstream aliases obj.Labels to the very map the generator then adds the
-      # controller-uid labels to, so a Job that supplied template labels ends up
-      # carrying the generated ones on the object as well.
-      def apply_job_defaults(result)
-        spec = result["spec"]
-        return unless spec.is_a?(Hash)
+      def apply_job_defaults(result, operation)
+        return unless result["spec"].is_a?(Hash)
 
-        spec = deep_copy(spec)
-        supplied_labels = spec.dig("template", "metadata", "labels")
-        alias_labels = supplied_labels.is_a?(Hash)
-        existing = result.dig("metadata", "labels")
-        alias_labels &&= !(existing.is_a?(Hash) && !existing.empty?)
-
+        result["spec"] = deep_copy(result["spec"])
+        result["metadata"] = result["metadata"].dup if result["metadata"].is_a?(Hash)
+        JobSelector.normalize_label_values!(result)
+        spec = result["spec"] = JobSelector.omit_empty_collections(result).fetch("spec")
+        inherited = deep_copy(JobSelector.inherited_labels(result))
         if spec["completions"].nil? && spec["parallelism"].nil?
           spec["completions"] = 1
           spec["parallelism"] = 1
@@ -521,52 +488,26 @@ module Rubernetes
           spec["podReplacementPolicy"] = spec["podFailurePolicy"].nil? ? "TerminatingOrFailed" : "Failed"
         end
 
-        uid = result.dig("metadata", "uid").to_s
-        # generateSelectorIfNeeded (pkg/registry/batch/job/strategy.go): the
-        # generated selector and its labels are added ONLY when the user has not
-        # taken over the selector with manualSelector.
-        if !uid.empty? && !spec.key?("selector") && spec["manualSelector"] != true
-          spec["selector"] = {"matchLabels" => {"batch.kubernetes.io/controller-uid" => uid}}
-          template = spec["template"].is_a?(Hash) ? deep_copy(spec["template"]) : {}
-          template["metadata"] = template["metadata"].is_a?(Hash) ? deep_copy(template["metadata"]) : {}
-          labels = template["metadata"]["labels"].is_a?(Hash) ? deep_copy(template["metadata"]["labels"]) : {}
-          labels["batch.kubernetes.io/controller-uid"] = uid
-          labels["batch.kubernetes.io/job-name"] = result.dig("metadata", "name")
-          labels["controller-uid"] = uid
-          labels["job-name"] = result.dig("metadata", "name")
-          template["metadata"]["labels"] = labels
-          spec["template"] = template
+        if inherited
+          metadata = (result["metadata"] ||= {})
+          metadata["labels"] = inherited
         end
-        result["spec"] = spec
-
-        return unless alias_labels
-
-        metadata = result["metadata"].is_a?(Hash) ? deep_copy(result["metadata"]) : {}
-        metadata["labels"] = deep_copy(spec.dig("template", "metadata", "labels"))
-        result["metadata"] = metadata
+        # HTTP decoding runs before the API assigns a UID and applies its
+        # create strategy. Standalone admission defaulting can take a known UID.
+        JobSelector.generate!(result, inherited_labels: inherited) if [:create, true].include?(operation)
       end
 
       # SetDefaults_Pod: the defaults that materialise only on a Pod, never on
       # a bare PodSpec carried inside a workload template.
-      def apply_pod_defaults(result)
+      def apply_pod_defaults(result, default_service_account:)
         spec = result["spec"].is_a?(Hash) ? deep_copy(result["spec"]) : nil
         return unless spec
 
         spec["enableServiceLinks"] = true unless spec.key?("enableServiceLinks")
-        spec["preemptionPolicy"] ||= "PreemptLowerPriority"
-        spec["priority"] = 0 unless spec.key?("priority")
-        spec["serviceAccount"] ||= "default"
-        spec["serviceAccountName"] ||= "default"
-        tolerations = Array(spec["tolerations"]).map { |entry| deep_copy(entry) }
-        %w[node.kubernetes.io/not-ready node.kubernetes.io/unreachable].each do |key|
-          next if tolerations.any? do |entry|
-            entry.is_a?(Hash) && entry["key"] == key && entry["effect"] == "NoExecute"
-          end
-
-          tolerations << {"effect" => "NoExecute", "key" => key, "operator" => "Exists",
-                          "tolerationSeconds" => 300}
-        end
-        spec["tolerations"] = tolerations
+        # The Priority admission plugin resolves these with the selected class.
+        # Setting them here makes omitted fields look like explicit overrides.
+        # ServiceAccount admission assigns the default account on CREATE only.
+        spec = self.class.default_pod_service_account(spec, result.dig("metadata", "annotations")) if default_service_account
 
         # A container limit without a matching request defaults the request to
         # the limit.  This is deliberately a Pod-only rule upstream, so a
@@ -610,12 +551,21 @@ module Rubernetes
         end
 
         result["spec"] = spec
-        # The ServiceAccount token projection is injected by the ServiceAccount
-        # ADMISSION plugin, which is the only place that can read the
-        # ServiceAccount and honour its automountServiceAccountToken.  Injecting
-        # it here ran before admission and left the plugin's early-out ("a token
-        # volume is already present") to skip the decision entirely, so a
-        # ServiceAccount with automountServiceAccountToken: false still got one.
+        # ServiceAccount admission honors automountServiceAccountToken when injecting projections.
+      end
+
+      # Core v1 PodSpec conversion gives the current field precedence and
+      # serializes both aliases from the same ServiceAccountName.
+      def normalize_service_account_alias(spec)
+        account = spec["serviceAccountName"]
+        account = spec["serviceAccount"] if account.to_s.empty?
+        if account.to_s.empty?
+          spec.delete("serviceAccountName")
+          spec.delete("serviceAccount")
+        else
+          spec["serviceAccountName"] = account
+          spec["serviceAccount"] = account
+        end
       end
 
       # pkg/apis/resource/{v1,v1beta2,v1beta1}/defaults.go.
@@ -633,6 +583,10 @@ module Rubernetes
           result["count"] = 1 if result["allocationMode"] == "ExactCount" && result["count"].to_i.zero?
         when "DeviceTaint"
           result["timeAdded"] = Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ") if result["timeAdded"].nil?
+        when "ResourcePoolStatusRequest"
+          result["spec"] = {"limit" => 100} if result["spec"].nil?
+        when "ResourcePoolStatusRequestSpec"
+          result["limit"] = 100 if result["limit"].nil?
         when "Device", "BasicDevice"
           mappings = result["nodeAllocatableResourceMappings"]
           if mappings.is_a?(Hash)
@@ -737,7 +691,7 @@ module Rubernetes
           end
         end
 
-        nested = nested_definition(field)
+        nested = definition.nested_definition_for(field)
         return apply_object_hash(value, nested, path, mode, kubernetes_admission_defaults, old) if nested && value.respond_to?(:each_pair)
         if value.respond_to?(:each_pair) && field.additional_properties && field.additional_properties != true
           return value.each_pair.to_h do |key, item|
@@ -801,23 +755,6 @@ module Rubernetes
         end
       end
 
-      def nested_definition(field)
-        return field.type if field.type.is_a?(Definition)
-        return field.type.resolve if field.type.is_a?(Reference)
-        return nil unless field.object? && !field.properties.empty?
-
-        Definition.new(
-          name: "#{definition.kind}#{field.name.capitalize}",
-          group: definition.group,
-          version: definition.version,
-          kind: "#{definition.kind}#{field.name.capitalize}",
-          resource: "#{definition.resource}-#{field.name}",
-          scope: definition.scope,
-          fields: field.properties,
-          preserve_unknown_fields: field.preserve_unknown_fields
-        )
-      end
-
       def path_for(path, key)
         (path + [key]).join(".").then { |item| item.empty? ? "$" : item }
       end
@@ -843,3 +780,5 @@ module Rubernetes
     end
   end
 end
+
+require_relative "defaulting/pod_resources"
