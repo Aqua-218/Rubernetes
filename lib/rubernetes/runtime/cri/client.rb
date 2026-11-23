@@ -26,8 +26,19 @@ module Rubernetes
         # gRPC status codes a caller tests for.
         NOT_FOUND = 5
         UNIMPLEMENTED = 12
+        UNAVAILABLE = 14
 
         SERVICES = %w[RuntimeService ImageService].freeze
+        STREAMING_LISTS = {
+          "RuntimeService" => {
+            "ListPodSandbox" => %w[StreamPodSandboxes items pod_sandboxes],
+            "ListContainers" => %w[StreamContainers containers containers],
+            "ListContainerStats" => %w[StreamContainerStats stats container_stats],
+            "ListPodSandboxStats" => %w[StreamPodSandboxStats stats pod_sandbox_stats],
+            "ListPodSandboxMetrics" => %w[StreamPodSandboxMetrics pod_metrics pod_sandbox_metrics]
+          }.freeze,
+          "ImageService" => {"ListImages" => %w[StreamImages images images]}.freeze
+        }.freeze
 
         HELPER = <<~'RUBY'
           require "json"
@@ -55,7 +66,8 @@ module Rubernetes
                 method = name.gsub(/([a-z0-9])([A-Z])/, '\1_\2').downcase
                 if call["stream"]
                   # A server stream: one line per response, then "done".
-                  replies = stub.public_send(method, message)
+                  deadline = call["timeout"] && Time.now + Float(call["timeout"])
+                  replies = stub.public_send(method, message, deadline: deadline)
                   respond.call("id" => call["id"], "connected" => true)
                   replies.each do |reply|
                     respond.call("id" => call["id"], "event" => JSON.parse(reply.to_json(preserve_proto_fieldnames: true, emit_defaults: true)))
@@ -75,7 +87,8 @@ module Rubernetes
           end
         RUBY
 
-        def initialize(endpoint:, timeout: 30.0, ruby: RbConfig.ruby, lib: File.expand_path("../../..", __dir__))
+        def initialize(endpoint:, timeout: 30.0, ruby: RbConfig.ruby, lib: File.expand_path("../../..", __dir__),
+                       stream_lists: false)
           @endpoint = endpoint.to_s.delete_prefix("unix://")
           @timeout = Float(timeout)
           @ruby = ruby
@@ -84,6 +97,7 @@ module Rubernetes
           @pending = {}
           @next_id = 0
           @helper = nil
+          @stream_lists = SERVICES.to_h { |service| [service, stream_lists] }
         end
 
         attr_reader :endpoint
@@ -120,7 +134,7 @@ module Rubernetes
         # A server-streaming RPC (GetContainerEvents): yields :connected once
         # the stream is open, then each response Hash; returns when the
         # runtime ends the stream; raises Error when it fails.
-        def stream(service, method, request = {})
+        def stream(service, method, request = {}, timeout: nil)
           raise ArgumentError, "unknown CRI service #{service}" unless SERVICES.include?(service.to_s)
 
           queue = Queue.new
@@ -130,7 +144,7 @@ module Rubernetes
             @pending[@next_id] = queue
             begin
               @helper[:input].write(JSON.generate("id" => @next_id, "service" => service.to_s, "method" => method.to_s,
-                                                  "request" => request, "stream" => true) + "\n")
+                                                  "request" => request, "stream" => true, "timeout" => timeout) + "\n")
             rescue IOError, SystemCallError => error
               @pending.delete(@next_id)
               stop_helper_locked
@@ -138,8 +152,10 @@ module Rubernetes
             end
             @next_id
           end
+          expiry = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout) + 5.0 if timeout
           loop do
-            outcome = queue.pop
+            outcome = expiry ? wait(queue, [expiry - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0].max) : queue.pop
+            raise Error, "CRI #{service}/#{method} did not finish in #{timeout}s" if outcome.nil?
             raise Error.new(outcome["error"].to_s, code: outcome["code"]) if outcome.key?("error")
             return true if outcome["done"]
 
@@ -149,14 +165,39 @@ module Rubernetes
           @mutex.synchronize { @pending.delete(id) } if id
         end
 
-        def runtime(method, request = {}, **) = call("RuntimeService", method, request, **)
-        def image(method, request = {}, **) = call("ImageService", method, request, **)
+        def runtime(method, request = {}, **) = call_with_list_streaming("RuntimeService", method, request, **)
+        def image(method, request = {}, **) = call_with_list_streaming("ImageService", method, request, **)
 
         def close
           @mutex.synchronize { stop_helper_locked }
         end
 
         private
+
+        def call_with_list_streaming(service, method, request, timeout: @timeout)
+          listing = STREAMING_LISTS.fetch(service)[method.to_s]
+          return call(service, method, request, timeout: timeout) unless listing && @mutex.synchronize { @stream_lists.fetch(service) }
+
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
+          begin
+            collect_list(service, listing, request, timeout: timeout)
+          rescue Error => error
+            raise unless error.code == UNIMPLEMENTED
+
+            @mutex.synchronize { @stream_lists[service] = false }
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            call(service, method, request, timeout: [remaining, 0].max)
+          end
+        end
+
+        def collect_list(service, listing, request, timeout:)
+          method, unary_field, stream_field = listing
+          entries = []
+          stream(service, method, request, timeout: timeout) do |event|
+            entries.concat(Array(event[stream_field])) unless event == :connected
+          end
+          {unary_field => entries}
+        end
 
         def wait(queue, seconds)
           queue.pop(timeout: seconds)
