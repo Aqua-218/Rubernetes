@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "tmpdir"
 require "rubernetes/node"
 require_relative "../support/node_agent_fakes"
 require_relative "../support/node_lifecycle_fakes"
@@ -47,7 +48,13 @@ class NodeEvictionLifecycleTest < Minitest::Test
     assert_equal "Failed", status["phase"]
     assert_equal "Evicted", status["reason"]
     assert_equal MESSAGE, status["message"]
-    target = status["conditions"].find { |entry| entry["type"] == "DisruptionTarget" }
+    eviction_phases = @reporter.statuses.filter_map { |entry| entry["phase"] if entry["reason"] == "Evicted" }
+
+    assert_equal ["Failed"], eviction_phases
+    targets = status["conditions"].select { |entry| entry["type"] == "DisruptionTarget" }
+
+    assert_equal 1, targets.length
+    target = targets.first
 
     assert_equal "True", target["status"]
     assert_equal "TerminationByKubelet", target["reason"]
@@ -61,6 +68,85 @@ class NodeEvictionLifecycleTest < Minitest::Test
 
     assert_equal ["app"], @runtime.created
     assert_equal 1, @runtime.sandboxes
+  end
+
+  class InterruptedCleanupRuntime < Runtime
+    def stop_container(id, timeout:)
+      @exited[id] = 0
+      super
+    end
+
+    def remove_container(id)
+      unless @remove_attempted
+        @remove_attempted = true
+        raise IOError, "temporary container cleanup failure"
+      end
+
+      super
+    end
+  end
+
+  class InterruptedStopRuntime < Runtime
+    def stop_container(id, timeout:)
+      @stop_attempts = @stop_attempts.to_i + 1
+      raise IOError, "temporary container stop failure" if @stop_attempts <= 2
+
+      super
+    end
+  end
+
+  def test_eviction_publishes_the_outcome_if_the_fallback_stop_succeeds
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: InterruptedStopRuntime.new, reporter: @reporter, sleeper: ->(_) {})
+    spec = pod
+    lifecycle.start(spec)
+    result = lifecycle.evict(spec, message: MESSAGE, grace_period_seconds: 1, condition: condition)
+
+    assert_equal "Removed", result.state
+    assert(result.events.any? { |event| event["type"] == "pod.failed" })
+    assert_eviction_published
+  end
+
+  def test_eviction_waits_for_cleanup_and_publishes_the_outcome_after_retry
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: InterruptedCleanupRuntime.new, reporter: @reporter)
+    initiate_interrupted_eviction(lifecycle)
+
+    assert_equal ["pod-1"], lifecycle.retry_pending_cleanups
+    assert_eviction_published
+  end
+
+  def test_recovery_publishes_the_original_eviction_after_cleanup
+    Dir.mktmpdir do |dir|
+      store = Rubernetes::Node::Lifecycle::StateStore.new(File.join(dir, "lifecycle.json"))
+      runtime = InterruptedCleanupRuntime.new
+      lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, reporter: @reporter, state_store: store)
+      initiate_interrupted_eviction(lifecycle)
+
+      recovered = Rubernetes::Node::Lifecycle.new(runtime: runtime, reporter: @reporter, state_store: store)
+
+      assert_equal ["pod-1"], recovered.recover.fetch("recovered")
+      assert_eviction_published
+    end
+  end
+
+  def initiate_interrupted_eviction(lifecycle)
+    spec = pod(restart_policy: "Never")
+    lifecycle.start(spec)
+    result = lifecycle.evict(spec, message: MESSAGE, grace_period_seconds: 1, condition: condition)
+
+    assert_equal "CleanupPending", result.state
+    status = @reporter.statuses.last
+
+    assert_equal ["Running", nil, nil], status.values_at("phase", "reason", "message")
+    assert_equal 0, status.dig("containerStatuses", 0, "state", "terminated", "exitCode")
+    refute(status.fetch("conditions").any? { |entry| entry["type"] == "DisruptionTarget" })
+  end
+
+  def assert_eviction_published
+    status = @reporter.statuses.last
+    target = status.fetch("conditions").find { |entry| entry["type"] == "DisruptionTarget" }
+
+    assert_equal ["Failed", "Evicted", MESSAGE], status.values_at("phase", "reason", "message")
+    assert_equal ["True", "TerminationByKubelet", MESSAGE], target.values_at("status", "reason", "message")
   end
 
   def test_requested_eviction_is_carried_out_by_the_next_sync
@@ -176,6 +262,27 @@ class NodeEvictionLifecycleTest < Minitest::Test
     assert_nil Rubernetes::Node::Agent.new(node_name: "node-a", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new,
                                            sleeper: ->(_) {}, stats_provider: ImageStats.new, image_resolver: ImageResolver.new,
                                            image_gc: {"enabled" => false}).image_gc_manager
+  end
+
+  class SeparateImageStats < Rubernetes::Node::StatsProvider
+    attr_accessor :split
+
+    def dedicated_image_fs? = true
+    def split_container_fs? = split
+  end
+
+  def test_agent_reclaims_images_only_for_the_filesystem_that_contains_them
+    stats = SeparateImageStats.new(node_name: "node-a", lifecycle: Lifecycle.new, runtime: Object.new)
+    [false, true].each do |split|
+      stats.split = split
+      agent = Rubernetes::Node::Agent.new(node_name: "node-a", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new,
+                                          sleeper: ->(_) {}, stats_provider: stats, image_resolver: ImageResolver.new)
+      reclaim = agent.eviction_manager.instance_variable_get(:@node_reclaim)
+      signals = %w[imagefs.available imagefs.inodesFree]
+      signals += %w[containerfs.available containerfs.inodesFree] unless split
+
+      assert_equal signals.sort, reclaim.keys.sort
+    end
   end
 
   def test_eviction_can_be_disabled_and_is_absent_without_stats
