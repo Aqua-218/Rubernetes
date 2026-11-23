@@ -45,6 +45,7 @@ module Rubernetes
             hash = nested.to_h.merge(hash.reject { |key, _| key.to_s.casecmp?(backend.to_s) }) if Capability.hash_like?(nested) && !nested.is_a?(String)
           end
           hash["backend"] = backend || Types.key(hash, "backend", "emptyDir").to_s
+          normalize_csi_secret_references(hash) if hash["backend"].casecmp?("csi")
           hash["capacityBytes"] = Types.parse_capacity(Types.key(hash, "capacityBytes", Types.key(hash, "capacity", 1)))
           hash["accessModes"] = Types.normalize_access_modes(Types.key(hash, "accessModes")) if Types.key(hash, "accessModes")
           hash
