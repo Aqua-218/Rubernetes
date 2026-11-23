@@ -7,13 +7,18 @@
 require "fileutils"
 require "digest"
 require "securerandom"
+require "tempfile"
 require "tmpdir"
 require "time"
+require_relative "durable_process"
+require_relative "process_supervisor/recovery"
 
 module Rubernetes
   module Platform
     module Linux
       class ProcessSupervisor
+        include Recovery
+
         class Error < StandardError; end
         class InvalidSpec < Error; end
         class Timeout < Error; end
@@ -26,7 +31,7 @@ module Rubernetes
           :workload_executable_digest, :workload_creation_method, :workload_clone_flags,
           :workload_security,
           :command, :started_at, :gate, :stdin, :stdout, :stderr,
-          :stdout_log, :stderr_log, :combined_log, :state, :exit_status, :term_signal, :cgroup
+          :stdout_log, :stderr_log, :combined_log, :state, :exit_status, :term_signal, :cgroup, :durable
         ) do
           def running?
             state == :running
@@ -53,7 +58,8 @@ module Rubernetes
               "state" => state.to_s,
               "exit_status" => exit_status,
               "term_signal" => term_signal,
-              "cgroup" => cgroup
+              "cgroup" => cgroup,
+              "durable" => durable
             }
           end
         end
@@ -76,8 +82,9 @@ module Rubernetes
         class LogRotator
           DEFAULT_MAX_BYTES = 10 * 1024 * 1024
           DEFAULT_MAX_FILES = 5
+          Cursor = Data.define(:identity, :offset)
 
-          def initialize(path:, max_bytes: DEFAULT_MAX_BYTES, max_files: DEFAULT_MAX_FILES, adapter: nil)
+          def initialize(path:, max_bytes: DEFAULT_MAX_BYTES, max_files: DEFAULT_MAX_FILES, adapter: nil, create_directory: true)
             @path = File.expand_path(String(path))
             @max_bytes = Integer(max_bytes)
             @max_files = Integer(max_files)
@@ -92,8 +99,9 @@ module Rubernetes
             # sinceTime/sinceSeconds; the file here holds raw bytes, so the
             # time of each write lives beside it instead.
             @written = 0
+            @rotation = 0
             @index = []
-            FileUtils.mkdir_p(File.dirname(@path)) unless @adapter
+            FileUtils.mkdir_p(File.dirname(@path)) if create_directory && !@adapter
           end
 
           MAX_INDEX_ENTRIES = 16_384
@@ -107,33 +115,35 @@ module Rubernetes
             return 0 if payload.empty?
 
             @mutex.synchronize do
-              record_append_time(payload.bytesize)
               written = 0
-              until payload.empty?
-                current_size = size
-                available = @max_bytes - current_size
-                rotate_unlocked! if available <= 0
-                chunk_size = [payload.bytesize, [available, @max_bytes].max].min
-                chunk = payload.byteslice(0, chunk_size)
-                write(chunk)
-                written += chunk.bytesize
-                payload = payload.byteslice(chunk.bytesize, payload.bytesize - chunk.bytesize) || "".b
-                rotate_unlocked! if size >= @max_bytes && !payload.empty?
+              available = @max_bytes - size
+              time = @clock.call
+              while written < payload.bytesize
+                if available <= 0
+                  rotate_unlocked!
+                  available = @max_bytes
+                end
+                length = [payload.bytesize - written, available].min
+                write(payload.byteslice(written, length))
+                record_append_time(length, time)
+                written += length
+                available -= length
               end
               written
             end
           end
 
           def read(follow: false, since: nil, tail: nil, stop: nil, tick: nil, timestamps: false)
-            snapshot = nil
+            cursor = nil
             value = @mutex.synchronize do
-              contents = (0...@max_files).to_a.reverse_each.filter_map do |index|
-                file = index.zero? ? @path : "#{@path}.#{index}"
-                next unless exists?(file)
+              contents = "".b
+              (@max_files - 1).downto(0) do |index|
+                segment = read_segment(index)
+                next unless segment
 
-                read_file(file)
-              end.join
-              snapshot = exists?(@path) ? read_file(@path) : "".b
+                chunk, cursor = segment
+                contents << chunk
+              end
               base = @written - contents.bytesize
               offset = since_offset(since, contents.bytesize)
               if offset
@@ -149,16 +159,17 @@ module Rubernetes
             end
             return value unless follow
 
-            follow_from(value, snapshot, stop: stop, tick: tick, timestamps: timestamps)
+            follow_from(value, cursor, stop: stop, tick: tick, timestamps: timestamps)
           end
 
           # PodLogOptions.timestamps: every line starts with the RFC 3339
           # time it was written, as the CRI log format records it.
-          def stamp_lines(contents, base)
+          def stamp_lines(contents, base, line_start: true)
             offset = base
             contents.lines.map do |line|
-              stamped = "#{written_at(offset).utc.iso8601(9)} ".b + line
+              stamped = line_start ? "#{written_at(offset).utc.iso8601(9)} ".b + line : line
               offset += line.bytesize
+              line_start = true
               stamped
             end.join.b
           end
@@ -168,25 +179,14 @@ module Rubernetes
             entry ? entry[1] : (@index.first&.last || @clock.call)
           end
 
-          # A followed log ends when `stop` reports the writer gone (after a
-          # final read), the way `kubectl logs -f` returns once the container
-          # exits; `tick` runs before every poll so the owner can drain the
-          # process pipes into the file.  `value` is what the caller sees
-          # first (possibly tailed or offset); `snapshot` is the current file
-          # deltas are measured against.
-          # A followed log whose reader goes away must end.  Returning a bare
-          # Enumerator gave the stream no lifecycle: `stop` only reports the
-          # WRITER (the container) gone, so an idle log being followed by a
-          # client that has disconnected polled at 10Hz for the life of the
-          # process.  Node::Service::Stream#close_endpoint closes a source
-          # that answers #close, which is how the transport ends a stream when
-          # the peer disconnects -- a bare Enumerator silently ignored it.
+          # `tick` drains the process pipes before each poll. `stop` reports
+          # that the writer exited, and #close reports a disconnected reader.
           class FollowStream
             include Enumerable
 
-            def initialize(initial, snapshot, rotator, stop: nil, tick: nil, timestamps: false)
+            def initialize(initial, cursor, rotator, stop: nil, tick: nil, timestamps: false)
               @initial = initial
-              @snapshot = snapshot
+              @cursor = cursor
               @rotator = rotator
               @stop = stop
               @tick = tick
@@ -200,21 +200,16 @@ module Rubernetes
               return to_enum(:each) unless block_given?
 
               yield @initial unless @initial.nil? || @initial.empty?
-              value = @snapshot
+              cursor = @cursor
               loop do
                 break if closed?
 
                 @tick&.call
                 finished = @stop&.call
-                next_value = @rotator.contents
-                if next_value.bytesize > value.bytesize
-                  delta = next_value.byteslice(value.bytesize, next_value.bytesize - value.bytesize)
-                  yield stamp(delta)
-                  value = next_value
-                elsif next_value.bytesize < value.bytesize
-                  # Rotated underneath us: continue from the new file.
-                  yield stamp(next_value) unless next_value.empty?
-                  value = next_value
+                chunk, cursor = @rotator.follow_delta(cursor, timestamps: @timestamps, line_start: @line_start)
+                unless chunk.empty?
+                  @line_start = chunk.end_with?("\n")
+                  yield chunk
                 end
                 break if finished
                 break if closed?
@@ -222,20 +217,6 @@ module Rubernetes
                 sleep 0.1
               end
               self
-            end
-
-            # A followed delta is stamped when it is observed, at most one
-            # poll (100 ms) after it was written; a line split across polls is
-            # stamped once, where it starts.
-            def stamp(chunk)
-              return chunk unless @timestamps
-
-              now = "#{Time.now.utc.iso8601(9)} ".b
-              chunk.b.lines.map do |line|
-                stamped = @line_start ? now + line : line
-                @line_start = line.end_with?("\n")
-                stamped
-              end.join.b
             end
 
             def closed?
@@ -248,11 +229,40 @@ module Rubernetes
             end
           end
 
-          def follow_from(initial, snapshot, stop: nil, tick: nil, timestamps: false)
-            FollowStream.new(initial, snapshot, self, stop: stop, tick: tick, timestamps: timestamps)
+          def follow_from(initial, cursor, stop: nil, tick: nil, timestamps: false)
+            FollowStream.new(initial, cursor, self, stop: stop, tick: tick, timestamps: timestamps)
           end
 
-          # The current contents of the live log file, for a follower.
+          # After rotation, the previously followed file may have an unread
+          # suffix. Scan from the live file back to that cursor or the oldest
+          # retained file. Idle polls read only the live file's new bytes.
+          def follow_delta(cursor, timestamps:, line_start:)
+            @mutex.synchronize do
+              chunks = {}
+              latest = nil
+              @max_files.times do |index|
+                segment = read_segment(index, cursor)
+                next unless segment
+
+                chunk, ending = segment
+                latest ||= ending
+                # Another rotator may move an archive while this one reads.
+                # Retry on the next poll rather than replaying a moved file.
+                return ["".b, cursor] if chunks.key?(ending.identity)
+
+                chunks[ending.identity] = chunk
+                break if ending.identity == cursor&.identity
+              end
+              return ["".b, cursor] if !@adapter && chunks.length > 1 && file_identity(File.stat(@path)) != latest.identity
+
+              chunk = chunks.values.reverse.join.b
+              chunk = stamp_lines(chunk, @written - chunk.bytesize, line_start: line_start) if timestamps
+              [chunk, latest || cursor]
+            end
+          rescue Errno::ENOENT
+            ["".b, cursor]
+          end
+
           def contents
             @mutex.synchronize { read_file(@path) }
           end
@@ -268,8 +278,39 @@ module Rubernetes
 
           private
 
+          def read_segment(index, cursor = nil)
+            path = index.zero? ? @path : "#{@path}.#{index}"
+            if @adapter
+              return unless exists?(path)
+
+              identity = @rotation - index
+              contents = read_file(path)
+              offset = resume_offset(cursor, identity, contents.bytesize)
+              return [contents.byteslice(offset..), Cursor.new(identity: identity, offset: contents.bytesize)]
+            end
+
+            File.open(path, "rb") do |file|
+              stat = file.stat
+              identity = file_identity(stat)
+              offset = resume_offset(cursor, identity, stat.size)
+              file.seek(offset)
+              chunk = file.read(stat.size - offset) || "".b
+              [chunk, Cursor.new(identity: identity, offset: offset + chunk.bytesize)]
+            end
+          rescue Errno::ENOENT
+            nil
+          end
+
+          def file_identity(stat) = [stat.dev, stat.ino]
+
+          def resume_offset(cursor, identity, length)
+            cursor&.identity == identity && cursor.offset <= length ? cursor.offset : 0
+          end
+
           def size
             return Integer(@adapter.size(@path)) if @adapter.respond_to?(:size)
+            return exists?(@path) ? read_file(@path).bytesize : 0 if @adapter
+
             return File.size(@path) if File.exist?(@path)
 
             0
@@ -279,8 +320,7 @@ module Rubernetes
             @adapter ? @adapter.exists?(path) : File.exist?(path)
           end
 
-          def record_append_time(bytes)
-            now = @clock.call
+          def record_append_time(bytes, now)
             last = @index.last
             @index << [@written, now] unless last && last[1] == now
             @index.shift while @index.length > MAX_INDEX_ENTRIES
@@ -326,6 +366,15 @@ module Rubernetes
           def rotate_unlocked!
             if @adapter
               @adapter.rotate(path: @path, max_files: @max_files)
+              @rotation += 1
+              return true
+            end
+
+            if @max_files == 1
+              Tempfile.create([".log-", ".rotate"], File.dirname(@path)) do |file|
+                file.fsync
+                File.rename(file.path, @path)
+              end
               return true
             end
 
@@ -450,6 +499,10 @@ module Rubernetes
           @process_adapter.respond_to?(:security_applied_in_child?) && @process_adapter.security_applied_in_child?
         end
 
+        def places_workload_in_cgroup?
+          defined?(NativeAdapters::ProcessGateAdapter) && @process_adapter.is_a?(NativeAdapters::ProcessGateAdapter)
+        end
+
         # OCI hooks at their stages inside the container (see
         # ProcessGateAdapter#runs_container_hooks?).
         def runs_container_hooks?
@@ -463,16 +516,20 @@ module Rubernetes
           @mutex.synchronize { @handles.values.map(&:to_h).freeze }
         end
 
-        def spawn(command:, env: {}, cwd: nil, security_plan: nil, resource_id: nil, gate: true, id: nil, **options)
+        def spawn(command:, env: {}, cwd: nil, security_plan: nil, resource_id: nil, gate: true, id: nil, durable: false, **options)
           normalized = normalize_command(command)
           normalized_env = normalize_environment(env)
           normalized_cwd = cwd && File.expand_path(String(cwd))
+          handle_id = String(id || resource_id || "process-#{Process.pid}-#{SecureRandom.hex(8)}")
+          log_root = File.join(@log_directory, handle_id)
+          if durable && places_workload_in_cgroup?
+            FileUtils.mkdir_p(log_root, mode: 0o700)
+            options[:durable_exit] = File.join(log_root, "exit-#{SecureRandom.hex(12)}.json")
+          end
           process = call_spawn(normalized, normalized_env, normalized_cwd, gate, security_plan, options)
           pid = Integer(fetch_value(process, :pid))
           pidfd = fetch_value(process, :pidfd)
           pidfd ||= open_pidfd(pid, resource_id || "process:#{pid}") if @pidfd_adapter
-          handle_id = String(id || resource_id || "process-#{Process.pid}-#{SecureRandom.hex(8)}")
-          log_root = File.join(@log_directory, handle_id)
           handle = Handle.new(
             id: handle_id.freeze,
             pid: pid,
@@ -505,7 +562,8 @@ module Rubernetes
             state: :created,
             exit_status: nil,
             term_signal: nil,
-            cgroup: fetch_value(process, :cgroup)
+            cgroup: fetch_value(process, :cgroup),
+            durable: fetch_value(process, :durable)
           )
           @mutex.synchronize { @handles[handle.id] = handle }
           handle
@@ -514,6 +572,12 @@ module Rubernetes
         end
 
         alias create spawn
+
+        def commit(handle)
+          return unless handle.durable
+
+          handle.gate.commit
+        end
 
         def release_gate(handle)
           current = lookup(handle)
@@ -543,82 +607,15 @@ module Rubernetes
                           workload_security: workload_security || current.workload_security)
         end
 
-        # Re-adopt a live process discovered during startup reconciliation.
-        # The caller must supply the durable start time and workload PID; a
-        # numeric PID alone is never sufficient because it may have been
-        # reused after the agent crashed.
-        def adopt(metadata:, cgroup: nil)
-          value = metadata.respond_to?(:to_h) ? metadata.to_h.transform_keys(&:to_s) : {}
-          id = String(value.fetch("id") { raise Error, "process adoption requires an id" })
-          pid = Integer(value.fetch("pid") { value.fetch("workload_pid") })
-          workload_pid = Integer(value.fetch("workload_pid", pid))
-          expected_start = value["workload_start_time"] || value["start_time"]
-          raise Error, "process #{id} adoption requires a start time" if expected_start.nil?
-
-          actual_start = process_start_time(workload_pid)
-          raise Error, "process #{id} start time changed during adoption" unless actual_start == Integer(expected_start)
-
-          expected_digest = value["workload_executable_digest"] || value["executable_digest"]
-          raise Error, "process #{id} adoption requires an executable digest" if expected_digest.nil?
-
-          actual_digest = executable_digest(workload_pid)
-          raise Error, "process #{id} executable identity changed during adoption" unless actual_digest == String(expected_digest).downcase
-
-          pidfd = @pidfd_adapter ? open_pidfd(pid, "process:adopt:#{id}") : value["pidfd"]
-          workload_pidfd = if @pidfd_adapter && workload_pid != pid
-                             open_pidfd(workload_pid, "process:adopt:#{id}:workload")
-                           else
-                             pidfd
-                           end
-          log_root = File.join(@log_directory, id)
-          handle = Handle.new(
-            id: id.freeze,
-            pid: pid,
-            pidfd: pidfd && Integer(pidfd),
-            workload_pid: workload_pid,
-            workload_pidfd: workload_pidfd && Integer(workload_pidfd),
-            workload_start_time: actual_start,
-            workload_executable_digest: actual_digest,
-            workload_creation_method: value["workload_creation_method"],
-            workload_clone_flags: value["workload_clone_flags"],
-            workload_security: value["workload_security"],
-            command: Array(value["command"]).map(&:to_s).freeze,
-            started_at: value["started_at"] && Time.iso8601(String(value["started_at"])).utc,
-            gate: nil,
-            stdin: nil,
-            stdout: nil,
-            stderr: nil,
-            stdout_log: LogRotator.new(path: File.join(log_root, "stdout.log"), max_bytes: @max_log_bytes, max_files: @max_log_files),
-            stderr_log: LogRotator.new(path: File.join(log_root, "stderr.log"), max_bytes: @max_log_bytes, max_files: @max_log_files),
-            # Spawned handles gained the interleaved container.log; an adopted
-            # one (after an agent restart) was never given it, so Handle.new
-            # raised "missing keyword: :combined_log" and the restarted agent
-            # could not adopt a single running container -- recovery failed
-            # closed on every restart.
-            combined_log: LogRotator.new(path: File.join(log_root, "container.log"), max_bytes: @max_log_bytes, max_files: @max_log_files),
-            state: value["state"].to_s == "stopped" ? :stopped : :running,
-            exit_status: value["exit_status"],
-            term_signal: value["term_signal"],
-            cgroup: cgroup
-          )
-          @mutex.synchronize do
-            existing = @handles[id]
-            return existing if existing
-
-            @handles[id] = handle
-          end
-          handle
-        rescue ArgumentError, TypeError, SystemCallError => error
-          raise Error, "process adoption failed: #{error.message}"
-        end
-
         alias start release_gate
         alias start_process release_gate
 
         def wait(handle, timeout: nil, resource_id: nil)
           current = lookup(handle)
           drain_logs(current)
-          result = if current.pidfd && @pidfd_adapter
+          result = if current.durable && current.pidfd
+                     await_durable_exit(current, timeout: timeout, resource_id: resource_id)
+                   elsif current.pidfd && @pidfd_adapter
                      @pidfd_adapter.wait(pidfd: current.pidfd, timeout: timeout, resource_id: resource_id || "process:#{current.id}")
                    elsif @process_adapter.respond_to?(:wait)
                      @process_adapter.wait(pid: current.pid, timeout: timeout)
@@ -691,7 +688,7 @@ module Rubernetes
         # captured stdout/stderr, exactly as `kubectl logs` does for a
         # terminated container.  The retained record holds only the log
         # readers; every process resource was released by close.
-        def logs(handle, follow: false, since: nil, tail: nil, stream: :stdout, timestamps: false)
+        def logs(handle, follow: false, since: nil, tail: nil, stream: :stdout, timestamps: false, stop: nil)
           id = handle.respond_to?(:id) ? String(handle.id) : String(handle)
           current = @mutex.synchronize { @handles[id] }
           if current
@@ -701,9 +698,9 @@ module Rubernetes
 
             return log.read(follow: follow, since: since, tail: tail, timestamps: timestamps,
                             tick: -> { drain_logs(@mutex.synchronize { @handles[id] } || current) },
-                            stop: -> { !@mutex.synchronize { @handles[id] }&.running? })
+                            stop: -> { stop&.call || !@mutex.synchronize { @handles[id] }&.running? })
           end
-          retained = @mutex.synchronize { @closed_logs.fetch(id) { raise Error, "unknown process handle #{id}" } }
+          retained = @mutex.synchronize { @closed_logs[id] } || recovered_log_files(id)
           log = case stream.to_sym
                 when :stderr then retained.fetch(:stderr)
                 when :stdout then retained.fetch(:stdout)
@@ -739,6 +736,8 @@ module Rubernetes
           return false if current.stopped?
 
           if current.pidfd && @pidfd_adapter
+            return IO.for_fd(current.pidfd, autoclose: false).wait_readable(0).nil? if current.durable
+
             if @pidfd_adapter.respond_to?(:alive?)
               alive = @pidfd_adapter.alive?(pidfd: current.pidfd)
               unless alive
@@ -887,7 +886,7 @@ module Rubernetes
           if handle.workload_pidfd && @pidfd_adapter
             begin
               @pidfd_adapter.send_signal(pidfd: handle.workload_pidfd, signal: Integer(signal), resource_id: "#{resource_id}:workload")
-              return true unless Integer(signal) == Signal.list.fetch("KILL")
+              return true if handle.durable || Integer(signal) != Signal.list.fetch("KILL")
             rescue StandardError => error
               raise unless process_disappeared_error?(error)
             end
