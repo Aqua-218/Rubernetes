@@ -174,8 +174,8 @@ class KubeletWorkspaceUmountIdempotencyTest < Minitest::Test
     adapter = Adapters::OverlayFilesystemAdapter.allocate
     adapter.instance_variable_set(:@mount, mount)
     adapter.instance_variable_set(:@namespace_adapter, Namespaces.new)
-    adapter.define_singleton_method(:mount_readback) { |_handle, _target| "identity" }
-    adapter.define_singleton_method(:mount_present?) { |_handle, _target| false }
+    observations = ["identity", ("identity" if errno == Errno::EBUSY::Errno)]
+    adapter.define_singleton_method(:mount_readback) { |_handle, _target, **| observations.shift }
     adapter.define_singleton_method(:same_mount_identity?) { |_left, _right| true }
     adapter
   end
@@ -185,12 +185,12 @@ class KubeletWorkspaceUmountIdempotencyTest < Minitest::Test
                                                            image_digest: nil)
   end
 
-  def test_enoent_and_einval_are_success_other_errors_are_not
+  def test_cleanup_accepts_unmount_errors_when_readback_proves_the_mount_is_already_gone
     require "rubernetes/runtime/native"
 
-    assert_nil adapter(Errno::ENOENT::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
-    assert_nil adapter(Errno::EINVAL::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
-    assert_nil adapter(nil).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
+    assert adapter(Errno::ENOENT::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
+    assert adapter(Errno::EINVAL::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
+    assert adapter(nil).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
     assert_raises(Rubernetes::Platform::Linux::Error) do
       adapter(Errno::EBUSY::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
     end
