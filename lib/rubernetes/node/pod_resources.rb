@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "plugins/helper_process"
+
 require "fileutils"
 require "json"
 require "rbconfig"
@@ -7,20 +9,24 @@ require "timeout"
 
 module Rubernetes
   module Node
-    # kubelet's pod resources API (pkg/kubelet/apis/podresources, v1
-    # PodResourcesLister on <directory>/kubelet.sock): monitoring and device
+    # kubelet's pod resources API (v1 and v1alpha1 PodResourcesLister on
+    # <directory>/kubelet.sock): monitoring and device
     # agents ask which devices, exclusive CPUs, NUMA-pinned memory and DRA
     # claims each running container holds (List / Get) and what the node can
     # hand out (GetAllocatableResources).  gRPC runs in a helper interpreter;
     # each call it receives comes back to the agent as one JSON line and is
     # answered from the agent's own state.
     class PodResources
+      include Plugins::HelperProcess
+
       HELPER = <<~'RUBY'
         require "json"
         require "grpc"
         $LOAD_PATH.unshift(ARGV.fetch(1))
         require "rubernetes/node/plugins/generated/podresources_v1_services_pb"
+        require "rubernetes/node/plugins/generated/podresources_v1alpha1_services_pb"
         api = Rubernetes::Node::Plugins::Generated::PodResourcesV1
+        alpha = Rubernetes::Node::Plugins::Generated::PodResourcesV1alpha1
         socket = File.join(ARGV.fetch(0), "kubelet.sock")
         output = Mutex.new
         pending = {}
@@ -45,10 +51,16 @@ module Rubernetes
             decode.call(api::AllocatableResourcesResponse, ask.call("GetAllocatableResources", encode.call(request)))
           end
         end
+        alpha_service = Class.new(alpha::PodResourcesLister::Service) do
+          define_method(:list) do |_request, _call|
+            decode.call(alpha::ListPodResourcesResponse, ask.call("ListAlpha", {}))
+          end
+        end
         File.delete(socket) if File.exist?(socket) || File.symlink?(socket)
         server = GRPC::RpcServer.new
         server.add_http2_port("unix:#{socket}", :this_port_is_insecure)
         server.handle(service.new)
+        server.handle(alpha_service.new)
         Thread.new { server.run }
         server.wait_till_running(10)
         output.synchronize { $stdout.write(JSON.generate("event" => "serving") + "\n") }
@@ -82,40 +94,9 @@ module Rubernetes
           return self if @pid
 
           FileUtils.mkdir_p(@directory)
-          reader, child_out = IO.pipe
-          child_in, @stdin = IO.pipe
-          @pid = Process.spawn(@ruby, "-e", HELPER, @directory, @lib, in: child_in, out: child_out, err: File::NULL, pgroup: true)
-          child_in.close
-          child_out.close
-          @reader = Thread.new { serve(reader, ready) }
+          spawn_helper(HELPER, @directory, @lib) { |reader, writer| serve(reader, ready, writer) }
         end
         Timeout.timeout(wait) { ready.pop }
-        self
-      end
-
-      def stop
-        pid = @mutex.synchronize do
-          value = @pid
-          @pid = nil
-          value
-        end
-        return self unless pid
-
-        begin
-          @stdin&.close
-        rescue StandardError
-          nil
-        end
-        begin
-          Process.kill(:TERM, pid)
-        rescue StandardError
-          nil
-        end
-        begin
-          Process.wait(pid)
-        rescue StandardError
-          nil
-        end
         self
       end
 
@@ -165,13 +146,18 @@ module Rubernetes
 
       private
 
-      def count(*names)
-        names.each { |name| @metrics&.increment(name, {"server_api_version" => "v1"}) }
+      def list_alpha
+        count("kubelet_pod_resources_endpoint_requests_total", version: "v1alpha1")
+        {"pod_resources" => Array(@pods.call).filter_map { |pod| pod_resources(pod, devices_only: true) }}
+      end
+
+      def count(*names, version: "v1")
+        names.each { |name| @metrics&.increment(name, {"server_api_version" => version}) }
       rescue StandardError
         nil
       end
 
-      def serve(reader, ready)
+      def serve(reader, ready, writer)
         while (line = reader.gets)
           message = JSON.parse(line)
           if message["event"] == "serving"
@@ -181,6 +167,7 @@ module Rubernetes
           reply = begin
             ok = case message["method"]
                  when "List" then list
+                 when "ListAlpha" then list_alpha
                  when "Get" then get(message.dig("request", "pod_name").to_s, message.dig("request", "pod_namespace").to_s)
                  when "GetAllocatableResources" then allocatable
                  else raise ArgumentError, "unknown method #{message["method"]}"
@@ -193,29 +180,34 @@ module Rubernetes
             count("kubelet_pod_resources_endpoint_errors_get_allocatable") if message["method"] == "GetAllocatableResources"
             {"id" => message["id"], "error" => error.message}
           end
-          @mutex.synchronize { @stdin.write(JSON.generate(reply) + "\n") if @pid }
+          @mutex.synchronize { writer.write(JSON.generate(reply) + "\n") if @stdin.equal?(writer) }
         end
       rescue IOError, JSON::ParserError
         nil
       end
 
-      def pod_resources(pod)
+      def pod_resources(pod, devices_only: false)
         uid = pod.dig("metadata", "uid").to_s
-        containers = (Array(pod.dig("spec", "initContainers")).select { |c| c["restartPolicy"] == "Always" } +
-                      Array(pod.dig("spec", "containers"))).map do |container|
-          container_resources(pod, uid, container)
+        containers = Array(pod.dig("spec", "containers"))
+        unless devices_only
+          sidecars = Array(pod.dig("spec", "initContainers")).select { |container| container["restartPolicy"] == "Always" }
+          containers = sidecars + containers
         end
-        {"name" => pod.dig("metadata", "name"), "namespace" => pod.dig("metadata", "namespace"), "containers" => containers}
+        resources = containers.map { |container| container_resources(pod, uid, container, devices_only: devices_only) }
+        {"name" => pod.dig("metadata", "name"), "namespace" => pod.dig("metadata", "namespace"), "containers" => resources}
       end
 
-      def container_resources(pod, uid, container)
+      def container_resources(pod, uid, container, devices_only:)
         name = container["name"].to_s
-        result = {"name" => name, "devices" => [], "cpu_ids" => [], "memory" => [], "dynamic_resources" => []}
+        result = {"name" => name, "devices" => []}
         if @device_plugins.respond_to?(:container_devices)
           result["devices"] = @device_plugins.container_devices(uid, name).map do |resource, ids|
             {"resource_name" => resource, "device_ids" => ids}
           end
         end
+        return result if devices_only
+
+        result.merge!("cpu_ids" => [], "memory" => [], "dynamic_resources" => [])
         cpu = @container_manager.respond_to?(:cpu_manager) ? @container_manager.cpu_manager : nil
         if cpu.respond_to?(:state) && cpu.state.respond_to?(:cpu_set)
           set = cpu.state.cpu_set(uid, name)
