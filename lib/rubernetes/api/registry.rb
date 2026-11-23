@@ -47,7 +47,7 @@ module Rubernetes
       attr_reader :group, :version, :resource, :kind, :scope, :short_names,
                   :categories, :verbs, :list_kind, :singular_name, :merge_keys,
                   :patch_strategy, :storage_version_hash, :schema, :subresources,
-                  :storage_version, :storage_group, :wire_converter, :converter, :printer_columns,
+                  :storage_version, :storage_group, :storage_key_versions, :wire_converter, :converter, :printer_columns,
                   :selectable_fields, :custom
 
       # A subresource can be advertised under a group/version different from
@@ -97,12 +97,15 @@ module Rubernetes
                      short_names: [], categories: [], verbs: nil, list_kind: nil,
                      singular_name: nil, merge_keys: {}, patch_strategy: :merge,
                      storage_version_hash: nil, schema: nil, namespaced: nil, subresources: [],
-                     storage_version: nil, storage_group: nil, wire_converter: nil, converter: nil,
+                     storage_version: nil, storage_group: nil, storage_key_version: nil, storage_key_versions: [],
+                     wire_converter: nil, converter: nil,
                      printer_columns: [], selectable_fields: [], custom: false)
         # Dynamically served resources (CustomResourceDefinitions) share one
         # storage location across their served versions: objects are stored
         # under the storage version's GVR and converted on the way in and out.
         @storage_version = storage_version&.to_s&.freeze
+        @storage_key_version = storage_key_version&.to_s&.freeze
+        @storage_key_versions = Array(storage_key_versions).map { |value| value.to_s.freeze }.uniq.freeze
         # An API group served over ANOTHER group's storage: events.k8s.io/v1
         # Events are the same objects as core/v1 Events, stored once in the
         # core shape and translated at the edge by wire_converter.
@@ -161,6 +164,10 @@ module Rubernetes
       def storage_gvr
         return GVR.new(group: storage_group || group, version: CUSTOM_STORAGE_VERSION, resource: resource) if custom?
 
+        GVR.new(group: storage_group || group, version: @storage_key_version || storage_version || version, resource: resource)
+      end
+
+      def storage_encoding_gvr
         GVR.new(group: storage_group || group, version: storage_version || version, resource: resource)
       end
 
