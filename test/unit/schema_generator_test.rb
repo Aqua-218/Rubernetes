@@ -92,6 +92,8 @@ class SchemaGeneratorTest < Minitest::Test
 
         runtime = inspect_canonical_generated(first)
 
+        assert_equal(true, runtime.fetch("pod_loaded_on_demand"))
+        assert_equal(true, runtime.fetch("apps_still_deferred"))
         assert_equal(771, runtime.fetch("definition_count"))
         assert_equal(true, runtime.fetch("definitions_frozen"))
         assert_equal("Rubernetes::Schema::Reference", runtime.fetch("pod_spec_type"))
@@ -253,8 +255,11 @@ class SchemaGeneratorTest < Minitest::Test
       require "json"
       require File.expand_path(ARGV.fetch(0))
       constants = Rubernetes::Generated::SCHEMA_CONSTANTS.values
-      definitions = constants.map { |name| Rubernetes::Generated.const_get(name, false)::DEFINITION }
+      pod_deferred = Rubernetes::Generated.autoload?(:IoK8sApiCoreV1Pod)
       pod = Rubernetes::Generated::IoK8sApiCoreV1Pod
+      pod_loaded_on_demand = pod_deferred && !Rubernetes::Generated.autoload?(:IoK8sApiCoreV1Pod)
+      apps_still_deferred = !Rubernetes::Generated.autoload?(:IoK8sApiAppsV1Deployment).nil?
+      definitions = constants.map { |name| Rubernetes::Generated.const_get(name, false)::DEFINITION }
       config_map = Rubernetes::Generated::IoK8sApiCoreV1ConfigMap
       crd = Rubernetes::Generated::IoK8sApiextensionsApiserverPkgApisApiextensionsV1CustomResourceDefinition
       containers = pod.definition.field("spec").type.resolve.field("containers")
@@ -272,6 +277,8 @@ class SchemaGeneratorTest < Minitest::Test
         ).map(&:path)
       }
       puts JSON.generate(
+        "pod_loaded_on_demand" => pod_loaded_on_demand,
+        "apps_still_deferred" => apps_still_deferred,
         "definition_count" => definitions.length,
         "definitions_frozen" => definitions.all? { |definition| definition.frozen? && definition.fields.frozen? },
         "pod_spec_type" => pod.definition.field("spec").type.class.name,
