@@ -1034,9 +1034,18 @@ class RubectlClientTest < Minitest::Test
 
       assert_equal("yaml", created_yaml.dig("data", "format"))
 
+      planned = JSON.parse(run.call("plan", "-f", apply_path))
+
+      assert_equal "create", planned.fetch("action")
+      assert_equal "d03", planned.dig("metadata", "namespace")
       applied = JSON.parse(run.call("apply", "-f", apply_path))
 
       assert_equal("apply", applied.dig("data", "operation"))
+      assert_equal "unchanged", JSON.parse(run.call("plan", "-f", apply_path)).fetch("action")
+      File.write(apply_path, File.read(apply_path).sub("operation: apply", "operation: next"))
+
+      assert_equal ["/data/operation"], JSON.parse(run.call("plan", "-f", apply_path)).fetch("changedPaths")
+      assert_equal "apply", JSON.parse(run.call("get", "configmaps", "applied")).dig("data", "operation")
       fetched = JSON.parse(run.call("get", "configmaps", "json-created", "-o", "json"))
 
       assert_equal("json", fetched.dig("data", "format"))
