@@ -41,7 +41,7 @@ module Rubernetes
       alias target_port port
 
       def ==(other)
-        other.is_a?(Rule) && to_h == other.to_h
+        equal?(other) || (other.is_a?(Rule) && to_h == other.to_h)
       end
 
       alias eql? ==
@@ -122,7 +122,8 @@ module Rubernetes
     # compiler performs no I/O and is therefore safe to run in a watch thread
     # before atomically publishing the resulting RuleSet.
     class RuleCompiler
-      attr_reader :local_node, :node_addresses, :node_zone
+      attr_reader :local_node, :node_addresses
+      attr_accessor :node_zone
 
       def initialize(local_node: nil, node_addresses: [], node_name: nil, node_zone: nil, zone: nil)
         @local_node = (local_node || node_name)&.to_s
@@ -166,19 +167,15 @@ module Rubernetes
         rules = []
         service.ports.each do |service_port|
           endpoint_set = endpoints.select { |endpoint| endpoint.protocol == service_port.protocol }
-          if service.cluster_ip?
-            service.cluster_ips.each do |vip|
-              backend_groups = backend_groups_for(service, service_port, endpoint_set, family: ModelSupport.ip_family(vip))
-              rules << build_rule(service, service_port, backend_groups, kind: "ClusterIP", virtual_ip: vip)
+          addresses = {"ClusterIP" => (service.cluster_ips if service.cluster_ip?), "ExternalIP" => service.external_ips,
+                       "LoadBalancer" => service.load_balancer_ips}
+          families = {}
+          addresses.each do |kind, ips|
+            Array(ips).each do |vip|
+              family = ModelSupport.ip_family(vip)
+              groups = families[family] ||= backend_groups_for(service, service_port, endpoint_set, family: family)
+              rules << build_rule(service, service_port, groups, kind: kind, virtual_ip: vip)
             end
-          end
-          service.external_ips.each do |vip|
-            backend_groups = backend_groups_for(service, service_port, endpoint_set, family: ModelSupport.ip_family(vip))
-            rules << build_rule(service, service_port, backend_groups, kind: "ExternalIP", virtual_ip: vip)
-          end
-          service.load_balancer_ips.each do |vip|
-            backend_groups = backend_groups_for(service, service_port, endpoint_set, family: ModelSupport.ip_family(vip))
-            rules << build_rule(service, service_port, backend_groups, kind: "LoadBalancer", virtual_ip: vip)
           end
           next unless service.node_port?
 
@@ -203,20 +200,14 @@ module Rubernetes
         endpoint_set = endpoints.select do |endpoint|
           endpoint.port_compatible?(service_port) && (family.nil? || endpoint.family == family)
         end
-        # EndpointSlice ports can use a named target port.  Endpoint#port is
-        # already the resolved numeric target port, so only protocol matters
-        # here; named target ports are handled by Endpoint#port_compatible?.
+        endpoint_set.sort_by!(&:identity)
         {
-          "all" => stable_endpoints(endpoint_set),
-          "local" => stable_endpoints(endpoint_set.select { |endpoint| endpoint.local_to?(local_node) }),
-          "healthy" => stable_endpoints(endpoint_set.select(&:healthy?)),
-          "serving" => stable_endpoints(endpoint_set.select(&:serving?)),
-          "terminating" => stable_endpoints(endpoint_set.select(&:terminating?))
+          "all" => endpoint_set,
+          "local" => endpoint_set.select { |endpoint| endpoint.local_to?(local_node) },
+          "healthy" => endpoint_set.select(&:healthy?),
+          "serving" => endpoint_set.select(&:serving?),
+          "terminating" => endpoint_set.select(&:terminating?)
         }
-      end
-
-      def stable_endpoints(endpoints)
-        Array(endpoints).sort_by(&:identity)
       end
 
       def build_rule(service, service_port, groups, kind:, virtual_ip:, node_port: nil, health_check: false)
@@ -257,6 +248,20 @@ module Rubernetes
     # can apply a differential transaction without flushing existing rules.
     class RuleDiff
       attr_reader :added, :updated, :deleted, :from_revision, :to_revision, :digest
+
+      def self.between(previous, incoming, from_revision:, to_revision:)
+        added = []
+        updated = []
+        incoming.each do |key, rule|
+          if (old = previous[key])
+            updated << [old, rule] unless rule == old
+          else
+            added << rule
+          end
+        end
+        deleted = previous.filter_map { |key, rule| rule unless incoming.key?(key) }
+        new(added: added, updated: updated, deleted: deleted, from_revision: from_revision, to_revision: to_revision)
+      end
 
       def initialize(added: [], updated: [], deleted: [], from_revision: 0, to_revision: 0)
         @added = Array(added).sort_by(&:key).freeze
@@ -302,6 +307,16 @@ module Rubernetes
         @mutex.synchronize { @rules.values.sort_by(&:key).freeze }
       end
 
+      # Virtual addresses match exactly. NodePort rules also accept their
+      # Service port; health checks accept only their node port.
+      def for_destination(protocol, ip, port, node_port:)
+        @mutex.synchronize do
+          @destinations ||= destination_index
+          matches = ip ? @destinations.fetch([protocol, ip, port], []) : []
+          node_port ? matches + @destinations.fetch([protocol, nil, port], []) : matches
+        end
+      end
+
       def [](key)
         @mutex.synchronize { @rules[key] }
       end
@@ -317,22 +332,27 @@ module Rubernetes
           next_revision = revision.nil? ? @revision + 1 : Integer(revision)
           raise StaleRevisionError, "rule revision #{next_revision} is older than #{@revision}" if next_revision < @revision
 
-          added = incoming.keys.reject { |key| @rules.key?(key) }.map { |key| incoming.fetch(key) }
-          deleted = @rules.keys.reject { |key| incoming.key?(key) }.map { |key| @rules.fetch(key) }
-          updated = incoming.keys.filter_map do |key|
-            old_rule = @rules[key]
-            new_rule = incoming[key]
-            old_rule && new_rule != old_rule ? [old_rule, new_rule] : nil
-          end
-          from_revision = @revision
+          diff = RuleDiff.between(@rules, incoming, from_revision: @revision, to_revision: next_revision)
+          @destinations = nil
           @rules = incoming
           @revision = next_revision
-          @last_diff = RuleDiff.new(added: added, updated: updated, deleted: deleted,
-                                    from_revision: from_revision, to_revision: @revision)
+          @last_diff = diff
         end
       end
 
       alias apply_diff apply
+
+      private
+
+      def destination_index
+        index = {}
+        @rules.each_value do |rule|
+          ports = rule.health_check ? [rule.node_port] : [rule.port, rule.node_port].compact.uniq
+          ports.each { |port| (index[[rule.protocol, rule.virtual_ip, port]] ||= []) << rule }
+        end
+        index.each_value(&:freeze)
+        index
+      end
     end
 
     # Thread-safe Service/EndpointSlice cache.  A watcher adapter can call the
@@ -345,6 +365,7 @@ module Rubernetes
         @mutex = Mutex.new
         @services = {}
         @slices = {}
+        @slices_by_service = {}
         @revision = 0
         @subscribers = []
       end
@@ -358,18 +379,13 @@ module Rubernetes
       alias upsert_service apply_service
 
       def delete_service(value, namespace: nil)
-        key = if value.is_a?(Service)
-                value.key
-              elsif value.to_s.include?("/")
-                value.to_s
-              else
-                ModelSupport.service_key(namespace || "default", value)
-              end
+        key = service_key(value, namespace)
         removed = nil
         revision = nil
         @mutex.synchronize do
           removed = @services.delete(key)
-          @slices.delete_if { |_slice_key, slice| slice.key == key }
+          # Service and EndpointSlice informers have independent lifetimes. A
+          # filtered-out Service can return while its slices stay unchanged.
           @revision += 1 if removed
           revision = @revision
         end
@@ -402,7 +418,12 @@ module Rubernetes
         revision = nil
         @mutex.synchronize do
           removed = @slices.delete(key)
-          @revision += 1 if removed
+          if removed
+            siblings = @slices_by_service.fetch(key.first)
+            siblings.delete(key.last)
+            @slices_by_service.delete(key.first) if siblings.empty?
+            @revision += 1
+          end
           revision = @revision
         end
         notify(:endpoint_slice_deleted, key, removed, revision: revision) if removed
@@ -410,16 +431,7 @@ module Rubernetes
       end
 
       def service(key, namespace: nil)
-        normalized = if key.is_a?(Service)
-                       key.key
-                     else
-                       (if key.to_s.include?("/")
-                          key.to_s
-                        else
-                          ModelSupport.service_key(namespace || "default",
-                                                   key)
-                        end)
-                     end
+        normalized = service_key(key, namespace)
         @mutex.synchronize { @services[normalized] }
       end
 
@@ -438,8 +450,7 @@ module Rubernetes
                        ModelSupport.service_key(namespace || "default", service_key)
                      end
         @mutex.synchronize do
-          result = @slices.values
-          result = result.select { |slice| slice.key == normalized } if normalized
+          result = normalized ? @slices_by_service.fetch(normalized, {}).values : @slices.values
           result = result.select { |slice| slice.name == name.to_s } if name
           result.sort_by(&:name).freeze
         end
@@ -483,6 +494,12 @@ module Rubernetes
 
       private
 
+      def service_key(value, namespace)
+        return value.key if value.is_a?(Service)
+
+        value.to_s.include?("/") ? value.to_s : ModelSupport.service_key(namespace || "default", value)
+      end
+
       def publish(kind, key, value)
         revision = nil
         @mutex.synchronize do
@@ -490,6 +507,7 @@ module Rubernetes
             @services[key] = value
           else
             @slices[key] = value
+            (@slices_by_service[key.first] ||= {})[key.last] = value
           end
           @revision += 1
           revision = @revision
