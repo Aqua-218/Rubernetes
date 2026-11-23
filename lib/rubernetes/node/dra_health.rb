@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "plugins/helper_process"
+
 require "fileutils"
 require "json"
 require "rbconfig"
@@ -156,6 +158,8 @@ module Rubernetes
       # message.  The helper exits when its stdin closes, so it cannot outlive
       # the agent.
       class Stream
+        include Plugins::HelperProcess
+
         RETRY_PERIOD = 5.0
 
         HELPER = <<~'RUBY'
@@ -206,41 +210,13 @@ module Rubernetes
           @mutex.synchronize do
             return self if @pid
 
-            reader, writer = IO.pipe
-            child_in, @stdin = IO.pipe
-            @pid = Process.spawn(@ruby, "-e", HELPER, @endpoint, @lib, @retry_period.to_s,
-                                 in: child_in, out: writer, err: File::NULL, pgroup: true)
-            child_in.close
-            writer.close
-            @thread = Thread.new { read_loop(reader) }
+            spawn_helper(HELPER, @endpoint, @lib, @retry_period.to_s) { |reader| read_loop(reader) }
           end
           self
         end
 
         def stop
-          pid, thread = @mutex.synchronize do
-            value = [@pid, @thread]
-            @pid = nil
-            value
-          end
-          return self unless pid
-
-          begin
-            @stdin&.close
-          rescue StandardError
-            nil
-          end
-          begin
-            Process.kill(:TERM, pid)
-          rescue StandardError
-            nil
-          end
-          begin
-            Process.wait(pid)
-          rescue StandardError
-            nil
-          end
-          thread&.join(5)
+          stop_helper&.join(5)
           self
         end
 
@@ -260,7 +236,6 @@ module Rubernetes
         rescue IOError
           nil
         ensure
-          reader.close unless reader.closed?
           @on_event.call({"event" => "ended"})
         end
       end
