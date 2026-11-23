@@ -30,6 +30,8 @@ module Rubernetes
     # a Rack-style three-element array, or a JSON-compatible value. An
     # Enumerable response body is streamed with HTTP chunked framing.
     class HTTPServer
+      require_relative "http_server/buffered_socket"
+
       HEADER_SEPARATOR = "\r\n\r\n".b.freeze
       CRLF = "\r\n".b.freeze
       MAX_READ_CHUNK = 16 * 1024
@@ -294,29 +296,28 @@ module Rubernetes
       # process alive forever.
       def stop(graceful: true, timeout: @shutdown_timeout)
         timeout = float_option(timeout, "shutdown timeout", min: 0.0)
+        deadline = monotonic_time + timeout
         current = Thread.current
-        clients_to_close = []
 
-        @mutex.synchronize do
+        sockets = @mutex.synchronize do
           return self if %i[new stopped].include?(@state)
 
           @state = :stopping
-          close_listener
-          clients_to_close = @clients.keys unless graceful
+          listeners = detach_listeners
+          graceful ? listeners : listeners.concat(@clients.keys)
         end
-
-        clients_to_close.each { |client| close_socket(client) }
-
-        deadline = monotonic_time + timeout
-        @mutex.synchronize do
-          while @clients.any? { |_socket, thread| thread != current } && monotonic_time < deadline
-            @condition.wait(@mutex, [deadline - monotonic_time, 0.05].max)
+        sockets.each { |socket| close_socket(socket) }
+        remaining_clients = @mutex.synchronize do
+          while @clients.any? { |_socket, thread| thread != current } && (wait = remaining(deadline)).positive?
+            @condition.wait(@mutex, wait)
           end
-          @clients.each_key { |client| close_socket(client) }
+          @clients.keys
         end
+        remaining_clients.each { |client| close_socket(client) }
 
         join_thread(@accept_thread, timeout: remaining(deadline), except: current)
         @mutex.synchronize do
+          @ssl_context = nil
           @state = :stopped
           @condition.broadcast
         end
@@ -390,18 +391,35 @@ module Rubernetes
       # A rotated serving certificate: connections accepted from now on use
       # it, established ones keep theirs (as kubelet's dynamic certificate
       # provider does).
-      def reload_tls!(certificate:, private_key:)
-        @certificate = certificate
-        @private_key = private_key
-        @mutex.synchronize { @ssl_context = build_ssl_context if @tls_enabled }
+      def reload_tls!(certificate: nil, private_key: nil, certificate_chain: nil, client_ca_certificates: nil)
+        @mutex.synchronize do
+          return self unless @tls_enabled
+
+          chain = certificate_chain || (certificate ? [] : (@ssl_context&.extra_chain_cert || @certificate_chain))
+          client_ca_certificates ||= @client_ca_certificates
+          context = build_ssl_context(certificate: certificate || @ssl_context&.cert || @certificate,
+                                      private_key: private_key || @ssl_context&.key || @private_key,
+                                      certificate_chain: chain, client_ca_certificates: client_ca_certificates)
+          context.setup
+          @certificate = context.cert
+          @private_key = context.key
+          @certificate_chain = context.extra_chain_cert
+          @client_ca_certificates = client_ca_certificates
+          @ssl_context = context
+        end
         self
       end
       public :reload_tls!
 
-      def build_ssl_context
+      def build_ssl_context(certificate: @certificate, private_key: @private_key, certificate_chain: @certificate_chain,
+                            client_ca_certificates: @client_ca_certificates)
         context = OpenSSL::SSL::SSLContext.new
-        context.cert = @certificate || OpenSSL::X509::Certificate.new(File.binread(@cert_file))
-        context.key = @private_key || OpenSSL::PKey.read(File.binread(@key_file))
+        certificate, *certificate_chain = OpenSSL::X509::Certificate.load(File.binread(@cert_file)) if certificate.nil?
+        raise ArgumentError, "serving certificate bundle is empty" unless certificate
+
+        context.cert = certificate
+        context.extra_chain_cert = certificate_chain if certificate_chain && !certificate_chain.empty?
+        context.key = private_key || OpenSSL::PKey.read(File.binread(@key_file))
         context.min_version = OpenSSL::SSL::TLS1_2_VERSION if context.respond_to?(:min_version=)
         # Go's crypto/tls (kube-apiserver) negotiates key-exchange groups in
         # server order with X25519 first.  OpenSSL defaults to the client's
@@ -432,10 +450,10 @@ module Rubernetes
           # sessions -- Ruby's Net::HTTP does -- failed its second connection.
           context.session_id_context = "rubernetes-http-server"
           store = OpenSSL::X509::Store.new
-          Array(@client_ca_certificates).each { |certificate| store.add_cert(certificate) }
+          client_ca_certificates.each { |authority| store.add_cert(authority) }
           context.cert_store = store
           # Advertise the acceptable CAs so clients pick a matching certificate.
-          context.client_ca = Array(@client_ca_certificates) unless Array(@client_ca_certificates).empty?
+          context.client_ca = client_ca_certificates unless client_ca_certificates.empty?
         end
         context
       rescue Errno::ENOENT, Errno::EACCES, OpenSSL::OpenSSLError, ArgumentError => error
@@ -513,7 +531,7 @@ module Rubernetes
 
       def admit_connection?(socket)
         @mutex.synchronize do
-          return false if @clients.length >= @max_connections
+          return false if @state != :running || @clients.length >= @max_connections
 
           @clients[socket] = :pending
           true
@@ -1308,6 +1326,8 @@ module Rubernetes
         initial_data = request.respond_to?(:initial_data) ? request.initial_data : ""
         upgrade_socket = initial_data.empty? ? socket : BufferedSocket.new(socket, initial_data)
         response.upgrade.call(upgrade_socket, request)
+      ensure
+        close_stream_body(nil, response.upgrade)
       end
 
       def write_stream(socket, body, request:, unbounded: false)
@@ -1333,11 +1353,14 @@ module Rubernetes
           frame = "#{encoded.bytesize.to_s(16)}\r\n".b + encoded + CRLF
           write_all(socket, frame, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
         end
+        # Once the terminating chunk is visible, a keep-alive client can send
+        # its next request. The TLS peer monitor must have stopped reading.
+        stop_disconnect_monitor(monitor)
         raise IOError, "peer closed during response stream" if stream_peer_disconnected?(monitor)
 
         write_all(socket, "0\r\n\r\n".b, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
       ensure
-        stop_disconnect_monitor(monitor)
+        stop_disconnect_monitor(monitor) if monitor && monitor[:thread].alive?
         close_stream_body(monitor, body)
       end
 
@@ -1620,10 +1643,15 @@ module Rubernetes
       end
 
       def close_listener
-        [@listener, @tcp_listener].compact.uniq.each { |socket| close_socket(socket) }
+        detach_listeners.each { |socket| close_socket(socket) }
+        @ssl_context = nil
+      end
+
+      def detach_listeners
+        listeners = [@listener, @tcp_listener].compact.uniq
         @listener = nil
         @tcp_listener = nil
-        @ssl_context = nil
+        listeners
       end
 
       def close_socket(socket)
@@ -1660,67 +1688,6 @@ module Rubernetes
         end
       rescue StandardError
         nil
-      end
-
-      # Bytes read together with an upgrade request belong to the upgraded
-      # protocol, not to a subsequent HTTP request.  The parser keeps those
-      # bytes in the connection buffer; this adapter makes them visible to
-      # the duplex handler before reading from the socket.
-      class BufferedSocket
-        def initialize(socket, prefix)
-          @socket = socket
-          @prefix = String(prefix).b
-        end
-
-        def read(length = nil)
-          return @socket.read(length) if @prefix.empty?
-          return @prefix.tap { @prefix = "".b } if length.nil?
-
-          length = Integer(length)
-          return "".b if length.zero?
-
-          prefix = @prefix.byteslice(0, length)
-          if prefix.bytesize == length
-            @prefix = @prefix.byteslice(length..)&.b || "".b
-            prefix
-          else
-            @prefix = "".b
-            suffix = @socket.read(length - prefix.bytesize)
-            prefix + suffix.to_s.b
-          end
-        end
-
-        def readpartial(length, buffer = nil)
-          value = read(length)
-          raise EOFError if value.nil? || value.empty?
-
-          if buffer
-            buffer.replace(value)
-            buffer
-          else
-            value
-          end
-        end
-
-        def write(data)
-          @socket.write(data)
-        end
-
-        def write_nonblock(*, **)
-          @socket.write_nonblock(*, **)
-        end
-
-        def to_io
-          @socket.respond_to?(:to_io) ? @socket.to_io : @socket
-        end
-
-        def closed?
-          @socket.closed?
-        end
-
-        def close
-          @socket.close
-        end
       end
     end
 
