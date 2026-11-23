@@ -39,6 +39,23 @@ class ClientRateLimiterTest < Minitest::Test
     assert_in_delta 0.1, bucket.wait, 1e-9
   end
 
+  def test_default_qps_buckets_keep_api_versions_and_discovery_independent
+    clock = -> { 0.0 }
+    sleeper = ->(_delay) {}
+    build = Rubernetes::Client::RateLimiter.method(:new)
+    factory = ->(**options) { build.call(**options, clock: clock, sleeper: sleeper) }
+    bucket = Rubernetes::Client::RateLimiter::ByAPIVersion.new(qps: 5, burst: 1)
+
+    Rubernetes::Client::RateLimiter.stub(:new, factory) do
+      assert_in_delta 0, bucket.wait("/api/v1/namespaces"), 1e-9
+      assert_in_delta 0, bucket.wait("/apis/apps/v1/deployments"), 1e-9
+      assert_in_delta 0, bucket.wait("/apis/apps/v1"), 1e-9
+      assert_in_delta 0.2, bucket.wait("/api/v1/pods"), 1e-9
+      assert_in_delta 0.2, bucket.wait("/apis/apps/v1/statefulsets"), 1e-9
+      assert_in_delta 0.2, bucket.wait("/apis/batch/v1"), 1e-9
+    end
+  end
+
   def test_a_rate_must_be_positive
     assert_raises(ArgumentError) { Rubernetes::Client::RateLimiter.new(qps: 0, burst: 1) }
     assert_raises(ArgumentError) { Rubernetes::Client::RateLimiter.new(qps: 1, burst: 0) }
