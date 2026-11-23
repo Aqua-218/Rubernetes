@@ -12,14 +12,18 @@ module Rubernetes
             return node if @registered && !force
           end
           object = build_node(ready: true)
-          @kubelet_metrics&.node_registration_attempted
-          persist_node(object)
+          if @register_node
+            @kubelet_metrics&.node_registration_attempted
+            persist_node(object)
+          end
           @mutex.synchronize do
+            # With registration disabled, local workers and the independent
+            # lease/status loops can start while the Node is still absent.
             @registered = true
             @ready = true
             @startup_error = nil
           end
-          renew_lease(force: true)
+          renew_lease(force: true) if @register_node
           object
         rescue StandardError => error
           set_ready(false, reason: "RegistrationFailed", message: error.message, persist: false)
@@ -49,6 +53,8 @@ module Rubernetes
           end
           current.to_h
         rescue StandardError => error
+          return nil if missing_unregistered_node?(error)
+
           set_ready(false, reason: "LeaseRenewalFailed", message: error.message)
           raise
         end
@@ -56,6 +62,10 @@ module Rubernetes
         alias heartbeat renew_lease
 
         private
+
+        def missing_unregistered_node?(error)
+          !@register_node && error.is_a?(Client::APIError) && error.status.to_i == 404
+        end
 
         def start_lease_thread
           @mutex.synchronize do
