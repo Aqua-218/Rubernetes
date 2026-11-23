@@ -41,7 +41,9 @@ module Rubernetes
         end
 
         def list_resources
-          claims.filter_map { |claim| observe(claim) }
+          inventory = claims
+          holders = inventory.select { |claim| claim["kind"] == "namespace" }.to_h { |claim| [claim["owner"], claim] }
+          inventory.filter_map { |claim| observe(claim, holders[claim["owner"]]) }
         end
         alias resources list_resources
         alias observe_resources list_resources
@@ -58,12 +60,13 @@ module Rubernetes
           ledger.resources(include_released: false).map { |claim| stringify(claim) }
         end
 
-        def observe(claim)
+        def observe(claim, holder)
           metadata = claim["metadata"].is_a?(Hash) ? claim["metadata"] : {}
           case claim["kind"].to_s
           when "process" then observe_process(claim, metadata)
           when "namespace" then observe_namespace(claim, metadata)
-          when "cgroup", "workspace", "mount" then observe_path(claim, metadata)
+          when "workspace" then observe_workspace(claim, metadata, holder)
+          when "cgroup", "mount" then observe_path(claim, metadata)
           else observe_unverifiable(claim, metadata)
           end
         end
@@ -102,13 +105,19 @@ module Rubernetes
         end
 
         def process_start_time(pid)
+          tail = process_stat(pid)
+          return nil if tail.nil? || %w[Z X].include?(tail.first)
+
+          tail[19]
+        end
+
+        def process_stat(pid)
           stat = read_file("#{proc_root}/#{pid}/stat")
-          return nil if stat.nil?
+          return unless stat
 
           # The comm field may contain spaces and parentheses, so field 22 is
           # counted from after the final ')'.
-          tail = stat[((stat.rindex(")") || -1) + 1)..].to_s.split
-          tail[19]
+          stat[((stat.rindex(")") || -1) + 1)..].to_s.split
         end
 
         def executable_digest(pid)
@@ -133,8 +142,14 @@ module Rubernetes
           pid = integer(metadata["pid"] || metadata["workload_pid"] || metadata["supervisor_pid"] || kernel["pid"])
 
           if links && pid
+            expected_start = kernel["start_time"] || metadata["start_time"]
+            if expected_start
+              started = process_start_time(pid)
+              return nil unless started
+              return reuse_entry(claim, metadata, observed_start_time: started) unless started.to_s == expected_start.to_s
+            end
             observed = links.keys.to_h { |name| [name, namespace_link(pid, name)] }
-            return nil if observed.values.all?(&:nil?)
+            return nil if observed.values.all?(&:nil?) || (expected_start && process_start_time(pid).nil?)
             return reuse_entry(claim, metadata, observed_links: observed) if observed != links
 
             return entry(claim, metadata.merge("live" => true, "observed_namespace_links" => observed))
@@ -144,10 +159,49 @@ module Rubernetes
         end
 
         def namespace_link(pid, name)
-          readlink("#{proc_root}/#{pid}/ns/#{name}")
+          proc_name = Platform::Linux::Setns::NAMESPACE_TYPES[name.to_sym]&.last || name
+          readlink("#{proc_root}/#{pid}/ns/#{proc_name}")
         end
 
         # --------------------------------------------------------------- path
+
+        def observe_workspace(claim, metadata, holder)
+          root = metadata["root"]
+          return observe_path(claim, metadata) if root.to_s.empty?
+
+          path = observe_path(claim, metadata.merge(metadata["root_identity"] || {}).merge("path" => root))
+          return path unless path && path["identity"] == claim["identity"] && metadata["mounted"] == true
+
+          expected = metadata["mount_identity"]
+          return observe_unverifiable(claim, metadata) unless expected.is_a?(Hash) && holder
+
+          kernel = holder.fetch("metadata", {})
+          observed = observe_namespace(holder, kernel)
+          return nil unless observed
+          return observe_unverifiable(claim, metadata) unless observed["identity"] == holder["identity"]
+
+          pid = kernel.dig("kernel_identity", "pid") || kernel["pid"]
+          readback = read_file("#{proc_root}/#{Integer(pid)}/mountinfo")
+          return observe_unverifiable(claim, metadata) unless readback
+
+          compare_workspace_mount(claim, metadata, expected, readback)
+        end
+
+        def compare_workspace_mount(claim, metadata, expected, readback)
+          target = metadata.fetch("root").gsub(/[\\ \t\n]/) { |character| format("\\%03o", character.ord) }
+          matches = readback.lines.filter_map do |line|
+            mount, details = line.split(" - ", 2)
+            fields = mount.split
+            [fields.first, details&.split&.first] if fields[4] == target
+          end
+          return nil if matches.empty?
+
+          unless matches == [[expected.fetch("mount_id").to_s, expected.fetch("filesystem")]] && expected["mountpoint"] == metadata["root"]
+            return reuse_entry(claim, metadata, observed_mounts: matches)
+          end
+
+          entry(claim, metadata.merge("live" => true))
+        end
 
         def observe_path(claim, metadata)
           path = metadata["path"]
