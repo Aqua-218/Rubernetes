@@ -6,7 +6,7 @@ require "optparse"
 
 options = {}
 OptionParser.new do |parser|
-  %i[manifest registry openapi library max_output max_resources].each do |name|
+  %i[manifest source_name registry openapi library max_output max_resources].each do |name|
     parser.on("--#{name.to_s.tr("_", "-")} VALUE") { |value| options[name] = value }
   end
 end.parse!(ARGV)
@@ -23,13 +23,13 @@ builder = Rubernetes::Manifest::Builder.load(
 )
 source = File.binread(options.fetch(:manifest), 4 * 1024 * 1024)
 resources = begin
-  builder.evaluate(source, options.fetch(:manifest))
+  builder.evaluate(source, options.fetch(:source_name, options.fetch(:manifest)))
 rescue Rubernetes::Manifest::Error => error
   abort error.message
 end
 abort "manifest resource limit exceeded" if resources.length > Integer(options.fetch(:max_resources))
 
-payload = JSON.generate(resources)
+payload = JSON.generate("resources" => resources, "declarationLines" => builder.declaration_lines)
 abort "manifest output limit exceeded" if payload.bytesize > Integer(options.fetch(:max_output))
 $stdout.binmode
 $stdout.write([payload.bytesize].pack("Q>"))
