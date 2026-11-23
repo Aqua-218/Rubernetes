@@ -80,12 +80,18 @@ class ConsensusLogSnapshotTest < Minitest::Test
       store = C::SnapshotStore.new(dir)
       state = "\xff\xfe state bytes — 日本語".b
       membership = {"voters" => %w[a b c], "learners" => [], "note" => "quorum — 過半数"}
-      store.write(state: state, index: 7, term: 2, membership: membership)
+      fields = {state: state, index: 7, term: 2, membership: membership, created_at: "2026-11-20T00:00:00Z"}
+      written = store.write(**fields)
       snapshot, rejected = store.latest
+      encoded = C::SnapshotStore.encode(**fields)
 
       assert_empty rejected
       assert_equal state, snapshot.state
       assert_equal "quorum — 過半数", snapshot.membership["note"]
+      assert_equal encoded, File.binread(written.path)
+      assert_equal encoded.bytesize, written.bytes
+      assert_equal Digest::SHA256.hexdigest(state), written.state_sha256
+      assert_equal({index: 7, term: 2, bytes: encoded}, store.latest_for_transfer)
     end
   end
 
@@ -117,6 +123,7 @@ class ConsensusLogSnapshotTest < Minitest::Test
       end
       File.binwrite(metadata.path, cases["bit_flip_state"])
       assert_raises(C::SnapshotCorruption) { store.latest(strict: true) }
+      assert_raises(C::SnapshotCorruption) { store.latest_for_transfer }
       latest, rejected = store.latest(strict: false)
 
       assert_nil latest
