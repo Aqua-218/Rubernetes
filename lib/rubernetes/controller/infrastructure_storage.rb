@@ -52,10 +52,6 @@ require_relative "infrastructure_storage/cloud_provider_controllers"
 # PersistentVolume binder: plan, constants and lookups; then syncClaim,
 # provisioning, binding with volume matching, and syncVolume with reclaim.
 require_relative "infrastructure_storage/persistent_volume_binder_controller"
-require_relative "infrastructure_storage/persistent_volume_binder/claims"
-require_relative "infrastructure_storage/persistent_volume_binder/provisioning"
-require_relative "infrastructure_storage/persistent_volume_binder/binding"
-require_relative "infrastructure_storage/persistent_volume_binder/volumes"
 require_relative "infrastructure_storage/persistent_volume_attach_detach_controller"
 require_relative "infrastructure_storage/persistent_volume_expander_controller"
 require_relative "infrastructure_storage/cluster_role_aggregation_controller"
