@@ -6,6 +6,7 @@ require "json"
 require "uri"
 
 require_relative "credential_providers"
+require_relative "image_credentials/node_config"
 
 module Rubernetes
   module Node
@@ -44,7 +45,7 @@ module Rubernetes
       class << self
         # Builds the keyring for a Pod: `reader` answers `get("secrets", name,
         # namespace:)` and `get("serviceaccounts", name, namespace:)`.
-        def for_pod(pod, reader:, providers: nil)
+        def for_pod(pod, reader:, providers: nil, node_config: nil)
           metadata = pod["metadata"] || pod[:metadata] || {}
           spec = pod["spec"] || pod[:spec] || {}
           namespace = (metadata["namespace"] || metadata[:namespace] || "default").to_s
@@ -58,7 +59,7 @@ module Rubernetes
               ref.is_a?(Hash) ? (ref["name"] || ref[:name]) : ref
             end
           end
-          keyring = new(providers: providers, pod: pod)
+          keyring = new(providers: providers, pod: pod, node_config: node_config)
           names.map(&:to_s).reject(&:empty?).uniq.each do |name|
             secret = reader && safe_get(reader, "secrets", name, namespace)
             keyring.add_secret(secret, namespace: namespace) if secret
@@ -79,17 +80,18 @@ module Rubernetes
       # (CredentialProviders), asked per image on behalf of +pod+ after the
       # Pod's own Secrets, as the kubelet's keyring puts pull secrets before
       # the node keyring.
-      def initialize(providers: nil, pod: nil)
+      def initialize(providers: nil, pod: nil, node_config: nil)
         @entries = {}
         @all = Hash.new { |hash, key| hash[key] = [] }
         @providers = providers && !providers.empty? ? providers : nil
         @pod = pod
+        @node_config = node_config
         @provided = {}
         @provided_mutex = Mutex.new
       end
 
       def empty?
-        @entries.empty? && @providers.nil?
+        @entries.empty? && @providers.nil? && @node_config.nil?
       end
 
       def registries
@@ -171,7 +173,7 @@ module Rubernetes
 
           best = credential
         end
-        best || provided(reference).first
+        best || @node_config&.lookup(reference) || provided(reference).first
       end
 
       alias credentials_for lookup
