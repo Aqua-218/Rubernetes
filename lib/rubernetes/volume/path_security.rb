@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "pathname"
+require_relative "configured_roots"
+require_relative "kernel_host_paths"
 
 module Rubernetes
   module Volume
@@ -82,9 +84,9 @@ module Rubernetes
         # pathname. A mounted target changes the identity returned by
         # stat(original_path), so mounted verification additionally binds the
         # visible and descriptor-relative leaves to the mountinfo entry.
-        def verify_original!(mounted: false, mount_identity: nil)
+        def verify_original!(mounted: false, mount_identity: nil, removed: false)
           verify_descriptor_identity!
-          reject_visible_symlink_components!
+          reject_visible_symlink_components!(removed ? File.dirname(original_path) : original_path)
           parent_path_identity = descriptor_identity(File.dirname(original_path))
           verify_identity_match!(parent_path_identity, @parent_identity, "volume target parent changed")
 
@@ -99,8 +101,7 @@ module Rubernetes
             # After an unmount the leaf identity legitimately changes (the
             # underlying directory is visible again); the parent descriptor
             # and a non-symlink leaf are what remain provable.
-            stat = File.lstat(File.join("/proc/#{Process.pid}/fd/#{parent_descriptor}", @leaf_name))
-            raise PathSecurityError, "volume target was replaced by a symlink while its lease was active" if stat.symlink?
+            verify_released_leaf!(allow_absent: removed)
           else
             current_identity = descriptor_identity(original_path)
             verify_identity_match!(current_identity, identity, "volume target changed while its descriptor lease was active")
@@ -122,6 +123,13 @@ module Rubernetes
         end
 
         private
+
+        def verify_released_leaf!(allow_absent:)
+          stat = File.lstat(held_leaf_path)
+          raise PathSecurityError, "volume target was replaced by a symlink while its lease was active" if stat.symlink?
+        rescue Errno::ENOENT
+          raise unless allow_absent
+        end
 
         def verify_descriptor_identity!
           unless @leaf_released
@@ -214,9 +222,9 @@ module Rubernetes
           path_flag | File::NOFOLLOW
         end
 
-        def reject_visible_symlink_components!
+        def reject_visible_symlink_components!(path)
           current = File::SEPARATOR
-          original_path.split(File::SEPARATOR).reject(&:empty?).each do |component|
+          path.split(File::SEPARATOR).reject(&:empty?).each do |component|
             current = File.join(current, component)
             stat = File.lstat(current)
             raise PathSecurityError, "volume target path component #{component.inspect} is a symlink" if stat.symlink?
@@ -242,6 +250,9 @@ module Rubernetes
       end
 
       class Resolver
+        include ConfiguredRoots
+        include KernelHostPaths
+
         def initialize(root:, adapter: nil, require_openat2: true)
           @root = File.expand_path(String(root))
           raise PathSecurityError, "configured path-security root must not be a symlink" if File.symlink?(@root)
@@ -309,12 +320,16 @@ module Rubernetes
           Array(@mount_boundaries).dup
         end
 
-        def open(path, flags: nil, mode: 0, resolve: nil, resource_id: nil)
+        def open(path, flags: nil, mode: 0, resolve: nil, resource_id: nil, configured_roots: true)
           relative_path = relative(path)
-          if @adapter && (boundary = mount_boundary_for(relative_path))
+          pinned = configured_root_for(relative_path) if configured_roots
+          boundary = mount_boundary_for(relative_path) if @adapter
+          if boundary && (!pinned || boundary.length > pinned.length)
             return open_across_boundary(boundary, relative_path, flags: flags, mode: mode, resolve: resolve,
-                                                                 resource_id: resource_id)
+                                                                 resource_id: resource_id, configured_roots: configured_roots)
           end
+          return open_pinned_root(pinned, relative_path, flags: flags, mode: mode, resolve: resolve, resource_id: resource_id) if pinned
+
           unless @adapter
             raise PathSecurityError, "openat2 adapter is required for descriptor-relative volume paths" if @require_openat2
 
@@ -384,7 +399,7 @@ module Rubernetes
           end
         end
 
-        def open_mount_point(path, flags: nil, resource_id: nil)
+        def open_mount_point(path, flags: nil, resource_id: nil, configured_roots: true)
           relative_path = relative(path)
           return open(relative_path, flags: flags, resource_id: resource_id) unless descriptor_capable?
 
@@ -392,7 +407,7 @@ module Rubernetes
           leaf = components.pop
           return open(relative_path, flags: flags, resource_id: resource_id) if leaf.nil?
 
-          parent_relative = components.empty? ? "." : components.join("/")
+          parent_relative = components.empty? ? @root : components.join("/")
           path_flag = if defined?(Rubernetes::Platform::Linux::Openat2::O_PATH)
                         Rubernetes::Platform::Linux::Openat2::O_PATH
                       else
@@ -404,11 +419,13 @@ module Rubernetes
                              0x10000
                            end
           parent = open(parent_relative, flags: path_flag | directory_flag,
-                                         resource_id: "volume-stage-parent:#{path}")
+                                         resource_id: "volume-stage-parent:#{path}", configured_roots: configured_roots)
           begin
             open_relative(parent, leaf, flags: flags || (path_flag | directory_flag),
                                         resolve: target_resolve_flags(nil),
-                                        resource_id: resource_id || "volume-stage:#{path}")
+                                        resource_id: resource_id || "volume-stage:#{path}").tap do |handle|
+              handle.path = relative_path
+            end
           ensure
             parent.close if parent.respond_to?(:close)
           end
@@ -443,7 +460,7 @@ module Rubernetes
 
           components = relative_path.split("/")
           leaf = components.pop
-          parent_relative = components.empty? ? "." : components.join("/")
+          parent_relative = components.empty? ? @root : components.join("/")
           path_flag = if defined?(Rubernetes::Platform::Linux::Openat2::O_PATH)
                         Rubernetes::Platform::Linux::Openat2::O_PATH
                       else
@@ -554,11 +571,13 @@ module Rubernetes
         private
 
         def mount_boundary_for(relative_path)
-          Array(@mount_boundaries).find { |boundary| relative_path == boundary || relative_path.start_with?("#{boundary}/") }
+          Array(@mount_boundaries).select do |boundary|
+            relative_path == boundary || relative_path.start_with?("#{boundary}/")
+          end.max_by(&:length)
         end
 
-        def open_across_boundary(boundary, relative_path, flags:, mode:, resolve:, resource_id:)
-          base = open_mount_point(boundary, resource_id: "mount-boundary:#{boundary}")
+        def open_across_boundary(boundary, relative_path, flags:, mode:, resolve:, resource_id:, configured_roots:)
+          base = open_mount_point(boundary, resource_id: "mount-boundary:#{boundary}", configured_roots: configured_roots)
           return base if relative_path == boundary
 
           rest = relative_path.delete_prefix("#{boundary}/")
@@ -697,11 +716,31 @@ module Rubernetes
         resolver.allow_mount_boundary!(path)
       end
 
+      def pin_configured_root!(path, &)
+        resolver.pin_configured_root!(path, &) if resolver.is_a?(Resolver)
+      end
+
+      def close
+        resolver.close if resolver.is_a?(Resolver)
+      end
+
       alias resolve open
       alias resolve_fd open
 
-      def validate_host_path!(path, **)
-        open(path, **)
+      def validate_host_path!(path, block_device: false, **options)
+        source_options = resolver.is_a?(Resolver) ? options.merge(configured_roots: false) : options
+        open(path, **source_options)
+      rescue PathSecurityError => error
+        # The explicitly selected HostPath can be the mount point itself.
+        # Keep its parent descriptor and the strict traversal flags.
+        cause = error.cause
+        raise unless cause.respond_to?(:errno) && cause.errno == Errno::EXDEV::Errno
+
+        if resolver.respond_to?(:kernel_host_path?) && resolver.kernel_host_path?(path, block_device: block_device)
+          return resolver.open_kernel_host_path(path, **options)
+        end
+
+        open_mount_point(path, **source_options)
       end
 
       def validate_target!(path)
@@ -738,25 +777,7 @@ module Rubernetes
         sub_path = evaluate_sub_path_symlinks(root_handle, sub_path)
 
         options = options.merge(resolve: secure_resolve_flags(options[:resolve]))
-        handle = begin
-          open_sub_path(root_handle, sub_path, options)
-        rescue StandardError => error
-          # An atomic-writer volume (configMap, secret, downwardAPI,
-          # projected) publishes every entry as a symlink into "..data/", so a
-          # subPath into one IS a symlink and a walk that refuses symlinks
-          # outright fails it with ELOOP.  The property a subPath actually has
-          # to hold is that it stays INSIDE the volume, which is what
-          # RESOLVE_IN_ROOT enforces: the kernel resolves the symlink but
-          # clamps it -- and "..", and any absolute target -- to the volume
-          # directory.  That is the same containment kubelet gets by evaluating
-          # the symlink and then requiring the result to be within the volume
-          # (subpath_linux.go doBindSubPath).  Refusing it instead meant no
-          # Pod could ever use a subPath into a configMap or a projected
-          # volume at all.
-          raise unless symlink_resolution_error?(error)
-
-          open_sub_path(root_handle, sub_path, options.merge(resolve: in_root_resolve_flags))
-        end
+        handle = open_sub_path(root_handle, sub_path, options)
         parent_identity = root_handle.respond_to?(:identity) ? root_handle.identity : nil
         if parent_identity && handle.respond_to?(:root) && handle.root.to_s != root_handle.root.to_s
           handle.close
@@ -781,46 +802,17 @@ module Rubernetes
         end
       end
 
-      SYMLINK_RESOLUTION_PATTERN = /too many levels of symbolic links|\bELOOP\b/i
-
-      def symlink_resolution_error?(error)
-        errno = error.respond_to?(:errno) ? error.errno : nil
-        return true if errno == Errno::ELOOP::Errno
-
-        message = error.message.to_s
-        return true if SYMLINK_RESOLUTION_PATTERN.match?(message)
-
-        cause = error.respond_to?(:cause) ? error.cause : nil
-        cause && cause != error ? symlink_resolution_error?(cause) : false
-      end
-
-      # Symlinks are followed but cannot leave the volume: the kernel treats
-      # the volume descriptor as "/" for this resolution.  Magic links and
-      # mount crossing stay forbidden.
-      def in_root_resolve_flags
-        constants = Rubernetes::Platform::Linux::Openat2
-        if defined?(constants::RESOLVE_IN_ROOT)
-          constants::RESOLVE_IN_ROOT | constants::RESOLVE_NO_MAGICLINKS | constants::RESOLVE_NO_XDEV
-        else
-          0x10 | 0x02 | 0x01
-        end
-      end
-
       # kubelet doBindSubPath evaluates the subPath with symlinks followed and
       # then requires it to remain inside the volume; the descriptor walk
       # afterwards refuses symlinks.  Atomic-writer volumes (configMap,
       # secret, downwardAPI, projected) expose every top-level entry as a
       # "..data/<name>" symlink, so a subPath into one is always a symlink.
       def evaluate_sub_path_symlinks(root_handle, sub_path)
-        root = root_handle.respond_to?(:root) ? root_handle.root.to_s : ""
-        return sub_path if root.empty? || !File.directory?(root)
-
-        candidate = File.join(root, String(sub_path))
-        return sub_path unless File.exist?(candidate) || File.symlink?(candidate)
-
+        descriptor = root_handle.respond_to?(:fd) ? root_handle.fd : root_handle
+        root = "/proc/self/fd/#{descriptor_number(descriptor)}"
         real_root = File.realpath(root)
-        real = File.realpath(candidate)
-        prefix = "#{real_root}/"
+        real = File.realpath(String(sub_path), root)
+        prefix = File.join(real_root, "")
         raise PathSecurityError, "subPath #{sub_path.inspect} resolves outside its volume" unless real.start_with?(prefix)
 
         real.delete_prefix(prefix)
@@ -888,3 +880,5 @@ module Rubernetes
     Openat2PathValidator = PathSecurity unless const_defined?(:Openat2PathValidator, false)
   end
 end
+
+require_relative "stale_target_lease"
