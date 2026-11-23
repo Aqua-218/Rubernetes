@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
 require "securerandom"
 
 require_relative "cel"
+require_relative "allocator/attribute_constraints"
 require_relative "../schema/quantity"
 
 module Rubernetes
@@ -44,7 +47,12 @@ module Rubernetes
       end
 
       Features = Data.define(:admin_access, :prioritized_list, :partitionable_devices, :device_taints,
-                             :device_binding_and_status, :consumable_capacity) do
+                             :device_binding_and_status, :consumable_capacity, :list_type_attributes) do
+        def initialize(admin_access:, prioritized_list:, partitionable_devices:, device_taints:,
+                       device_binding_and_status:, consumable_capacity:, list_type_attributes: false)
+          super
+        end
+
         # The default feature gates of v1.36.2 (AllocatorFeatures).
         def self.defaults
           new(admin_access: true, prioritized_list: true, partitionable_devices: true, device_taints: true,
@@ -160,18 +168,15 @@ module Rubernetes
           values = Array(requirement["values"]).map(&:to_s)
           present = labels.key?(key)
           actual = labels[key].to_s
-          case requirement["operator"].to_s
-          when "In" then present && values.include?(actual)
-          when "NotIn" then !present || !values.include?(actual)
-          when "Exists" then present
-          when "DoesNotExist" then !present
+          operator = requirement["operator"].to_s
+          case operator
           when "Gt", "Lt"
             return false unless present && values.length == 1
 
             left = Integer(actual, 10)
             right = Integer(values.first, 10)
             requirement["operator"] == "Gt" ? left > right : left < right
-          else false
+          else LabelRequirement.matches?(operator, actual, values, present: present)
           end
         rescue ArgumentError
           false
@@ -331,7 +336,8 @@ module Rubernetes
       def allocate(node:, claims:, slices:, classes:, allocated_state: AllocatedState.empty, features: Features.defaults,
                    cel: nil, share_id: -> { SecureRandom.uuid })
         Search.new(node: node, claims: claims, slices: slices, classes: classes, allocated_state: allocated_state,
-                   features: features, cel: cel || CEL.new(consumable_capacity: features.consumable_capacity),
+                   features: features, cel: cel || CEL.new(consumable_capacity: features.consumable_capacity,
+                                                           list_type_attributes: features.list_type_attributes),
                    share_id: share_id).run
       end
 
@@ -449,7 +455,11 @@ module Rubernetes
             end
 
             @constraints[claim_index] = Array(claim.dig("spec", "devices", "constraints")).each_with_index.map do |constraint, index|
-              if constraint["matchAttribute"]
+              if @features.list_type_attributes && constraint["matchAttribute"]
+                ListAttributeConstraint.new(constraint["requests"], constraint["matchAttribute"].to_s, distinct: false)
+              elsif @features.list_type_attributes && constraint["distinctAttribute"]
+                ListAttributeConstraint.new(constraint["requests"], constraint["distinctAttribute"].to_s, distinct: true)
+              elsif constraint["matchAttribute"]
                 MatchAttributeConstraint.new(constraint["requests"], constraint["matchAttribute"].to_s)
               elsif constraint["distinctAttribute"]
                 DistinctAttributeConstraint.new(constraint["requests"], constraint["distinctAttribute"].to_s)
@@ -984,110 +994,6 @@ module Rubernetes
         when "Exists" then true
         else false
         end
-      end
-
-      # matchAttributeConstraint.
-      class MatchAttributeConstraint
-        def initialize(requests, attribute)
-          @requests = Array(requests).to_set
-          @attribute_name = attribute
-          @attribute = nil
-          @count = 0
-        end
-
-        def add(request_name, sub_request_name, device, device_id)
-          return true if !@requests.empty? && !Allocator.constraint_applies?(@requests, request_name, sub_request_name)
-
-          attribute = Allocator.lookup_attribute(device, device_id, @attribute_name)
-          return false if attribute.nil?
-
-          if @count.zero?
-            @attribute = attribute
-            @count = 1
-            return true
-          end
-          type = Allocator.attribute_type(attribute)
-          return false if type.nil?
-          return false unless @attribute.key?(type) && @attribute[type] == attribute[type]
-
-          @count += 1
-          true
-        end
-
-        def remove(request_name, sub_request_name, _device, _device_id)
-          return if !@requests.empty? && !Allocator.constraint_applies?(@requests, request_name, sub_request_name)
-
-          @count -= 1
-        end
-      end
-
-      # distinctAttributeConstraint.
-      class DistinctAttributeConstraint
-        def initialize(requests, attribute)
-          @requests = Array(requests).to_set
-          @attribute_name = attribute
-          @attributes = {}
-          @count = 0
-        end
-
-        def add(request_name, sub_request_name, device, device_id)
-          return true if !@requests.empty? && !Allocator.constraint_applies?(@requests, request_name, sub_request_name)
-
-          attribute = Allocator.lookup_attribute(device, device_id, @attribute_name)
-          return false if attribute.nil?
-
-          if @count.zero?
-            @attributes[request_name] = attribute
-            @count = 1
-            return true
-          end
-          return false unless distinct?(attribute)
-
-          @attributes[request_name] = attribute
-          @count += 1
-          true
-        end
-
-        def remove(request_name, sub_request_name, _device, _device_id)
-          return if !@requests.empty? && !Allocator.constraint_applies?(@requests, request_name, sub_request_name)
-
-          @attributes.delete(request_name)
-          @count -= 1
-        end
-
-        private
-
-        def distinct?(attribute)
-          type = Allocator.attribute_type(attribute)
-          @attributes.each_value do |existing|
-            return false if type.nil?
-            return false if existing.key?(type) && existing[type] == attribute[type]
-          end
-          true
-        end
-      end
-
-      def constraint_applies?(requests, request_name, sub_request_name)
-        return requests.include?(request_name) if sub_request_name.to_s.empty?
-
-        requests.include?(request_name) || requests.include?("#{request_name}/#{sub_request_name}")
-      end
-
-      # The one value field of an attribute (string / int / bool / version).
-      def attribute_type(attribute)
-        %w[string int bool version].find { |type| attribute.key?(type) && !attribute[type].nil? }
-      end
-
-      # lookupAttribute: the fully qualified name, or the bare name when the
-      # domain is the device's driver.
-      def lookup_attribute(device, device_id, name)
-        attributes = device["attributes"] || {}
-        return attributes[name] if attributes.key?(name)
-
-        index = name.index("/")
-        return nil if index.nil? || name[0...index] != device_id.driver
-
-        attributes[name[(index + 1)..]]
       end
 
       # consumable_capacity.go.
