@@ -21,9 +21,10 @@ module Rubernetes
           raise RecoveryRequired, "native runtime recovery requires an external resource observer" if in_process_observer?(observer)
 
           cleaner ||= @adapters[:cleaner] || method(:cleanup_resource)
-          observed_snapshot = normalize_inventory(invoke_observer(observer))
+          observed_snapshot = observe_recovery(observer)
           mark_dead_operations_for_recovery!(observed_snapshot)
           observed_snapshot = quiesce_dead_operations!(observed_snapshot, observer)
+          observed_snapshot = finish_retired_namespace_cleanup!(observed_snapshot, observer)
           reconstruct_sandboxes_from_observed!(observed_snapshot)
           recovery = Support::Recovery.new(
             ledger: ledger,
@@ -32,11 +33,21 @@ module Rubernetes
             orphan_predicate: orphan_predicate
           )
           result = recovery.reconcile
+          clean_finished_sandbox_logs
           record(:recovery, result: result.to_h)
           result
         end
 
         private
+
+        def observe_recovery(observer)
+          observed = normalize_inventory(invoke_observer(observer))
+          unknown = observed.select { |entry| entry.dig("metadata", "unverifiable") == true }
+          return observed if unknown.empty?
+
+          resources = unknown.map { |entry| resource_key(entry) }.join(", ")
+          raise RecoveryRequired, "kernel recovery evidence could not be verified for #{resources}"
+        end
 
         # A complete external inventory can prove that a durable operation lost
         # one of its exact kernel identities, or that the identity remains but
@@ -73,7 +84,7 @@ module Rubernetes
                 (resource["kind"] == "process" && observed_resource["identity"] != resource["identity"]) ||
                 (observed_resource["identity"] == resource["identity"] &&
                  observed_resource["owner"] == resource["owner"] &&
-                 observed_resource.dig("metadata", "live") == false)
+                 resource_not_live?(resource, observed_resource))
             end
             @ledger.transition(operation_id: operation.fetch("id") { operation[:id] }, to: "StateUnknown") if dead
           end
@@ -106,7 +117,7 @@ module Rubernetes
           return observed if quiesced.empty?
 
           record(:recovery_quiesced, resources: quiesced)
-          normalize_inventory(invoke_observer(observer))
+          observe_recovery(observer)
         end
 
         def observed_live_and_ours?(observed_resource, resource)
@@ -146,6 +157,60 @@ module Rubernetes
           @cgroup.kill(handle)
         end
 
+        # An abandoned operation may have no workload left while its durable
+        # holder keeps real mounts alive. Verify all remaining identities,
+        # release the overlays in their original namespace, then stop the holder.
+        def finish_retired_namespace_cleanup!(observed, observer)
+          return observed unless namespace_adoption_supported?
+
+          observed_by_key = observed.to_h { |entry| [resource_key(entry), entry] }
+          retired = @ledger.recovery_candidates.filter_map do |entry|
+            operation = @ledger.operation(ledger_value(entry, :id))
+            next if @mutex.synchronize { @sandboxes.key?(operation.id) }
+
+            resources = normalize_inventory(@ledger.resources(owner: operation.owner, include_released: false))
+            next unless safe_namespace_retirement?(resources, observed_by_key)
+
+            holder = resources.find { |resource| resource["kind"] == "namespace" && resource["id"] == operation.id }
+            next unless holder && observed_by_key[resource_key(holder)]&.dig("metadata", "live") == true
+
+            retire_namespace_resources(operation, holder, resources, observed_by_key)
+            operation.id
+          end
+          return observed if retired.empty?
+
+          record(:recovery_retired_namespaces, sandboxes: retired)
+          observe_recovery(observer)
+        end
+
+        def safe_namespace_retirement?(resources, observed_by_key)
+          resources.all? do |resource|
+            observation = observed_by_key[resource_key(resource)]
+            next true unless observation
+            next false unless observation.values_at("identity", "owner") == resource.values_at("identity", "owner")
+            next true if %w[namespace workspace].include?(resource["kind"])
+
+            %w[process cgroup].include?(resource["kind"]) && observation.dig("metadata", "live") == false
+          end
+        end
+
+        def retire_namespace_resources(operation, holder, resources, observed_by_key)
+          namespace = adopt_namespace(operation.id, holder)
+          workspaces = resources.select { |resource| resource["kind"] == "workspace" && observed_by_key.key?(resource_key(resource)) }
+          workspaces.sort_by { |resource| -resource.fetch("id").length }.each do |resource|
+            workspace = adopt_workspace(resource, namespace)
+            raise RecoveryRequired, "workspace #{workspace.id} cleanup did not complete" unless @filesystem.cleanup(workspace)
+
+            release_ledger_claim(operation, "workspace", workspace.id)
+          end
+          raise RecoveryRequired, "namespace #{operation.id} cleanup did not complete" unless @namespace.destroy(namespace)
+
+          userns_allocator.release(operation.owner) if namespace.plan.user_mapping
+          release_ledger_claim(operation, "namespace", operation.id)
+        rescue StandardError => error
+          raise RecoveryRequired, "retired namespace #{operation.id} cleanup failed closed: #{error.message}"
+        end
+
         # Rebuild only resources whose durable identity is present in the
         # external kernel inventory.  Missing or mismatched resources are left
         # to Recovery, which can release ledger ownership only after the same
@@ -166,12 +231,14 @@ module Rubernetes
             sandbox_resources = resources.select do |resource|
               metadata = resource["metadata"] || {}
               resource_id = resource["id"].to_s
-              resource_id == sandbox_id || resource_id.start_with?("#{sandbox_id}:") || metadata["parent"].to_s == sandbox_id
+              resource_id == sandbox_id || resource_id.start_with?("#{sandbox_id}:") || metadata["parent"].to_s == sandbox_id ||
+                (resource["kind"] == "workspace" && resource_id.start_with?("#{sandbox_id}."))
             end
             next if sandbox_resources.empty?
             next unless sandbox_resources.all? do |resource|
               observed_resource = observed_by_key[resource_key(resource)]
-              observed_resource && observed_resource["identity"] == resource["identity"] && observed_resource.dig("metadata", "live") != false
+              observed_resource && observed_resource["identity"] == resource["identity"] &&
+              observed_resource["owner"] == resource["owner"] && !resource_not_live?(resource, observed_resource)
             end
 
             reconstruct_one_sandbox!(operation, sandbox_resources)
@@ -179,6 +246,12 @@ module Rubernetes
           true
         rescue StandardError => error
           raise RecoveryRequired, "native startup reconstruction failed closed: #{error.message}"
+        end
+
+        # Empty cgroups still carry their exact kernel identity. The sandbox
+        # leaf is normally empty because each container owns a sibling leaf.
+        def resource_not_live?(claim, observed)
+          claim["kind"] != "cgroup" && observed.dig("metadata", "live") == false
         end
 
         def reconstruct_one_sandbox!(operation, resources)
@@ -194,6 +267,7 @@ module Rubernetes
           workspace = adopt_workspace(workspace_resource, namespace)
           sandbox = Sandbox.new(id: sandbox_id, identity: owner, config: {}, clock: @clock)
           sandbox.set_resources(namespace: namespace, workspace: workspace, cgroup: cgroup)
+          sandbox.restore_container_sequence(container_log_ids(sandbox_id, owner))
 
           container_cgroups = resources.select do |resource|
             resource["kind"] == "cgroup" && resource["id"].to_s.start_with?("#{sandbox_id}:")
@@ -203,7 +277,9 @@ module Rubernetes
           end
           container_cgroups.each do |resource|
             process_resource = process_resources.find { |candidate| candidate["id"] == resource["id"] }
-            reconstruct_container!(sandbox, resource, process_resource)
+            workspace_id = "#{sandbox_id}.#{resource.fetch("id").delete_prefix("#{sandbox_id}:")}"
+            container_workspace = resources.find { |candidate| candidate["kind"] == "workspace" && candidate["id"] == workspace_id }
+            reconstruct_container!(sandbox, resource, process_resource, container_workspace)
           end
           restore_sandbox_state!(sandbox, String(operation.fetch("state") { operation[:state] }))
           @mutex.synchronize { @sandboxes[sandbox_id] = sandbox }
@@ -234,7 +310,7 @@ module Rubernetes
 
         # One container of a reconstructed sandbox, from its cgroup claim (the
         # durable spec) and, when it was running, its process claim.
-        def reconstruct_container!(sandbox, resource, process_resource)
+        def reconstruct_container!(sandbox, resource, process_resource, workspace_resource)
           container_id = resource.fetch("id").to_s.delete_prefix("#{sandbox.id}:")
           process_metadata = process_resource && process_resource.fetch("metadata")
           container_metadata = resource.fetch("metadata", {})
@@ -248,8 +324,10 @@ module Rubernetes
           security_context = container_security_context(spec)
           security_plan, = security_plan_for(security_context)
           process = (@process_supervisor.adopt(metadata: process_metadata, cgroup: container_cgroup) if process_metadata)
+          workspace = adopt_workspace(workspace_resource, sandbox.namespace) if workspace_resource
           sandbox.update_container(container, cgroup: container_cgroup,
                                               process: process,
+                                              workspace: workspace,
                                               security_plan: security_plan,
                                               state: process ? :running : :created)
         end
