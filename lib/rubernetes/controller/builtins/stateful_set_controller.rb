@@ -33,12 +33,12 @@ module Rubernetes
         def plan(stateful_set, store: nil, pods: nil, revisions: nil, controller_revisions: nil,
                  pvcs: nil, claims: nil, now: nil, max_unavailable_stateful_set: nil, **_options)
           max_unavailable_gate = max_unavailable_stateful_set.nil? ? @max_unavailable_stateful_set : max_unavailable_stateful_set == true
-          adapter = controller_adapter(store)
+          adapter = adapter_for(store)
           pods ||= list_children(adapter, POD, Support.namespace(stateful_set))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
 
-          owned_pods = owned(stateful_set, pods)
+          owned_pods, ownership_operations = claim_pods(stateful_set, pods, adapter)
 
           revisions = controller_revisions unless controller_revisions.nil?
           revisions = list_children(adapter, CONTROLLER_REVISION, Support.namespace(stateful_set)) if revisions.nil? && adapter
@@ -46,6 +46,7 @@ module Rubernetes
           pvcs = list_children(adapter, PERSISTENT_VOLUME_CLAIM, Support.namespace(stateful_set)) if pvcs.nil? && adapter
 
           sync = begin_sync(stateful_set, revisions, owned_pods, now, max_unavailable_gate)
+          sync.operations.unshift(*ownership_operations)
           if Support.metadata(stateful_set).key?("deletionTimestamp")
             observe_replicas(sync)
           else
@@ -55,7 +56,8 @@ module Rubernetes
             rolling_update(sync) if !exited && sync.strategy_type == "RollingUpdate"
             complete_rolling_update!(sync.working_set, sync.status, sync.strategy_type, sync.desired)
           end
-          result(stateful_set, sync.operations, status: compact_stateful_status(sync.status), events: sync.events)
+          planned = result(stateful_set, sync.operations, status: compact_stateful_status(sync.status), events: sync.events)
+          with_requeue(planned, availability_requeue(sync, owned_pods))
         end
 
         def scale(stateful_set, replicas, pods: nil, store: nil)
@@ -66,7 +68,7 @@ module Rubernetes
         end
 
         def rollback(stateful_set, revision:, pods: nil, store: nil, revisions: nil, controller_revisions: nil)
-          adapter = controller_adapter(store)
+          adapter = adapter_for(store)
           revisions = controller_revisions unless controller_revisions.nil?
           revisions = list_children(adapter, CONTROLLER_REVISION, Support.namespace(stateful_set)) if revisions.nil? && adapter
           selected = find_revision(revisions, revision)
@@ -83,7 +85,7 @@ module Rubernetes
         end
 
         def delete(stateful_set, pods: nil, store: nil, orphan: false)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(stateful_set))
           operations = if orphan
                          []
@@ -98,11 +100,31 @@ module Rubernetes
 
         private
 
-        def controller_adapter(store)
-          candidate = store || self.store
-          return nil unless candidate
+        def claim_pods(stateful_set, pods, adapter)
+          matches = Support.selector_predicate(Support.value(Support.spec(stateful_set), "selector", {}))
+          namespace = Support.namespace(stateful_set)
+          name = Support.name(stateful_set)
+          matching = pods.select do |pod|
+            Support.namespace(pod) == namespace && ordinal_for(pod, name) && matches.call(pod)
+          end
+          registered = owned(stateful_set, pods)
+          retained = registered & matching
+          return [retained, []] if terminating?(stateful_set)
 
-          candidate.is_a?(StoreAdapter) ? candidate : StoreAdapter.new(candidate)
+          orphans = matching.reject { |pod| terminating?(pod) || Support.controller_owner_reference(pod) }
+          orphans = [] unless orphans.empty? || Support.adoption_allowed?(adapter, stateful_set, DESCRIPTOR)
+          releases = (registered - matching).map { |pod| update_pod_owner(pod, stateful_set, adopt: false) }
+          adoptions = orphans.map { |pod| update_pod_owner(pod, stateful_set, adopt: true) }
+          [retained + orphans, releases + adoptions]
+        end
+
+        def update_pod_owner(pod, stateful_set, adopt:)
+          candidate = Support.deep_copy(pod)
+          uid = Support.uid(stateful_set).to_s
+          references = Support.owner_references(candidate).reject { |ref| Support.ref_value(ref, "uid", nil).to_s == uid }
+          references << Support.owner_reference(stateful_set) if adopt
+          candidate.fetch("metadata")["ownerReferences"] = references
+          operation_update(pod, candidate, descriptor: POD, reason: adopt ? "statefulset pod adoption" : "statefulset pod release")
         end
 
         def start_ordinal(resource)
@@ -169,6 +191,22 @@ module Rubernetes
           !Support.pod_available?(pod, sync.min_ready_seconds, sync.now) || terminating?(pod)
         end
 
+        def availability_requeue(sync, pods)
+          minimum = sync.min_ready_seconds
+          return unless minimum.positive? && sync.status["readyReplicas"] != sync.status["availableReplicas"]
+
+          # A ready Pod can become available without generating another Pod
+          # event. Schedule the first upcoming availability transition.
+          delays = pods.filter_map do |pod|
+            next unless running_and_ready?(pod)
+
+            transition = Support.parse_time(Support.value(Support.condition(pod, "Ready"), "lastTransitionTime", nil))
+            delay = transition + minimum - sync.now if transition
+            delay if delay&.positive?
+          end
+          delays.min || minimum
+        end
+
         def status_header(stateful_set, sync, collision_count)
           status = Support.deep_copy(Support.status(stateful_set))
           status["observedGeneration"] = Support.integer(Support.metadata(stateful_set)["generation"],
@@ -186,8 +224,14 @@ module Rubernetes
           # must be materialized; an adapter-backed reconcile already supplied
           # the authoritative snapshot above.
           pvcs = [] if pvcs.nil? && sync.claim_templates.any?
+          blocked = sync.replicas.index { |pod| pod.nil? || ordered_replica_blocked?(sync, pod) } if sync.monotonic
+          create_through = sync.start + (blocked || sync.desired)
           sync.operations.concat(reconcile_claims(sync.working_set, sync.claim_templates, pvcs, sync.desired, sync.start,
-                                                  sync.existing_by_ordinal))
+                                                  sync.existing_by_ordinal, create_through: create_through))
+        end
+
+        def ordered_replica_blocked?(sync, pod)
+          !running_and_ready?(pod) || unavailable?(sync, pod)
         end
 
         # processReplica: create missing ordinals, restart terminal Pods, and
@@ -206,8 +250,7 @@ module Rubernetes
               restart_terminal_pod(sync, pod)
               return true
             end
-            return true if sync.monotonic && (terminating?(pod) || !running_and_ready?(pod) ||
-                                              !Support.pod_available?(pod, sync.min_ready_seconds, sync.now))
+            return true if sync.monotonic && ordered_replica_blocked?(sync, pod)
             next if sync.claim_templates.empty?
 
             reconcile_pod_volumes(sync, pod, ordinal)
@@ -388,9 +431,6 @@ module Rubernetes
         end
 
         def ordinal_for(pod, prefix)
-          label = Support.labels(pod)["controller.kubernetes.io/ordinal"]
-          return Integer(label) if label && label.to_s.match?(/\A\d+\z/)
-
           match = Support.name(pod).match(/\A#{Regexp.escape(prefix)}-(\d+)\z/)
           match && Integer(match[1])
         rescue ArgumentError
