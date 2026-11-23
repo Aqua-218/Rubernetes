@@ -4,6 +4,7 @@ require "json"
 require "yaml"
 
 require_relative "../schema/codec/kubernetes_protobuf"
+require_relative "../schema/codec/kubernetes_cbor"
 
 module Rubernetes
   module API
@@ -16,7 +17,10 @@ module Rubernetes
       JSON_TYPE = "application/json"
       YAML_TYPE = "application/yaml"
       PROTOBUF_TYPE = Schema::Codec::KubernetesProtobuf::CONTENT_TYPE
+      CBOR_TYPE = Schema::Codec::KubernetesCBOR::CONTENT_TYPE
+      CBOR_SEQUENCE_TYPE = Schema::Codec::KubernetesCBOR::WATCH_CONTENT_TYPE
       STREAM_TYPES = [JSON_TYPE, PROTOBUF_TYPE].freeze
+      CBOR_STREAM_TYPES = [*STREAM_TYPES, CBOR_TYPE].freeze
       STANDARD_TYPES = [JSON_TYPE, YAML_TYPE, PROTOBUF_TYPE].freeze
       # Custom resources have no generated protobuf message, like upstream.
       DYNAMIC_TYPES = [JSON_TYPE, YAML_TYPE].freeze
@@ -64,16 +68,39 @@ module Rubernetes
           media_type == YAML_TYPE
         end
 
+        def cbor?
+          media_type == CBOR_TYPE
+        end
+
         def json?
           media_type == JSON_TYPE
         end
 
         def content_type
+          return CBOR_SEQUENCE_TYPE if stream && cbor?
+
           stream ? "#{media_type};stream=#{stream}" : media_type
         end
       end
 
       module_function
+
+      def stream_content_types(supported)
+        (supported & CBOR_STREAM_TYPES).map do |type|
+          Selection.new(media_type: type, stream: "watch").content_type
+        end
+      end
+
+      # go-restful matches the media ranges declared by a route before the
+      # API handler negotiates serializers and transformation parameters.
+      def restful_route_accepts?(header, produces)
+        return true if header.to_s.empty?
+
+        header.split(",").any? do |clause|
+          media_type = clause.split(";", 2).first.to_s.strip
+          media_type == "*/*" || produces.include?(media_type)
+        end
+      end
 
       # goautoneg.ParseAccept: clauses ordered by q (stable) with wildcards last.
       def parse_accept(header)
@@ -112,11 +139,11 @@ module Rubernetes
       # Selects the response encoding.  +supported+ lists the endpoint's media
       # types in preference order; +stream+ requires a streaming serializer.
       def negotiate_output(accept_header, supported: STANDARD_TYPES, stream: false, table: true,
-                           user_agent: nil, pretty_query: nil)
+                           user_agent: nil, pretty_query: nil, protobuf: true, transformations: true)
         clauses = parse_accept(accept_header)
         selection = nil
-        if clauses.empty?
-          candidate = stream ? supported.find { |type| STREAM_TYPES.include?(type) } : supported.first
+        if accept_header.to_s.empty?
+          candidate = stream ? supported.find { |type| CBOR_STREAM_TYPES.include?(type) } : supported.first
           if candidate
             selection = Selection.new(media_type: candidate, convert: nil, stream: stream ? "watch" : nil,
                                       pretty: false, params: {})
@@ -128,7 +155,8 @@ module Rubernetes
 
               options = accept_options(clause.params, media_type, table: table)
               next if options.nil?
-              next if stream && !STREAM_TYPES.include?(media_type)
+              next if !transformations && options[:convert]
+              next if !protobuf && media_type == PROTOBUF_TYPE && options[:convert].nil?
 
               selection = Selection.new(media_type: media_type, convert: options.fetch(:convert),
                                         stream: stream ? "watch" : nil, pretty: options.fetch(:pretty),
@@ -138,8 +166,12 @@ module Rubernetes
             break if selection
           end
         end
-        if selection.nil?
-          accepted = stream ? supported.select { |type| STREAM_TYPES.include?(type) }.map { |type| "#{type};stream=watch" } : supported
+        if selection.nil? || (stream && !CBOR_STREAM_TYPES.include?(selection.media_type))
+          accepted = if stream
+                       stream_content_types(supported)
+                     else
+                       supported
+                     end
           raise Status::NotAcceptable.new("only the following media types are accepted: #{accepted.join(", ")}")
         end
         selection.pretty ||= pretty_print?(pretty_query, user_agent) if selection.json?
@@ -155,7 +187,7 @@ module Rubernetes
             convert ||= {group: "", version: "", kind: ""}
             convert[{"as" => :kind, "g" => :group, "v" => :version}.fetch(key)] = value
           when "stream"
-            return nil unless value.empty? || (value == "watch" && STREAM_TYPES.include?(media_type))
+            return nil unless value.empty? || (value == "watch" && CBOR_STREAM_TYPES.include?(media_type))
           when "pretty"
             pretty = %w[1 true].include?(value)
           when "charset", "profile", "sv", "export"
