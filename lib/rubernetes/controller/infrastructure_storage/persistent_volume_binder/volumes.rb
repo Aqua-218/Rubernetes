@@ -15,17 +15,7 @@ module Rubernetes
           return
         end
 
-        namespace = Support.value(reference, "namespace", "")
-        claim_name = Support.value(reference, "name", "")
-        claim = find_claim(context, namespace, claim_name)
-        phase = Support.value(Support.status(volume), "phase", "").to_s
-        # A claim missing from the cache, or with another UID, is read from
-        # the API server before the volume is released (cache lag).
-        if (claim.nil? && !%w[Released Failed].include?(phase)) ||
-           (claim && Support.uid(claim).to_s != Support.value(reference, "uid", "").to_s)
-          claim = live_claim(context, namespace, claim_name) || (claim.nil? ? nil : claim)
-        end
-        claim = nil if claim && Support.uid(claim).to_s != Support.value(reference, "uid", "").to_s
+        claim = claim_for_volume(volume, context)
         if claim.nil?
           release_and_reclaim(volume, context)
         elsif Support.value(Support.spec(claim), "volumeName", "").to_s.empty?
@@ -44,6 +34,20 @@ module Rubernetes
         else
           unbind_volume(volume, context)
         end
+      end
+
+      def claim_for_volume(volume, context)
+        namespace, name, uid = claim_ref(volume).values_at("namespace", "name", "uid")
+        claim = find_claim(context, namespace, name)
+        released = %w[Released Failed].include?(Support.status(volume)["phase"])
+        # A recycler is also rechecked on subsequent syncs. A still-cached
+        # deleted claim must not move its already released PV back to Bound.
+        if released && reclaim_policy(volume) == "Recycle" && InfrastructureCapability.live_reads?(context[:adapter])
+          claim = live_claim(context, namespace, name)
+        elsif (claim.nil? && !released) || (claim && Support.uid(claim) != uid)
+          claim = live_claim(context, namespace, name) || claim
+        end
+        claim if claim && Support.uid(claim) == uid
       end
 
       def release_and_reclaim(volume, context)
@@ -83,13 +87,17 @@ module Rubernetes
 
         result = current.dup
         policy = reclaim_policy(volume)
-        if policy == "Delete" && !result.include?(IN_TREE_FINALIZER)
+        if policy == "Delete" && !volume_deleting?(volume) && !result.include?(IN_TREE_FINALIZER)
           result << IN_TREE_FINALIZER
         elsif %w[Retain Recycle].include?(policy) && result.include?(IN_TREE_FINALIZER)
           result -= [IN_TREE_FINALIZER]
         end
         result -= [EXTERNAL_FINALIZER]
         result == current ? nil : result
+      end
+
+      def volume_deleting?(volume)
+        !Support.value(Support.metadata(volume), "deletionTimestamp", nil).nil?
       end
 
       def update_volume_phase(volume, phase, message, context)
@@ -157,7 +165,8 @@ module Rubernetes
         return unless volume_released?(volume, context)
 
         begin
-          @host_path_deleter.call(Support.value(Support.value(Support.spec(volume), "hostPath", {}), "path", ""))
+          path = Support.value(Support.value(Support.spec(volume), "hostPath", {}), "path", "")
+          delete_host_path(path, context.fetch(:hostpath_root))
         rescue StandardError => failure
           record_volume_operation_error("kubernetes.io/host-path", "delete")
           update_volume_phase_with_event(volume, "Failed", context, "Warning", "VolumeFailedDelete", failure.message)
@@ -169,6 +178,8 @@ module Rubernetes
           updated["metadata"]["finalizers"] = finalizers - [IN_TREE_FINALIZER]
           context[:operations] << operation_update(volume, updated, descriptor: PV, reason: "remove the in-tree deletion finalizer")
         end
+        return if volume_deleting?(volume)
+
         remove = operation_delete(volume, descriptor: PV, reason: "delete released PersistentVolume")&.observed do |succeeded, error|
           not_found = InfrastructureCapability.not_found?(error)
           record_volume_operation_error("kubernetes.io/host-path", "delete") unless succeeded || not_found
@@ -199,81 +210,21 @@ module Rubernetes
       end
 
       # isVolumeReleased.
-      def volume_released?(volume, context)
+      def volume_released?(volume, context, fresh: false)
         reference = claim_ref(volume)
         return false if reference.nil? || Support.value(reference, "uid", "").to_s.empty?
 
-        claim = find_claim(context, Support.value(reference, "namespace", ""), Support.value(reference, "name", ""))
+        namespace = Support.value(reference, "namespace", "")
+        name = Support.value(reference, "name", "")
+        claim = if fresh && InfrastructureCapability.live_reads?(context[:adapter])
+                  live_claim(context, namespace, name)
+                else
+                  find_claim(context, namespace, name)
+                end
         return true unless claim && Support.uid(claim).to_s == Support.value(reference, "uid", "").to_s
 
         volume_name = Support.value(Support.spec(claim), "volumeName", "").to_s
         !volume_name.empty? && volume_name != Support.name(volume)
-      end
-
-      # recycleVolumeOperation with the hostPath/NFS recycler Pod
-      # (RecycleVolumeByWatchingPodUntilCompletion), one step per sync.
-      def recycle_volume(volume, context)
-        return unless volume_released?(volume, context)
-
-        reference = claim_ref(volume)
-        users = pods_by_claim(context, Support.value(reference, "namespace", ""), Support.value(reference, "name", ""))
-          .reject { |pod| pod_terminated?(pod) }.map { |pod| "#{Support.namespace(pod)}/#{Support.name(pod)}" }.sort
-        cached = find_claim(context, Support.value(reference, "namespace", ""), Support.value(reference, "name", ""))
-        if !users.empty? && cached.nil?
-          event(context, "Normal", "VolumeFailedRecycle", "Volume is used by pods: #{users.join(",")}")
-          return
-        end
-
-        source = recycler_source(volume)
-        if source.nil?
-          update_volume_phase_with_event(volume, "Failed", context, "Warning", "VolumeFailedRecycle",
-                                         "No recycler plugin found for the volume!")
-          return
-        end
-
-        pod_name = "recycler-for-#{Support.name(volume)}"
-        pod = context[:adapter] && context[:adapter].find(POD, name: pod_name, namespace: "default")
-        if pod.nil?
-          context[:operations] << operation_create(recycler_pod(pod_name, volume, source), descriptor: POD,
-                                                                                           reason: "start the volume recycler")
-          context[:requeue] = RECHECK_SECONDS
-          return
-        end
-
-        case Support.value(Support.status(pod), "phase", "").to_s
-        when "Succeeded"
-          context[:operations] << operation_delete(pod, descriptor: POD, reason: "remove the finished recycler")
-          event(context, "Normal", "VolumeRecycled", "Volume recycled")
-          unbind_volume(volume, context)
-        when "Failed"
-          context[:operations] << operation_delete(pod, descriptor: POD, reason: "remove the failed recycler")
-          message = Support.value(Support.status(pod), "message", "").to_s
-          update_volume_phase_with_event(volume, "Failed", context, "Warning", "VolumeFailedRecycle",
-                                         "Recycle failed: pod failed, pod.Status.Message #{message}")
-        else
-          context[:requeue] = RECHECK_SECONDS
-        end
-      end
-
-      def recycler_source(volume)
-        spec = Support.spec(volume)
-        return {"hostPath" => Support.deep_copy(spec["hostPath"]), minimum: 60} if spec["hostPath"]
-        return {"nfs" => Support.deep_copy(spec["nfs"]), minimum: 300} if spec["nfs"]
-
-        nil
-      end
-
-      # NewPersistentVolumeRecyclerPodTemplate with the plugin's timeout:
-      # max(minimum, 30 s per GiB).
-      def recycler_pod(name, volume, source)
-        size_gib = (storage(volume_capacity(volume)) / (1024**3)).ceil
-        timeout = [source[:minimum], 30 * size_gib].max
-        {"apiVersion" => "v1", "kind" => "Pod",
-         "metadata" => {"name" => name, "namespace" => "default"},
-         "spec" => {"activeDeadlineSeconds" => timeout, "restartPolicy" => "Never",
-                    "volumes" => [{"name" => "vol"}.merge(source.except(:minimum))],
-                    "containers" => [{"name" => "pv-recycler", "image" => RECYCLER_IMAGE, "command" => ["/bin/sh"],
-                                      "args" => ["-c", RECYCLER_SCRIPT], "volumeMounts" => [{"name" => "vol", "mountPath" => "/scrub"}]}]}}
       end
     end
   end
