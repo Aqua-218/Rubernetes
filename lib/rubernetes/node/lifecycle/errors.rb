@@ -11,6 +11,9 @@ module Rubernetes
       # The runtime no longer knows the sandbox (startup recovery released it).
       class SandboxGone < LifecycleError; end
 
+      # The Pod worker has a termination request queued after this start.
+      class StartCancelled < LifecycleError; end
+
       # Raised when a Pod's claims cannot be prepared; the kubelet reports
       # FailedPrepareDynamicResources and retries, the Pod stays
       # ContainerCreating.
