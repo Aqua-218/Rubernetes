@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../../support/object_tree"
+
 require "json"
 require "time"
+require_relative "cel_runtime"
+require_relative "subtree_correlation"
 
 module Rubernetes
   module API
@@ -20,6 +24,8 @@ module Rubernetes
       # and map-key semantics, int-or-string, embedded resources, and the
       # x-kubernetes-validations CEL rules.
       class StructuralSchema
+        include CELRuntime
+
         class Invalid < StandardError
           attr_reader :causes
 
@@ -163,20 +169,19 @@ module Rubernetes
         end
 
         def default_value(value, schema)
-          return value if schema.nil? || !schema.is_a?(Hash)
+          return value unless schema.is_a?(Hash)
 
-          value = deep_copy(schema["default"]) if value.nil? && schema.key?("default")
+          value = deep_copy(schema["default"]) if value.nil? && !schema["nullable"] && !schema["default"].nil?
           case value
           when Hash
-            (schema["properties"] || {}).each do |name, child|
-              if value.key?(name)
-                value[name] = default_value(value[name], child)
-              elsif child.is_a?(Hash) && child.key?("default")
-                value[name] = deep_copy(child["default"])
-                value[name] = default_value(value[name], child)
-              end
+            properties = schema["properties"] || {}
+            properties.each do |name, child|
+              value[name] = deep_copy(child["default"]) if child.is_a?(Hash) && !value.key?(name) && !child["default"].nil?
             end
-            value.each_key { |key| value[key] = default_value(value[key], schema["additionalProperties"]) } if schema["additionalProperties"].is_a?(Hash)
+            value.each_key do |key|
+              child = properties.fetch(key, schema["additionalProperties"])
+              value[key] = default_value(value[key], child) if child.is_a?(Hash)
+            end
           when Array
             value.map! { |item| default_value(item, schema["items"]) } if schema["items"].is_a?(Hash)
           end
@@ -218,13 +223,14 @@ module Rubernetes
                 value[key] = prune_metadata(value[key]) if key == "metadata"
                 next
               end
-              if properties.key?(key)
-                value[key] = prune_value(value[key], properties[key])
-              elsif schema["additionalProperties"].is_a?(Hash)
-                value[key] = prune_value(value[key], schema["additionalProperties"])
-              elsif schema["additionalProperties"] == true || preserve
-                next
-              else
+              child = properties.fetch(key, schema["additionalProperties"])
+              if child.is_a?(Hash)
+                if value[key].nil? && !child["nullable"] && child["default"].nil?
+                  value.delete(key)
+                else
+                  value[key] = prune_value(value[key], child)
+                end
+              elsif child != true && !preserve
                 value.delete(key)
               end
             end
@@ -316,12 +322,14 @@ module Rubernetes
         def validate(object, old: nil, variables: {})
           causes = []
           validate_value(object, @schema, [], causes, root: true)
-          ratchet!(causes, object, old) if old
+          correlation = SubtreeCorrelation.new(object, old, @schema) if old
+          ratchet!(causes, correlation) if correlation
           if @cel && validations?(@schema)
             if causes.any? { |cause| BLOCKING_REASONS.include?(cause["reason"]) }
               causes << {"field" => "<nil>", "message" => "Invalid value: null: #{BLOCKED_MESSAGE}", "reason" => "FieldValueInvalid"}
             else
-              validate_cel(object, @schema, [], causes, old_value: old, root: true)
+              budget = Security::CEL::Evaluator::Budget.new(RUNTIME_CEL_BUDGET)
+              validate_cel(object, @schema, [], causes, correlation: correlation, root: true, budget: budget)
             end
           end
           raise Invalid, causes unless causes.empty?
@@ -329,17 +337,14 @@ module Rubernetes
           true
         end
 
-        # CRDValidationRatcheting: on an update, a structural error inside a
-        # subtree that is unchanged from the stored object is not the
-        # caller's doing and is dropped (it was accepted when stored).  Lists
-        # correlate by index.  apiextensions_apiserver_validation_ratcheting_seconds
-        # is the time the old/new comparison takes.
-        def ratchet!(causes, object, old)
+        # CRDValidationRatcheting ignores schema errors below unchanged,
+        # correlated values. An atomic or set list can only match as a whole.
+        def ratchet!(causes, correlation)
           return if causes.empty?
 
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           unchanged = []
-          collect_unchanged(object, old, [], unchanged)
+          collect_unchanged(correlation, [], unchanged)
           unless unchanged.empty?
             causes.reject! do |cause|
               field = cause["field"].to_s
@@ -350,21 +355,23 @@ module Rubernetes
           observe_ratcheting(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) if started
         end
 
-        def collect_unchanged(value, old, path, unchanged)
-          if value == old
-            unchanged << join(path) unless path.empty?
+        def collect_unchanged(correlation, path, unchanged)
+          return unless correlation
+
+          if !path.empty? && correlation.unchanged?
+            unchanged << join(path)
             return
           end
-          case value
+          case correlation.value
           when Hash
-            return unless old.is_a?(Hash)
+            correlation.value.each_key do |key|
+              next if path.empty? && %w[apiVersion kind metadata].include?(key)
 
-            value.each { |key, child| collect_unchanged(child, old[key], path + [key.to_s], unchanged) if old.key?(key) }
+              collect_unchanged(correlation.child(key), path + [key.to_s], unchanged)
+            end
           when Array
-            return unless old.is_a?(Array)
-
-            value.each_with_index do |child, index|
-              collect_unchanged(child, old[index], path + ["[#{index}]"], unchanged) if index < old.length
+            correlation.value.each_index do |index|
+              collect_unchanged(correlation.child(index), path + ["[#{index}]"], unchanged)
             end
           end
         end
@@ -391,13 +398,12 @@ module Rubernetes
         end
 
         def validate_value(value, schema, path, causes, root: false)
-          return if schema.nil?
+          return if schema.nil? || (value.nil? && schema["nullable"] == true)
 
           if schema["x-kubernetes-int-or-string"] == true
             return type_invalid(causes, path, value, "integer,string") unless value.is_a?(Integer) || value.is_a?(String)
           elsif value.nil?
-            return if schema["nullable"] == true
-            return type_invalid(causes, path, value, schema["type"]) if schema["type"] && !schema.key?("default")
+            return type_invalid(causes, path, value, schema["type"]) if schema["type"]
 
             return
           end
@@ -456,7 +462,7 @@ module Rubernetes
           when Hash
             properties = schema["properties"] || {}
             Array(schema["required"]).each do |name|
-              add(causes, path + [name], "Required value", "FieldValueRequired") unless value.key?(name) && !value[name].nil?
+              add(causes, path + [name], "Required value", "FieldValueRequired") unless value.key?(name)
             end
             if schema["minProperties"] && value.length < schema["minProperties"]
               invalid(causes, path, value,
@@ -564,78 +570,7 @@ module Rubernetes
           add(causes, path + ["kind"], "Required value", "FieldValueRequired") unless value["kind"].is_a?(String) && !value["kind"].empty?
         end
 
-        # x-kubernetes-validations: each rule sees `self` (and `oldSelf` on
-        # update); a false result yields the rule's message / messageExpression.
-        # Validator.validate: each visit of a node that has a validator is one
-        # evaluation, its time including the nodes below it.
-        def validate_cel(value, schema, path, causes, old_value: nil, root: false)
-          return validate_cel_node(value, schema, path, causes, old_value: old_value, root: root) unless CRD.metrics && @validator_nodes.key?(schema)
-
-          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          begin
-            validate_cel_node(value, schema, path, causes, old_value: old_value, root: root)
-          ensure
-            observe_cel("apiserver_cel_evaluation_duration_seconds", started)
-          end
-        end
-
-        def validate_cel_node(value, schema, path, causes, old_value: nil, root: false)
-          return if schema.nil? || !schema.is_a?(Hash)
-
-          Array(schema["x-kubernetes-validations"]).each do |rule|
-            next if value.nil?
-            next if rule["optionalOldSelf"] != true && rule["rule"].include?("oldSelf") && old_value.nil?
-
-            variables = {"self" => value}
-            variables["oldSelf"] = old_value unless old_value.nil?
-            result = begin
-              @cel.evaluate(rule["rule"], variables)
-            rescue StandardError => error
-              add(causes, path, "Invalid value: #{go_quote(schema["type"].to_s)}: #{error.message} evaluating rule: #{rule["rule"]}",
-                  "FieldValueInvalid")
-              next
-            end
-            next if result == true
-
-            message = rule["message"]
-            if rule["messageExpression"]
-              message = begin
-                @cel.evaluate(rule["messageExpression"], variables)
-              rescue StandardError
-                message
-              end
-            end
-            detail = message.to_s.empty? ? "failed rule: #{rule["rule"]}" : message.to_s
-            reason = rule["reason"] || "FieldValueInvalid"
-            add(causes, path, "#{ERROR_TYPE_TEXT.fetch(reason, "Invalid value")}: #{detail}", reason)
-          end
-          case value
-          when Hash
-            (schema["properties"] || {}).each do |name, child|
-              next unless value.key?(name)
-              next if root && %w[apiVersion kind metadata].include?(name)
-
-              validate_cel(value[name], child, path + [name], causes, old_value: old_value.is_a?(Hash) ? old_value[name] : nil)
-            end
-            if schema["additionalProperties"].is_a?(Hash)
-              value.each do |key, child|
-                validate_cel(child, schema["additionalProperties"], path + [key], causes,
-                             old_value: old_value.is_a?(Hash) ? old_value[key] : nil)
-              end
-            end
-          when Array
-            if schema["items"].is_a?(Hash)
-              value.each_with_index do |item, index|
-                validate_cel(item, schema["items"], path + ["[#{index}]"], causes)
-              end
-            end
-          end
-        end
-
         private
-
-        ERROR_TYPE_TEXT = {"FieldValueInvalid" => "Invalid value", "FieldValueForbidden" => "Forbidden", "FieldValueRequired" => "Required value",
-                           "FieldValueDuplicate" => "Duplicate value", "FieldValueNotSupported" => "Unsupported value"}.freeze
 
         def add(causes, path, message, reason)
           causes << {"field" => join(path), "message" => message, "reason" => reason}
@@ -720,13 +655,7 @@ module Rubernetes
           path.empty? ? "<root>" : path.join(".").gsub(".[", "[")
         end
 
-        def deep_copy(value)
-          case value
-          when Hash then value.each_with_object({}) { |(key, child), hash| hash[key] = deep_copy(child) }
-          when Array then value.map { |child| deep_copy(child) }
-          else value
-          end
-        end
+        def deep_copy(value) = ObjectTree.copy(value)
       end
     end
   end
