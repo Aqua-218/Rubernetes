@@ -36,13 +36,6 @@ module Rubernetes
         def noop_update?(object, existing)
           return false unless object.is_a?(Hash) && existing.is_a?(Hash)
 
-          # Stored metav1.Time fields are second precision, so an update carrying
-          # the same instants with sub-second digits (the node agent stamps
-          # status that way) is still no change.  Comparing the raw strings made
-          # every such status sync a real write.
-          # The stored object was truncated on its way in (StoreAdapter
-          # #convert_in), so only the submitted one needs it; truncate_times
-          # never mutates its argument, so neither side is copied.
           strip = lambda do |value|
             metadata = value["metadata"]
             return value unless metadata.is_a?(Hash)
@@ -50,7 +43,14 @@ module Rubernetes
             value.merge("metadata" => metadata.except(*NOOP_IGNORED_METADATA))
           end
           # An object that cannot be compared is written like any other change.
-          best_effort { strip.call(StoreAdapter.time_codec.truncate_times(object)) == strip.call(existing) } || false
+          best_effort { strip.call(object) == strip.call(existing) } || false
+        end
+
+        def normalize_update_times(resource, object)
+          return object unless object.is_a?(Hash)
+          return ObjectMetaWire.normalize_times(object) if resource.custom?
+
+          StoreAdapter.time_codec.truncated_frozen(object)
         end
 
         def update_response_once(request, route, retry_conflicts: false)
@@ -58,49 +58,56 @@ module Rubernetes
           validate_write_options!(request, "UpdateOptions")
           if route.subresource == "scale"
             existing = @store.get(resource: route.resource, namespace: namespace, name: route.name)
-            return scale_update_response(request, route, existing, namespace, request_body(request))
+            return scale_update_response(request, route, existing, namespace, stringify_keys(request_body(request)))
           end
 
           object = phase("update.normalize") { normalize_object(request, route) }
-          existing, cached = read_for_update(route, namespace, object)
-          ensure_name!(object, route.name)
-          expected = metadata_value(object, "resourceVersion")
-          unconditional = expected.to_s.empty?
-          refuse_unconditional_update!(route) if unconditional
+          check_update_name!(object, route)
+          version_text = object.dig("metadata", "resourceVersion")
+          stored, cached = read_for_update(route, namespace, object)
+          existing = Schema::JobSelector.resource?(route.resource) ? Schema::JobSelector.decode_labels(stored) : stored
+          check_storage_uid!(route, existing, object)
+          expected = parse_update_version(version_text)
           # Strategy.AllowCreateOnUpdate: a PUT to an object that does not exist
           # CREATES it for the kinds whose strategy says so (Lease,
           # LeaseCandidate, Endpoints, Event, LimitRange, Service).  Answering
           # 404 for those made a client that PUTs its own object -- which is how
           # leases and endpoints are written -- fail against us and work
           # everywhere else.
-          return create_response(request, route) if existing.nil? && allow_create_on_update?(route.resource)
+          return create_response(request, route) if existing.nil?
 
-          ensure_update_target!(route, existing, expected, unconditional)
+          unconditional = expected.zero?
+          current_version = checked_update_version!(route, existing, expected)
+
           object = preserve_metadata(object, existing)
+          object["metadata"]["resourceVersion"] = current_version
           unknown_mode = enforce_field_validation(route.resource, object, request,
                                                   duplicates: request_duplicate_fields(request))
-          object = apply_subresource_strategy(route, existing, object)
-          object = admitted_for_update(request, route, existing, object, namespace, unknown_mode)
-          return json_response(written_view(route, dry_run_view(object, namespace))) if dry_run?(request)
+          with_registry_allocations(route) do |allocation|
+            object = admitted_for_update(request, route, existing, object, namespace, unknown_mode, allocation: allocation)
+            return json_response(written_view(route, dry_run_view(object, namespace))) if dry_run?(request)
 
-          # Truncated once: the no-op check compares it, and the store takes it
-          # as is instead of truncating it again in convert_in.
-          object = StoreAdapter.time_codec.truncated_frozen(object) if object.is_a?(Hash)
-          return json_response(written_view(route, existing)) if unchanged_update?(request, object, existing)
+            # Truncated once: the no-op check compares it, and the store takes it
+            # as is instead of truncating it again in convert_in.
+            object = normalize_update_times(route.resource, object)
+            return json_response(written_view(route, existing)) if unchanged_update?(request, object, stored)
 
-          resource_version = unconditional ? metadata_value(existing, "resourceVersion") : expected
-          updated = store_update(route, namespace, object, resource_version, cached: cached)
-          after_commit(route.resource, updated) if route.subresource.nil?
-          finalize_object_removal(route.resource, namespace, updated)
-          phase("update.respond") { json_response(written_view(route, updated)) }
+            updated = store_update(route, namespace, object, current_version, cached: cached, allocation: allocation)
+            allocation&.commit!
+            after_commit(route.resource, updated) if route.subresource.nil?
+            finalize_object_removal(route.resource, namespace, updated, existing)
+            phase("update.respond") { json_response(written_view(route, updated)) }
+          end
         rescue MemoryStore::NotFound
-          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                     details: resource_details(route))
+          raise missing_resource(route)
         rescue MemoryStore::Conflict
           raise UnconditionalUpdateConflict if retry_conflicts && unconditional
 
-          raise Status::Conflict.new("#{route.resource.kind} #{route.name.inspect} changed during update",
-                                     details: resource_details(route))
+          raise stale_update(route)
+        rescue Status::AlreadyExists
+          raise unless retry_conflicts && existing.nil?
+
+          raise UnconditionalUpdateConflict
         end
 
         # GuaranteedUpdate with cachedExistingObject: an update that names the
@@ -114,13 +121,23 @@ module Rubernetes
         # Returns the stored object and whether it came from the cached read.
         def read_for_update(route, namespace, object)
           hinted = metadata_value(object, "resourceVersion").to_s
+          arguments = {resource: route.resource, namespace: namespace, name: route.name}
+          arguments[:decode_job_labels] = false if Schema::JobSelector.resource?(route.resource)
           cached = false
           unless hinted.empty?
-            existing = cached_store_read { @store.get(resource: route.resource, namespace: namespace, name: route.name) }
+            existing = begin
+              cached_store_read { @store.get(**arguments) }
+            rescue MemoryStore::NotFound
+              nil
+            end
             cached = existing.is_a?(Hash) && metadata_value(existing, "resourceVersion").to_s == hinted
           end
-          existing = @store.get(resource: route.resource, namespace: namespace, name: route.name) unless cached
+          existing = @store.get(**arguments) unless cached
           [existing, cached]
+        rescue MemoryStore::NotFound
+          raise unless route.subresource.nil? && allow_create_on_update?(route.resource)
+
+          [nil, false]
         end
 
         # Strategy.AllowUnconditionalUpdate() == false: these kinds refuse an
@@ -131,41 +148,78 @@ module Rubernetes
         def refuse_unconditional_update!(route)
           return unless strict_update?(route.resource)
 
-          raise Status::Invalid.new("#{route.resource.resource} #{route.name.inspect} is invalid: metadata.resourceVersion: Invalid value: 0x0: must be " \
-                                    "specified for an update",
-                                    details: resource_details(route))
+          message = "Invalid value: 0: must be specified for an update"
+          cause = {"reason" => "FieldValueInvalid", "field" => "metadata.resourceVersion", "message" => message}
+          raise Status::Invalid.new("#{qualified_resource(route.resource)} #{route.name.inspect} is invalid: metadata.resourceVersion: #{message}",
+                                    details: resource_details(route).merge("causes" => [cause]))
         end
 
-        # registry.Store#Update: an object submitted without a resourceVersion
-        # is an *unconditional* update wherever the strategy allows one, which
-        # every built-in kind does.  Upstream's own conformance tests rely on
-        # it -- "should update ConfigMap successfully" updates the object it
-        # built locally, never having read the one the server stored -- so
-        # rejecting it fails the spec outright.  A resourceVersion that *is*
-        # present is still enforced as an optimistic-concurrency precondition.
-        def ensure_update_target!(route, existing, expected, unconditional)
-          if unconditional && existing.nil?
-            raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                       details: resource_details(route))
-          end
-          ensure_expected_version!(existing, expected) unless unconditional
+        # The storage versioner uses an unsigned 64-bit decimal. Empty and
+        # zero both select the resource's unconditional update strategy.
+        def parse_update_version(value)
+          return 0 if value.to_s.empty?
+
+          digits = value.sub(/\A0+/, "")
+          return 0 if digits.empty?
+
+          error = if !digits.match?(/\A[0-9]+\z/)
+                    "invalid syntax"
+                  elsif digits.size > 20 || (digits.size == 20 && digits > "18446744073709551615")
+                    "value out of range"
+                  end
+          raise Status::Error.new(message: "strconv.ParseUint: parsing #{value.inspect}: #{error}", code: 500, reason: nil) if error
+
+          digits.to_i
         end
 
-        # The object as it will be stored: checked against its schema, given
-        # the registry's PrepareForUpdate, passed through mutating admission,
-        # validated, passed through validating admission, with its generation.
-        def admitted_for_update(request, route, existing, object, namespace, unknown_mode)
-          object = phase("update.schema") do
-            apply_schema(route.resource, object, operation: :update, old: existing, subresource: route.subresource,
-                                                 unknown_fields: unknown_mode)
+        def checked_update_version!(route, existing, expected)
+          current = metadata_value(existing, "resourceVersion")
+          if expected.zero?
+            refuse_unconditional_update!(route)
+          elsif current.to_s != expected.to_s
+            raise stale_update(route)
           end
-          object = prepare_registry_update(route.resource, existing, object) if route.subresource.nil?
+          current
+        end
+
+        def stale_update(route)
+          message = "the object has been modified; please apply your changes to the latest version and try again"
+          resource_conflict(route, message)
+        end
+
+        # The decoder defaults before managed field tracking and mutating
+        # admission. Registry strategies and validation see the mutated object.
+        def admitted_for_update(request, route, existing, object, namespace, unknown_mode, allocation:)
+          object = phase("update.schema") { default_schema_for_write(route.resource, object, unknown_fields: unknown_mode, old: existing) }
           object = before_mutation = with_managed_fields(object, record_managed_update(request, route, existing, object))
           object = admit_mutating(request, route, "UPDATE", object, existing, namespace)
-          object = redefault_after_mutation(route.resource, object, before_mutation, unknown_fields: unknown_mode)
+          object = redefault_after_mutation(route.resource, object, before_mutation, unknown_fields: unknown_mode, operation: :update)
+          finish_admitted_update(request, route, existing, object, namespace, allocation: allocation)
+        end
+
+        def finish_admitted_update(request, route, existing, object, namespace, allocation:)
+          object = apply_subresource_strategy(route, existing, object)
+          if metadata_value(object, "uid").to_s.empty?
+            object = object.merge("metadata" => object.fetch("metadata", {}).merge("uid" => metadata_value(existing, "uid")))
+          end
+          # Generic REST BeforeUpdate restores the original creation time
+          # after mutating admission, including typed webhook round trips.
+          created_at = metadata_value(existing, "creationTimestamp")
+          if created_at && metadata_value(object, "creationTimestamp") != created_at
+            object = object.merge("metadata" => object.fetch("metadata", {}).merge("creationTimestamp" => created_at))
+          end
+          object = phase("update.validate") do
+            validate_schema(route.resource, object, operation: :update, old: existing, subresource: route.subresource)
+          end
+          object = prepare_registry_update(route.resource, existing, object, dry_run: dry_run?(request), allocation: allocation) if route.subresource.nil?
+          object = drop_disabled_pod_fields(route.resource, object, old: existing)
+          prepare_image_volume_status!(route, existing, object)
           authorize_resource_claim_status!(request, route, existing, object)
-          phase("update.validate") { validate_object!(route.resource, object, old: existing) } unless route.subresource == "status"
+          if route.subresource != "status" || storage_version_resource?(route.resource)
+            phase("update.validate") { validate_object!(route.resource, object, old: existing) }
+          end
           admit_validating(request, route, "UPDATE", object, existing, namespace)
+          existing = Schema::JobSelector.omit_empty_collections(existing) if Schema::JobSelector.resource?(route.resource)
           apply_generation(object, existing, subresource: route.subresource, resource: route.resource)
         end
 
@@ -186,10 +240,10 @@ module Rubernetes
 
         # An update that started from the cached copy proposes through the
         # same cached path (see read_for_update).
-        def store_update(route, namespace, object, resource_version, cached:)
+        def store_update(route, namespace, object, resource_version, cached:, allocation:)
           write = lambda do
             @store.update(resource: route.resource, namespace: namespace, name: route.name,
-                          object: object, resource_version: resource_version)
+                          object: object, resource_version: resource_version, **(allocation&.write_preconditions || {}))
           end
           cached ? cached_store_read(&write) : write.call
         end
@@ -201,12 +255,10 @@ module Rubernetes
           result = object.transform_keys(&:to_s)
           result["metadata"] = result["metadata"].is_a?(Hash) ? result["metadata"].transform_keys(&:to_s) : {}
           existing_metadata = existing["metadata"] || {}
-          # ValidateObjectMetaUpdate treats these as immutable; upstream's
-          # registry preserves them from the stored object rather than taking
-          # whatever the client sent.  deletionGracePeriodSeconds belongs to the
-          # same set -- a client must not be able to shorten or clear the grace
-          # period the API server granted.
-          %w[uid creationTimestamp deletionTimestamp deletionGracePeriodSeconds].each do |key|
+          # An omitted UID inherits the stored identity. An explicit UID survives
+          # until registry validation, which reports any immutable-field errors.
+          result["metadata"]["uid"] = existing_metadata["uid"] if result["metadata"]["uid"].to_s.empty? && existing_metadata.key?("uid")
+          %w[creationTimestamp deletionTimestamp deletionGracePeriodSeconds].each do |key|
             if existing_metadata.key?(key)
               result["metadata"][key] = deep_copy(existing_metadata[key])
             else
@@ -223,7 +275,7 @@ module Rubernetes
 
         # PrepareForUpdate hooks of the registry strategies that own
         # allocations (Service ClusterIPs and NodePorts follow type changes).
-        def prepare_registry_update(resource, existing, object)
+        def prepare_registry_update(resource, existing, object, dry_run:, allocation:)
           object = drop_stateful_set_disabled_fields(resource, object, existing)
           if csr_resource?(resource) && existing.is_a?(Hash) && object.is_a?(Hash)
             # csrStrategy.PrepareForUpdate: a request is immutable except
@@ -235,7 +287,8 @@ module Rubernetes
           end
           return object unless @service_allocator && @service_allocator.service?(resource)
 
-          @service_allocator.prepare_update(existing, object)
+          options = allocation ? {allocation: allocation} : {}
+          @service_allocator.prepare_update(existing, object, dry_run: dry_run, **options)
         end
 
         # pkg/registry/*/*/strategy.go AllowCreateOnUpdate() == true.
@@ -251,6 +304,7 @@ module Rubernetes
 
         # Strategy.AllowUnconditionalUpdate() == false.
         STRICT_UPDATE_RESOURCES = [
+          ["storage.k8s.io", "csidrivers"],
           ["admissionregistration.k8s.io", "mutatingwebhookconfigurations"],
           ["admissionregistration.k8s.io", "validatingwebhookconfigurations"],
           ["admissionregistration.k8s.io", "validatingadmissionpolicies"],
@@ -264,7 +318,7 @@ module Rubernetes
           ["coordination.k8s.io", "leasecandidates"],
           ["node.k8s.io", "runtimeclasses"],
           ["policy", "poddisruptionbudgets"],
-          ["storage.k8s.io", "csidrivers"],
+          ["resource.k8s.io", "resourcepoolstatusrequests"],
           ["storage.k8s.io", "csinodes"],
           ["storage.k8s.io", "csistoragecapacities"],
           ["storage.k8s.io", "volumeattachments"],
