@@ -199,8 +199,8 @@ class StreamingProtocolsTest < Minitest::Test
       "GET #{path} HTTP/1.1", "Host: 127.0.0.1", "Connection: Upgrade", "Upgrade: websocket",
       "Sec-WebSocket-Version: 13", "Sec-WebSocket-Key: #{key}", "Sec-WebSocket-Protocol: #{protocols.join(", ")}", "", ""
     ].join("\r\n"))
-    head = +""
-    head << socket.readpartial(1024) until head.include?("\r\n\r\n")
+    # The first WebSocket frame may arrive with the HTTP response.
+    head = Timeout.timeout(10) { socket.gets("\r\n\r\n") }
     [socket, head]
   end
 
@@ -269,8 +269,7 @@ class StreamingProtocolsTest < Minitest::Test
     lines = ["#{method} #{path} HTTP/1.1", "Host: 127.0.0.1", "Connection: Upgrade", "Upgrade: SPDY/3.1"]
     protocols.each { |protocol| lines << "X-Stream-Protocol-Version: #{protocol}" }
     socket.write(lines.join("\r\n") + "\r\n\r\n")
-    head = +""
-    head << socket.readpartial(1024) until head.include?("\r\n\r\n")
+    head = Timeout.timeout(10) { socket.gets("\r\n\r\n") }
     [socket, head]
   end
 
@@ -395,7 +394,7 @@ class StreamingProtocolsTest < Minitest::Test
 
       assert_match(/ 101 /, head)
       client = WebSocket::Connection.new(socket, client: true)
-      announcements = Array.new(2) { client.read_message.payload }
+      announcements = Timeout.timeout(10) { Array.new(2) { client.read_message.payload } }
 
       assert_equal ["\x00\x50\x00".b, "\x01\x50\x00".b], announcements.sort
       client.write_message("\x00hi".b)
