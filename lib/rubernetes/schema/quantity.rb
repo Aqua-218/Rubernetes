@@ -73,6 +73,34 @@ module Rubernetes
         new(rational, format, original: original)
       end
 
+      # ParseQuantity(...).AsInt64 only accepts the parser's int64 fast path
+      # at a nonnegative decimal scale. The same amount can be accepted or
+      # rejected depending on its spelling (for example, 1 and 1000m).
+      def self.parse_int64(string)
+        raise ParseError, FORMAT_WRONG_MESSAGE unless string.is_a?(String) && !string.empty?
+
+        positive, num, denom, suffix = split(string)
+        base, exponent, format = interpret_suffix(suffix)
+        if format == :decimal_exponent
+          raise ParseError, SUFFIX_MESSAGE unless exponent.between?(-MAX_INT64 - 1, MAX_INT64)
+
+          exponent = int32(exponent)
+        end
+        scale = base == 10 ? int32(exponent - denom.length) : 0
+        error = "quantity has no fast int64 representation"
+        raise ParseError, error if scale.negative? || fast_path_precision(num, denom, exponent, format).negative?
+
+        magnitude = Integer(num + denom, 10)
+        return 0 if magnitude.zero?
+        raise ParseError, error if scale > MAX_INT64_FACTORS
+
+        value = magnitude * (base == 2 ? 2**exponent : 10**scale)
+        value = -value unless positive
+        raise ParseError, error unless value.between?(-MAX_INT64 - 1, MAX_INT64)
+
+        value
+      end
+
       def initialize(value, format = :decimal_si, original: nil)
         raise ArgumentError, "quantity value must be Rational" unless value.is_a?(Rational)
         raise ArgumentError, "unknown quantity format #{format.inspect}" unless FORMATS.include?(format)
@@ -270,12 +298,7 @@ module Rubernetes
         # ParseQuantity keeps the caller's spelling only on its int64 fast
         # path and only when that spelling is already canonical.
         def keep_original?(_positive, num, denom, base, exponent, format, magnitude, digits)
-          precision = if format == :binary_si
-                        exponent >= 0 && denom.empty? ? 15 - num.length - (exponent * 3 / 10) - 1 : -1
-                      else
-                        MAX_INT64_FACTORS - digits.length
-                      end
-          return false if precision.negative?
+          return false if fast_path_precision(num, denom, exponent, format).negative?
 
           scale = -denom.length
           scale += exponent if base == 10
@@ -292,6 +315,15 @@ module Rubernetes
             (scale % 3).zero? && !digits.end_with?("000") && digits[0] != "0"
           end
         end
+
+        def fast_path_precision(num, denom, exponent, format)
+          return MAX_INT64_FACTORS - num.length - denom.length unless format == :binary_si
+
+          exponent >= 0 && denom.empty? ? 15 - num.length - (exponent * 3 / 10) - 1 : -1
+        end
+
+        # Both the exponent and the decimal scale are int32 in ParseQuantity.
+        def int32(value) = ((value + (1 << 31)) % (1 << 32)) - (1 << 31)
 
         # inf.Dec rounding to nano precision, away from zero.
         def round_to_nano(rational)
