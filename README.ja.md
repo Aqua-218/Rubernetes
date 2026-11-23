@@ -112,7 +112,7 @@ kubectlのチェックサムは`test/compatibility/clients/matrix.yml`に書い�
 ```sh
 git clone https://github.com/Aqua-218/Rubernetes.git && cd Rubernetes
 bundle install
-rake abi:compile                    # Cの拡張をbuild/配下にビルド
+rake compile                        # Cの拡張をbuild/配下にビルド
 
 # クラスタを作る。control 1ノードとworker 1ノードで、10秒ほどで使えるようになる
 sudo ruby -Ilib exe/rubectl cluster up
@@ -391,7 +391,7 @@ rubectl apply -f nightly.rb --allow-code
 
 ```sh
 bundle install
-rake abi:compile                 # 最初に1回。以後はext/を変更したとき
+rake compile                     # 最初に1回。以後はext/を変更したとき
 rake test:parallel               # 全テストをファイルごとに別プロセスで実行。約7分。JOBS=nで並列数を指定
 rake test                        # 直列実行。約1時間。証拠ゲートはこちらを使う
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
