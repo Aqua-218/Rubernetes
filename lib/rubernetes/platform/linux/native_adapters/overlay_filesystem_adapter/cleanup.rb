@@ -62,23 +62,9 @@ module Rubernetes
           # mount would stay alive behind any descriptor and defeat the
           # "no child mounts" release precondition of §5.8.4.
           def cleanup_mounted_workspace(workspace, metadata, namespace_handle)
-            current_identity = begin
-              mount_readback(namespace_handle, workspace.root)
-            rescue EffectError
-              # The holder can exit between the liveness check in #cleanup and
-              # this readback.  Its mount namespace -- and therefore every
-              # mount inside it -- is gone with it, which is exactly the state
-              # cleanup is trying to reach, so reading /proc/<pid>/mountinfo
-              # failing for a holder that has since vanished is success, not a
-              # cleanup failure.  Observed as
-              # "overlay mount readback failed: Invalid argument @ rb_sysopen -
-              # /proc/<pid>/mountinfo" on roughly one in three 1000-cycle
-              # ledger probe runs.  Strictness is retained while the holder is
-              # alive: the raise is re-raised in that case.
-              raise unless namespace_holder_vanished?(namespace_handle)
+            current_identity = cleanup_mount_identity(namespace_handle, workspace.root)
+            return true unless current_identity
 
-              return true
-            end
             unless same_mount_identity?(current_identity, metadata.fetch("mount_identity"))
               raise EffectError, "overlay mount identity changed before cleanup for #{workspace.identity}"
             end
@@ -91,15 +77,25 @@ module Rubernetes
                 mount.unmount(target: root, flags: 0, resource_id: identity)
                 true
               end
-            rescue EffectError, Linux::Error => error
-              # umount2 ENOENT (the target is gone) or EINVAL (nothing is
-              # mounted there any more): a concurrent or earlier cleanup got
-              # there first -- the state this one is trying to reach.  A
-              # runtime restart that hit this died with RecoveryRequired.
-              raise unless error.message.include?("umount2") && error.message.match?(/No such file or directory|Invalid argument/)
+            rescue EffectError, Linux::Error
+              # The helper can lose the reply after unmounting the target.
+              # Confirm the effect from mountinfo before accepting completion.
+              return true unless cleanup_mount_identity(namespace_handle, root)
+
+              raise
             end
-            raise EffectError, "overlay mount remained after cleanup for #{workspace.identity}" if mount_present?(namespace_handle,
-                                                                                                                  workspace.root)
+            raise EffectError, "overlay mount remained after cleanup for #{workspace.identity}" if cleanup_mount_identity(namespace_handle, root)
+
+            true
+          end
+
+          def cleanup_mount_identity(namespace_handle, root)
+            mount_readback(namespace_handle, root, allow_absent: true)
+          rescue EffectError
+            # The holder can exit between the liveness check and readback.
+            raise unless namespace_holder_vanished?(namespace_handle)
+
+            nil
           end
 
           def namespace_holder_gone?(namespace_handle)
@@ -116,9 +112,15 @@ module Rubernetes
             pid = namespace_handle.pid
             return true if pid.nil?
 
-            !File.exist?("/proc/#{Integer(pid)}/mountinfo")
-          rescue SystemCallError, ArgumentError, TypeError
+            # procfs can still expose the mountinfo inode after the task has
+            # dropped its namespace (opening it then returns EINVAL). Inspect
+            # the namespace link itself so an unreaped holder is recognized.
+            File.readlink("/proc/#{Integer(pid)}/ns/mnt")
+            false
+          rescue Errno::ENOENT, Errno::ESRCH
             true
+          rescue SystemCallError, ArgumentError, TypeError
+            false
           end
         end
       end
