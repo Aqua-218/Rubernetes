@@ -1,0 +1,134 @@
+module Rubernetes
+  module Schema
+    class Quantity
+      def self.parse: (String value) -> Quantity
+      def self.from_json: (String | Integer | Float | Quantity value) -> Quantity
+    end
+  end
+
+  module Manifest
+    type resource_reference = resource | Reference
+    type probe_kind = :readiness | :startup | :liveness | String
+    type volume_sources = resource_reference | Array[resource_reference]
+    type object_fields = Hash[String | Symbol, untyped]
+    type quantity = String | Integer | Float | Rubernetes::Schema::Quantity
+    type environment_value = String | Symbol | Integer | Float | bool
+
+    class Reference < Data
+      attr_reader kind: String
+      attr_reader name: String
+    end
+
+    module Workload
+      class EmptyDirReference < Data
+        attr_reader name: String
+        attr_reader workload: resource
+      end
+
+      class ClaimTemplateReference < Data
+        attr_reader name: String
+        attr_reader workload: resource
+        attr_reader claim: resource
+      end
+    end
+
+    # These reference methods look up objects from inside a DSL block.
+    interface _ResourceReferenceDSL
+      def configmap: (resource_name name) -> Reference
+      def secret: (resource_name name) -> Reference
+    end
+
+    interface _PodServiceAccountDSL
+      def use_service_account: (resource_reference account) -> Array[String]
+    end
+
+    interface _PodCredentialDSL
+      include _PodServiceAccountDSL
+
+      def image_pull_secrets: (resource_reference secret, *resource_reference more_secrets) -> Array[String]
+    end
+
+    # Direct PodSpec setters also accept the raw list or explicit null.
+    interface _RawImagePullSecretsDSL
+      def image_pull_secrets: (Array[object_fields]? references) -> Array[resource]?
+                           | (resource_reference secret, *resource_reference more_secrets) -> Array[String]
+    end
+
+    interface _PodSpecDSL
+      include _ResourceReferenceDSL
+      include _PodServiceAccountDSL
+      include _RawImagePullSecretsDSL
+      include _PodSpecSchemaFields
+    end
+
+    # These methods are installed on resources with a PodSpec.
+    interface _PodTemplateDSL
+      include _ResourceReferenceDSL
+      include _PodCredentialDSL
+
+      def container: (resource_name name, image: String | Symbol, **untyped fields)
+                     ?{ () [self: ObjectBuilder & _ContainerDSL] -> void } -> Array[resource]
+      def init_container: (resource_name name, image: String | Symbol, **untyped fields)
+                          ?{ () [self: ObjectBuilder & _ContainerDSL] -> void } -> Array[resource]
+      def sidecar: (resource_name name, image: String | Symbol, **untyped fields)
+                   ?{ () [self: ObjectBuilder & _ContainerDSL] -> void } -> Array[resource]
+
+      def empty_dir: (resource_name name, ?medium: :disk | "" | :memory | "Memory",
+                      ?size_limit: quantity?) -> Workload::EmptyDirReference
+      def volume: (resource_name name, ?from: volume_sources?, **untyped source) -> Array[resource]
+      def pod: [Result] () { () [self: ObjectBuilder & _PodSpecDSL] -> Result } -> Result
+      def anti_affinity: (on: String | Symbol) -> Array[String]
+      def spread_across: (resource_name key, ?max_skew: Integer, ?when_unsatisfiable: :do_not_schedule | :schedule_anyway) -> nil
+    end
+
+    interface _ContainerDSL
+      include _ResourceReferenceDSL
+      include _ContainerSchemaFields
+
+      def port: (Integer | String number, ?name: String | Symbol | nil, ?protocol: String | Symbol | nil) -> Array[resource]
+      def http_probe: (probe_kind kind, port: Integer | resource_name, ?path: String, ?scheme: String | Symbol,
+                       ?headers: Hash[String | Symbol, String | Array[String]],
+                       ?initial_delay_seconds: Integer, ?period_seconds: Integer, ?timeout_seconds: Integer, ?success_threshold: Integer,
+                       ?failure_threshold: Integer, ?termination_grace_period_seconds: Integer) -> resource
+      def tcp_probe: (probe_kind kind, port: Integer | resource_name,
+                       ?initial_delay_seconds: Integer, ?period_seconds: Integer, ?timeout_seconds: Integer, ?success_threshold: Integer,
+                       ?failure_threshold: Integer, ?termination_grace_period_seconds: Integer) -> resource
+      def grpc_probe: (probe_kind kind, port: Integer, ?service: String?,
+                       ?initial_delay_seconds: Integer, ?period_seconds: Integer, ?timeout_seconds: Integer, ?success_threshold: Integer,
+                       ?failure_threshold: Integer, ?termination_grace_period_seconds: Integer) -> resource
+      def exec_probe: (probe_kind kind, command: Array[String],
+                       ?initial_delay_seconds: Integer, ?period_seconds: Integer, ?timeout_seconds: Integer, ?success_threshold: Integer,
+                       ?failure_threshold: Integer, ?termination_grace_period_seconds: Integer) -> resource
+      def cpu: (?request: quantity?, ?limit: quantity?) -> Hash[String, quantity]
+      def memory: (?request: quantity?, ?limit: quantity?) -> Hash[String, quantity]
+      def ephemeral_storage: (?request: quantity?, ?limit: quantity?) -> Hash[String, quantity]
+
+      def env: (resource_name name, ?environment_value? value, ?from: nil, ?key: nil) -> Array[resource]
+             | (?nil name, ?nil value, from: resource_reference, ?key: resource_name?) -> Array[resource]
+             | (resource_name name, ?nil value, from: resource_reference, key: resource_name) -> Array[resource]
+             | (Array[object_fields] entries) -> Array[resource]
+
+      def env_field: (resource_name name, resource_name path) -> Array[resource]
+                   | (resource_name name, label: resource_name) -> Array[resource]
+                   | (resource_name name, annotation: resource_name) -> Array[resource]
+      def env_resource: (resource_name name, resource_name resource, ?divisor: quantity?, ?container: resource_name?) -> Array[resource]
+
+      def mount: (resource_name volume, at: String, ?read_only: bool?, ?from: volume_sources?) -> Array[resource]
+               | (resource_reference | Workload::EmptyDirReference | Workload::ClaimTemplateReference volume,
+                  at: String, ?read_only: bool?, ?from: nil) -> Array[resource]
+               | (nil volume, at: String, ?read_only: bool?, from: resource_reference) -> Array[resource]
+      def device: (resource_name volume, at: String, ?from: resource_reference?) -> Array[resource]
+                | (resource_reference | Workload::ClaimTemplateReference volume, at: String, ?from: nil) -> Array[resource]
+                | (nil volume, at: String, from: resource_reference) -> Array[resource]
+    end
+
+    interface _RolloutDSL
+      def rollout_on: (resource config_map, *resource more_config_maps) -> Array[resource]
+    end
+
+    interface _ClaimTemplateDSL
+      def volume_claim_template: (resource_name name, **untyped metadata)
+                                  ?{ () [self: ObjectBuilder & _PersistentVolumeClaimFields] -> void } -> Workload::ClaimTemplateReference
+    end
+  end
+end
