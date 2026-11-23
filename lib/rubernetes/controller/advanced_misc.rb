@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "resource_claim_workloads"
+
 require "ipaddr"
 require "time"
 
@@ -8,6 +10,8 @@ require_relative "support"
 require_relative "types"
 require_relative "secondary_support"
 require_relative "registry"
+require_relative "builtin_factory"
+require_relative "../support/service_cidr"
 
 module Rubernetes
   module Controller
@@ -26,22 +30,10 @@ module Rubernetes
       VAP = ResourceDescriptor.parse("ValidatingAdmissionPolicy")
       SERVICE_CIDR = ResourceDescriptor.parse("ServiceCIDR")
       NODE = ResourceDescriptor.parse("Node")
-      IP_ADDRESS = ResourceDescriptor.parse(
-        {"apiVersion" => "networking.k8s.io/v1", "kind" => "IPAddress"},
-        resource: "ipaddresses", scope: :cluster
-      )
-      RESOURCE_POOL_STATUS_REQUEST = ResourceDescriptor.parse(
-        {"apiVersion" => "resource.k8s.io/v1alpha3", "kind" => "ResourcePoolStatusRequest"},
-        resource: "resourcepoolstatusrequests", scope: :cluster
-      )
-      VAP_BINDING = ResourceDescriptor.parse(
-        {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "ValidatingAdmissionPolicyBinding"},
-        resource: "validatingadmissionpolicybindings", scope: :cluster
-      )
-      STORAGE_VERSION_MIGRATION = ResourceDescriptor.parse(
-        {"apiVersion" => "storagemigration.k8s.io/v1beta1", "kind" => "StorageVersionMigration"},
-        resource: "storageversionmigrations", scope: :cluster
-      )
+      IP_ADDRESS = ResourceDescriptor.parse("IPAddress")
+      RESOURCE_POOL_STATUS_REQUEST = ResourceDescriptor.parse("ResourcePoolStatusRequest")
+      VAP_BINDING = ResourceDescriptor.parse("ValidatingAdmissionPolicyBinding")
+      STORAGE_VERSION_MIGRATION = ResourceDescriptor.parse("StorageVersionMigration")
 
       RESOURCE_CLAIM_FINALIZER = "resource.kubernetes.io/delete-protection"
       SERVICE_ACCOUNT_TOKEN_TYPE = "kubernetes.io/service-account-token"
@@ -67,13 +59,13 @@ module Rubernetes
         parsed.utc
       end
 
-      def result(resource, operations:, events: [], status: nil, controller: nil, descriptor: nil)
+      def result(resource, operations:, events: [], status: nil, controller: nil, descriptor: nil, requeue_after: nil)
         key = if resource
                 namespace = descriptor&.cluster_scoped? ? nil : Support.namespace(resource)
                 [namespace, Support.name(resource)].compact.join("/")
               end
         ReconcileResult.new(operations: operations.compact, status: status || Support.status(resource),
-                            events: events, controller: controller, key: key)
+                            events: events, controller: controller, key: key, requeue_after: requeue_after)
       end
 
       def condition_list(resource_or_status)
@@ -156,6 +148,7 @@ module Rubernetes
     class ResourceClaimController < BaseController
       include AdvancedMiscSupport
       include SecondarySupport
+      include ResourceClaimWorkloads
 
       TEMPLATE = ResourceDescriptor.parse("ResourceClaimTemplate")
       POD_CLAIM_ANNOTATION = "resource.kubernetes.io/pod-claim-name"
@@ -168,25 +161,35 @@ module Rubernetes
         @random = random
       end
 
-      def plan(object, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, now: nil, store: nil, **)
+      def plan(object, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, now: nil, store: nil, feature_gates: {}, **)
         return result(object, operations: [], controller: name, descriptor: RESOURCE_CLAIM) unless object.is_a?(Hash)
 
-        case Support.kind(object).to_s
-        when "Pod" then plan_pod(object, store: store, **)
-        when "ResourceClaimTemplate" then plan_template(object, store: store, **)
-        else
-          claim_result = plan_claim(object, pods: pods, deleted_pod_uids: deleted_pod_uids,
-                                            authoritative_pods: authoritative_pods, store: store)
-          # A Pod with the same namespace/name reaches this controller under
-          # the same key; its work is not lost to the claim.
-          pod = (adapter = adapter_for(store)) && find_for(adapter, POD, Support.name(object), namespace: Support.namespace(object))
-          return claim_result unless pod
+        workload_claims = feature_gates[WORKLOAD_CLAIMS::GATE] == true
+        adapter = adapter_for(store)
+        kind = Support.kind(object)
+        primary = case kind
+                  when "Pod" then plan_pod(object, store: store, workload_claims: workload_claims, **)
+                  when "PodGroup"
+                    return plan_pod_group(object, store: store, **) if workload_claims
 
-          pod_result = plan_pod(pod, store: store, **)
-          ReconcileResult.new(operations: claim_result.operations + pod_result.operations,
-                              events: Array(claim_result.events) + Array(pod_result.events),
-                              status: claim_result.status, controller: name, key: claim_result.key)
+                    return result(object, operations: [], controller: name, descriptor: CLAIM_POD_GROUP)
+                  when "ResourceClaimTemplate" then plan_template(object, store: store, workload_claims: workload_claims, **)
+                  else plan_claim(object, pods: pods, deleted_pod_uids: deleted_pod_uids, workload_claims: workload_claims,
+                                          authoritative_pods: authoritative_pods, store: store, **)
+                  end
+        secondary = []
+        # The queue uses namespace/name for all three kinds. Preserve the
+        # related Pod and PodGroup work even if a ResourceClaim owns that key.
+        if kind == "ResourceClaim" && (pod = find_for(adapter, POD, Support.name(object), namespace: Support.namespace(object)))
+          secondary << plan_pod(pod, store: store, workload_claims: workload_claims, **)
         end
+        if workload_claims && (group = related_pod_group(object, adapter))
+          secondary << plan_pod_group(group, store: store)
+        end
+        return primary if secondary.empty?
+
+        ReconcileResult.new(operations: primary.operations + secondary.flat_map(&:operations),
+                            events: Array(primary.events) + secondary.flat_map(&:events), status: primary.status, controller: name, key: primary.key)
       end
 
       # enqueuePod: the Pod itself, and -- because a Pod that is done or
@@ -236,15 +239,44 @@ module Rubernetes
         keys.uniq
       end
 
+      def self.claim_queue_keys(claim)
+        namespace = Support.namespace(claim)
+        reference = AdvancedMiscSupport.owner_reference(claim, kind: "PodGroup")
+        owner = Support.ref_value(reference, "name", nil) if reference
+        [Support.name(claim), owner].compact.map { |name| "#{namespace}/#{name}" }
+      end
+
+      def self.group_queue_keys(group, adapter)
+        namespace = Support.namespace(group)
+        keys = pod_queue_keys(group)
+        members = adapter.list(POD, namespace: namespace).select do |pod|
+          WORKLOAD_CLAIMS.member?(pod, group) && !Array(Support.spec(pod)["resourceClaims"]).empty?
+        end
+        keys + members.map { |pod| "#{namespace}/#{Support.name(pod)}" }
+      end
+
+      def self.template_queue_keys(template, adapter)
+        namespace = Support.namespace(template)
+        template_name = Support.name(template)
+        [POD, CLAIM_POD_GROUP].flat_map do |kind|
+          adapter.list(kind, namespace: namespace).filter_map do |object|
+            if Array(Support.spec(object)["resourceClaims"]).any? { |entry| entry["resourceClaimTemplateName"] == template_name }
+              "#{namespace}/#{Support.name(object)}"
+            end
+          end
+        end
+      end
+
       # ---------------------------------------------------------- syncPod
 
-      def plan_pod(pod, store: nil, claims: nil, templates: nil, **_options)
+      def plan_pod(pod, store: nil, claims: nil, templates: nil, workload_claims: false, pod_group: nil, **_options)
         empty = result(pod, operations: [], controller: name, descriptor: POD)
         return empty unless metadata_value(pod, "deletionTimestamp", nil).nil?
         return empty if Array(value_at(Support.spec(pod), "resourceClaims")).empty?
 
         adapter = adapter_for(store)
         namespace = Support.namespace(pod)
+        pod_group ||= pod_group_for(pod, adapter) if workload_claims
         claims ||= adapter ? list_for(adapter, RESOURCE_CLAIM, namespace: namespace) : []
         templates ||= adapter ? list_for(adapter, TEMPLATE, namespace: namespace) : []
         operations = []
@@ -253,7 +285,7 @@ module Rubernetes
         created = []
         Array(value_at(Support.spec(pod), "resourceClaims")).each do |pod_claim|
           begin
-            claim = handle_claim(pod, pod_claim, claims + created, templates)
+            claim = handle_claim(pod, pod_claim, claims + created, templates, pod_group: pod_group)
           rescue ClaimFailure => error
             events << {"type" => "Warning", "reason" => "FailedResourceClaimCreation",
                        "message" => "PodResourceClaim #{pod_claim["name"]}: #{error.message}"}
@@ -263,20 +295,14 @@ module Rubernetes
 
           if claim[:create]
             created << claim[:create]
-            admin_access = self.class.admin_access_label(claim[:create])
-            create = operation_create(claim[:create], descriptor: RESOURCE_CLAIM, reason: "create ResourceClaim from template")
-            create = create&.observed do |succeeded, _|
-              ControllerMetrics.increment("resourceclaim_controller_creates_total",
-                                          {"status" => succeeded ? "success" : "failure", "admin_access" => admin_access})
-            end
-            operations << create if create
+            operations << template_claim_creation(claim[:create])
           end
           new_statuses[pod_claim["name"].to_s] = claim[:name]
         end
         unless new_statuses.empty?
           statuses = new_statuses.map { |pod_claim_name, claim_name| {"name" => pod_claim_name, "resourceClaimName" => claim_name} }
-          operations << operation_status(pod, {"resourceClaimStatuses" => statuses}, descriptor: POD,
-                                                                                     reason: "record ResourceClaims created for the Pod", force: true)
+          status = {"resourceClaimStatuses" => merge_claim_statuses(pod, statuses)}
+          operations << operation_status(pod, status, descriptor: POD, reason: "record ResourceClaims created for the Pod", force: true)
         end
         return result(pod, operations: operations, events: events, controller: name, descriptor: POD) if value_at(Support.spec(pod),
                                                                                                                   "nodeName").to_s.empty?
@@ -293,25 +319,24 @@ module Rubernetes
 
           claim = claims.find { |candidate| Support.name(candidate) == claim_name }
           next if claim.nil?
-          next if check_owner && !owned_by_pod?(claim, pod)
-          next if value_at(Support.status(claim), "allocation").nil? || reserved_for?(claim, pod)
+          next if check_owner && !owned_by_workload?(claim, pod, pod_group)
+          next if value_at(Support.status(claim), "allocation").nil? || WORKLOAD_CLAIMS.reserved_for_pod?(pod, claim, workload_claims: workload_claims)
 
           status = Support.deep_copy(Support.status(claim))
-          status["reservedFor"] =
-            Array(status["reservedFor"]) + [{"resource" => "pods", "name" => Support.name(pod), "uid" => Support.uid(pod)}]
+          status["reservedFor"] = Array(status["reservedFor"]) + [WORKLOAD_CLAIMS.reference_for(pod, pod_claim, pod_group, workload_claims: workload_claims)]
           operations << operation_status(claim, status, descriptor: RESOURCE_CLAIM, reason: "reserve claim for scheduled Pod")
         end
         result(pod, operations: operations, events: events, controller: name, descriptor: POD)
       end
 
-      def plan_template(template, store: nil, **)
+      def plan_template(template, store: nil, workload_claims: false, **)
         adapter = adapter_for(store)
         return result(template, operations: [], controller: name, descriptor: TEMPLATE) unless adapter
 
         pods = list_for(adapter, POD, namespace: Support.namespace(template)).select do |pod|
           Array(value_at(Support.spec(pod), "resourceClaims")).any? { |entry| entry["resourceClaimTemplateName"] == Support.name(template) }
         end
-        operations = pods.flat_map { |pod| plan_pod(pod, store: store, **).operations }
+        operations = pods.flat_map { |pod| plan_pod(pod, store: store, workload_claims: workload_claims, **).operations }
         result(template, operations: operations, controller: name, descriptor: TEMPLATE)
       end
 
@@ -319,7 +344,7 @@ module Rubernetes
 
       # handleClaim: {name:, create:} for a claim the Pod's status must name,
       # nil when there is nothing to record.
-      def handle_claim(pod, pod_claim, claims, templates)
+      def handle_claim(pod, pod_claim, claims, templates, pod_group: nil)
         begin
           claim_name, must_check_owner = claim_name_for(pod, pod_claim)
         rescue ClaimNotCreated
@@ -329,15 +354,17 @@ module Rubernetes
 
         unless claim_name == :not_created
           existing = claims.find { |candidate| Support.name(candidate) == claim_name }
-          return nil if existing && (!must_check_owner || owned_by_pod?(existing, pod))
+          return nil if existing && (!must_check_owner || owned_by_workload?(existing, pod, pod_group))
         end
         template_name = pod_claim["resourceClaimTemplateName"]
         return nil if template_name.nil?
 
+        owner = WORKLOAD_CLAIMS.matching_group_claim(pod_group, pod_claim) ? pod_group : pod
         found = claims.find do |candidate|
-          owned_by_pod?(candidate, pod) && metadata_value(candidate, "annotations", {}).to_h[POD_CLAIM_ANNOTATION] == pod_claim["name"]
+          owned_by_consumer?(candidate, owner) && metadata_value(candidate, "annotations", {}).to_h[POD_CLAIM_ANNOTATION] == pod_claim["name"]
         end
         return {name: Support.name(found), create: nil} if found
+        return nil unless owner.equal?(pod)
 
         template = templates.find { |candidate| Support.name(candidate) == template_name }
         unless template
@@ -353,8 +380,7 @@ module Rubernetes
           "metadata" => {
             "name" => generated_name(Support.name(pod), pod_claim["name"].to_s),
             "namespace" => Support.namespace(pod),
-            "ownerReferences" => [{"apiVersion" => "v1", "kind" => "Pod", "name" => Support.name(pod), "uid" => Support.uid(pod),
-                                   "controller" => true, "blockOwnerDeletion" => true}],
+            "ownerReferences" => [claim_owner_reference(pod)],
             "annotations" => annotations
           },
           "spec" => Support.deep_copy(spec["spec"] || {})
@@ -364,6 +390,20 @@ module Rubernetes
       end
 
       class ClaimNotCreated < StandardError; end
+
+      def claim_owner_reference(consumer)
+        reference = Support.owner_reference(consumer)
+        reference.delete("blockOwnerDeletion") if Support.kind(consumer) == "PodGroup"
+        reference
+      end
+
+      def template_claim_creation(claim)
+        admin_access = self.class.admin_access_label(claim)
+        operation_create(claim, descriptor: RESOURCE_CLAIM, reason: "create ResourceClaim from template").observed do |succeeded, _|
+          ControllerMetrics.increment("resourceclaim_controller_creates_total",
+                                      {"status" => succeeded ? "success" : "failure", "admin_access" => admin_access})
+        end
+      end
 
       # resourceclaim.Name: [name, must check owner]; nil name = not needed.
       def claim_name_for(pod, pod_claim)
@@ -388,76 +428,86 @@ module Rubernetes
         base + Array.new(5) { NAME_ALPHABET[@random.rand(NAME_ALPHABET.length)] }.join
       end
 
-      def owned_by_pod?(claim, pod)
+      def owned_by_consumer?(claim, consumer)
         reference = owner_reference(claim)
-        reference && Support.ref_value(reference, "uid", "").to_s == Support.uid(pod).to_s
+        reference && Support.ref_value(reference, "uid", "").to_s == Support.uid(consumer).to_s
       end
 
-      def reserved_for?(claim, pod)
-        Array(value_at(Support.status(claim), "reservedFor")).any? { |entry| Support.value(entry, "uid", "").to_s == Support.uid(pod).to_s }
+      def owned_by_workload?(claim, pod, pod_group)
+        owned_by_consumer?(claim, pod) || (pod_group && owned_by_consumer?(claim, pod_group))
       end
 
       # -------------------------------------------------------- syncClaim
 
-      def plan_claim(claim, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, store: nil)
+      def plan_claim(claim, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, store: nil,
+                     workload_claims: false, pod_groups: nil, deleted_pod_group_uids: [], **_options)
         adapter = adapter_for(store)
-        pod_snapshot = authoritative_pods.nil? ? pods : authoritative_pods
-        pod_snapshot = list_for(adapter, POD, namespace: Support.namespace(claim)) if pod_snapshot.nil? && adapter
-        deleted_uids = Array(deleted_pod_uids).map(&:to_s)
-        status = Support.deep_copy(Support.status(claim))
-        reserved = Array(Support.value(status, "reservedFor", [])).grep(Hash)
-        remaining = reserved.select { |reference| keep_reserved_reference?(claim, reference, pod_snapshot, deleted_uids) }
+        snapshot = authoritative_pods.nil? ? pods : authoritative_pods
+        lookup_pod = reservation_pod_lookup(Support.namespace(claim), snapshot, adapter)
+        deleted_uids = Array(deleted_pod_uids).to_set(&:to_s)
+        status = Support.status(claim)
+        reserved = Array(Support.value(status, "reservedFor")).grep(Hash)
+        deleted_group_uids = Array(deleted_pod_group_uids).to_set(&:to_s)
+        remaining = reserved.select do |reference|
+          if workload_claims && WORKLOAD_CLAIMS.group_reference?(reference)
+            keep_group_reservation?(claim, reference, pod_groups, deleted_group_uids, adapter)
+          else
+            keep_reserved_reference?(reference, lookup_pod, deleted_uids)
+          end
+        end
 
         operations = []
         events = []
         has_finalizer = Array(metadata_value(claim, "finalizers", [])).map(&:to_s).include?(RESOURCE_CLAIM_FINALIZER)
         deleting = !metadata_value(claim, "deletionTimestamp", nil).nil?
-        next_status = status
-        deallocated = false
-        if remaining.length < reserved.length
-          next_status = Support.deep_copy(status)
-          next_status["reservedFor"] = remaining
-          if remaining.empty? && has_finalizer && next_status["allocation"]
-            next_status.delete("allocation")
-            deallocated = true
-          end
-          operations << operation_status(claim, next_status, descriptor: RESOURCE_CLAIM, reason: "remove stale ResourceClaim reservations")
-          operations << remove_finalizer(claim, next_status) if has_finalizer && next_status["allocation"].nil?
-        elsif has_finalizer && deleting && remaining.empty?
-          if next_status["allocation"]
-            next_status = Support.deep_copy(status)
-            next_status.delete("allocation")
-            deallocated = true
-            operations << operation_status(claim, next_status, descriptor: RESOURCE_CLAIM, reason: "remove allocation because not needed")
-          end
-          operations << remove_finalizer(claim, next_status)
-        end
+        pruned = remaining.length < reserved.length
+        status = status.merge("reservedFor" => remaining) if pruned
+        releasing = has_finalizer && remaining.empty? && (deleting || pruned)
+        deallocated = releasing && status["allocation"]
         if deallocated
+          status = status.except("allocation")
           events << {"type" => "Normal", "reason" => "ResourceClaimAllocated",
                      "message" => "ResourceClaim #{object_name(claim)} allocation released"}
         end
+        if pruned || deallocated
+          reason = pruned ? "remove stale ResourceClaim reservations" : "remove allocation because not needed"
+          operations << operation_status(claim, status, descriptor: RESOURCE_CLAIM, reason: reason)
+        end
+        drop_finalizer = pruned ? status["allocation"].nil? : deleting && remaining.empty?
+        operations << remove_finalizer(claim, status) if has_finalizer && drop_finalizer
 
         # Generated claims are deleted once their Pod was replaced or is done.
-        if remaining.empty? && pod_snapshot
+        if remaining.empty? && lookup_pod
           owner = owner_reference(claim, kind: "Pod")
           if owner && Support.ref_value(owner, "apiVersion", "v1").to_s == "v1"
-            owner_pod = Array(pod_snapshot).find { |pod| Support.name(pod) == Support.ref_value(owner, "name", "").to_s }
+            owner_pod = lookup_pod.call(Support.ref_value(owner, "name", "").to_s)
             if owner_pod && (Support.uid(owner_pod).to_s != Support.ref_value(owner, "uid", nil).to_s || pod_done?(owner_pod))
               operations << operation_delete(claim, descriptor: RESOURCE_CLAIM, reason: "delete unused generated ResourceClaim")
             end
           end
         end
-        result(claim, operations: operations.compact, events: events, status: next_status, controller: name, descriptor: RESOURCE_CLAIM)
+        result(claim, operations: operations.compact, events: events, status: status, controller: name, descriptor: RESOURCE_CLAIM)
       end
 
       private
 
+      # Store-backed reconciles look up only named consumers. An explicitly
+      # supplied snapshot is authoritative, including an empty one.
+      def reservation_pod_lookup(namespace, pods, adapter)
+        if pods
+          by_name = {}
+          Array(pods).each { |pod| by_name[Support.name(pod)] ||= pod if Support.namespace(pod) == namespace }
+          by_name.method(:[])
+        elsif adapter
+          ->(name) { find_for(adapter, POD, name, namespace: namespace) }
+        end
+      end
+
       def remove_finalizer(claim, status)
-        updated = Support.deep_copy(claim)
-        finalizers = Array(Support.value(updated["metadata"], "finalizers", [])).map(&:to_s)
+        metadata = Support.metadata(claim)
+        finalizers = Array(Support.value(metadata, "finalizers")).map(&:to_s)
         finalizers.delete_at(finalizers.index(RESOURCE_CLAIM_FINALIZER))
-        updated["metadata"]["finalizers"] = finalizers
-        updated["status"] = Support.deep_copy(status)
+        updated = claim.merge("metadata" => metadata.merge("finalizers" => finalizers), "status" => status)
         operation_update(claim, updated, descriptor: RESOURCE_CLAIM, reason: "remove ResourceClaim delete-protection finalizer")
       end
 
@@ -465,20 +515,15 @@ module Rubernetes
         api_group(reference).to_s.empty? && Support.value(reference, "resource", "").to_s.downcase == "pods"
       end
 
-      def keep_reserved_reference?(claim, reference, pods, deleted_uids)
+      def keep_reserved_reference?(reference, lookup_pod, deleted_uids)
         return true unless pod_reference?(reference)
 
         uid = Support.value(reference, "uid", nil).to_s
         return false if !uid.empty? && deleted_uids.include?(uid)
-        return true unless pods
+        return true unless lookup_pod
 
-        pod = Array(pods).find do |candidate|
-          Support.namespace(candidate) == Support.namespace(claim) && Support.name(candidate) == Support.value(reference, "name", "").to_s
-        end
-        return false unless pod
-        return false unless Support.uid(pod).to_s == uid
-
-        !pod_done?(pod)
+        pod = lookup_pod.call(Support.value(reference, "name", "").to_s)
+        pod && Support.uid(pod).to_s == uid && !pod_done?(pod)
       end
 
       # isPodDone.
@@ -488,178 +533,7 @@ module Rubernetes
       end
     end
 
-    # Computes ResourcePoolStatusRequest synchronously from ResourceSlices and
-    # current ResourceClaim allocations.  Incomplete pools are retried rather
-    # than finalized, matching the v1.36.2 controller's bounded queue policy.
-    class ResourcePoolStatusRequestController < BaseController
-      include AdvancedMiscSupport
-      include SecondarySupport
-
-      COMPLETED_TTL = 3_600
-      PENDING_TTL = 86_400
-      MAX_RETRIES = 5
-      DEFAULT_LIMIT = 100
-
-      def plan(request, resource_slices: nil, resource_claims: nil, now: nil, limit: nil, store: nil, **_options)
-        return result(request, operations: [], controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST) unless request.is_a?(Hash)
-        return result(request, operations: [], controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST) unless Support.value(request,
-                                                                                                                                "status", nil).nil?
-
-        adapter = adapter_for(store)
-        resource_slices = list_for(adapter, RESOURCE_SLICE, namespace: :all) if resource_slices.nil? && adapter
-        resource_claims = list_for(adapter, RESOURCE_CLAIM, namespace: :all) if resource_claims.nil? && adapter
-        resource_slices ||= []
-        resource_claims ||= []
-        timestamp = normalize_time(now || Time.now.utc)
-        desired_status = calculate_status(request, resource_slices: resource_slices, resource_claims: resource_claims,
-                                                   now: timestamp, limit: limit)
-        incomplete = Array(Support.value(desired_status, "pools", [])).any? do |pool|
-          !Support.value(pool, "validationError", nil).to_s.empty?
-        end
-        if incomplete
-          events = [{"type" => "Warning", "reason" => "ResourcePoolStatusIncomplete",
-                     "message" => "one or more resource pools are incomplete; retrying",
-                     "retryable" => true, "maxRetries" => MAX_RETRIES}]
-          return result(request, operations: [], events: events, status: desired_status,
-                                 controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
-        end
-
-        operation = operation_status(request, desired_status, descriptor: RESOURCE_POOL_STATUS_REQUEST,
-                                                              reason: "calculate ResourcePoolStatusRequest status")
-        events = [{"type" => "Normal", "reason" => "ResourcePoolStatusUpdated",
-                   "message" => "calculated ResourcePoolStatusRequest status"}]
-        result(request, operations: [operation].compact, events: events, status: desired_status,
-                        controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
-      end
-
-      # The upstream controller's periodic cleanup is exposed as a pure
-      # planner for callers that own the request list.  Every delete carries
-      # the original UID in the immutable object for StoreAdapter fencing.
-      def cleanup_expired(requests, now:, completed_ttl: COMPLETED_TTL, pending_ttl: PENDING_TTL)
-        timestamp = normalize_time(now)
-        Array(requests).filter_map do |request|
-          status = Support.value(request, "status", nil)
-          reference_time = if status
-                             completed_condition = Array(Support.value(status, "conditions", [])).find do |condition|
-                               %w[Complete Failed MigrationSucceeded MigrationFailed].include?(Support.value(condition, "type", "").to_s)
-                             end
-                             Support.parse_time(Support.value(completed_condition || {}, "lastTransitionTime",
-                                                              nil)) || Support.creation_time(request)
-                           else
-                             Support.creation_time(request)
-                           end
-          age = timestamp.to_f - reference_time.to_f
-          next if age <= 0
-
-          ttl = status.nil? ? pending_ttl.to_f : completed_ttl.to_f
-          next unless age > ttl
-
-          operation_delete(request, descriptor: RESOURCE_POOL_STATUS_REQUEST,
-                                    reason: "delete expired ResourcePoolStatusRequest")
-        end
-      end
-
-      private
-
-      def calculate_status(request, resource_slices:, resource_claims:, now:, limit: nil)
-        driver = value_at(Support.spec(request), "driver").to_s
-        pool_filter = value_at(Support.spec(request), "poolName", "pool_name").to_s
-        slices = Array(resource_slices).select do |slice|
-          spec = Support.spec(slice)
-          next false unless value_at(spec, "driver").to_s == driver
-
-          pool_name = pool_name_for(slice)
-          pool_filter.empty? || pool_name == pool_filter
-        end
-        max_generations = slices.each_with_object({}) do |slice, result_hash|
-          key = [value_at(Support.spec(slice), "driver").to_s, pool_name_for(slice)]
-          generation = generation_for(slice)
-          result_hash[key] = [result_hash[key] || generation, generation].max
-        end
-        pools = {}
-        slices.each do |slice|
-          key = [value_at(Support.spec(slice), "driver").to_s, pool_name_for(slice)]
-          next unless generation_for(slice) == max_generations[key]
-
-          spec = Support.spec(slice)
-          pool = (pools[key] ||= {
-            "driver" => key[0], "poolName" => key[1], "generation" => max_generations[key],
-            "nodeName" => nil, "_nodes" => [], "totalDevices" => 0, "resourceSliceCount" => 0,
-            "expectedSliceCount" => expected_slice_count(slice)
-          })
-          pool["totalDevices"] += Array(value_at(spec, "devices")).length
-          pool["resourceSliceCount"] += 1
-          pool["_nodes"] << value_at(spec, "nodeName").to_s
-        end
-
-        allocations = allocation_counts(resource_claims)
-        statuses = pools.values.map do |pool|
-          nodes = pool.delete("_nodes").uniq
-          pool["nodeName"] = nodes.first if nodes.length == 1 && !nodes.first.to_s.empty?
-          pool.delete("nodeName") if pool["nodeName"].nil?
-          expected = pool.delete("expectedSliceCount")
-          if expected > pool["resourceSliceCount"]
-            message = "pool #{pool["driver"]}/#{pool["poolName"]} is incomplete: observed #{pool["resourceSliceCount"]}/#{expected} slices at generation " \
-                      "#{pool["generation"]}"
-            pool.delete("resourceSliceCount")
-            pool.delete("totalDevices")
-            pool["validationError"] = message.byteslice(0, 256)
-          else
-            allocated = allocations[[pool["driver"], pool["poolName"]]] || 0
-            pool["allocatedDevices"] = allocated
-            pool["unavailableDevices"] = 0
-            pool["availableDevices"] = [pool["totalDevices"] - allocated, 0].max
-          end
-          pool
-        end.sort_by { |pool| [pool["driver"].to_s, pool["poolName"].to_s] }
-
-        effective_limit = limit.nil? ? value_at(Support.spec(request), "limit") : limit
-        effective_limit = Support.integer(effective_limit, DEFAULT_LIMIT)
-        effective_limit = DEFAULT_LIMIT if effective_limit.negative?
-        returned = statuses.first(effective_limit)
-        incomplete_count = returned.count { |pool| Support.value(pool, "validationError", nil) }
-        message = "Calculated status for #{returned.length} pools"
-        message = "#{message} (#{incomplete_count} incomplete)" if incomplete_count.positive?
-        {
-          "poolCount" => statuses.length,
-          "pools" => returned,
-          "conditions" => [{"type" => "Complete", "status" => "True", "lastTransitionTime" => now.utc.iso8601(9),
-                            "reason" => "CalculationComplete", "message" => message}]
-        }
-      end
-
-      def pool_name_for(slice)
-        spec = Support.spec(slice)
-        pool = value_at(spec, "pool")
-        return value_at(pool, "name", "poolName").to_s if pool.is_a?(Hash)
-
-        value_at(spec, "poolName", "pool_name").to_s
-      end
-
-      def generation_for(slice)
-        pool = value_at(Support.spec(slice), "pool")
-        value = pool.is_a?(Hash) ? value_at(pool, "generation") : nil
-        Support.integer(value, Support.integer(value_at(Support.spec(slice), "generation"), 0))
-      end
-
-      def expected_slice_count(slice)
-        pool = value_at(Support.spec(slice), "pool")
-        value = pool.is_a?(Hash) ? value_at(pool, "resourceSliceCount", "resource_slice_count") : nil
-        Support.integer(value, Support.integer(value_at(Support.spec(slice), "resourceSliceCount"), 1))
-      end
-
-      def allocation_counts(claims)
-        Array(claims).each_with_object(Hash.new(0)) do |claim, counts|
-          allocation = value_at(Support.status(claim), "allocation")
-          results = allocation.is_a?(Hash) ? value_at(value_at(allocation, "devices") || {}, "results") : nil
-          Array(results).each do |entry|
-            driver = value_at(entry, "driver").to_s
-            pool = value_at(entry, "pool").to_s
-            counts[[driver, pool]] += 1 unless driver.empty? || pool.empty?
-          end
-        end
-      end
-    end
+    require_relative "resource_pool_status_request_controller"
 
     # Deletes only auto-generated, demonstrably unused legacy service-account
     # token Secrets.  The first pass marks a token invalid; a later pass may
@@ -905,15 +779,31 @@ module Rubernetes
 
       DELETION_GRACE_PERIOD = 10
 
+      def self.queue_keys(object, adapter)
+        # A new covering range can unblock a different range's deletion
+        # without changing any IPAddress or the deleting ServiceCIDR itself.
+        if object["kind"] == "IPAddress"
+          keys = []
+          address = IPAddr.new(Support.name(object))
+          matches = ->(cidr) { Rubernetes::Support::ServiceCIDR.usable_address?(cidr, address) }
+        else
+          keys = [Support.name(object)]
+          changed = Array(Support.spec(object)["cidrs"]).map { |prefix| IPAddr.new(prefix) }
+          matches = ->(cidr) { changed.any? { |prefix| prefix.include?(cidr) || cidr.include?(prefix) } }
+        end
+        adapter.list(SERVICE_CIDR, namespace: :all).each do |pool|
+          next unless Support.metadata(pool)["deletionTimestamp"]
+          next unless Array(Support.spec(pool)["cidrs"]).any? { |prefix| matches.call(IPAddr.new(prefix)) }
+
+          keys << Support.name(pool)
+        end
+        keys.uniq
+      end
+
       def plan(service_cidr, service_cidrs: nil, ip_addresses: nil, now: nil,
                deletion_grace_period: DELETION_GRACE_PERIOD, store: nil, **_options)
         return result(service_cidr, operations: [], controller: name, descriptor: SERVICE_CIDR) unless service_cidr.is_a?(Hash)
 
-        adapter = adapter_for(store)
-        service_cidrs = list_for(adapter, SERVICE_CIDR, namespace: :all) if service_cidrs.nil? && adapter
-        ip_addresses = list_for(adapter, IP_ADDRESS, namespace: :all) if ip_addresses.nil? && adapter
-        service_cidrs ||= []
-        ip_addresses ||= []
         timestamp = normalize_time(now || Time.now.utc)
         finalizers = Array(metadata_value(service_cidr, "finalizers", [])).map(&:to_s)
         deleting = !metadata_value(service_cidr, "deletionTimestamp", nil).nil?
@@ -921,6 +811,9 @@ module Rubernetes
         events = []
 
         if deleting
+          adapter = adapter_for(store)
+          service_cidrs ||= list_for(adapter, SERVICE_CIDR)
+          ip_addresses ||= list_for(adapter, IP_ADDRESS)
           can_delete = can_delete?(service_cidr, service_cidrs, ip_addresses)
           unless can_delete
             desired_status = status_with_condition(service_cidr, "False", "Terminating",
@@ -938,7 +831,8 @@ module Rubernetes
           if deletion_time && timestamp < deletion_time + deletion_grace_period.to_f
             events << {"type" => "Normal", "reason" => "ServiceCIDRUpdated",
                        "message" => "waiting for ServiceCIDR deletion grace period", "retryable" => true}
-            return result(service_cidr, operations: [], events: events, controller: name, descriptor: SERVICE_CIDR)
+            return result(service_cidr, operations: [], events: events, controller: name, descriptor: SERVICE_CIDR,
+                                        requeue_after: deletion_time + deletion_grace_period.to_f - timestamp)
           end
 
           if finalizers.include?(SERVICE_CIDR_FINALIZER)
@@ -1024,7 +918,7 @@ module Rubernetes
 
       def containing_cidrs(address, service_cidrs)
         Array(service_cidrs).select do |candidate|
-          cidr_strings(candidate).any? { |cidr| IPAddr.new(cidr).include?(address) }
+          cidr_strings(candidate).any? { |cidr| Rubernetes::Support::ServiceCIDR.usable_address?(IPAddr.new(cidr), address) }
         rescue ArgumentError
           false
         end
@@ -1032,9 +926,7 @@ module Rubernetes
 
       def can_delete?(service_cidr, service_cidrs, ip_addresses)
         candidates = Array(service_cidrs)
-        candidates += [service_cidr] unless candidates.any? do |candidate|
-          Support.uid(candidate) == Support.uid(service_cidr) || Support.name(candidate) == Support.name(service_cidr)
-        end
+        candidates += [service_cidr] if candidates.none? { |candidate| Support.name(candidate) == Support.name(service_cidr) }
         own_cidrs = cidr_strings(service_cidr)
         has_parent = own_cidrs.all? do |own_cidr|
           candidates.any? do |candidate|
@@ -1045,35 +937,26 @@ module Rubernetes
         end
         return true if has_parent
 
-        own_cidrs.none? do |own_cidr|
-          begin
-            network = IPAddr.new(own_cidr)
-          rescue ArgumentError
-            next false
-          end
-          Array(ip_addresses).any? do |ip_address|
-            managed_by = value_at(Support.metadata(ip_address), "labels")
-            managed_by = value_at(managed_by, "ipaddress.kubernetes.io/managed-by") if managed_by.is_a?(Hash)
-            next false if managed_by && !managed_by.to_s.empty? && managed_by.to_s != "ipallocator.k8s.io"
+        Array(ip_addresses).none? do |ip_address|
+          address = IPAddr.new(Support.name(ip_address))
+          next false unless allocated_address?(ip_address, address)
 
-            begin
-              parent_ref = value_at(Support.spec(ip_address), "parentRef", "parent_ref")
-              if parent_ref.is_a?(Hash)
-                parent_resource = value_at(parent_ref, "resource").to_s
-                parent_name = value_at(parent_ref, "name").to_s
-                next false unless parent_resource.empty? || parent_resource == "servicecidrs"
-                next false unless parent_name.empty? || parent_name == Support.name(service_cidr)
-              end
-              address = IPAddr.new(Support.name(ip_address))
-              next false unless network.include?(address)
-
-              containing = containing_cidrs(address, candidates)
-              containing.length == 1 && Support.name(containing.first) == Support.name(service_cidr)
-            rescue ArgumentError
-              false
-            end
-          end
+          containing = containing_cidrs(address, candidates)
+          containing.one? && Support.name(containing.first) == Support.name(service_cidr)
+        rescue IPAddr::Error
+          false
         end
+      end
+
+      def allocated_address?(object, address)
+        labels = Support.labels(object)
+        manager = labels[Rubernetes::Support::ServiceCIDR::MANAGED_BY_LABEL]
+        family = labels[Rubernetes::Support::ServiceCIDR::FAMILY_LABEL]
+        # Older Rubernetes allocations carried only the old manager label.
+        # Protect their owning Service until allocator repair updates the labels.
+        return object.dig("spec", "parentRef", "resource") == "services" && family.nil? if manager == Rubernetes::Support::ServiceCIDR::LEGACY_MANAGER
+
+        manager == Rubernetes::Support::ServiceCIDR::MANAGER && family == (address.ipv4? ? "IPv4" : "IPv6")
       end
     end
 
@@ -1458,18 +1341,9 @@ module Rubernetes
     # The parent controller entrypoint can register these definitions in one
     # atomic operation once all parallel implementation batches are loaded.
     module AdvancedMiscControllerFactory
-      VERSION = "v1.36.2"
-      NAMES = %w[
-        resourceclaim-controller
-        resourcepoolstatusrequest-controller
-        legacy-serviceaccount-token-cleaner-controller
-        validatingadmissionpolicy-status-controller
-        service-cidr-controller
-        storage-version-migrator-controller
-        selinux-warning-controller
-      ].freeze
-      CONTROLLER_NAMES = NAMES
+      include BuiltinFactory
 
+      VERSION = "v1.36.2"
       IMPLEMENTATIONS = {
         "resourceclaim-controller" => ResourceClaimController,
         "resourcepoolstatusrequest-controller" => ResourcePoolStatusRequestController,
@@ -1479,6 +1353,8 @@ module Rubernetes
         "storage-version-migrator-controller" => StorageVersionMigratorController,
         "selinux-warning-controller" => SELinuxWarningController
       }.freeze
+      NAMES = IMPLEMENTATIONS.keys.freeze
+      CONTROLLER_NAMES = NAMES
 
       WATCHES = {
         "resourceclaim-controller" => [
@@ -1494,26 +1370,20 @@ module Rubernetes
           ["ValidatingAdmissionPolicy", :all], ["ValidatingAdmissionPolicyBinding", :all]
         ],
         "service-cidr-controller" => [
-          ["ServiceCIDR", :all], ["IPAddress", :all], ["Node", :all]
+          ["ServiceCIDR", :all], ["IPAddress", :all]
         ],
         "storage-version-migrator-controller" => [["StorageVersionMigration", :all]],
         "selinux-warning-controller" => [["Pod", :all], ["Node", :all]]
       }.freeze
 
-      METADATA = NAMES.each_with_object({}) do |controller_name, metadata|
-        entry = BuiltinControllerCorpus.fetch(controller_name)
-        metadata[controller_name] = {
-          kind: entry.kind, feature_gates: entry.feature_gates,
-          startup_conditions: entry.startup_conditions, sync_targets: entry.sync_targets,
-          status_fields: entry.status_fields, events: entry.events
-        }.freeze
-      end.freeze
+      METADATA = NAMES.to_h { |name| [name, BuiltinControllerCorpus.fetch(name).metadata] }.freeze
+
+      module_function :entries, :register!, :usable_descriptor
+      alias register register!
 
       module_function
 
-      def names
-        NAMES
-      end
+      def names = CONTROLLER_NAMES
 
       def metadata(name = nil)
         return entries.map(&:to_h).freeze if name.nil?
@@ -1525,96 +1395,58 @@ module Rubernetes
         IMPLEMENTATIONS.fetch(name.to_s)
       end
 
-      def entries
-        NAMES.map do |controller_name|
-          BuiltinControllerCorpus.fetch(controller_name) || raise(ValidationError, "missing pinned corpus entry #{controller_name.inspect}")
-        end
-      end
-
-      def definitions(registry: nil)
-        NAMES.map { |controller_name| definition(controller_name, registry: registry) }.freeze
+      def definitions(registry: nil, feature_gates: {})
+        NAMES.map { |controller_name| definition(controller_name, registry: registry, feature_gates: feature_gates) }.freeze
       end
 
       alias build_definitions definitions
 
-      def definition(controller_name, registry: nil)
+      def definition(controller_name, registry: nil, feature_gates: {})
         controller_name = controller_name.to_s
-        metadata = METADATA.fetch(controller_name)
         implementation = IMPLEMENTATIONS.fetch(controller_name)
-        kind_descriptor = usable_descriptor(descriptor_for(metadata.fetch(:kind)), registry)
-        definition = nil
-        mutex = Mutex.new
-        instance = nil
-        reconcile = lambda do |resource, context = nil|
-          context = {} unless context.is_a?(Hash)
-          controller = context[:controller] || context["controller"]
-          controller ||= mutex.synchronize do
-            instance ||= implementation.new(store: context[:store] || context["store"], definition: definition)
-          end
-          options = context[:options] || context["options"] || {}
-          options = options.dup if options.is_a?(Hash)
-          options[:store] = context[:store] || context["store"] if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
-          controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
-        end
-        ControllerDefinition.new(
-          name: controller_name, kind: kind_descriptor, owns: [],
-          watches: watch_specs(controller_name, registry: registry), reconcile_block: reconcile,
-          feature_gates: metadata.fetch(:feature_gates), startup_conditions: metadata.fetch(:startup_conditions),
-          sync_targets: metadata.fetch(:sync_targets), status_fields: metadata.fetch(:status_fields),
-          events: metadata.fetch(:events), implementation: implementation
-        )
-      end
-
-      def register!(registry)
-        definitions(registry: registry).each { |definition| registry.register(definition) }
-        registry
-      end
-
-      alias register register!
-
-      def descriptor_for(kind)
-        case kind.to_s
-        when "ResourcePoolStatusRequest"
-          AdvancedMiscSupport::RESOURCE_POOL_STATUS_REQUEST
-        when "ValidatingAdmissionPolicyBinding"
-          AdvancedMiscSupport::VAP_BINDING
-        when "IPAddress"
-          AdvancedMiscSupport::IP_ADDRESS
-        when "StorageVersionMigration"
-          AdvancedMiscSupport::STORAGE_VERSION_MIGRATION
-        else
-          ResourceDescriptor.parse(kind)
+        entry = BuiltinControllerCorpus.fetch(controller_name)
+        kind = usable_descriptor(descriptor_for(entry.kind), registry)
+        watches = watch_specs(controller_name, registry: registry, feature_gates: feature_gates)
+        entry.build_controller(implementation, kind: kind, watches: watches) do |definition, store|
+          implementation.new(store: store, definition: definition)
         end
       end
+
+      def descriptor_for(kind) = ResourceDescriptor.parse(kind)
 
       # Watches whose event is reconciled as the observed object itself
       # (WatchSpec route: :self): a Pod needs claims created for it, a
       # ResourceClaimTemplate names the Pods waiting for it.
       SELF_ROUTED_WATCHES = {"resourceclaim-controller" => %w[Pod ResourceClaimTemplate]}.freeze
 
-      def watch_specs(controller_name, registry: nil)
-        WATCHES.fetch(controller_name).each_with_index.map do |(kind, relationship), index|
+      def watch_specs(controller_name, registry: nil, feature_gates: {})
+        watches = WATCHES.fetch(controller_name)
+        use_workload_claims = controller_name == "resourceclaim-controller" && feature_gates[DRA::WorkloadClaims::GATE] == true
+        watches += [["PodGroup", :all]] if use_workload_claims
+        watches.each_with_index.map do |(kind, relationship), index|
           descriptor = usable_descriptor(descriptor_for(kind), registry)
           route = SELF_ROUTED_WATCHES.fetch(controller_name, []).include?(kind) ? :self : :fan_out
-          queue_key = if controller_name == "resourceclaim-controller" && kind == "Pod"
-                        ->(object) { ResourceClaimController.pod_queue_keys(object) }
+          route = :self if use_workload_claims && kind == "PodGroup"
+          queue_key = if controller_name == "service-cidr-controller"
+                        route = :mapped
+                        ServiceCIDRController.method(:queue_keys)
+                      elsif use_workload_claims && kind == "PodGroup"
+                        ResourceClaimController.method(:group_queue_keys)
+                      elsif use_workload_claims && kind == "ResourceClaim"
+                        ResourceClaimController.method(:claim_queue_keys)
+                      elsif use_workload_claims && kind == "ResourceClaimTemplate"
+                        ResourceClaimController.method(:template_queue_keys)
+                      elsif controller_name == "resourceclaim-controller" && kind == "Pod"
+                        ResourceClaimController.method(:pod_queue_keys)
                       else
                         ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") }
                       end
+          cache_only = controller_name == "resourcepoolstatusrequest-controller" && kind != "ResourcePoolStatusRequest"
           WatchSpec.new(resource: descriptor, via: relationship,
                         index_name: "advanced/#{controller_name}/#{index}",
-                        predicate: ->(_object) { true },
+                        predicate: ->(_object) { !cache_only },
                         queue_key: queue_key, scope: descriptor.scope, route: route)
         end.freeze
-      end
-
-      def usable_descriptor(descriptor, registry)
-        return descriptor unless registry
-
-        registry.validate_descriptor!(descriptor)
-        descriptor
-      rescue UnknownGVKError
-        ResourceDescriptor.parse(descriptor.kind)
       end
     end
 
