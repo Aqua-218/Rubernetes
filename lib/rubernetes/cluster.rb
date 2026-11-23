@@ -14,6 +14,8 @@ require_relative "client"
 require_relative "consensus/identity"
 require_relative "controller/registry"
 require_relative "network/host_forward"
+require_relative "network/load_balancer_pool"
+require_relative "network/nat64_prefix"
 
 module Rubernetes
   # A whole cluster on one host: every component a real `exe/rubernetes-*`
@@ -27,6 +29,7 @@ module Rubernetes
     ADMIN_USER = "rubernetes-admin"
     BOOTSTRAP_GROUP = "system:bootstrappers:kubeadm:default-node-token"
     COREDNS_USER = "system:coredns"
+    NETWORK_POLICY_READER = "rubernetes:network-policy-reader"
     KUBELET_CLIENT_USER = "kube-apiserver-kubelet-client"
     # Service CIDRs per family (kube-apiserver --service-cluster-ip-range);
     # the primary family is the cluster's first.
@@ -79,7 +82,9 @@ end
 require_relative "cluster/processes"
 require_relative "cluster/pki"
 require_relative "cluster/host"
+require_relative "cluster/worker_networks"
 require_relative "cluster/configs"
+require_relative "cluster/dns_addon"
 require_relative "cluster/readiness"
 require_relative "cluster/shrink"
 require_relative "cluster/provisioner"
