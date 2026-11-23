@@ -34,6 +34,7 @@ module Rubernetes
     class NativeMountAdapter
       LinuxMount = Rubernetes::Platform::Linux::Mount
       LinuxStatfs = Rubernetes::Platform::Linux::Statfs
+      require_relative "native_mount_adapter/filesystem_uuid"
 
       MS_RDONLY = LinuxMount::MS_RDONLY
       MS_NOSUID = LinuxMount::MS_NOSUID
@@ -193,7 +194,7 @@ module Rubernetes
       # Mount a filesystem or create a directory bind mount.  The return value
       # is the post-effect mountinfo identity, never the raw syscall result.
       def mount(source:, target:, filesystem: nil, readonly: false, options: {}, volume_id: nil, stage: false,
-                source_handle: nil, target_handle: nil, flags: nil, data: nil, resource_id: nil, **_kwargs)
+                source_handle: nil, target_handle: nil, flags: nil, data: nil, resource_id: nil, require_filesystem_uuid: false, **_kwargs)
         normalized_target = normalize_target(target)
         kernel_source = source_for_mount(source, source_handle)
         requested_source = requested_source_identity(source, source_handle)
@@ -229,7 +230,7 @@ module Rubernetes
               mounted = true
             else
               syscall_result = @mount.mount(source: kernel_source, target: kernel_target, filesystem: kernel_filesystem,
-                                            flags: effective_flags | (effective_readonly && !bind ? MS_RDONLY : 0),
+                                            flags: (effective_flags & ~MS_PRIVATE) | (effective_readonly && !bind ? MS_RDONLY : 0),
                                             data: option_data, resource_id: resource_id)
               mounted = true
               ensure_syscall_success!(syscall_result, "mount(2)", resource_id)
@@ -241,24 +242,23 @@ module Rubernetes
             # operation and clean up through the held descriptor.
             verify_target_handle!(target_handle, mounted: true)
 
-            if mount_api == "mount" && bind && effective_readonly
-              # mount(2) ignores MS_RDONLY on the initial bind; a remount is
-              # the only way to make it read-only through this API.
-              remount_flags = MS_BIND | MS_REMOUNT | MS_RDONLY
-              remount_flags |= effective_flags & (MS_NOSUID | MS_NODEV | MS_NOEXEC)
-              remount_result = @mount.mount(source: nil, target: kernel_target, filesystem: nil, flags: remount_flags,
-                                            data: nil, resource_id: "#{resource_id}:readonly")
-              ensure_syscall_success!(remount_result, "mount(2) read-only remount", "#{resource_id}:readonly")
+            if mount_api == "mount"
+              apply_legacy_attributes(normalized_target, target_handle, effective_flags, resource_id, readonly: bind && effective_readonly)
             end
 
             observed = readback_mount!(normalized_target, requested_filesystem: requested_filesystem,
                                                           bind: bind, readonly: effective_readonly, resource_id: resource_id)
             verify_target_handle!(target_handle, mounted: true,
                                                  mount_identity: descriptor_mount_binding? ? observed : nil)
-            decorate_mount(observed, requested_source: requested_source, dispatch_source: kernel_source,
-                                     requested_filesystem: requested_filesystem, requested_options: options,
-                                     volume_id: volume_id, stage: stage, readonly: effective_readonly, bind: bind,
-                                     mount_api: mount_api)
+            result = decorate_mount(observed, requested_source: requested_source, dispatch_source: kernel_source,
+                                              requested_filesystem: requested_filesystem, requested_options: options,
+                                              volume_id: volume_id, stage: stage, readonly: effective_readonly, bind: bind,
+                                              mount_api: mount_api)
+            if require_filesystem_uuid && !result["filesystemUuidAvailable"]
+              raise MountIdentityError, "block mount at #{normalized_target.inspect} lacks a filesystem UUID"
+            end
+
+            result
           rescue StandardError => error
             if mounted
               begin
@@ -290,10 +290,9 @@ module Rubernetes
               volume_id: volume_id, source_handle: source_handle, target_handle: target_handle, **)
       end
 
-      # Unmount target with umount2(2) and verify that target disappeared from
-      # the same mount namespace before reporting success.
+      # Confirm that the unmounted target disappeared from this mount namespace.
       def unmount(target:, mount_id: nil, identity: nil, flags: 0, volume_id: nil, resource_id: nil,
-                  target_handle: nil, **_kwargs)
+                  target_handle: nil, isolate_propagation: false, **_kwargs)
         normalized_target = normalize_target(target)
         resource_id ||= resource_id_for("unmount", normalized_target, volume_id)
         expected = identity.respond_to?(:to_h) ? identity.to_h.transform_keys(&:to_s) : identity
@@ -302,7 +301,7 @@ module Rubernetes
           observed = mount_entry_at(normalized_target)
           raise MountIdentityError, "mount target #{normalized_target.inspect} is not present in mountinfo" unless observed
 
-          verify_identity!(observed, expected) if expected
+          verify_identity!(observed, expected, leased: target_handle.is_a?(PathSecurity::TargetLease)) if expected
           if mount_id && observed.fetch("mountId").to_s != mount_id.to_s
             raise MountIdentityError,
                   "mount id changed at #{normalized_target}: expected #{mount_id}, observed #{observed.fetch("mountId")}"
@@ -312,6 +311,7 @@ module Rubernetes
           # pathname-only umount would let a rename/replacement redirect the
           # cleanup to another mount between the readback and umount2(2).
           verify_target_handle!(target_handle, mounted: true, mount_identity: observed) if target_handle
+          @mount.make_private(target: target_for_mount(normalized_target, target_handle), resource_id: resource_id) if isolate_propagation
           kernel_target, kernel_flags = unmount_dispatch(normalized_target, target_handle, observed, Integer(flags))
           syscall_result = unmount_syscall(kernel_target, kernel_flags, resource_id)
           unless [true, 0].include?(syscall_result)
@@ -448,24 +448,23 @@ module Rubernetes
         self.class.parse_mountinfo(read_mountinfo_contents)
       end
 
-      # The first entry mounted at +target+ -- what read_mounts.find would
-      # return -- without parsing the whole table.  Every mount, bind and
-      # unmount reads its target back, and a node with a few hundred volume
-      # mounts spent most of MountVolume.SetUp decoding every mountinfo line
-      # into a record to look at one of them.
+      # Use the kernel mount ID to exclude hidden propagation peers at the same path.
       def mount_entry_at(target)
-        line_number = 0
-        needle = " #{mountinfo_encode(target)} "
-        read_mountinfo_contents.each_line do |line|
-          line_number += 1
+        encoded_target = mountinfo_encode(target)
+        needle = " #{encoded_target} "
+        visible_mount_id = nil
+        read_mountinfo_contents.each_line.with_index(1) do |line, line_number|
           next unless line.include?(needle)
 
           fields = line.split(" ", 6)
-          next if fields.length < 6
+          next unless fields.length == 6 && fields[4] == encoded_target
 
-          mountpoint = fields[4]
-          mountpoint = self.class.decode_mountinfo_field(mountpoint) if mountpoint.include?("\\")
-          return self.class.parse_mountinfo_line(line, line_number) if mountpoint == target
+          if !@mountinfo_reader && @mountinfo_path == "/proc/self/mountinfo"
+            visible_mount_id ||= descriptor_mount_id(target)
+            return nil unless visible_mount_id
+            next unless fields[0] == visible_mount_id
+          end
+          return self.class.parse_mountinfo_line(line, line_number)
         end
         nil
       end
@@ -487,14 +486,13 @@ module Rubernetes
       end
 
       def descriptor_mount_id(path)
-        File.open(path, File::RDONLY | File::NONBLOCK | File::NOFOLLOW) do |io|
+        File.open(path, O_PATH | O_CLOEXEC | O_NOFOLLOW) do |io|
           File.read("/proc/self/fdinfo/#{io.fileno}")[/^mnt_id:\s*(\d+)/, 1]
         end
       rescue SystemCallError, IOError
         nil
       end
 
-      # mountinfo escapes space, tab, newline and backslash as \\ooo.
       TARGET_LOCK_STRIPES = 64
 
       def target_lock(target)
@@ -644,6 +642,8 @@ module Rubernetes
         return [target_for_mount(normalized_target, target_handle), flags] unless target_handle.respond_to?(:release_leaf_for_unmount!)
 
         dispatch_path = String(target_handle.release_leaf_for_unmount!)
+        return [dispatch_path, flags | UMOUNT_NOFOLLOW] if target_handle.is_a?(PathSecurity::StaleTargetLease)
+
         stat = File.lstat(dispatch_path)
         raise PathSecurityError, "unmount target #{normalized_target.inspect} became a symlink" if stat.symlink?
 
@@ -716,7 +716,7 @@ module Rubernetes
           end
           @mount.bind_tree(source_fd: source_fd, target_fd: target_fd, readonly: readonly,
                            nosuid: flags.anybits?(MS_NOSUID), nodev: flags.anybits?(MS_NODEV),
-                           noexec: flags.anybits?(MS_NOEXEC), recursive: flags.anybits?(MS_REC),
+                           noexec: flags.anybits?(MS_NOEXEC), recursive: flags.anybits?(MS_REC), propagation: flags & MS_PRIVATE,
                            resource_id: resource_id)
         rescue SystemCallError => error
           raise MountIdentityError, "bind source/target descriptor could not be opened for #{resource_id}: #{error.message}",
@@ -760,6 +760,22 @@ module Rubernetes
 
       def bind_mount?(filesystem, option_flags, requested_flags)
         filesystem.to_s.casecmp?("bind") || (option_flags | requested_flags).anybits?(MS_BIND)
+      end
+
+      def apply_legacy_attributes(target, lease, flags, resource_id, readonly:)
+        return unless readonly || flags.anybits?(MS_PRIVATE)
+
+        target = "/proc/self/fd/#{lease.parent_descriptor}/#{File.basename(target)}" if lease.is_a?(PathSecurity::TargetLease)
+        @mount.make_private(target: target, recursive: flags.anybits?(MS_REC), resource_id: "#{resource_id}:private") if flags.anybits?(MS_PRIVATE)
+        remount_bind_readonly(target, flags, resource_id) if readonly
+      end
+
+      def remount_bind_readonly(target, flags, resource_id)
+        # Legacy mount(2) ignores MS_RDONLY on the initial bind.
+        remount_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | (flags & (MS_NOSUID | MS_NODEV | MS_NOEXEC))
+        remount_id = "#{resource_id}:readonly"
+        result = @mount.mount(source: nil, target: target, filesystem: nil, flags: remount_flags, data: nil, resource_id: remount_id)
+        ensure_syscall_success!(result, "mount(2) read-only remount", remount_id)
       end
 
       def normalize_options(options, data)
@@ -811,7 +827,9 @@ module Rubernetes
         raise MountIdentityError, "mount(2) reported success but #{target.inspect} is absent from mountinfo (resource=#{resource_id})" unless observed
 
         validate_stable_identity!(observed, resource_id)
-        if requested_filesystem && !bind && !observed.fetch("filesystem").casecmp?(requested_filesystem)
+        observed_filesystem = observed.fetch("filesystem")
+        nfs_family = requested_filesystem == "nfs" && observed_filesystem == "nfs4"
+        if requested_filesystem && !bind && !nfs_family && !observed_filesystem.casecmp?(requested_filesystem)
           raise MountIdentityError,
                 "mount(2) mounted #{observed.fetch("filesystem")} at #{target.inspect}; expected #{requested_filesystem}"
         end
@@ -841,7 +859,8 @@ module Rubernetes
         # mistaken for ownership of that disk.
         result["filesystemUuid"] = bind ? nil : resolve_filesystem_uuid(result)
         result["filesystemUuidAvailable"] = !result["filesystemUuid"].nil?
-        result["source"] = bind && requested_source ? requested_source : kernel_source
+        descriptor_source = kernel_source.start_with?("/proc/self/fd/")
+        result["source"] = (bind || descriptor_source) && requested_source ? requested_source : kernel_source
         result["requestedSource"] = requested_source || dispatch_source
         result["dispatchSource"] = dispatch_source
         result["requestedFilesystem"] = requested_filesystem
@@ -858,35 +877,12 @@ module Rubernetes
 
       # Observations never claim bind-ness (mountinfo cannot express it); the
       # ledger decides that from its own registration record.
-      def decorate_observation(entry)
-        return entry unless @filesystem_uuid_resolver
-        return entry unless UUID_FILESYSTEMS.include?(entry.fetch("filesystem").downcase) &&
-                            entry.fetch("source").start_with?("/dev/")
-
-        uuid = resolve_filesystem_uuid(entry)
-        return entry if uuid.nil?
-
-        entry.merge("filesystemUuid" => uuid, "filesystemUuidAvailable" => true).freeze
-      end
-
-      def resolve_filesystem_uuid(entry)
-        return nil unless @filesystem_uuid_resolver
-
-        value = @filesystem_uuid_resolver.call(entry)
-        return nil if value.nil?
-
-        uuid = String(value)
-        raise MountIdentityError, "filesystem UUID resolver returned an empty value" if uuid.empty?
-
-        uuid.freeze
-      rescue TypeError => error
-        raise MountIdentityError, "filesystem UUID resolver returned a non-string value", cause: error
-      end
-
       # Compare the durable identity against the live mountinfo entry.  The
       # requested bind source is intent, not something mountinfo can show, so
       # the kernel source recorded at mount time is what "source" means here.
-      def verify_identity!(observed, expected)
+      def verify_identity!(observed, expected, leased:)
+        same_bind = leased && expected["bind"] == true && Types.present?(Types.key(expected, "mountId")) &&
+                    Types.key(expected, "mountId").to_s == observed.fetch("mountId").to_s
         STABLE_FIELDS.each do |field|
           value = if field == "source"
                     expected_kernel_source(expected)
@@ -894,6 +890,7 @@ module Rubernetes
                     expected[field] || expected[field.gsub(/([A-Z])/, '_\\1').downcase]
                   end
           next if value.nil? || value.to_s == observed.fetch(field).to_s
+          next if field == "root" && same_bind && Types.deleted_mount_root?(value, observed.fetch(field))
 
           raise MountIdentityError, "mount identity changed at #{observed.fetch("target")}: #{field} mismatch"
         end
@@ -955,3 +952,4 @@ module Rubernetes
     NativeMount = NativeMountAdapter unless const_defined?(:NativeMount, false)
   end
 end
+require_relative "stale_nfs_unmount"
