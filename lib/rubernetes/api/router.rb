@@ -22,6 +22,14 @@ module Rubernetes
         def resource_route?
           kind == :resource
         end
+
+        def watch_request?(request)
+          return request.method == "GET" || resource.custom? if operation == :watch
+          return false unless request.method == "GET" || (request.method == "HEAD" && resource_route? && resource.custom?)
+
+          value = request.query_value("watch")
+          collection && !value.nil? && !%w[0 false].include?(value.downcase)
+        end
       end
 
       def initialize(registry)
@@ -47,6 +55,9 @@ module Rubernetes
         in ["flagz"]
           return Route.new(kind: :flagz, operation: :get, path: path)
         in ["openapi", "v2"] | ["openapi", "v3"] | ["openapi", "v3", *]
+          # All OpenAPI discovery keys consist of DNS names and fixed segments.
+          # Preserve encoded delimiters so they cannot become path boundaries.
+          path = "/#{segments.join("/")}" if segments.all? { |segment| segment.match?(/\A[A-Za-z0-9._-]+\z/) }
           return Route.new(kind: :openapi, operation: :get, path: path)
         in [".well-known", "openid-configuration"] | ["openid", "v1", "jwks"]
           return Route.new(kind: :openid, operation: :get, path: path)
@@ -94,6 +105,20 @@ module Rubernetes
       end
 
       def parse_resource_segments(segments, group:, version:, path:)
+        legacy_watch = segments.first == "watch"
+        segments.shift if legacy_watch
+        route = resource_route(segments, group: group, version: version, path: path)
+        return route unless legacy_watch && route.resource_route?
+
+        if route.subresource || !route.resource.verbs.include?("watch") || (route.name && route.resource.namespaced? && !route.namespace)
+          return Route.new(kind: :unknown, operation: :unknown, path: path)
+        end
+
+        route.operation = :watch
+        route
+      end
+
+      def resource_route(segments, group:, version:, path:)
         namespace = nil
         # `namespaces` is itself a cluster-scoped resource. Treat it as the
         # namespace path marker only when another resource segment follows.
@@ -143,6 +168,8 @@ module Rubernetes
         return Route.new(kind: :unknown, operation: :unknown, path: path) if subresource && resource.subresource(subresource).nil?
 
         collection = name.nil?
+        return Route.new(kind: :unknown, operation: :unknown, path: path) if resource.namespaced? && namespace.nil? && !collection && !resource.custom?
+
         operation = operation_for(collection: collection, subresource: subresource)
         Route.new(kind: :resource, operation: operation, group: group, version: version,
                   resource: resource, namespace: namespace, name: name,
