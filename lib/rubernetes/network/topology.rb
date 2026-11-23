@@ -89,9 +89,9 @@ module Rubernetes
         end
       end
 
-      def refcount(name)
-        @mutex.synchronize { @bridges[String(name)]&.fetch("owners", Set.new)&.length || 0 }
-      end
+      def refcount(name) = @mutex.synchronize { @bridges[String(name)]&.fetch("owners")&.length || 0 }
+
+      def referenced_by?(name, owner) = @mutex.synchronize { @bridges[String(name)]&.fetch("owners")&.include?(String(owner)) == true }
 
       def shutdown(name: nil)
         @mutex.synchronize do
@@ -215,7 +215,7 @@ module Rubernetes
                                                                                     "peer" => pod_ifname, "peer_resource" => pod_link_resource,
                                                                                     "mtu" => effective_mtu, **namespace_options)
         operations << op("link_set", "link:#{host_ifname}", "#{host_ifname}:#{id}", "name" => host_ifname,
-                                                                                    "master" => bridge, "up" => true)
+                                                                                    "master" => bridge, "up" => true, "bridge_hairpin" => true)
         # The pod-side interface is "eth0" in every sandbox, so its ownership id
         # must carry the sandbox the way addresses and routes already do --
         # otherwise the second pod on the node claims a resource the first one
@@ -344,12 +344,15 @@ module Rubernetes
                  revision: plan.revision, metadata: plan.metadata).freeze
       end
 
-      def rollback(plan, operation_id: nil)
+      def rollback(plan, operation_id: nil, namespace_gone: false)
         errors = []
         owned_links = owned_links_for(plan)
         Array(plan.operations).reverse_each do |operation|
           inverse = inverse_operation(operation, owned_links: owned_links)
           next unless inverse
+          # The pod-side links, addresses and routes disappeared with the
+          # namespace. The veth inverse still deletes its host-side link.
+          next if namespace_gone && (inverse.parameters["namespace_fd"] || inverse.parameters["namespace"])
 
           begin
             execute(inverse, operation_id: operation_id)
@@ -364,12 +367,8 @@ module Rubernetes
         true
       end
 
-      # Undoing something that is already undone is a completed rollback, not a
-      # failure.  The CNI spec says as much of DEL -- "plugins should generally
-      # complete a DEL action without error even if some resources are missing"
-      # -- and the kernel has every reason to have removed these already: tearing
-      # down a network namespace takes its veth, addresses and routes with it, so
-      # the inverse operations arrive at a namespace where eth0 no longer exists.
+      # CNI DEL treats absent resources as already removed. Removing a network
+      # namespace also removes its veth, addresses and routes from the kernel.
       # Reporting that as a cleanup failure left the Pod in CleanupPending, the
       # node never issued the final delete, and the Pod stayed Terminating in the
       # API until the spec waiting for it to disappear timed out.
@@ -447,7 +446,8 @@ module Rubernetes
         when "link_set"
           @netlink.link_set(name: params["name"], index: params["index"], mtu: params["mtu"], up: params["up"],
                             master: params["master"], namespace: params["namespace"], namespace_fd: params["namespace_fd"],
-                            operation: operation_id, clear_master: params["clear_master"])
+                            operation: operation_id, clear_master: params["clear_master"],
+                            **params.slice("bridge_hairpin").transform_keys(&:to_sym))
         when "address_add"
           @netlink.address_add(address: params.fetch("address"), prefix: params["prefix"], name: params["interface"],
                                index: params["link_index"], operation: operation_id, namespace: params["namespace"],
