@@ -74,20 +74,21 @@ module Rubernetes
           @tls = tls
         end
 
-        def logs(container_id = nil, follow: false, since: nil, tail: nil, stream: nil,
+        def logs(container_id = nil, follow: false, previous: false, since: nil, tail: nil, stream: nil,
                  request_id: nil, identity: nil, namespace: nil, pod: nil, timestamps: false, limit_bytes: nil, **_options)
           query = {}
           query["follow"] = "true" if follow
+          query["previous"] = "true" if previous
           query["timestamps"] = "true" if timestamps
           query["limitBytes"] = limit_bytes.to_s if limit_bytes && !limit_bytes.to_s.empty?
           query["sinceSeconds"] = since if since && since.to_s.match?(/\A\d+\z/)
           query["sinceTime"] = since if since && !since.to_s.match?(/\A\d+\z/)
           query["tailLines"] = tail if tail
-          query["stream"] = stream if stream
+          query["stream"] = stream.is_a?(Symbol) ? stream.to_s.capitalize : stream if stream
           query["requestID"] = request_id if request_id
 
           path = "/containerLogs/#{escape(namespace || "default")}/#{escape(pod.to_s)}/#{escape(container_id.to_s)}"
-          get_stream(path, query, follow: follow)
+          get_stream(path, query, follow: follow && !previous)
         end
 
         HOP_HEADERS = %w[connection upgrade sec-websocket-key sec-websocket-version sec-websocket-protocol
