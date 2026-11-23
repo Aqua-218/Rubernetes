@@ -11,6 +11,7 @@ module Rubernetes
         DEFAULT_SUCCESSFUL_JOBS_HISTORY_LIMIT = 3
         DEFAULT_FAILED_JOBS_HISTORY_LIMIT = 1
         NEXT_SCHEDULE_DELAY_SECONDS = 0.1
+        JOB_DELETE_OPTIONS = {"propagationPolicy" => "Background"}.freeze
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
@@ -24,7 +25,7 @@ module Rubernetes
         # pkg/controller/cronjob/cronjob_controllerv2.go sync: history cleanup,
         # then syncCronJob for the most recent unmet schedule time.
         def plan(cron_job, store: nil, jobs: nil, now: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           jobs ||= list_children(adapter, JOB, Support.namespace(cron_job))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
@@ -40,9 +41,9 @@ module Rubernetes
           # good -- which also disabled the Forbid concurrency policy.
           previous_active = Array(sync.status["active"]).grep(Hash).map { |reference| Support.deep_copy(reference) }
 
-          # The active list is rebuilt below, so there is none to prune here.
-          deleted_uids = cleanup_finished_jobs(cron_job, sync.owned_jobs, [], sync.operations, sync.events)
-          sync.owned_jobs = sync.owned_jobs.reject { |job| deleted_uids.include?(Support.uid(job)) }
+          # A completed Job still supplies its completion time in the sync
+          # that deletes it, even when the history limit is zero.
+          cleanup_finished_jobs(cron_job, sync.owned_jobs, previous_active, sync.operations, sync.events)
 
           # syncCronJob: reconcile the active list against the observed Jobs.
           sync.active = sync.owned_jobs.reject { |job| job_finished_type(job) }.map { |job| job_reference(job) }
@@ -63,7 +64,7 @@ module Rubernetes
         end
 
         def delete(cron_job, jobs: nil, store: nil, orphan: false)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           jobs ||= list_children(adapter, JOB, Support.namespace(cron_job))
           operations = orphan ? [] : owned(cron_job, jobs).map { |job| operation_delete(job, descriptor: JOB, reason: "cronjob deletion") }
           operations << operation_delete(cron_job, descriptor: DESCRIPTOR, reason: "cronjob deletion")
@@ -79,10 +80,7 @@ module Rubernetes
           sync.owned_jobs.each do |job|
             # A reference this planner wrote before the Job existed carries no
             # uid, so a Job it did create is recognised by name as well.
-            in_active = previous_active.any? do |reference|
-              uid = Support.ref_value(reference, "uid", nil).to_s
-              uid.empty? ? Support.ref_value(reference, "name", "").to_s == Support.name(job) : uid == Support.uid(job)
-            end
+            in_active = previous_active.any? { |reference| references_job?(reference, job) }
             finished_type = job_finished_type(job)
             if !in_active && finished_type.nil?
               sync.events << {"type" => "Warning", "reason" => "UnexpectedJob",
@@ -107,6 +105,11 @@ module Rubernetes
           end
         end
 
+        def references_job?(reference, job)
+          uid = Support.ref_value(reference, "uid", nil).to_s
+          uid.empty? ? Support.ref_value(reference, "name", "").to_s == Support.name(job) : uid == Support.uid(job)
+        end
+
         def record_last_successful_time(status, job)
           completion_time = Support.parse_time(Support.value(Support.status(job), "completionTime", nil))
           last_successful = Support.parse_time(status["lastSuccessfulTime"])
@@ -122,34 +125,48 @@ module Rubernetes
         def schedule_job(sync)
           cron_job = sync.cron_job
           spec_value = Support.spec(cron_job)
-          return nil if Support.metadata(cron_job).key?("deletionTimestamp") || Support.value(spec_value, "suspend", false) == true
+          return nil if Support.metadata(cron_job).key?("deletionTimestamp")
 
           time_zone = Support.value(spec_value, "timeZone", nil)
-          if !time_zone.nil? && !supported_time_zone?(time_zone)
-            sync.events << {"type" => "Warning", "reason" => "UnknownTimeZone", "message" => "invalid timeZone: #{time_zone.to_s.inspect}"}
+          zone = begin
+            CronTimeZone.timestamp_zone(time_zone)
+          rescue TZInfo::InvalidTimezoneIdentifier
+            sync.events << {"type" => "Warning", "reason" => "UnknownTimeZone",
+                            "message" => "invalid timeZone: #{time_zone.inspect}: unknown time zone #{time_zone}"}
             return nil
           end
-          fields = cron_fields(Support.value(spec_value, "schedule", ""))
-          if fields.nil?
-            sync.events << {"type" => "Warning", "reason" => "UnparseableSchedule",
-                            "message" => "unparseable schedule: #{Support.value(spec_value, "schedule", "").to_s.inspect}"}
-            return nil
-          end
+          return nil if Support.value(spec_value, "suspend", false) == true
 
-          offset = time_zone_offset(time_zone)
-          scheduled_at, = next_schedule_time(cron_job, sync.status, sync.now, fields, offset, sync.events)
+          expression = Support.value(spec_value, "schedule", "").to_s
+          schedule = parse_schedule(sync, expression, time_zone)
+          scheduled_at = next_schedule_time(sync, schedule)
           policy = Support.value(spec_value, "concurrencyPolicy", "Allow").to_s
           raise ArgumentError, "unsupported CronJob concurrencyPolicy #{policy.inspect}" unless %w[Allow Forbid Replace].include?(policy)
 
-          requeue_after = next_schedule_delay(cron_job, sync.status, sync.now, fields, offset)
-          start_due_job(sync, scheduled_at, policy, offset)
-          requeue_after
+          start_due_job(sync, scheduled_at, policy, zone)
+          next_schedule_delay(sync, schedule)
+        rescue CronSchedule::ParseError => error
+          sync.events << {"type" => "Warning", "reason" => "UnparseableSchedule", "message" => "unparseable schedule: #{expression.inspect} : #{error.message}"}
+          nil
+        rescue InvalidSchedule => error
+          sync.events << {"type" => "Warning", "reason" => "InvalidSchedule", "message" => "invalid schedule: #{expression} : #{error.message}"}
+          nil
+        end
+
+        def parse_schedule(sync, expression, time_zone)
+          if expression.include?("TZ")
+            sync.events << {"type" => "Warning", "reason" => "UnsupportedSchedule",
+                            "message" => "CRON_TZ or TZ used in schedule #{expression.inspect} is not officially supported, " \
+                                         "see https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/ for more details"}
+            time_zone = nil
+          end
+          CronSchedule.parse(expression, time_zone: time_zone)
         end
 
         # Starts the Job for +scheduled_at+ unless there is nothing to start,
         # its starting deadline passed, it was already started, or the Forbid
         # policy holds it back behind a running Job.
-        def start_due_job(sync, scheduled_at, policy, offset)
+        def start_due_job(sync, scheduled_at, policy, zone)
           return if scheduled_at.nil? # No unmet start time.
 
           starting_deadline = Support.value(Support.spec(sync.cron_job), "startingDeadlineSeconds", nil)
@@ -169,7 +186,7 @@ module Rubernetes
           end
 
           replace_active_jobs(sync) if policy == "Replace"
-          start_job(sync, scheduled_at, offset)
+          start_job(sync, scheduled_at, zone)
           sync.status["lastScheduleTime"] = scheduled_at.utc.iso8601(6)
         end
 
@@ -180,7 +197,7 @@ module Rubernetes
             job = children[Support.ref_value(reference, "uid", nil).to_s]
             next unless job
 
-            sync.operations << operation_delete(job, descriptor: JOB, reason: "cronjob replace")
+            sync.operations << operation_delete(job, descriptor: JOB, reason: "cronjob replace", options: JOB_DELETE_OPTIONS)
             sync.events << {"type" => "Normal", "reason" => "SuccessfulDelete", "message" => "Deleted job #{Support.name(job)}"}
           end
           sync.active = []
@@ -188,8 +205,8 @@ module Rubernetes
 
         # Creates the Job for +scheduled_at+, or lists the one that already
         # carries its name, and adds it to the active list.
-        def start_job(sync, scheduled_at, offset)
-          candidate = job_from_template(sync.cron_job, scheduled_at, offset)
+        def start_job(sync, scheduled_at, zone)
+          candidate = job_from_template(sync.cron_job, scheduled_at, zone)
           existing = sync.owned_jobs.find { |job| Support.name(job) == Support.name(candidate) }
           if existing
             sync.active << job_reference(existing) unless sync.active.any? do |reference|
@@ -221,19 +238,16 @@ module Rubernetes
                                          DEFAULT_FAILED_JOBS_HISTORY_LIMIT)
           successful = jobs.select { |job| job_finished_type(job) == "Complete" }
           failed = jobs.select { |job| job_finished_type(job) == "Failed" }
-          deleted = []
           [[successful, successful_limit], [failed, failed_limit]].each do |group, limit|
             to_delete = group.length - limit
             next if to_delete <= 0
 
             group.sort_by { |job| job_start_sort_key(job) }.first(to_delete).each do |job|
-              operations << operation_delete(job, descriptor: JOB, reason: "cronjob history limit")
+              operations << operation_delete(job, descriptor: JOB, reason: "cronjob history limit", options: JOB_DELETE_OPTIONS)
               events << {"type" => "Normal", "reason" => "SuccessfulDelete", "message" => "Deleted job #{Support.name(job)}"}
-              active.reject! { |reference| Support.ref_value(reference, "uid", nil).to_s == Support.uid(job) }
-              deleted << Support.uid(job)
+              active.reject! { |reference| references_job?(reference, job) }
             end
           end
-          deleted
         end
 
         def job_start_sort_key(job)
@@ -255,16 +269,18 @@ module Rubernetes
         end
 
         # getJobFromTemplate2
-        def job_from_template(cron_job, scheduled_at, offset)
+        def job_from_template(cron_job, scheduled_at, zone)
           job_template = Support.value(Support.spec(cron_job), "jobTemplate", {})
           job_template = {} unless job_template.is_a?(Hash)
           job_metadata = Support.value(job_template, "metadata", {})
           job_metadata = {} unless job_metadata.is_a?(Hash)
           labels = Support.value(job_metadata, "labels", {})
           annotations = Support.value(job_metadata, "annotations", {})
+          local = CronTimeZone.local_time(scheduled_at, zone)
+          timestamp = (local.utc_offset.zero? ? local.utc : local).iso8601
           metadata = {"name" => job_name(cron_job, scheduled_at), "namespace" => Support.namespace(cron_job),
                       "annotations" => (annotations.is_a?(Hash) ? Support.deep_copy(annotations) : {}).merge(
-                        SCHEDULED_TIMESTAMP_ANNOTATION => (offset == "+00:00" ? scheduled_at.utc.iso8601 : scheduled_at.getlocal(offset).iso8601)
+                        SCHEDULED_TIMESTAMP_ANNOTATION => timestamp
                       )}
           metadata["labels"] = Support.deep_copy(labels) if labels.is_a?(Hash) && !labels.empty?
           job_spec = Support.value(job_template, "spec", {})
