@@ -1,11 +1,27 @@
 # frozen_string_literal: true
 
+require_relative "../../support/object_tree"
+
 require "fileutils"
 require "json"
 require "stringio"
 require "time"
+require "timeout"
+require_relative "../common/errors"
 require_relative "client"
+require_relative "image_operations"
+require_relative "resource_limits"
 require_relative "logs"
+require_relative "log_manager"
+require_relative "user_namespaces"
+require_relative "pod_sandboxes"
+require_relative "pod_logs"
+require_relative "../memory_qos"
+require_relative "../app_armor"
+require_relative "../../container_stop_signals"
+require_relative "../../http_probe_headers"
+require_relative "../../image/pull_limiter"
+require_relative "../../platform/linux/swap_controller"
 
 module Rubernetes
   module Runtime
@@ -23,6 +39,10 @@ module Rubernetes
       # namespace (through its pause process), which the node's network sets
       # up exactly as for a native sandbox.
       class Backend
+        include ImageOperations
+        include ResourceLimits
+        include PodSandboxes
+
         class Error < StandardError; end
 
         STATES = {"CONTAINER_CREATED" => "created", "CONTAINER_RUNNING" => "running",
@@ -45,7 +65,8 @@ module Rubernetes
           exit 0
         SH
 
-        attr_reader :handler, :client
+        attr_reader :handler, :client, :log_root, :log_manager
+        attr_writer :memory_qos_allocatable
         # (pod, image) -> {"registry", "username", "password", "identity_token"}
         # or nil: the Pod's imagePullSecrets for a pull (the node sets it).
         attr_accessor :credential_provider
@@ -58,23 +79,42 @@ module Rubernetes
         # runtime's cgroupfs driver puts the containers below it); nil leaves
         # placement to the runtime.
         def initialize(client:, handler: "", log_root: "/var/log/pods", cgroup_parent: nil, clock: -> { Time.now.utc },
-                       stop_timeout: 30, cgroup_root: "/sys/fs/cgroup", log_manager: nil)
+                       stop_timeout: 30, cgroup_root: "/sys/fs/cgroup", log_manager: nil, runtime_class_in_image_api: false,
+                       memory_qos: false, memory_throttling_factor: MemoryQoS::DEFAULT_THROTTLING_FACTOR, memory_reservation_policy: "None",
+                       user_namespace_allocations: nil, user_namespaces_host_network: false, pull_limiter: Image::PullLimiter.new(nil),
+                       cpu_cfs_quota: true, cpu_period: CPUQuota::DEFAULT_PERIOD,
+                       single_process_oom_kill: nil,
+                       swap_controller: Platform::Linux::SwapController.available?(root: cgroup_root))
           @client = client
+          @pull_limiter = pull_limiter
           # Rotation is the kubelet's with a CRI runtime; started with the
           # first sandbox.
           @log_manager = log_manager
           @handler = handler.to_s
+          @user_namespaces = UserNamespaces.new(client: client, handler: @handler, allocations: user_namespace_allocations,
+                                                host_network_enabled: user_namespaces_host_network)
+          @runtime_class_in_image_api = runtime_class_in_image_api
+          @memory_qos = memory_qos
+          @memory_throttling_factor = memory_throttling_factor
+          @memory_reservation_policy = memory_reservation_policy
           @log_root = log_root
+          @pod_logs = PodLogs.new(log_root, handler: @handler, client: client)
           @cgroup_parent = cgroup_parent
           @cgroup_root = cgroup_root
+          @group_oom_kill = single_process_oom_kill != true && File.file?(File.join(cgroup_root, "cgroup.controllers"))
+          @cpu_cfs_quota = cpu_cfs_quota
+          @cpu_period = cpu_period
+          @swap_controller = swap_controller
           @clock = clock
           @stop_timeout = Integer(stop_timeout)
           @mutex = Mutex.new
           @sandboxes = {}
+          @network_holders = {}
           @containers = {}
         end
 
         def profile = :cri
+        def runtime_features = @user_namespaces.runtime_features
 
         # A CNI configuration list and plugin that leave networking to the
         # node (#network_sandbox_context), for the runtime's conf/bin dirs.
@@ -96,7 +136,17 @@ module Rubernetes
         end
 
         def version
-          @client.runtime("Version", {"version" => "v1"})
+          @client.runtime("Version", {"version" => "v1"}).tap do |response|
+            name = response["runtime_name"].to_s
+            @runtime_name = name unless name.empty?
+          end
+        end
+
+        def sandbox_container_id_prefix(_sandbox)
+          version unless @runtime_name
+          @runtime_name
+        rescue Client::Error
+          @runtime_name
         end
 
         # Multiplexer ownership after a restart: ids this backend's runtime
@@ -141,67 +191,21 @@ module Rubernetes
           {"sandboxes" => sandboxes.length}
         end
 
-        # ---------------------------------------------------------- sandboxes
-
-        def run_sandbox(pod, runtime_class: nil, **_options)
-          pod = stringify(pod)
-          @log_manager&.start
-          config = sandbox_config(pod)
-          FileUtils.mkdir_p(config["log_directory"])
-          cgroup = create_pod_cgroup(pod)
-          config["linux"]["cgroup_parent"] = cgroup if cgroup
-          response = @client.runtime("RunPodSandbox", {"config" => config, "runtime_handler" => @handler}, timeout: 240)
-          id = response.fetch("pod_sandbox_id")
-          @mutex.synchronize { @sandboxes[id] = {config: config, pod: pod, cgroup: cgroup} }
-          id
-        end
-
-        def stop_sandbox(sandbox, timeout: nil)
-          @client.runtime("StopPodSandbox", {"pod_sandbox_id" => key(sandbox)})
-          true
-        end
-
-        def remove_sandbox(sandbox)
-          id = key(sandbox)
-          @client.runtime("StopPodSandbox", {"pod_sandbox_id" => id})
-          @client.runtime("RemovePodSandbox", {"pod_sandbox_id" => id})
-          entry = @mutex.synchronize do
-            @containers.delete_if { |_container, value| value[:sandbox] == id }
-            @sandboxes.delete(id)
-          end
-          remove_pod_cgroup(entry[:cgroup]) if entry && entry[:cgroup]
-          true
-        rescue Client::Error => error
-          raise unless error.code == Client::NOT_FOUND
-
-          true
-        end
-
-        # The sandbox's network namespace, held by its pause process -- the
-        # shape Native::Sandbox#network_sandbox_context has.
-        def network_sandbox_context(sandbox)
-          id = key(sandbox)
-          status = @client.runtime("PodSandboxStatus", {"pod_sandbox_id" => id, "verbose" => true})
-          info = JSON.parse(status.dig("info", "info") || "{}")
-          pid = Integer(info["pid"] || 0)
-          raise Error, "sandbox #{id} reports no pause process" unless pid.positive?
-
-          path = "/proc/#{pid}/ns/net"
-          {"sandbox_id" => id,
-           "netns" => {"handle" => "cri:#{id}", "path" => path, "inode" => File.stat(path).ino, "pid" => pid}}
-        rescue JSON::ParserError, SystemCallError, ArgumentError => error
-          raise Error, "sandbox #{id} network namespace is unavailable: #{error.message}"
-        end
-
         # --------------------------------------------------------- containers
 
-        def create_container(sandbox, spec, **_options)
+        def create_container(sandbox, spec, runtime_class_name: nil, **_options)
           id = key(sandbox)
           entry = @mutex.synchronize { @sandboxes[id] } or raise Error, "unknown sandbox #{id}"
           spec = stringify(spec)
           image = spec.fetch("image").to_s
-          ensure_image(image, spec, pod: entry[:pod])
           config = container_config(spec, entry[:pod], entry[:config])
+          runtime_class_name ||= entry.dig(:pod, "spec", "runtimeClassName")
+          resolved = ensure_image(image, spec, pod: entry[:pod], sandbox_config: entry[:config], runtime_class_name: runtime_class_name)
+          @user_namespaces.configure_container(config, sandbox_namespace_options(id, entry))
+          if @runtime_class_in_image_api
+            image_ref = resolved["image_ref"] || resolved["id"]
+            config["image"] = {"image" => image_ref.to_s.empty? ? image : image_ref, "user_specified_image" => image}
+          end
           response = @client.runtime("CreateContainer", {"pod_sandbox_id" => id, "config" => config, "sandbox_config" => entry[:config]},
                                      timeout: 240)
           container = response.fetch("container_id")
@@ -238,12 +242,27 @@ module Rubernetes
           true
         end
 
+        # containerd leaves the Pod log file when it removes the container.
+        # Keep that exact path for --previous and release the snapshot now.
+        def retire_container(container, previous_log_path: nil, **)
+          path = log_path(container)
+          if previous_log_path != path && valid_archive_path?(previous_log_path) && File.dirname(previous_log_path) == File.dirname(path)
+            @log_manager ? @log_manager.clean(previous_log_path) : LogManager.clean(previous_log_path)
+          end
+          remove_container(container)
+          {"log_path" => path} if valid_archive_path?(path)
+        end
+
         # The node's status Hash from ContainerStatus.
         def container_status(container)
           status = @client.runtime("ContainerStatus", {"container_id" => key(container)}).fetch("status")
           state = STATES.fetch(status["state"].to_s, "unknown")
           result = {"id" => status["id"], "state" => state, "image" => status.dig("image", "image"),
                     "imageRef" => status["image_ref"], "reason" => status["reason"], "message" => status["message"]}
+          result["recursiveReadOnlyMounts"] = Array(status["mounts"]).to_h do |mount|
+            [mount["container_path"], mount["readonly"] == true && mount["recursive_read_only"] == true]
+          end
+          result["stopSignal"] = ContainerStopSignals.api_name(status["stop_signal"])
           started = timestamp(status["started_at"])
           case state
           when "running"
@@ -259,6 +278,8 @@ module Rubernetes
           result.compact
         end
 
+        def container_stop_signal(container) = container_status(container)["stopSignal"]
+
         def wait_container(container, timeout: nil)
           deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout))
           loop do
@@ -270,8 +291,8 @@ module Rubernetes
           end
         end
 
-        def logs(container, follow: false, since: nil, tail: nil, stream: :all, timestamps: false)
-          path = log_path(container)
+        def logs(container, follow: false, since: nil, tail: nil, stream: :all, timestamps: false, archived_log_path: nil)
+          path = valid_archive_path?(archived_log_path) ? archived_log_path : log_path(container)
           Logs.read(path, follow: follow, since: since, tail: tail, stream: stream, timestamps: timestamps,
                           running: -> { container_status(container)["state"] == "running" })
         end
@@ -350,11 +371,6 @@ module Rubernetes
             .dig("status", "labels", "io.kubernetes.pod.sandbox") || key(container)
         end
 
-        def update_container_resources(container, resources, **_options)
-          @client.runtime("UpdateContainerResources", {"container_id" => key(container), "linux" => linux_resources(stringify(resources))})
-          true
-        end
-
         # The node's usage shape (Native#pod_usage) from the Pod's cgroup and
         # its containers' (cgroupfs: <pod cgroup>/<container id>).
         def pod_usage(sandbox)
@@ -385,15 +401,12 @@ module Rubernetes
           definition = stringify(definition)
           path = definition["path"].to_s
           path = "/#{path}" unless path.start_with?("/")
-          headers = Array(definition["httpHeaders"]).to_h { |header| [header["name"].to_s, header["value"].to_s] }
+          headers = HTTPProbeHeaders.from_action(definition["httpHeaders"])
           tls = definition["scheme"].to_s.casecmp("HTTPS").zero?
-          result = within_netns(container, timeout) do
+          within_netns(container, timeout) do
             connector.blocking_http_get(definition["host"] || "127.0.0.1", Integer(definition["port"] || 80), path, headers,
                                         Float(timeout), tls: tls)
           end
-          status = Integer(result.fetch("status"))
-          {"status" => status, "success" => status.between?(200, 399), "message" => "HTTP #{status}",
-           "body_bytes" => Integer(result.fetch("body_bytes"))}
         end
 
         def tcp_socket(container, definition, timeout: 1.0, **_options)
@@ -413,67 +426,7 @@ module Rubernetes
           {"success" => result.fetch("success") == true, "message" => result.fetch("message").to_s}
         end
 
-        # ------------------------------------------------------------- images
-
-        # Node::Agent builds the kubelet's image GC over the runtime from it.
-        def image_gc_source = true
-
-        def ensure_image(image, spec = {}, pod: nil)
-          present = @client.image("ImageStatus", {"image" => {"image" => image}})["image"]
-          policy = spec["imagePullPolicy"].to_s
-          return present if present && !present.fetch("id", "").to_s.empty? && policy != "Always"
-
-          request = {"image" => {"image" => image}}
-          auth = pull_auth(pod, image)
-          request["auth"] = auth if auth
-          @client.image("PullImage", request, timeout: 600)
-        end
-
         private
-
-        # kubelet's pod container manager + ResourceConfigForPod: the Pod's
-        # cgroup with its requests as CPU weight and, when every container
-        # declares them (or the Pod does), its CPU quota and memory limit.
-        def create_pod_cgroup(pod)
-          return nil if @cgroup_parent.nil?
-
-          uid = pod.dig("metadata", "uid").to_s
-          raise Error, "a Pod without a uid has no cgroup" if uid.empty?
-
-          relative = File.join(@cgroup_parent, "pod#{uid}")
-          enable_controllers(relative)
-          pod_cgroup_settings(pod).each do |file, value|
-            path = File.join(@cgroup_root, relative, file)
-            File.write(path, value) if File.exist?(path)
-          end
-          relative
-        end
-
-        def pod_cgroup_settings(pod)
-          qos = ResourceHelpers.qos_class(pod)
-          return {"cpu.weight" => "1"} if qos == "BestEffort"
-
-          requests = ResourceHelpers.pod_requests(pod)
-          limits = ResourceHelpers.pod_limits(pod)
-          cpu_request = requests["cpu"] ? (value_of(requests["cpu"]) * 1000).ceil : 0
-          shares = cpu_request.zero? ? 2 : [[(cpu_request * 1024) / 1000, 2].max, 262_144].min
-          settings = {"cpu.weight" => (1 + (((shares - 2) * 9999) / 262_142)).to_s}
-          if qos == "Guaranteed" || declared_for_all?(pod, "cpu")
-            quota = limits["cpu"] ? [(value_of(limits["cpu"]) * 100_000).ceil, 1000].max : nil
-            settings["cpu.max"] = "#{quota} 100000" if quota
-          end
-          settings["memory.max"] = value_of(limits["memory"]).ceil.to_s if (qos == "Guaranteed" || declared_for_all?(pod, "memory")) && limits["memory"]
-          settings
-        end
-
-        def declared_for_all?(pod, resource)
-          return true if pod.dig("spec", "resources", "limits", resource)
-
-          containers = ResourceHelpers.containers(pod, "containers") + ResourceHelpers.containers(pod, "initContainers")
-          !containers.empty? && containers.all? { |container| container.dig("resources", "limits", resource) }
-        end
-
-        def value_of(quantity) = quantity.respond_to?(:value) ? quantity.value : Schema::Quantity.from_json(quantity.to_s).value
 
         # The root and every cgroup down to +relative+ (created as needed)
         # delegate cpu, memory and pids to their children.
@@ -523,7 +476,8 @@ module Rubernetes
             end
           }
           scalar = ->(text) { text && Integer(text.strip, exception: false) }
-          {"cpu" => key_values.call(read.call("cpu.stat")), "memory" => key_values.call(read.call("memory.stat")),
+          {"path" => relative, "cgroup_root" => @cgroup_root,
+           "cpu" => key_values.call(read.call("cpu.stat")), "memory" => key_values.call(read.call("memory.stat")),
            "memory.current" => scalar.call(read.call("memory.current")), "pids.current" => scalar.call(read.call("pids.current"))}
         end
 
@@ -548,54 +502,34 @@ module Rubernetes
             exit!(1)
           end
           writer.close
-          payload = nil
-          waiter = Thread.new { payload = reader.read }
-          unless waiter.join(Float(timeout) + 5.0)
-            Process.kill(:KILL, pid)
-            waiter.join(1)
+          payload = Timeout.timeout(Float(timeout) + 5.0, Error, "probe helper timed out") do
+            bytes = reader.read
+            Process.waitpid(pid)
+            pid = nil
+            bytes
           end
-          Process.wait(pid)
           document = payload.to_s.empty? ? {} : JSON.parse(payload)
           raise Error, "probe helper failed: #{document["error"] || "no answer"}" unless document["ok"] == true
 
           document.fetch("value")
         ensure
-          reader&.close unless reader.nil? || reader.closed?
+          reader&.close
+          writer&.close
+          reap_probe_helper(pid) if pid
         end
 
-        # PullImageRequest.auth (AuthConfig) from the Pod's credentials.
-        def pull_auth(pod, image)
-          return nil if @credential_provider.nil? || pod.nil?
+        def reap_probe_helper(pid)
+          return if Process.waitpid(pid, Process::WNOHANG)
 
-          credential = @credential_provider.call(pod, image)
-          return nil if credential.nil?
-
-          credential = credential.to_h.transform_keys(&:to_s)
-          {"username" => credential["username"].to_s, "password" => credential["password"].to_s,
-           "server_address" => credential["registry"].to_s, "identity_token" => credential["identity_token"].to_s}
-            .reject { |_name, value| value.empty? }
+          Process.kill(:KILL, pid)
+          Process.waitpid(pid)
+        rescue Errno::ECHILD
+          nil
         end
 
         def key(value) = value.respond_to?(:id) ? value.id.to_s : value.to_s
 
-        def stringify(value)
-          case value
-          when Hash then value.to_h { |name, item| [name.to_s, stringify(item)] }
-          when Array then value.map { |item| stringify(item) }
-          else value
-          end
-        end
-
-        # A sandbox learned from the runtime (after a restart): its config is
-        # rebuilt from what CreateContainer needs.
-        def remember_sandbox(id, status)
-          metadata = status["metadata"] || {}
-          @mutex.synchronize do
-            @sandboxes[id] ||= {config: {"metadata" => metadata, "labels" => status["labels"] || {},
-                                         "log_directory" => File.join(@log_root, "#{metadata["namespace"]}_#{metadata["name"]}_#{metadata["uid"]}")},
-                                pod: {"metadata" => metadata}}
-          end
-        end
+        def stringify(value) = ObjectTree.stringify_keys(value)
 
         def find_sandbox_of(container)
           item = Array(@client.runtime("ListContainers", {"filter" => {"id" => container}})["containers"]).first
@@ -608,6 +542,15 @@ module Rubernetes
 
           status = @client.runtime("ContainerStatus", {"container_id" => key(container)}).fetch("status")
           status["log_path"].to_s
+        end
+
+        def valid_archive_path?(path)
+          return false unless path.is_a?(String) && File.basename(path).match?(/\A\d+\.log\z/)
+
+          directory = File.realpath(File.dirname(path))
+          directory.start_with?("#{File.realpath(@log_root)}/") && !File.symlink?(path)
+        rescue SystemCallError
+          false
         end
 
         def decode(value) = value.to_s.unpack1("m").to_s
@@ -630,10 +573,10 @@ module Rubernetes
           config = {
             "metadata" => {"name" => name, "uid" => uid, "namespace" => namespace, "attempt" => 0},
             "hostname" => host_network ? "" : (pod["hostname"] || spec["hostname"] || name).to_s,
-            "log_directory" => File.join(@log_root, "#{namespace}_#{name}_#{uid}"),
+            "log_directory" => @pod_logs.path_for(metadata),
             "labels" => (metadata["labels"] || {}).merge("io.kubernetes.pod.name" => name, "io.kubernetes.pod.namespace" => namespace,
                                                          "io.kubernetes.pod.uid" => uid),
-            "annotations" => metadata["annotations"] || {},
+            "annotations" => (metadata["annotations"] || {}).dup,
             "port_mappings" => port_mappings(spec),
             "linux" => {
               "security_context" => {
@@ -644,7 +587,7 @@ module Rubernetes
               "sysctls" => Array(spec.dig("securityContext", "sysctls")).to_h { |sysctl| [sysctl["name"].to_s, sysctl["value"].to_s] }
             }
           }
-          dns = dns_config(spec)
+          dns = pod["dns_config"] || dns_config(spec)
           config["dns_config"] = dns if dns
           config
         end
@@ -678,23 +621,23 @@ module Rubernetes
         end
 
         # kuberuntime generateContainerConfig from the node's built spec:
-        # the final argv, the environment, the host-side mounts the node
+        # the Pod's command and args overrides, the environment, the host-side mounts the node
         # prepared, the effective security context, the resources.
         def container_config(spec, pod, sandbox)
           name = spec["name"].to_s
           attempt = spec["restart_count"] ? Integer(spec["restart_count"]) : next_attempt(sandbox["log_directory"], name)
-          argv = Array(spec["command"]) + Array(spec["args"])
           # KeyValue.value is bytes (an environment value need not be UTF-8):
           # base64 in protobuf JSON.
           env = Array(spec["env"]).map { |entry| {"key" => entry["name"].to_s, "value" => [entry["value"].to_s].pack("m0")} }
+          devices, mounts = Array(spec["mounts"]).partition { |mount| mount["device"] == true }
           config = {
             "metadata" => {"name" => name, "attempt" => attempt},
             "image" => {"image" => spec["image"].to_s},
-            "command" => argv,
-            "args" => [],
+            "command" => Array(spec["command"]),
+            "args" => Array(spec["args"]),
             "working_dir" => spec["cwd"].to_s,
             "envs" => env,
-            "mounts" => Array(spec["mounts"]).filter_map { |mount| mount_for(mount) },
+            "mounts" => container_mounts(mounts),
             "labels" => sandbox["labels"].slice("io.kubernetes.pod.name", "io.kubernetes.pod.namespace", "io.kubernetes.pod.uid")
               .merge("io.kubernetes.container.name" => name),
             "annotations" => {},
@@ -702,9 +645,11 @@ module Rubernetes
             "stdin" => spec["stdin"] == true,
             "stdin_once" => spec["stdinOnce"] == true,
             "tty" => spec["tty"] == true,
-            "linux" => {"resources" => linux_resources(spec["resources"] || {}), "security_context" => security_context(spec, pod)}
+            "linux" => {"resources" => linux_resources(spec, pod: pod), "security_context" => security_context(spec, pod)}
           }
-          config["command"] = [] if argv.empty?
+          config["devices"] = devices.map { |device| device_for(device) } unless devices.empty?
+          stop_signal = ContainerStopSignals.cri_name(spec["stop_signal"])
+          config["stop_signal"] = stop_signal if stop_signal
           config
         end
 
@@ -717,7 +662,21 @@ module Rubernetes
           existing.empty? ? 0 : existing.max + 1
         end
 
-        def mount_for(mount)
+        def container_mounts(mounts)
+          requested = mounts.any? { |mount| %w[Enabled IfPossible].include?(mount["recursive_readonly"]) }
+          supports_recursive = requested && recursive_read_only_supported?
+          mounts.filter_map { |mount| mount_for(mount, supports_recursive: supports_recursive) }
+        end
+
+        def recursive_read_only_supported?
+          status = @client.runtime("Status", {"verbose" => false}, timeout: 5)
+          selected = Array(status["runtime_handlers"]).find { |item| item["name"].to_s == @handler }
+          selected&.dig("features", "recursive_read_only_mounts") == true
+        rescue Client::Error
+          false
+        end
+
+        def mount_for(mount, supports_recursive:)
           source = mount["source"] || mount["host_path"]
           destination = mount["destination"] || mount["target"]
           return nil if source.to_s.empty? || destination.to_s.empty?
@@ -730,24 +689,37 @@ module Rubernetes
           readonly = mount["readonly"] == true
           {"container_path" => destination.to_s, "host_path" => source.to_s, "readonly" => readonly,
            "propagation" => propagation,
-           "recursive_read_only" => readonly && %w[Enabled IfPossible].include?(mount["recursive_readonly"].to_s)}
+           "recursive_read_only" => resolve_recursive_read_only(mount, readonly: readonly, supports_recursive: supports_recursive)}
         end
 
-        # kuberuntime's CPU shares/quota and memory limit.
-        def linux_resources(resources)
-          requests = resources["requests"] || {}
-          limits = resources["limits"] || {}
-          result = {}
-          cpu_request = milli(requests["cpu"] || limits["cpu"])
-          result["cpu_shares"] = cpu_request.nil? ? 2 : [[(cpu_request * 1024) / 1000, 2].max, 262_144].min
-          if (cpu_limit = milli(limits["cpu"]))
-            result["cpu_period"] = 100_000
-            result["cpu_quota"] = [(cpu_limit * 100_000) / 1000, 1000].max
+        def resolve_recursive_read_only(mount, readonly:, supports_recursive:)
+          mode = mount["recursive_readonly"]
+          return false if mode.nil? || mode == "Disabled"
+
+          volume = "volume #{mount.fetch("name", mount["destination"]).inspect}"
+          unless readonly
+            raise ContainerConfigError, "failed to resolve recursive read-only mode: #{volume} requested recursive read-only mode, but it is not read-only"
           end
-          if (memory = bytes(limits["memory"]))
-            result["memory_limit_in_bytes"] = memory
+
+          propagation = mount["propagation"]
+          unless propagation.nil? || propagation == "None"
+            raise ContainerConfigError, "failed to resolve recursive read-only mode: #{volume} is not compatible with propagation #{propagation.inspect}"
           end
-          result
+          return supports_recursive if mode == "IfPossible"
+
+          return true if mode == "Enabled" && supports_recursive
+
+          message = if mode == "Enabled"
+                      "#{volume} requested recursive read-only mode, but it is not supported by the runtime"
+                    else
+                      "unknown recursive read-only mode #{mode.inspect}"
+                    end
+          raise ContainerConfigError, "failed to resolve recursive read-only mode: #{message}"
+        end
+
+        def device_for(device)
+          {"host_path" => device.fetch("source"), "container_path" => device.fetch("destination"),
+           "permissions" => device.fetch("permissions", "mrw")}
         end
 
         def security_context(spec, pod)
@@ -766,19 +738,9 @@ module Rubernetes
           result["supplemental_groups"] = groups.map { |group| Integer(group) } unless groups.empty?
           seccomp = context.dig("seccompProfile", "type") || pod.dig("spec", "securityContext", "seccompProfile", "type")
           result["seccomp"] = {"profile_type" => seccomp == "Unconfined" ? "Unconfined" : "RuntimeDefault"} if seccomp
+          apparmor = AppArmor.profile(pod, {"name" => spec["name"], "securityContext" => context})
+          result["apparmor"] = AppArmor.cri_profile(apparmor) if apparmor
           result
-        end
-
-        def milli(value)
-          return nil if value.nil?
-
-          (Schema::Quantity.from_json(value.to_s).value * 1000).ceil
-        end
-
-        def bytes(value)
-          return nil if value.nil?
-
-          Schema::Quantity.from_json(value.to_s).value.ceil
         end
       end
     end
