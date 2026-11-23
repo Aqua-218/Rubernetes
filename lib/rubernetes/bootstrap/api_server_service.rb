@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../api"
+require_relative "../api/peer_proxy"
 require_relative "../schema/catalog"
 require_relative "../storage/memory_store"
 require_relative "../consensus"
@@ -12,8 +13,12 @@ require_relative "../runtime/microvm/runtime_classes"
 require_relative "../transport"
 require_relative "../extension/resource"
 require_relative "security_assembly"
+require_relative "api_server_bootstrap_objects"
+require_relative "api_server_startup_hooks"
 require_relative "kubernetes_service_reconciler"
+require_relative "peer_directory"
 require_relative "cluster_authentication_trust"
+require_relative "coordinated_leader_election"
 require File.expand_path("../../../generated/ruby/kubernetes_types", __dir__)
 
 module Rubernetes
@@ -22,6 +27,9 @@ module Rubernetes
     # the HTTP transport. Construction is side-effect free; the listening
     # socket is opened only by #start.
     class APIServerService
+      include APIServerBootstrapObjects
+      include APIServerStartupHooks
+
       # Presents generated Definition validation/defaulting through the small
       # schema contract consumed by API::Server.
       class SchemaContract
@@ -35,6 +43,8 @@ module Rubernetes
           @definition.validator
         end
 
+        def defaulting = @definition.defaulting
+
         # +old+: the stored object an update replaces (Defaulting#apply).
         def default(object, unknown_fields: :preserve, old: nil)
           # This contract is used at the API admission boundary. Include the
@@ -45,7 +55,7 @@ module Rubernetes
           @definition.defaulting.apply(
             object,
             unknown_fields: unknown_fields,
-            kubernetes_admission_defaults: true,
+            kubernetes_admission_defaults: old ? :update : :create,
             old: old
           )
         end
@@ -80,6 +90,9 @@ module Rubernetes
         # the client certificate the aggregator (and webhook calls) present,
         # which extension API servers trust through requestheader-client-ca.
         @proxy_certificate, @proxy_key = load_proxy_client(@config["proxy_client"])
+        identity = @raft_server ? @raft_server.id : "#{advertise_address}:#{@config.fetch("port")}"
+        @peer_directory = build_peer_directory(identity)
+        @peer_proxy = build_peer_proxy
         @openapi = API::OpenAPIRepository.new
         @crd_manager = API::CRD::Manager.new(registry: @registry, store: @store, openapi: @openapi,
                                              cel: Security::CEL::Evaluator.new, logger: @logger,
@@ -114,15 +127,18 @@ module Rubernetes
           crd_manager: @crd_manager,
           aggregator: @aggregator,
           runtime_config: @config.fetch("runtime_config", {}),
+          peer_proxy: @peer_proxy,
           service_cidrs: service_cidrs,
           node_port_range: node_port_range
         )
+        @startup_health = API::StartupHealth.new
+        @api_server.startup_health = @startup_health
         # /flagz: this process's command line and its (flattened) configuration.
         @api_server.component_flags = Observability::ZPages.flags_from(arguments: ARGV.dup, config: @config.to_h)
-        identity = @raft_server ? @raft_server.id : "#{advertise_address}:#{@config.fetch("port")}"
         @kubernetes_service = KubernetesServiceReconciler.new(
           api_server: @api_server, logger: @logger, advertise_address: advertise_address,
-          secure_port: @config.fetch("port"), service_cidrs: service_cidrs, identity: identity
+          secure_port: @config.fetch("port"), service_cidrs: service_cidrs, identity: identity,
+          peer_directory: @peer_directory, on_storage_versions_ready: -> { install_serving_bootstrap_objects }
         )
         API::CRD.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
         # JWT authenticator metrics carry this server's ID (hashed); they
@@ -140,6 +156,13 @@ module Rubernetes
                                                                  logger: @logger,
                                                                  uid_headers: @security.feature_gates.fetch("RemoteRequestHeaderUID", true) != false)
                                 end
+        http_options = serving_http_options
+        @http_server = http_server_class.new(@api_server, **http_options)
+        install_tls_handshake_metric
+        @started = false
+      end
+
+      private def serving_http_options
         http_options = {
           host: @config.fetch("bind_address"),
           port: @config.fetch("port"),
@@ -151,9 +174,7 @@ module Rubernetes
           http_options[:key_file] = @config["tls"]["key_file"]
           http_options.merge!(@security.tls_options) if @security
         end
-        @http_server = http_server_class.new(@api_server, **http_options)
-        install_tls_handshake_metric
-        @started = false
+        http_options
       end
 
       def install_tls_handshake_metric
@@ -174,9 +195,11 @@ module Rubernetes
                                                  address: @raft_server.address, voters: @raft_server.membership.voters.to_a.sort)
           @system_namespace_thread = Thread.new { ensure_system_namespaces_when_available }
           @system_namespace_thread.name = "apiserver-system-namespaces"
+        else
+          @startup_health.complete("start-system-namespaces-controller")
         end
-        install_bootstrap_objects if @security
-        install_bootstrap_object(Extension::CRD) if extensions_enabled?
+        install_serving_bootstrap_objects unless @api_server.storage_version_reporting?
+        @security&.flow_control_configuration&.start
         bootstrap_dynamic_apis
         start_dynamic_api_reconciler
         bootstrap_service_cidr
@@ -196,9 +219,17 @@ module Rubernetes
           controller.note_loaded
           controller.start
         end
+        @startup_health.complete("start-apiserver-admission-initializer")
+        @startup_health.monitor_log { @logger.flush } if @logger.is_a?(StructuredLogger)
         @http_server.start
+        @peer_directory&.assign_default_port(@http_server.port)
         @kubernetes_service.start
+        @startup_health.complete("bootstrap-controller")
+        @peer_proxy&.start
         @authentication_trust&.start
+        @startup_health.complete("start-cluster-authentication-info-controller")
+        start_registration_hooks
+        start_coordinated_leader_election
         @started = true
         @logger.info(
           "process.ready",
@@ -216,9 +247,15 @@ module Rubernetes
         @http_server.stop
         @stopping = true
         @kubernetes_service&.stop
+        @peer_proxy&.stop
         @authentication_trust&.stop
+        @coordinated_leader_election&.stop
         @system_namespace_thread&.join(1)
         @dynamic_api_thread&.join(2)
+        @registration_thread&.join(1)
+        @startup_health.stop_log_monitor
+        @api_server.stop_apiservice_availability_loop
+        @security&.flow_control_configuration&.stop
         @repair_thread&.kill
         @encryption_reload&.stop
         Array(@security&.reload_controllers).each(&:stop)
@@ -230,6 +267,49 @@ module Rubernetes
         @started = false
         self
       end
+
+      private def install_serving_bootstrap_objects
+        install_bootstrap_objects if @security
+        install_bootstrap_object(Extension::CRD) if extensions_enabled?
+      end
+
+      private def start_coordinated_leader_election
+        return unless @security&.feature_gates&.fetch(CoordinatedLeaderElection::GATE, false)
+
+        @coordinated_leader_election = CoordinatedLeaderElection.new(
+          api_server: @api_server, logger: @logger, identity: @config["identity"] || Socket.gethostname
+        )
+        @coordinated_leader_election.start
+      end
+
+      def build_peer_directory(identity)
+        gates = @security ? @security.feature_gates : {}
+        return unless @config["tls"] && gates.fetch("UnknownVersionInteroperabilityProxy", true) && gates.fetch("APIServerIdentity", true)
+
+        host = @config["peer_advertise_ip"]
+        port = @config["peer_advertise_port"]
+        unless host && port
+          host = advertise_address
+          port = @config.fetch("port")
+        end
+        PeerDirectory.new(store: @store, registry: @registry, identity: KubernetesServiceReconciler.apiserver_id(identity),
+                          host: host, port: port)
+      rescue IPAddr::InvalidAddressError
+        raise Config::Error, "peer proxy requires an IP address for peer advertisement" if @config["peer_ca_file"]
+      end
+
+      def build_peer_proxy
+        ca = @config["peer_ca_file"]
+        return unless ca && @peer_directory
+
+        unless @proxy_certificate && @proxy_key && @security&.authentication_info&.dig(:request_header)
+          raise Config::Error, "peer proxy requires a proxy client certificate and request_header authentication"
+        end
+
+        transport = API::PeerTransport.new(ca_file: ca, certificate: @proxy_certificate, key: @proxy_key)
+        API::PeerProxy.new(transport: transport, directory: @peer_directory, logger: @logger)
+      end
+      private :build_peer_directory, :build_peer_proxy
 
       # Whether the datastore can serve requests: a Raft-backed server is
       # ready only once its node is a member with a known leader.
@@ -288,7 +368,7 @@ module Rubernetes
                     namespace&.to_s
                   end
           prefix = "#{prefix}/#{scope}" if scope
-          name.nil? ? prefix : "#{prefix}/#{name}"
+          name.nil? ? "#{prefix.delete_suffix("/")}/" : "#{prefix}/#{name}"
         end
       end
 
@@ -319,6 +399,7 @@ module Rubernetes
 
         SecurityAssembly.new(config: config["security"], store: @store, key_for: store_key_for, logger: @logger,
                              extensions: extensions_enabled?,
+                             namespace_creator: method(:create_namespace_from_admission),
                              apiserver_id: config["identity"] || Socket.gethostname,
                              service_resolver: service_endpoint_resolver,
                              resource_resolver: lambda { |group, kind|
@@ -345,6 +426,18 @@ module Rubernetes
                                # A mutable copy: schema application hands back frozen members.
                                Marshal.load(Marshal.dump(@api_server.send(:apply_defaults_only, resource, object)))
                              })
+      end
+
+      def create_namespace_from_admission(name)
+        namespace = {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => name}}
+        response = @api_server.call(method: "POST", path: "/api/v1/namespaces", body: namespace,
+                                    headers: {"Content-Type" => "application/json"},
+                                    identity: {"username" => "system:apiserver", "groups" => ["system:masters"]})
+        return if response.status == 201
+        return if response.status == 409 && response.body["reason"] == "AlreadyExists"
+
+        raise API::Status::Error.new(message: response.body.fetch("message"), code: response.status,
+                                     reason: response.body.fetch("reason"), details: response.body["details"])
       end
 
       # Re-establish CustomResourceDefinitions and APIServices already in the
@@ -446,6 +539,8 @@ module Rubernetes
           apply_dynamic_snapshot(kind, listed.items)
           [kind, adapter.watch(resource: resource, namespace: :all, selectors: nil, resource_version: listed.resource_version.to_s)]
         end
+        @api_server.start_apiservice_availability_loop if streams.key?(:apiservice)
+        dynamic_api_hooks_ready
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DYNAMIC_API_RELIST_SECONDS
         until @stopping || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           idle = true
@@ -464,7 +559,12 @@ module Rubernetes
       def apply_dynamic_snapshot(kind, items)
         names = items.map { |item| item.dig("metadata", "name") }
         if kind == :crd
-          items.each { |item| @crd_manager.sync(item) }
+          items.each do |item|
+            @crd_manager.sync(item)
+            if item.dig("metadata", "deletionTimestamp") && Array(item.dig("metadata", "finalizers")).include?(API::CRD::Manager::CLEANUP_FINALIZER)
+              @api_server.schedule_crd_finalizer(item.dig("metadata", "name"))
+            end
+          end
           (@crd_manager.served_names - names).each { |name| @crd_manager.withdraw(name) }
         else
           items.each do |item|
@@ -491,46 +591,6 @@ module Rubernetes
         end
       end
 
-      # kube-apiserver post-start hooks: RBAC bootstrap policy (when RBAC is
-      # enabled), API Priority and Fairness bootstrap objects, and the system
-      # namespaces.  Objects are created only when absent so operator edits
-      # survive restarts, mirroring the upstream autoupdate annotation rule.
-      def install_bootstrap_objects
-        documents = SecurityAssembly.bootstrap_documents
-        modes = Array(@config.dig("security", "authorization", "modes"))
-        modes = %w[Node RBAC] if modes.empty?
-        wanted = []
-        wanted.push("clusterroles", "clusterrolebindings", "roles", "rolebindings") if modes.include?("RBAC")
-        wanted.push("prioritylevelconfigurations", "flowschemas") unless @config.dig("security", "flow_control", "enabled") == false
-        installed = 0
-        wanted.each do |name|
-          documents.fetch(name, []).each do |object|
-            installed += 1 if install_bootstrap_object(with_type_meta(name, object))
-          end
-        end
-        # The node runtime handlers of this project (spec/node/runtime.md 5.8.1).
-        Runtime::MicroVMRuntimeClasses.documents.each { |object| installed += 1 if install_bootstrap_object(object) }
-        @logger.info("security.bootstrap.installed", objects: installed, kinds: wanted + ["runtimeclasses"])
-        installed
-      end
-
-      # The oracle dump keeps list items without TypeMeta (as kube-apiserver
-      # serves them); restore apiVersion/kind from the collection name.
-      BOOTSTRAP_TYPE_META = {
-        "clusterroles" => ["rbac.authorization.k8s.io/v1", "ClusterRole"],
-        "clusterrolebindings" => ["rbac.authorization.k8s.io/v1", "ClusterRoleBinding"],
-        "roles" => ["rbac.authorization.k8s.io/v1", "Role"],
-        "rolebindings" => ["rbac.authorization.k8s.io/v1", "RoleBinding"],
-        "flowschemas" => ["flowcontrol.apiserver.k8s.io/v1", "FlowSchema"],
-        "prioritylevelconfigurations" => ["flowcontrol.apiserver.k8s.io/v1", "PriorityLevelConfiguration"],
-        "namespaces" => %w[v1 Namespace]
-      }.freeze
-
-      def with_type_meta(collection, object)
-        api_version, kind = BOOTSTRAP_TYPE_META.fetch(collection)
-        object.merge("apiVersion" => object["apiVersion"] || api_version, "kind" => object["kind"] || kind)
-      end
-
       # Makes the datastore's voters `voters`, reaching the new ones at
       # `peers` (id => host:port).  Raft does it in two steps (joint
       # consensus), so the cluster keeps a quorum throughout; this returns
@@ -547,43 +607,30 @@ module Rubernetes
 
       # Writes everything the in-memory datastore holds to `path`, for
       # Consensus::Seed to start a raft datastore from (`rubectl cluster
-      # seed`).  Writes that arrive after this call are not in the file: the
-      # API server is stopped right after it.
-      def export_datastore(path)
+      # seed`). For a cutover, pause writes at the snapshot boundary until the
+      # source is stopped or the migration is abandoned.
+      def export_datastore(path, pause_writes: false)
         raise Config::Error, "this API server runs the raft datastore; there is nothing to migrate" if @raft_server
         raise Config::Error, "this API server's datastore cannot be exported" unless @store.is_a?(Storage::MemoryStore)
 
-        state = @store.export_state
-        File.write(path, JSON.generate(state), perm: 0o600)
+        state = @store.export_state(write_pause: (path if pause_writes))
+        begin
+          File.write(path, JSON.generate(state), perm: 0o600)
+        rescue StandardError
+          resume_datastore_writes(path) if pause_writes
+          raise
+        end
         {"keys" => state.fetch("known_keys").length, "revision" => state.fetch("revision")}
       end
       public :export_datastore
 
+      def resume_datastore_writes(path)
+        @store.resume_writes!(write_pause: path) if @store.is_a?(Storage::MemoryStore)
+      end
+      public :resume_datastore_writes
+
       def extensions_enabled?
         @config.dig("extensions", "enabled") == true
-      end
-
-      def install_bootstrap_object(object)
-        request = API::Request.new(method: "POST", path: collection_path(object), headers: {"content-type" => "application/json"},
-                                   body: JSON.generate(object), identity: {"username" => "system:apiserver", "groups" => ["system:masters"]})
-        response = @api_server.call(request)
-        return true if response.status == 201
-        return false if response.status == 409
-
-        @logger.warn("security.bootstrap.failed", kind: object["kind"], name: object.dig("metadata", "name"), status: response.status,
-                                                  message: response.body.is_a?(Hash) ? response.body["message"] : nil)
-        false
-      end
-
-      def collection_path(object)
-        api_version = object.fetch("apiVersion")
-        resource = @registry.find_gvk(group: api_version.include?("/") ? api_version.split("/").first : "",
-                                      version: api_version.split("/").last, kind: object.fetch("kind"))
-        raise Config::Error, "bootstrap object kind #{object["kind"]} is not served" if resource.nil?
-
-        base = resource.group.empty? ? "/api/#{resource.version}" : "/apis/#{resource.group}/#{resource.version}"
-        namespace = object.dig("metadata", "namespace")
-        namespace ? "#{base}/namespaces/#{namespace}/#{resource.resource}" : "#{base}/#{resource.resource}"
       end
 
       # The system namespaces need a quorum; keep trying in the background
@@ -593,6 +640,7 @@ module Rubernetes
         until @stopping
           begin
             @api_server.ensure_system_namespaces!
+            @startup_health.complete("start-system-namespaces-controller")
             @logger.info("datastore.system_namespaces.ready")
             return
           rescue Consensus::Error, Storage::Error, API::Status::Error => error
@@ -606,25 +654,27 @@ module Rubernetes
       # minutes upstream): each API server sweeps allocations against the
       # Services and IPAddresses and repairs leaks.
       def start_allocation_repair
-        allocator = @api_server.respond_to?(:service_allocator) ? @api_server.service_allocator : nil
-        return unless allocator.respond_to?(:repair!)
-
+        allocator = @api_server.service_allocator
         interval = Float(ENV.fetch("RUBERNETES_ALLOCATION_REPAIR_INTERVAL", API::ServiceAllocator::REPAIR_INTERVAL_SECONDS))
         @repair_thread = Thread.new do
           Thread.current.name = "apiserver-allocation-repair"
-          loop do
-            sleep(interval)
-            report = allocator.repair!
-            findings = report["ip_errors"].values.sum + report["port_errors"].values.sum
-            if findings.positive?
-              @logger.info("allocation.repair", **report.transform_values do |value|
-                value.is_a?(Hash) ? value.to_h : value
-              end)
-            end
-          rescue StandardError => error
-            @logger.warn("allocation.repair.failed", error: error.class.name, message: error.message)
+          delay = 0.25
+          until @stopping
+            delay = interval if @api_server.ready? && repair_allocations(allocator)
+            sleep(delay)
           end
         end
+      end
+
+      def repair_allocations(allocator)
+        report = allocator.repair!(raise_on_error: true)
+        @startup_health.complete("start-service-ip-repair-controllers")
+        findings = report["ip_errors"].values.sum + report["port_errors"].values.sum
+        @logger.info("allocation.repair", **report) if findings.positive?
+        true
+      rescue StandardError => error
+        @logger.warn("allocation.repair.failed", error: error.class.name, message: error.message)
+        false
       end
 
       # --encryption-provider-config: the EncryptionConfiguration wraps the
@@ -636,7 +686,7 @@ module Rubernetes
 
         require_relative "../security/encryption"
         configuration = Security::Encryption::Configuration.load(path)
-        wrapped = configuration.wrap(store)
+        wrapped = configuration.wrap(store, corrupt_deletion: config.dig("security", "feature_gates", "AllowUnsafeMalformedObjectDeletion") == true)
         interval = Float(config.fetch("encryption_config_reload_interval_seconds", Security::Encryption::ReloadController::POLL_INTERVAL))
         @encryption_reload = Security::Encryption::ReloadController.new(path: path, wrapped: wrapped, interval: interval,
                                                                         logger: lambda { |level, event, **fields|
@@ -649,13 +699,13 @@ module Rubernetes
 
       def build_store(config)
         datastore = config["datastore"] || {}
-        history = config.fetch("watch_history_limit")
-        # kube-apiserver's --etcd-compaction-interval, in seconds.
+        policy = datastore.fetch("history_retention_policy", Storage::MemoryStore::DEFAULT_HISTORY_POLICY)
+        history = {history_revisions: config.fetch("watch_history_limit"), history_retention_policy: policy}
         compaction_seconds = datastore["compaction_interval_seconds"]
-        if (datastore["type"] || "memory") == "memory"
-          return Storage::MemoryStore.new(history_revisions: history,
-                                          **(compaction_seconds ? {history_seconds: Float(compaction_seconds)} : {}))
+        if compaction_seconds || (policy == Storage::MemoryStore::LONGER_HISTORY_POLICY && datastore.key?("compaction_interval_seconds"))
+          history[:history_seconds] = compaction_seconds
         end
+        return Storage::MemoryStore.new(**history) if (datastore["type"] || "memory") == "memory"
 
         timing = Consensus::Node::Timing.production
         timing = timing.with(**datastore.fetch("timing").transform_keys(&:to_sym)) if datastore["timing"]
@@ -671,14 +721,11 @@ module Rubernetes
           port: datastore.fetch("listen_port"),
           timing: timing,
           logger: @logger,
-          history_revisions: history,
-          # kube-apiserver compacts every 5 minutes unless told otherwise.  A
-          # nil window here meant only the revision cap applied, and 100k
-          # revisions of whole objects -- Pods with managedFields -- held the
-          # replicas' resident size in the gigabytes over a conformance run.
-          history_seconds: compaction_seconds ? Float(compaction_seconds) : Storage::MemoryStore::DEFAULT_HISTORY_SECONDS
+          **history
         )
-        Consensus::RaftStore.new(@raft_server)
+        gates = config.dig("security", "feature_gates") || {}
+        Consensus::RaftStore.new(@raft_server, cbor_storage: gates["CBORServingAndStorage"] == true,
+                                               corrupt_deletion: gates["AllowUnsafeMalformedObjectDeletion"] == true)
       end
 
       def build_registry(source)
@@ -723,8 +770,9 @@ module Rubernetes
           default_served = if served
                              ->(version) { served.include?(group.empty? ? version : "#{group}/#{version}") }
                            end
+          storage = API::BuiltinConversion.storage_version(group, resource, names, default_served: default_served)
           options[[group, resource]] = {
-            storage_version: API::BuiltinConversion.storage_version(group, resource, names, default_served: default_served),
+            storage_version: storage, storage_key_version: storage, storage_key_versions: names,
             converter: API::BuiltinConversion::Converter.new(group: group, resource: resource)
           }
         end
