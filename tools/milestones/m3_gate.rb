@@ -9,21 +9,23 @@
 # success by hiding retries, skips, missing production adapters, or a changed
 # input tree.
 
+require_relative "report_output"
 require "digest"
 require "json"
 require "open3"
 require "rbconfig"
 require "time"
+require_relative "m0_source_inventory"
 
 module M3Gate
   MANIFEST_SCHEMA_VERSION = 3
   REPORT_SCHEMA_VERSION = 1
   MAX_JSON_BYTES = 32 * 1024 * 1024
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/
-  SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
+  SOURCE_EXCLUDED_ROOTS = M0SourceInventory::EXCLUDED_ROOTS
   # Anchored generator scratch directories (a11-generated.XXXXXX) are
   # excluded from the source identity by every milestone (M0-M2 rule).
-  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
+  SOURCE_EXCLUDED_PATTERNS = M0SourceInventory::EXCLUDED_PATTERNS
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   M0_GATE = File.join(__dir__, "m0_gate.rb").freeze
   M1_GATE = File.join(__dir__, "m1_gate.rb").freeze
@@ -136,6 +138,7 @@ module M3Gate
 
       validate_manifest_shape(manifest, errors)
       artifacts = validate_entries(manifest.fetch("artifacts", []), directory, errors, "artifact")
+      MilestoneReportOutput.validate(manifest["commands"], artifacts, errors)
       subjects = validate_entries(manifest.fetch("subjects", []), directory, errors, "subject")
       artifact_index = index_artifacts(artifacts, errors)
       validate_inventory(manifest, directory, artifact_index, errors)
@@ -439,9 +442,7 @@ module M3Gate
         end
         path_value = entry["path"]
         invalid_segments = path_value.is_a?(String) && path_value.split("/").any? { |segment| ["", ".", ".."].include?(segment) }
-        excluded = path_value.is_a?(String) &&
-                   (SOURCE_EXCLUDED_ROOTS.include?(path_value.split("/", 2).first) ||
-                    SOURCE_EXCLUDED_PATTERNS.any? { |pattern| pattern.match?(path_value) })
+        excluded = path_value.is_a?(String) && M0SourceInventory.excluded?(path_value)
         unless non_empty_string?(path_value) && !path_value.start_with?("/") && !path_value.include?("\0") && !invalid_segments && !excluded
           errors << "source inventory entry #{index} path is invalid"
           next
