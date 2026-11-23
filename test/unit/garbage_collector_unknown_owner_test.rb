@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/controller"
+require "rubernetes/bootstrap/control_plane_services"
 
 # The collector scans a fixed corpus of kinds, so "I did not see the owner" is
 # not the same statement as "the owner is gone".  Upstream never conflates the
@@ -85,5 +86,65 @@ class GarbageCollectorUnknownOwnerTest < Minitest::Test
              "metadata" => {"name" => "owner", "namespace" => "ns", "uid" => "owner-uid"}}
 
     assert_empty(collector.plan([owner, dependent(owner_api_version: "v1", owner_kind: "Service")]).operations)
+  end
+
+  class CustomCollectionClient
+    PATH = "/apis/example.com/v1/specialwidgets"
+
+    attr_reader :requests
+
+    def initialize(dependent)
+      @dependent = dependent
+      @requests = []
+    end
+
+    def get(resource, name = nil, **)
+      @requests << [resource, name]
+      case [resource, name]
+      when ["pods", nil] then list([])
+      when ["customresourcedefinitions", nil] then list([definition])
+      when [PATH, nil] then list([@dependent])
+      when [PATH, "dependent"] then @dependent
+      else
+        raise Rubernetes::Client::APIError.new("not found", response: Struct.new(:status).new(404))
+      end
+    end
+
+    def list(items)
+      {"items" => items, "metadata" => {"resourceVersion" => "42"}}
+    end
+
+    def delete(resource, name, options:, **)
+      @requests << [resource, name, options]
+      {"kind" => "Status"}
+    end
+
+    def definition
+      {"spec" => {"group" => "example.com", "scope" => "Cluster", "names" => {"kind" => "Widget", "plural" => "specialwidgets"},
+                  "versions" => [{"name" => "v1", "served" => true, "storage" => true}]},
+       "status" => {"conditions" => [{"type" => "Established", "status" => "True"}]}}
+    end
+  end
+
+  def test_custom_collection_uses_established_plural_and_cluster_scope
+    instance = dependent(owner_api_version: "example.com/v1", owner_kind: "Widget", name: "dependent")
+    instance["apiVersion"] = "example.com/v1"
+    instance["kind"] = "Widget"
+    instance.fetch("metadata").delete("namespace")
+    client = CustomCollectionClient.new(instance)
+    store = Rubernetes::Bootstrap::KubernetesStoreAdapter.new(client: client, resource_descriptors: [Controller::ResourceDescriptor.parse("Pod")])
+    gc = Controller::Builtins::GarbageCollectorController.new
+    result = gc.plan_orphans("periodic", store: store)
+
+    assert_equal ["dependent"], names(result)
+    descriptor = result.operations.first.resource
+
+    assert_equal "specialwidgets", descriptor.resource
+    assert_predicate descriptor, :cluster_scoped?
+    assert_includes client.requests, [CustomCollectionClient::PATH, "owner"]
+    assert_includes client.requests, [CustomCollectionClient::PATH, "dependent"]
+    store.apply(result.operations.first)
+
+    assert_includes client.requests, [CustomCollectionClient::PATH, "dependent", {"preconditions" => {"uid" => "dependent-uid"}}]
   end
 end
