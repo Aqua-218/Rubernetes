@@ -9,7 +9,7 @@ module Rubernetes
     #
     #   device.driver                     string
     #   device.allowMultipleAllocations   bool (with DRAConsumableCapacity)
-    #   device.attributes[domain][id]     int / bool / string / semver
+    #   device.attributes[domain][id]     int / bool / string / semver, or a list when enabled
     #   device.capacity[domain][id]       quantity
     #
     # on the Kubernetes CEL libraries (quantity, semver, ...) plus ext.Bindings
@@ -23,6 +23,26 @@ module Rubernetes
       SecurityCEL = Security::CEL
       # resourceapi.CELSelectorExpressionMaxCost.
       MAX_COST = 1_000_000
+      MAX_ATTRIBUTE_VALUES_PER_DEVICE = 48
+
+      class ListAttributeLibrary < SecurityCEL::Library
+        def member_call(function, target, arguments, context)
+          return super unless function == "includes"
+
+          value = arguments.fetch(0)
+          return equal?(target, value) unless target.is_a?(Array)
+
+          target.each_with_index do |item, index|
+            if index >= MAX_ATTRIBUTE_VALUES_PER_DEVICE
+              raise SecurityCEL::EvaluationError, "'includes' function cannot be applied to lists longer than #{MAX_ATTRIBUTE_VALUES_PER_DEVICE} values"
+            end
+
+            context.charge
+            return true if equal?(item, value)
+          end
+          false
+        end
+      end
 
       class Error < StandardError; end
 
@@ -32,9 +52,11 @@ module Rubernetes
 
       DEVICE_FIELDS = {"driver" => :string, "attributes" => :attributes, "capacity" => :capacity}.freeze
 
-      def initialize(consumable_capacity: true, max_entries: 10)
+      def initialize(consumable_capacity: true, list_type_attributes: false, max_entries: 10)
         @consumable_capacity = consumable_capacity
-        @evaluator = SecurityCEL::Evaluator.new(cost_limit: MAX_COST)
+        @list_type_attributes = list_type_attributes
+        library = list_type_attributes ? ListAttributeLibrary.new : SecurityCEL::Library.new
+        @evaluator = SecurityCEL::Evaluator.new(cost_limit: MAX_COST, library: library)
         @cache = {}
         @order = []
         @max_entries = max_entries
@@ -64,7 +86,7 @@ module Rubernetes
       def compile(expression)
         program = @evaluator.compile(expression)
         type = infer(program.ast, {})
-        unless %i[bool dyn].include?(type)
+        unless %i[bool dyn attribute_value].include?(type)
           return failure(expression, "compilation failed: ERROR: <input>:1:1: must evaluate to bool or the unknown type, " \
                                      "not #{type_name(type)}")
         end
@@ -119,18 +141,20 @@ module Rubernetes
       # getAttributeValue.
       def attribute_value(name, attribute)
         attribute ||= {}
+        if @list_type_attributes
+          return attribute["ints"].map { |value| Integer(value) } if attribute["ints"]
+          return attribute["bools"].map { |value| value == true } if attribute["bools"]
+          return attribute["strings"].map(&:to_s) if attribute["strings"]
+          return attribute["versions"].map { |value| SecurityCEL::Library::SemVer.parse(value.to_s) } if attribute["versions"]
+        end
         return Integer(attribute["int"]) if attribute.key?("int")
         return attribute["bool"] == true if attribute.key?("bool")
         return attribute["string"].to_s if attribute.key?("string")
+        return SecurityCEL::Library::SemVer.parse(attribute["version"].to_s) if attribute.key?("version")
 
-        if attribute.key?("version")
-          begin
-            return SecurityCEL::Library::SemVer.parse(attribute["version"].to_s)
-          rescue SecurityCEL::EvaluationError => error
-            raise Error, "attribute #{name}: parse semantic version: #{error.message}"
-          end
-        end
         raise Error, "attribute #{name}: unsupported attribute value"
+      rescue SecurityCEL::EvaluationError => error
+        raise Error, "attribute #{name}: parse semantic version: #{error.message}"
       end
 
       # parseQualifiedName.
@@ -153,31 +177,8 @@ module Rubernetes
           return :device if name == "device"
 
           raise CompileError, "undeclared reference to '#{name}' (in container '')"
-        when :select
-          target = infer(node[1], scope)
-          field = node[2]
-          case target
-          when :device
-            type = device_field(field)
-            raise CompileError, "undefined field '#{field}'" unless type
-
-            type
-          when :attributes then :attribute_domain
-          when :capacity then :capacity_domain
-          when :attribute_domain then :dyn
-          when :capacity_domain then :quantity
-          else :dyn
-          end
-        when :index
-          target = infer(node[1], scope)
-          infer(node[2], scope)
-          case target
-          when :attributes then :attribute_domain
-          when :capacity then :capacity_domain
-          when :attribute_domain then :dyn
-          when :capacity_domain then :quantity
-          else :dyn
-          end
+        when :select, :index
+          infer_access(node, scope)
         when :has
           infer(node[1], scope)
           :bool
@@ -186,7 +187,8 @@ module Rubernetes
           infer(node[3], scope.merge(node[1] => bound))
         when :comprehension
           _, iter_var, range, accu_var, init, condition, step, result = node
-          infer(range, scope)
+          raise CompileError, "expression of type 'any' cannot be range of a comprehension" if infer(range, scope) == :attribute_value && !@list_type_attributes
+
           inner = scope.merge(iter_var => :dyn, accu_var => :dyn)
           infer(init, scope)
           [condition, step].each { |child| infer(child, inner) }
@@ -196,6 +198,11 @@ module Rubernetes
           target = node[2]
           infer(target, scope) if target
           Array(node[3]).each { |argument| infer(argument, scope) }
+          if name == "includes"
+            raise CompileError, "undeclared reference to 'includes' (in container '')" unless @list_type_attributes && target && Array(node[3]).length == 1
+
+            return :bool
+          end
           return :int if %w[compareTo].include?(name)
           return :quantity if name == "quantity" || (%w[add sub].include?(name) && target && infer(target, scope) == :quantity)
           return :semver if name == "semver"
@@ -220,6 +227,23 @@ module Rubernetes
           :map
         else
           SecurityCEL::Types.infer(node)
+        end
+      end
+
+      def infer_access(node, scope)
+        operation, receiver, field = node
+        target = infer(receiver, scope)
+        infer(field, scope) if operation == :index
+        case target
+        when :device
+          return :dyn if operation == :index
+
+          device_field(field) || raise(CompileError, "undefined field '#{field}'")
+        when :attributes then :attribute_domain
+        when :capacity then :capacity_domain
+        when :attribute_domain then @list_type_attributes ? :dyn : :attribute_value
+        when :capacity_domain then :quantity
+        else :dyn
         end
       end
 
