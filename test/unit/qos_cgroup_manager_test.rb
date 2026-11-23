@@ -9,7 +9,7 @@ require "rubernetes/node/qos_cgroup_manager"
 # helpers_linux.go MilliCPUToShares, libcontainer's shares -> cpu.weight).
 class QOSCgroupManagerTest < Minitest::Test
   Manager = Rubernetes::Node::QOSCgroupManager
-  FILES = %w[cpu.weight memory.max pids.max hugetlb.2MB.max].freeze
+  FILES = %w[cpu.weight memory.max memory.min memory.low pids.max hugetlb.2MB.max].freeze
 
   def setup
     @dir = Dir.mktmpdir("qos-cgroups-")
@@ -82,6 +82,62 @@ class QOSCgroupManagerTest < Minitest::Test
     assert_equal Manager.shares_to_weight(Manager.milli_cpu_to_shares(1000)).to_s, read("burstable", "cpu.weight")
     assert_equal Manager.shares_to_weight(Manager.milli_cpu_to_shares(2000)).to_s, read("guaranteed", "cpu.weight")
     assert_equal "1", read("besteffort", "cpu.weight")
+  end
+
+  def test_qos_reserved_applies_memory_limits_below_higher_qos_requests
+    memory = 1024**3
+    guaranteed = pod([:guaranteed, "1"], "a")
+    burstable = pod("500m", "b")
+    burstable.dig("spec", "containers", 0, "resources", "requests")["memory"] = "2Gi"
+
+    manager(reserved_memory_percent: Manager.parse_reserved_memory({"memory" => "50%"})).tick([guaranteed, burstable])
+
+    assert_equal "max", read("guaranteed", "memory.max")
+    assert_equal (15 * memory / 2).to_s, read("burstable", "memory.max")
+    assert_equal (13 * memory / 2).to_s, read("besteffort", "memory.max")
+    assert_raises(Manager::Error) { Manager.parse_reserved_memory({"memory" => "50%", "cpu" => "50%"}) }
+    assert_raises(Manager::Error) { Manager.parse_reserved_memory({"memory" => "101%"}) }
+  end
+
+  def test_qos_reserved_uses_absolute_allocatable_with_root_enforcement_disabled
+    gib = 1024**3
+    first = manager(node: "worker-0", system_reserved: {"memory" => "6Gi"}, enforce_node_allocatable: ["none"],
+                    reserved_memory_percent: 50)
+    first.tick([pod([:guaranteed, "1"], "a")])
+
+    assert_equal (8 * gib).to_s, read("memory.max")
+    assert_equal (3 * gib / 2).to_s, read("burstable", "memory.max")
+    assert_equal (3 * gib / 2).to_s, read("besteffort", "memory.max")
+
+    second = manager(node: "worker-1", kube_reserved: {"memory" => "7Gi"}, reserved_memory_percent: 50)
+    burstable = pod("500m", "b")
+    burstable.dig("spec", "containers", 0, "resources", "requests")["memory"] = "2Gi"
+    second.tick([burstable])
+
+    assert_equal (8 * gib).to_s, read("memory.max")
+    assert_equal (5 * gib / 2).to_s, read("burstable", "memory.max")
+    assert_equal (3 * gib / 2).to_s, read("besteffort", "memory.max")
+  end
+
+  def test_memory_qos_tiered_protects_guaranteed_and_burstable_requests
+    memory = 1024**3
+    guaranteed = pod([:guaranteed, "1"], "a")
+    burstable = pod("500m", "b")
+    burstable.dig("spec", "containers", 0, "resources", "requests")["memory"] = "2Gi"
+    subject = manager(memory_qos_policy: "TieredReservation")
+    metrics = []
+    subject.memory_qos_gauge = ->(*values) { metrics << values }
+    subject.tick([guaranteed, burstable])
+
+    assert_equal (3 * memory).to_s, read("memory.min")
+    assert_equal memory.to_s, read("guaranteed", "memory.min")
+    assert_equal (2 * memory).to_s, read("burstable", "memory.low")
+    assert_equal [[memory, 2 * memory]], metrics
+    subject.tick([])
+
+    assert_equal "0", read("memory.min")
+    assert_equal "0", read("guaranteed", "memory.min")
+    assert_equal "0", read("burstable", "memory.low")
   end
 
   # Two agents of one host share the hierarchy: both write the same
