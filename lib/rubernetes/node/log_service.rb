@@ -9,7 +9,7 @@ module Rubernetes
     # applies a local tail only to bounded data returned by simple adapters.
     class LogService < Service
       def logs(container_id = nil, follow: false, since: nil, tail: nil, request_id: nil, identity: nil,
-               timestamps: false, limit_bytes: nil, **options)
+               timestamps: false, limit_bytes: nil, sandbox_id: nil, archived_log_path: nil, **options)
         container_id ||= options.delete(:container_id) || options.delete(:id) || options.delete(:container)
         since ||= options.delete(:since_time) || options.delete(:since_seconds)
         tail ||= options.delete(:tail_lines)
@@ -32,7 +32,7 @@ module Rubernetes
           :logs,
           [request.container_id],
           {follow: follow, since: since, tail: tail, stream: stream_name, timestamps: timestamps,
-           request_id: request.request_id, identity: request.identity},
+           request_id: request.request_id, identity: request.identity, **{sandbox_id: sandbox_id, archived_log_path: archived_log_path}.compact},
           request_id: request.request_id
         )
         result = result[:body] || result["body"] if result.is_a?(Hash) && (result.key?(:body) || result.key?("body"))
