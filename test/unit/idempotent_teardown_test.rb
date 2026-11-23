@@ -120,6 +120,38 @@ class IdempotentTeardownTest < Minitest::Test
 
   # --- volume operations ---------------------------------------------------
 
+  def test_detach_retry_survives_publish_and_stage_cleanup_for_current_and_legacy_attachments
+    @directory = Dir.mktmpdir("detach-operation")
+    [false, true].each do |legacy|
+      root = File.join(@directory, legacy ? "legacy" : "current")
+      FileUtils.mkdir_p(root)
+      manager = Volume::Manager.new(data_dir: root)
+      id = manager.create_volume({"name" => "volume", "emptyDir" => {}}, token: "create")
+      stage = File.join(root, "stage")
+      target = File.join(root, "publish")
+      manager.controller.publish(id, "node", token: "attach")
+      if legacy
+        record = manager.fetch_record(id)
+        manager.volume_store[id] = record.with(attachments: {"node" => record.attachments.fetch("node").except("generation")})
+      end
+      manager.node.stage(id, stage, node: "node", token: "stage")
+      manager.node.publish(id, "pod", target, readonly: false, node: "node", token: "publish")
+
+      assert_raises(Volume::ConflictError) { manager.controller.unpublish(id, "node", token: "detach") }
+
+      manager.node.unpublish(id, "pod", target, token: "unpublish")
+      manager.node.unstage(id, stage, node: "node", token: "unstage")
+
+      restarted = Volume::Manager.new(data_dir: root)
+
+      assert restarted.controller.unpublish(id, "node", token: "detach")
+      assert_empty restarted.fetch_record(id).attachments
+
+      restarted.controller.publish(id, "node", token: "reattach")
+      assert_raises(Volume::OperationTokenConflict) { restarted.controller.unpublish(id, "node", token: "detach") }
+    end
+  end
+
   def test_teardown_operations_are_recognised_as_cleanup
     support = Volume::OperationSupport
 
