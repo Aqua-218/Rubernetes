@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../label_requirement"
+
 module Rubernetes
   module API
     class Server
@@ -14,41 +16,74 @@ module Rubernetes
         def binding_response(request, route)
           raise Status::MethodNotAllowed.new("verb #{request.method} is not supported for pods/binding") unless request.method == "POST"
 
-          object, node_name = binding_and_node(request, route)
+          validate_write_options!(request, "CreateOptions")
           namespace = storage_namespace(route, operation: :update)
-          existing = begin
-            @store.get(resource: route.resource, namespace: namespace, name: route.name)
-          rescue MemoryStore::NotFound
-            raise Status::NotFound.new("pods #{route.name.to_s.inspect} not found", details: resource_details(route))
+          object = admitted_pod_action(request, route, "Binding", "v1", namespace)
+          node_name = binding_node(object)
+          # The legacy bindings collection uses the same Pod storage strategy.
+          if route.resource.resource == "bindings"
+            route = route.dup
+            route.resource = @registry.find_gvr(group: "", version: "v1", resource: "pods")
+            route.name = metadata_value(object, "name")
           end
-          assigned = existing.dig("spec", "nodeName").to_s
-          unless assigned.empty?
-            raise Status::Conflict.new("Operation cannot be fulfilled on pods/binding #{route.name.to_s.inspect}: " \
-                                       "pod #{route.name} is already assigned to node #{assigned.inspect}")
+          existing = @store.get(resource: route.resource, namespace: namespace, name: route.name)
+          ensure_binding_allowed!(object, route, existing)
+          unless dry_run?(request)
+            updated = @store.update(resource: route.resource, namespace: namespace, name: route.name,
+                                    object: bound_pod(existing, object, node_name),
+                                    resource_version: metadata_value(existing, "resourceVersion"))
+            after_commit(route.resource, updated)
           end
-
-          updated = @store.update(resource: route.resource, namespace: namespace, name: route.name,
-                                  object: bound_pod(existing, object, node_name),
-                                  resource_version: metadata_value(existing, "resourceVersion"))
-          after_commit(route.resource, updated)
           json_response({"kind" => "Status", "apiVersion" => "v1", "metadata" => {}, "status" => "Success", "code" => 201},
                         status: 201)
         rescue MemoryStore::NotFound
           raise Status::NotFound.new("pods #{route.name.to_s.inspect} not found", details: resource_details(route))
         end
 
-        # The decoded Binding and the node it names, once both are well formed.
-        def binding_and_node(request, route)
+        def ensure_binding_allowed!(binding, route, pod)
+          preconditions = binding.fetch("metadata", {}).slice("uid", "resourceVersion")
+          preconditions.each do |key, value|
+            next if value.to_s.empty? || metadata_value(pod, key) == value
+
+            label = key == "uid" ? "UID" : "ResourceVersion"
+            detail = "Precondition failed: #{label} in precondition: #{value}, #{label} in object meta: #{metadata_value(pod, key)}"
+            raise Status::Conflict.new("Operation cannot be fulfilled on pods #{route.name.inspect}: StorageError: invalid object, Code: 4, " \
+                                       "Key: /pods/#{route.namespace}/#{route.name}, ResourceVersion: 0, AdditionalErrorMsg: #{detail}",
+                                       details: resource_details(route))
+          end
+          assigned = pod.dig("spec", "nodeName").to_s
+          reason = if metadata_value(pod, "deletionTimestamp")
+                     "is being deleted, cannot be assigned to a host"
+                   elsif !assigned.empty?
+                     "is already assigned to node #{assigned.inspect}"
+                   elsif !Array(pod.dig("spec", "schedulingGates")).empty?
+                     "has non-empty .spec.schedulingGates"
+                   end
+          return unless reason
+
+          raise Status::Conflict.new("Operation cannot be fulfilled on pods/binding #{route.name.inspect}: pod #{route.name} #{reason}",
+                                     details: {"name" => route.name, "kind" => "pods/binding"})
+        end
+
+        def admitted_pod_action(request, route, kind, version, namespace)
           body = request_body(request)
           raise Status::BadRequest.new("request body must be a JSON object") unless body.is_a?(Hash)
 
           object = stringify_keys(body)
-          kind = object["kind"].to_s
-          raise Status::BadRequest.new("expected a Binding, got #{kind.inspect}") unless kind.empty? || kind == "Binding"
+          provided = object["kind"].to_s
+          raise Status::BadRequest.new("expected #{kind}, got #{provided.inspect}") unless provided.empty? || provided == kind
 
-          name = object.dig("metadata", "name").to_s
-          raise Status::BadRequest.new("name in URL does not match name in Binding object") if !name.empty? && name != route.name.to_s
+          match_request_namespace!(object, route)
+          name = metadata_value(object, "name").to_s
+          raise Status::BadRequest.new("name in URL does not match name in #{kind} object") if route.name && name != route.name
+          raise Status::BadRequest.new("metadata.name is required") if name.empty?
 
+          object["kind"] = kind
+          object["apiVersion"] ||= version
+          admitted_for_create_subresource(request, route, object, namespace, dry_run: dry_run?(request))
+        end
+
+        def binding_node(object)
           target = object["target"]
           raise Status::BadRequest.new("target is required") unless target.is_a?(Hash)
 
@@ -58,7 +93,7 @@ module Rubernetes
           node_name = target["name"].to_s
           raise Status::BadRequest.new("target.name is required") if node_name.empty?
 
-          [object, node_name]
+          node_name
         end
 
         # The Pod as the binding leaves it: assigned, carrying the Binding's
@@ -90,58 +125,56 @@ module Rubernetes
         def eviction_response(request, route)
           raise Status::MethodNotAllowed.new("verb #{request.method} is not supported for pods/eviction") unless request.method == "POST"
 
-          delete_options = eviction_delete_options(request, route)
+          validate_write_options!(request, "CreateOptions")
           namespace = storage_namespace(route, operation: :delete)
+          object = admitted_pod_action(request, route, "Eviction", "policy/v1", namespace)
+          delete_options = eviction_delete_options(request, route, object)
           existing = begin
             @store.get(resource: route.resource, namespace: namespace, name: route.name)
           rescue MemoryStore::NotFound
             raise Status::NotFound.new("pods #{route.name.to_s.inspect} not found", details: resource_details(route))
           end
-          # An Eviction is checked against every PodDisruptionBudget that selects
-          # the Pod: a budget with no disruptions left refuses it with 429
-          # (pkg/registry/core/pod/storage/eviction.go:418-457), and a successful
-          # eviction spends one disruption.  None of that existed, so eviction
-          # was an unconditional delete and
-          # "[sig-apps] DisruptionController should block an eviction until the
-          # PDB is updated to allow it" could never pass.
-          dry_run = delete_options.is_a?(Hash) && !Array(delete_options["dryRun"]).empty?
-          check_disruption_budgets!(namespace, existing, dry_run: dry_run)
+          dry_run = !Array(delete_options["dryRun"]).empty?
           caller_version = eviction_precondition!(delete_options, existing)
+          unhealthy_budget = check_disruption_budgets!(namespace, existing, dry_run: dry_run)
           existing = mark_evicted(route.resource, namespace, route.name, existing) unless dry_run
-          delete_evicted_pod(route, namespace, existing, delete_options, pin_version: !caller_version.nil?)
+          delete_evicted_pod(route, namespace, existing, delete_options, pin_version: !!(caller_version || unhealthy_budget))
           json_response({"kind" => "Status", "apiVersion" => "v1", "metadata" => {}, "status" => "Success", "code" => 201}, status: 201)
+        rescue MemoryStore::Conflict
+          raise retry_disruption_budget(unhealthy_budget) if unhealthy_budget && !caller_version
+
+          raise
         end
 
-        # The deleteOptions of a well-formed Eviction (nil when it has none),
-        # once they validate.
-        def eviction_delete_options(request, route)
-          body = request_body(request)
-          raise Status::BadRequest.new("request body must be a JSON object") unless body.is_a?(Hash)
+        # Merge CreateOptions.dryRun into the embedded DeleteOptions.
+        def eviction_delete_options(request, route, object)
+          delete_options = object["deleteOptions"].nil? ? {} : object["deleteOptions"]
+          raise Status::BadRequest.new("deleteOptions must be an object") unless delete_options.is_a?(Hash)
 
-          object = stringify_keys(body)
-          kind = object["kind"].to_s
-          raise Status::BadRequest.new("expected an Eviction, got #{kind.inspect}") unless kind.empty? || kind == "Eviction"
+          if delete_options[DeleteHandler::UNSAFE_DELETE_OPTION] == true
+            cause = {"reason" => "FieldValueInvalid", "field" => "deleteOptions.#{DeleteHandler::UNSAFE_DELETE_OPTION}",
+                     "message" => "Invalid value: true: can not be set for pod eviction, try after removing the option"}
+            raise Status::Invalid.new("Eviction.policy #{route.name.inspect} is invalid: #{cause.fetch("message")}",
+                                      details: {"group" => "policy", "kind" => "Eviction", "name" => route.name, "causes" => [cause]})
+          end
 
-          name = object.dig("metadata", "name").to_s
-          raise Status::BadRequest.new("name in URL does not match name in Eviction object") if !name.empty? && name != route.name.to_s
-
-          delete_options = object["deleteOptions"]
-          return delete_options unless delete_options.is_a?(Hash)
-
-          issues = Schema::KubernetesValidator.delete_options_errors(delete_options)
-          return delete_options if issues.empty?
-
-          causes = issues.map { |issue| delete_options_cause(delete_options, issue) }
-          rendered = causes.map { |cause| "#{cause.fetch("field")}: #{cause.fetch("message")}" }
-          summary = rendered.length == 1 ? rendered.first : "[#{rendered.join(", ")}]"
-          raise Status::Invalid.new("DeleteOptions.meta.k8s.io \"\" is invalid: #{summary}",
-                                    details: {"group" => "meta.k8s.io", "kind" => "DeleteOptions", "causes" => causes})
+          requested = Array(request.query_values("dryRun"))
+          content = Array(delete_options["dryRun"])
+          if content.empty? && !requested.empty?
+            delete_options["dryRun"] = requested
+          elsif !requested.empty? && content != requested
+            raise Status::Error.new(message: "Non-matching dry-run options in request and content: [#{requested.join(" ")}] and [#{content.join(" ")}]",
+                                    code: 500, reason: "")
+          end
+          validate_delete_options!(delete_options)
+          delete_options
         end
 
         # eviction.go addConditionAndDeletePod: a resourceVersion precondition
         # the CALLER set is checked against the Pod before the DisruptionTarget
         # condition is written and then moved to the version that write
-        # produced; an eviction without one pins nothing.  Pinning the delete
+        # produced. Evicting an exempt unhealthy pod also pins the version so it
+        # cannot become healthy between the check and delete. Pinning other deletes
         # to our own condition write's version instead made any writer that
         # slipped in between (the node publishing status for the Pod it had
         # just seen change) fail the eviction with "expected resourceVersion
@@ -150,28 +183,27 @@ module Rubernetes
         #
         # Returns the caller's precondition, nil when there is none.
         def eviction_precondition!(delete_options, existing)
-          caller_version = delete_options.is_a?(Hash) ? delete_options.dig("preconditions", "resourceVersion") : nil
-          if caller_version && caller_version.to_s != metadata_value(existing, "resourceVersion").to_s
-            raise Status::Conflict.new("the ResourceVersion in the precondition (#{caller_version}) does not match the ResourceVersion in record " \
-                                       "(#{metadata_value(existing, "resourceVersion")}). The object might have been modified")
-          end
+          caller_version = delete_options.dig("preconditions", "resourceVersion")
+          {"uid" => ["UID", "deleted and then recreated"], "resourceVersion" => %w[ResourceVersion modified]}.each do |field, (label, reason)|
+            expected = delete_options.dig("preconditions", field)
+            actual = metadata_value(existing, field)
+            next if expected.to_s.empty? || expected == actual
 
-          caller_version
+            name = metadata_value(existing, "name")
+            raise Status::Conflict.new("Operation cannot be fulfilled on Pod #{name.inspect}: the #{label} in the precondition (#{expected}) " \
+                                       "does not match the #{label} in record (#{actual}). The object might have been #{reason}",
+                                       details: {"kind" => "Pod", "name" => name})
+          end
+          caller_version unless caller_version.to_s.empty?
         end
 
-        # An Eviction without deleteOptions deletes the Pod outright; with
-        # them, their propagation policy applies unless they ask for a dry run.
+        # Eviction follows the Pod strategy for its grace period and finalizers.
         def delete_evicted_pod(route, namespace, existing, delete_options, pin_version:)
-          if delete_options.is_a?(Hash) && Array(delete_options["dryRun"]).empty?
-            if orphan_deletion?(delete_options)
-              orphan_dependents(route.resource, namespace, existing)
-            else
-              cascade_delete_dependents(existing)
-            end
-            delete_one(route.resource, namespace, route.name, existing, pin_version: pin_version)
-          elsif !delete_options.is_a?(Hash)
-            delete_one(route.resource, namespace, route.name, existing, pin_version: false)
-          end
+          return unless Array(delete_options["dryRun"]).empty?
+
+          expected = metadata_value(existing, "resourceVersion") if pin_version
+          existing, pending = prepare_deletion(route, namespace, existing, delete_options, dry_run: false, expected: expected)
+          remove_deleted_object(route, namespace, existing, repin_after_mark(expected, existing)) unless pending
         end
 
         # eviction.go addConditionAndDeletePod: an evicted Pod is told that it is
@@ -205,48 +237,60 @@ module Rubernetes
         DISRUPTION_BUDGET_CAUSE = "DisruptionBudget"
 
         def check_disruption_budgets!(namespace, pod, dry_run: false)
+          return if %w[Pending Succeeded Failed].include?(pod.dig("status", "phase")) || metadata_value(pod, "deletionTimestamp")
+
           budgets = disruption_budgets_for(namespace, pod)
           return if budgets.empty?
 
-          budgets.each do |budget|
-            status = budget["status"] || {}
-            name = budget.dig("metadata", "name")
-            # eviction.go checkAndDecrement: only a budget the controller has
-            # not caught up with yet carries a retry hint.  A budget that simply
-            # allows no disruption answers 429 with retryAfterSeconds 0: client-go
-            # retries a 429 that has Retry-After on its own, ten times, so the
-            # 10 s hint we sent made every refused eviction take 100 s
-            # ("DisruptionController should block an eviction until the PDB is
-            # updated to allow it": 209 s against kube-apiserver's 8 s).
-            if status["observedGeneration"].to_i < budget.dig("metadata", "generation").to_i
-              raise Status::TooManyRequests.new(
-                "Cannot evict pod as it would violate the pod's disruption budget.",
-                retry_after_seconds: 10,
-                details: {"causes" => [{"reason" => DISRUPTION_BUDGET_CAUSE,
-                                        "message" => "The disruption budget #{name} is still being processed by the server."}]}
-              )
-            end
-            allowed = status["disruptionsAllowed"].to_i
-            if allowed.negative?
-              raise Status::Forbidden.new("poddisruptionbudgets.policy #{name.to_s.inspect} is forbidden: pdb disruptions allowed is negative")
-            end
-            next if allowed.positive?
-
-            message = if status["currentHealthy"].to_i <= status["desiredHealthy"].to_i
-                        "The disruption budget #{name} needs #{status["desiredHealthy"].to_i} healthy pods " \
-                          "and has #{status["currentHealthy"].to_i} currently"
-                      else
-                        "The disruption budget #{name} does not allow evicting pods currently"
-                      end
-            raise Status::TooManyRequests.new(
-              "Cannot evict pod as it would violate the pod's disruption budget.",
-              retry_after_seconds: 0,
-              details: {"causes" => [{"reason" => DISRUPTION_BUDGET_CAUSE, "message" => message}]}
-            )
+          if budgets.length > 1
+            raise Status::InternalError.new("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support.")
           end
-          return if dry_run
 
-          budgets.each { |budget| spend_disruption(namespace, budget, pod) }
+          budget = budgets.first
+          status = budget["status"] || {}
+          name = budget.dig("metadata", "name")
+          return name if allow_unhealthy_eviction?(pod, budget, status)
+
+          check_disruption_budget!(budget, status, name)
+          spend_disruption(namespace, budget, pod) unless dry_run
+          nil
+        end
+
+        def allow_unhealthy_eviction?(pod, budget, status)
+          return false if Controller::Support.ready?(pod)
+          return true if budget.dig("spec", "unhealthyPodEvictionPolicy") == "AlwaysAllow"
+
+          desired = status["desiredHealthy"].to_i
+          desired.positive? && status["currentHealthy"].to_i >= desired
+        end
+
+        def check_disruption_budget!(budget, status, name)
+          raise retry_disruption_budget(name) if status["observedGeneration"].to_i < budget.dig("metadata", "generation").to_i
+
+          allowed = status["disruptionsAllowed"].to_i
+          raise Status::Forbidden.new("poddisruptionbudgets.policy #{name.to_s.inspect} is forbidden: pdb disruptions allowed is negative") if allowed.negative?
+          return if allowed.positive?
+
+          message = if status["currentHealthy"].to_i <= status["desiredHealthy"].to_i
+                      "The disruption budget #{name} needs #{status["desiredHealthy"].to_i} healthy pods " \
+                        "and has #{status["currentHealthy"].to_i} currently"
+                    else
+                      "The disruption budget #{name} does not allow evicting pods currently"
+                    end
+          raise Status::TooManyRequests.new(
+            "Cannot evict pod as it would violate the pod's disruption budget.",
+            retry_after_seconds: 0,
+            details: {"causes" => [{"reason" => DISRUPTION_BUDGET_CAUSE, "message" => message}]}
+          )
+        end
+
+        def retry_disruption_budget(name)
+          Status::TooManyRequests.new(
+            "Cannot evict pod as it would violate the pod's disruption budget.",
+            retry_after_seconds: 10,
+            details: {"causes" => [{"reason" => DISRUPTION_BUDGET_CAUSE,
+                                    "message" => "The disruption budget #{name} is still being processed by the server."}]}
+          )
         end
 
         def disruption_budgets_for(namespace, pod)
@@ -273,14 +317,7 @@ module Rubernetes
           Array(selector["matchExpressions"]).all? do |expression|
             key = expression["key"].to_s
             values = Array(expression["values"]).map(&:to_s)
-            present = labels.key?(key)
-            case expression["operator"].to_s
-            when "In" then present && values.include?(labels[key].to_s)
-            when "NotIn" then !present || !values.include?(labels[key].to_s)
-            when "Exists" then present
-            when "DoesNotExist" then !present
-            else false
-            end
+            LabelRequirement.matches?(expression["operator"].to_s, labels[key].to_s, values, present: labels.key?(key))
           end
         end
 
