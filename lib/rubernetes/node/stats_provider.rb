@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
-require "find"
+require_relative "stats_provider/linux_counters"
+require_relative "stats_provider/filesystems"
+require_relative "stats_provider/host_files"
+require_relative "stats_provider/volume_stats"
+
 require "time"
+require_relative "cri_stats"
+require_relative "directory_usage"
+require_relative "kubelet_configz"
+require_relative "../volume/types"
 
 module Rubernetes
   module Node
@@ -23,20 +31,32 @@ module Rubernetes
     # rate-limits too.
     class StatsProvider
       DEFAULT_FS_TTL = 30.0
+      CPU_SAMPLE_INTERVAL = 10.0
+      IDLE_CPU_SAMPLE_INTERVAL = 15.0
+      include LinuxCounters
+      include Filesystems
+      include VolumeStats
 
-      def initialize(node_name:, lifecycle:, runtime:, pod_root: nil, image_root: nil, clock: -> { Time.now.utc },
+      def initialize(node_name:, lifecycle:, runtime:, pod_root: nil, image_root: nil, container_root: nil, clock: -> { Time.now.utc },
                      monotonic: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      cgroup_root: "/sys/fs/cgroup", proc_root: "/proc", memory_capacity: nil, fs_ttl: DEFAULT_FS_TTL,
-                     allocatable_memory: nil, volume_stats: nil)
+                     allocatable_memory: nil, volume_stats: nil, cri_clients: [], cri_log_roots: {}, system_cgroups: {},
+                     volume_health: false, event_recorder: nil, project_quota_usage: nil, cri_image_client: nil,
+                     volume_stats_agg_period: KubeletConfigz::DEFAULT_VOLUME_STATS_AGG_PERIOD_SECONDS)
         @node_name = node_name.to_s
         @lifecycle = lifecycle
+        @has_stats_records = lifecycle.respond_to?(:stats_records)
+        @cri_stats = CRIStats.new(cri_clients, log_roots: cri_log_roots) unless cri_clients.empty?
+        @cri_filesystem_stats = Runtime::CRI::FilesystemStats.new(cri_image_client) if cri_image_client
         @runtime = runtime
         @pod_root = pod_root
         @image_root = image_root
+        @container_root = container_root
         @clock = clock
         @monotonic = monotonic
         @cgroup_root = cgroup_root
         @proc_root = proc_root
+        @system_cgroups = system_cgroups
         @memory_capacity = memory_capacity
         @fs_ttl = Float(fs_ttl)
         @allocatable_memory = allocatable_memory && Integer(allocatable_memory)
@@ -47,18 +67,29 @@ module Rubernetes
         # (the volume is left out, as upstream without GET_VOLUME_STATS) or
         # nil for a volume measured like any directory.
         @volume_stats = volume_stats
-        @csi_cache = {}
+        @project_quota_usage = project_quota_usage
+        @volume_health = volume_health
+        @event_recorder = event_recorder
+        initialize_volume_stats(volume_stats_agg_period)
         @mutex = Mutex.new
       end
 
-      def summary
+      # nil selects the cgroup-based collector. An empty string means the CRI
+      # was selected but has no metrics to expose.
+      def cri_metrics = @cri_stats&.metrics
+
+      def summary = summary_with_filesystems.first
+
+      def summary_with_filesystems
         now = @clock.call.utc
         stamp = now.iso8601
         pods = pod_stats(stamp)
-        node = node_stats(stamp)
-        pods_container = pods_system_container(pods, stamp)
-        node["systemContainers"] = [pods_container] if pods_container
-        {"node" => node, "pods" => pods}
+        filesystems, layout = node_filesystem_stats(stamp)
+        node = node_stats(stamp, filesystems: filesystems)
+        system = [kubelet_cgroup_stats(stamp), runtime_service_cgroup_stats(stamp), misc_cgroup_stats(stamp),
+                  pods_system_container(pods, stamp)].compact
+        node["systemContainers"] = system unless system.empty?
+        [{"node" => node, "pods" => pods}, layout]
       end
 
       # The "pods" system container (the kubepods cgroup upstream): every
@@ -68,6 +99,9 @@ module Rubernetes
       def pods_system_container(pods, stamp)
         limit = @allocatable_memory
         return nil unless limit
+
+        actual = pods_cgroup_stats(stamp, limit)
+        return actual if actual && actual["memory"]
 
         memories = pods.filter_map { |pod| pod["memory"] }
         working_set = memories.sum { |memory| memory["workingSetBytes"].to_i }
@@ -79,7 +113,7 @@ module Rubernetes
 
       # --------------------------------------------------------------- node
 
-      def node_stats(stamp)
+      def node_stats(stamp, filesystems: node_filesystem_stats(stamp).first)
         memory_stat = read_key_values(File.join(@cgroup_root, "memory.stat"))
         cpu_stat = read_key_values(File.join(@cgroup_root, "cpu.stat"))
         capacity = memory_capacity
@@ -87,30 +121,14 @@ module Rubernetes
         stats = {"nodeName" => @node_name, "startTime" => boot_time}
         stats["cpu"] = cpu_stats("node", cpu_stat, stamp) if cpu_stat
         stats["memory"] = memory_stats(usage, memory_stat, stamp, limit: capacity) if memory_stat
+        stats["network"] = network_stats(stamp)
+        add_pressure(stats, stamp, File.join(@proc_root, "pressure"))
         swap = node_swap_stats(stamp)
         stats["swap"] = swap if swap
-        nodefs = fs_stats(@pod_root || "/", stamp)
-        stats["fs"] = nodefs if nodefs
-        imagefs = @image_root && fs_stats(@image_root, stamp)
-        stats["runtime"] = {"imageFs" => imagefs || nodefs}.compact unless (imagefs || nodefs).nil?
+        stats.merge!(filesystems)
         rlimit = rlimit_stats(stamp)
         stats["rlimit"] = rlimit if rlimit
         stats.compact
-      end
-
-      # The image filesystem alone (image garbage collection reads it every
-      # pass; a full summary would walk every Pod's writable layer).
-      def image_fs_stats
-        fs_stats(@image_root || @pod_root || "/", @clock.call.utc.iso8601)
-      end
-
-      # Images and Pod data on different filesystems (HasDedicatedImageFs).
-      def dedicated_image_fs?
-        return false if @image_root.nil?
-
-        File.stat(@image_root).dev != File.stat(@pod_root || "/").dev
-      rescue SystemCallError
-        false
       end
 
       def memory_capacity
@@ -144,43 +162,52 @@ module Rubernetes
       # --------------------------------------------------------------- pods
 
       def pod_stats(stamp)
-        records = if @lifecycle.respond_to?(:stats_records)
-                    @lifecycle.stats_records
-                  elsif @lifecycle.respond_to?(:records)
-                    @lifecycle.records.values
-                  else
-                    []
-                  end
+        volume_snapshot = @volume_mutex.synchronize { @volume_samples }
+        records = running_stats_records
         live = []
+        cri_samples = @cri_stats&.pod_samples(stamp) || {}
         stats = records.filter_map do |record|
-          next unless record.is_a?(Hash) && record[:state].to_s == "Running" && record[:sandbox_id]
-
           pod = record[:pod] || {}
           uid = record[:uid].to_s
           live << uid
-          usage = runtime_usage(record[:sandbox_id])
-          containers = Array(usage && usage["containers"]).map do |container|
-            container_stats(uid, container, record, stamp)
+          usage = pod_source_usage(record[:sandbox_id], cri_samples[record[:sandbox_id].to_s])
+          containers = Array(usage && usage["containers"]).filter_map do |container|
+            container_stats(uid, container, record, stamp, log_root: usage["logs_root"])
           end
           entry = {
             "podRef" => {"name" => pod.dig("metadata", "name").to_s, "namespace" => pod.dig("metadata", "namespace").to_s, "uid" => uid},
             "startTime" => record[:started_at],
             "containers" => containers
           }
+          entry.merge!(usage["summary"]) if usage && usage["summary"]
           pod_usage = usage && usage["pod"]
           if pod_usage
             entry["cpu"] = cpu_stats("pod/#{uid}", pod_usage["cpu"], stamp) if pod_usage["cpu"]
-            entry["memory"] = memory_stats(pod_usage["memory.current"], pod_usage["memory"], stamp) if pod_usage["memory"]
+            entry["memory"] = memory_stats(pod_usage["memory.current"], pod_usage["memory"], stamp, limit: pod_usage["memory.max"]) if pod_usage["memory"]
             entry["swap"] = swap_stats(pod_usage, stamp) if pod_usage.key?("memory.swap.current")
             entry["process_stats"] = {"process_count" => Integer(pod_usage["pids.current"])} if pod_usage["pids.current"]
+            add_cgroup_pressure(entry, pod_usage, stamp)
           end
-          volumes = volume_stats(record, stamp)
+          entry["network"] ||= network_stats(stamp, pid: usage["netns_pid"]) if usage && usage["netns_pid"]
+          specs = Array(record.dig(:pod, "spec", "volumes")).to_h { |volume| [volume["name"], volume] }
+          volumes = pod_volume_stats(record, volume_snapshot)
           entry["volume"] = volumes unless volumes.empty?
-          entry["ephemeral-storage"] = ephemeral_storage(containers, volumes, stamp)
+          local = volumes.select { |volume| Volume::Types.local_ephemeral_volume?(specs[volume["name"]]) }
+          entry["ephemeral-storage"] = ephemeral_storage(containers, local, stamp, record, usage && usage["logs_root"])
           entry.compact
         end
         forget_samples(live)
         stats
+      end
+
+      def pod_source_usage(sandbox_id, sample)
+        return runtime_usage(sandbox_id) unless sample
+        return sample unless sample["cgroup_fallback"]
+
+        local = runtime_usage(sandbox_id) || {}
+        containers = Array(local["containers"]).to_h { |container| [container["id"].to_s, container["usage"]] }
+        combined = sample.fetch("containers").map { |container| container.merge("usage" => containers[container["id"]]) }
+        sample.merge(local.slice("pod", "netns_pid"), "containers" => combined)
       end
 
       def runtime_usage(sandbox_id)
@@ -194,65 +221,66 @@ module Rubernetes
       # The raw cgroup accounting of every running Pod (what /metrics/cadvisor
       # renders): [[record, pod_usage], ...].
       def raw_pod_usages
-        records = if @lifecycle.respond_to?(:stats_records)
+        running_stats_records.filter_map do |record|
+          usage = runtime_usage(record[:sandbox_id])
+          usage && [record, usage]
+        end
+      end
+
+      private def running_stats_records
+        records = if @has_stats_records
                     @lifecycle.stats_records
                   elsif @lifecycle.respond_to?(:records)
                     @lifecycle.records.values
                   else
                     []
                   end
-        records.filter_map do |record|
-          next unless record.is_a?(Hash) && record[:state].to_s == "Running" && record[:sandbox_id]
-
-          usage = runtime_usage(record[:sandbox_id])
-          usage && [record, usage]
-        end
+        records.select { |record| record.is_a?(Hash) && record[:state].to_s == "Running" && record[:sandbox_id] }
       end
 
-      def container_stats(uid, container, record, stamp)
+      def container_stats(uid, container, record, stamp, log_root: nil)
         usage = container["usage"] || {}
         entry = record[:containers].to_a.find { |candidate| candidate[:id].to_s == container["id"].to_s }
+        return if container["summary"] && entry.nil?
+
         result = {"name" => container["name"].to_s,
                   "startTime" => entry && (entry[:started_at] || entry.dig(:status, "running", "startedAt"))}
+        result.merge!(container["summary"]) if container["summary"]
         result["cpu"] = cpu_stats("container/#{uid}/#{container["id"]}", usage["cpu"], stamp) if usage["cpu"]
-        result["memory"] = memory_stats(usage["memory.current"], usage["memory"], stamp) if usage["memory"]
+        result["memory"] = memory_stats(usage["memory.current"], usage["memory"], stamp, limit: usage["memory.max"]) if usage["memory"]
         result["swap"] = swap_stats(usage, stamp) if usage.key?("memory.swap.current")
-        rootfs = container["rootfs"] && directory_stats(container["rootfs"], stamp, device: @pod_root || container["rootfs"])
+        add_cgroup_pressure(result, usage, stamp)
+        rootfs = container["rootfs"] && directory_stats(container["rootfs"], stamp, device: container["rootfs"])
         result["rootfs"] = rootfs if rootfs
-        logs = container["logs"] && directory_stats(container["logs"], stamp, device: container["logs"])
+        if result["rootfs"] && (mount = container["rootfs_mount"]) && !mount.empty?
+          base = fs_stats(mount, stamp)&.except("usedBytes", "inodesUsed") || {}
+          result["rootfs"] = base.merge(result["rootfs"])
+        end
+        logs = if (directory = container["logs"])
+                 directory_stats(directory, stamp, device: directory)
+               elsif log_root && entry
+                 directory = File.join(cri_pod_log_directory(log_root, record), entry[:name].to_s)
+                 files = log_file_stats(directory)
+                 usage = [files.sum { |file| file["usedBytes"] }, files.size]
+                 directory_stats(directory, stamp, device: directory, usage: usage)
+               end
         result["logs"] = logs if logs
         result.compact
       end
 
-      # VolumeStats for the Pod's volumes: ephemeral ones (no pvcRef) count
-      # towards the Pod's ephemeral storage.
-      def volume_stats(record, stamp)
-        mounts = record[:volume].is_a?(Hash) ? (record[:volume]["mounts"] || {}) : {}
-        pod_spec = (record[:pod] || {})["spec"] || {}
-        claims = Array(pod_spec["volumes"]).to_h { |volume| [volume["name"].to_s, volume.dig("persistentVolumeClaim", "claimName")] }
-        mounts.filter_map do |name, mount|
-          path = mount.is_a?(Hash) ? mount["path"] : nil
-          next if path.nil? || !File.directory?(path)
-
-          collection_started = @monotonic.call
-          driver_stats = csi_volume_stats(mount["id"], path, stamp)
-          next if driver_stats == :unsupported
-
-          stats = driver_stats || directory_stats(path, stamp, device: path)
-          observe_volume_collection(driver_stats ? "csi" : "fs", @monotonic.call - collection_started)
-          next unless stats
-
-          entry = stats.merge("name" => name.to_s)
-          claim = claims[name.to_s]
-          entry["pvcRef"] = {"name" => claim, "namespace" => (record[:pod] || {}).dig("metadata", "namespace").to_s} if claim
-          entry
-        end
+      def cri_pod_log_directory(root, record)
+        metadata = record[:pod].fetch("metadata", {})
+        owner = %w[namespace name uid].map { |field| metadata[field].to_s }.join("_")
+        File.join(root, owner)
       end
 
       # EphemeralStorage: container rootfs and logs plus ephemeral volumes.
-      def ephemeral_storage(containers, volumes, stamp)
-        parts = containers.flat_map { |container| [container["rootfs"], container["logs"]] }.compact +
-                volumes.reject { |volume| volume.key?("pvcRef") }
+      def ephemeral_storage(containers, volumes, stamp, record, log_root)
+        parts = containers.flat_map { |container| [container["rootfs"], container["logs"]] }.compact + volumes
+        hosts = record[:hosts_file] || record.dig(:pod_files, "/etc/hosts")
+        parts << file_stats(hosts) if hosts
+        parts.concat(log_file_stats(cri_pod_log_directory(log_root, record))) if log_root
+        parts.compact!
         base = fs_stats(@pod_root || "/", stamp) || {"time" => stamp}
         {"time" => stamp, "availableBytes" => base["availableBytes"], "capacityBytes" => base["capacityBytes"],
          "usedBytes" => parts.sum { |part| part["usedBytes"].to_i }, "inodesFree" => base["inodesFree"],
@@ -268,9 +296,21 @@ module Rubernetes
         total = Integer(usec) * 1000
         now = @monotonic.call
         rate = @mutex.synchronize do
-          previous = @cpu_samples[key]
-          @cpu_samples[key] = [now, total]
-          ((total - previous[1]) / (now - previous[0])).to_i if previous && now > previous[0] && total >= previous[1]
+          previous_time, previous_total, previous_rate = @cpu_samples[key]
+          if previous_time.nil? || total < previous_total
+            @cpu_samples[key] = [now, total, nil]
+            next
+          end
+
+          interval = now - previous_time
+          # Kubelet's cAdvisor uses 10-second housekeeping and up to 15 seconds
+          # for inactive containers. Scrapes in between keep the last rate.
+          sample_interval = total == previous_total ? IDLE_CPU_SAMPLE_INTERVAL : CPU_SAMPLE_INTERVAL
+          next previous_rate if interval < sample_interval
+
+          measured = ((total - previous_total) / interval).to_i
+          @cpu_samples[key] = [now, total, measured]
+          measured
         end
         {"time" => stamp, "usageNanoCores" => rate, "usageCoreNanoSeconds" => total}.compact
       end
@@ -309,59 +349,21 @@ module Rubernetes
         working_set = usage < inactive ? 0 : usage - inactive
         result = {"time" => stamp, "usageBytes" => usage, "workingSetBytes" => working_set, "rssBytes" => memory_stat["anon"]&.to_i,
                   "pageFaults" => memory_stat["pgfault"]&.to_i, "majorPageFaults" => memory_stat["pgmajfault"]&.to_i}
-        result["availableBytes"] = limit - working_set if limit && limit > working_set
+        result["availableBytes"] = [limit - working_set, 0].max if limit
         result.compact
-      end
-
-      def fs_stats(path, stamp)
-        require_relative "../platform/linux/statfs"
-        return nil unless Platform::Linux::Statfs.supported? && File.exist?(path)
-
-        result = Platform::Linux::Statfs.statfs(path)
-        {"time" => stamp, "availableBytes" => result.available_bytes, "capacityBytes" => result.capacity_bytes,
-         "usedBytes" => result.used_bytes, "inodesFree" => result.files_free, "inodes" => result.files,
-         "inodesUsed" => result.files - result.files_free}
-      rescue StandardError
-        nil
       end
 
       # `du`-style usage of a directory tree (allocated blocks, entries), with
       # the capacity figures of the filesystem it lives on.
-      def directory_stats(path, stamp, device:)
+      def directory_stats(path, stamp, device:, usage: nil)
         return nil unless File.exist?(path)
 
-        used, inodes = directory_usage(path)
+        used, inodes = usage || directory_usage(path)
         base = fs_stats(device, stamp) || {}
         {"time" => stamp, "availableBytes" => base["availableBytes"], "capacityBytes" => base["capacityBytes"],
          "usedBytes" => used, "inodesFree" => base["inodesFree"], "inodes" => base["inodes"], "inodesUsed" => inodes}.compact
-      end
-
-      def csi_volume_stats(id, path, stamp)
-        return nil if @volume_stats.nil? || id.nil?
-
-        now = @monotonic.call
-        cached = @mutex.synchronize { @csi_cache[[id, path]] }
-        value = if cached && now - cached[0] < @fs_ttl
-                  cached[1]
-                else
-                  fresh = begin
-                    @volume_stats.call(id, path)
-                  rescue StandardError
-                    nil
-                  end
-                  @mutex.synchronize { @csi_cache[[id, path]] = [now, fresh] }
-                  fresh
-                end
-        return value if value.nil? || value == :unsupported
-
-        {"time" => stamp}.merge(value.slice("availableBytes", "capacityBytes", "usedBytes", "inodesFree", "inodes", "inodesUsed",
-                                            "volumeCondition")).compact
-      end
-
-      def observe_volume_collection(source, seconds)
-        @metrics_observer&.call(source, seconds)
-      rescue StandardError
-        nil
+      rescue Errno::ENOENT, Errno::ENOTDIR
+        nil # Pod cleanup can remove this path after the sample starts.
       end
 
       def directory_usage(path)
@@ -369,17 +371,9 @@ module Rubernetes
         cached = @mutex.synchronize { @du_cache[path] }
         return cached[1] if cached && now - cached[0] < @fs_ttl
 
-        bytes = 0
-        entries = 0
-        Find.find(path) do |entry|
-          stat = File.lstat(entry)
-          bytes += stat.blocks * 512
-          entries += 1
-        rescue SystemCallError
-          Find.prune
-        end
-        @mutex.synchronize { @du_cache[path] = [now, [bytes, entries]] }
-        [bytes, entries]
+        usage = DirectoryUsage.measure(path)
+        @mutex.synchronize { @du_cache[path] = [now, usage] }
+        usage
       end
 
       def forget_samples(live_uids)
@@ -389,7 +383,6 @@ module Rubernetes
             parts[0] != "node" && !live_uids.include?(parts[1])
           end
           @du_cache.delete_if { |_path, (at, _)| @monotonic.call - at > @fs_ttl * 4 }
-          @csi_cache.delete_if { |_key, (at, _)| @monotonic.call - at > @fs_ttl * 4 }
         end
       end
 
