@@ -4,7 +4,6 @@ require "base64"
 require "digest"
 require "fileutils"
 require "json"
-require "monitor"
 require "securerandom"
 
 module Rubernetes
@@ -15,14 +14,15 @@ module Rubernetes
     class AtomicWriter
       DATA_LINK = "..data"
       GENERATION_PREFIX = ".."
+      FileContent = Data.define(:bytes, :mode, :owner, :group)
 
-      def initialize(root, fsync: true, clock: -> { Time.now.utc }, tmpfs: false, mount_adapter: nil)
+      def initialize(root, fsync: true, clock: -> { Time.now.utc }, tmpfs: false, mount_adapter: nil, mountpoints: [])
         @root = File.expand_path(String(root))
         @fsync = fsync
         @clock = clock
         @tmpfs = tmpfs == true
         @mount_adapter = mount_adapter
-        @mutex = Monitor.new
+        @mountpoints = mountpoints.to_h { |path| [validate_mountpoint(path), true] }
         raise PathSecurityError, "projection root must not be a symlink" if File.symlink?(@root)
       end
 
@@ -31,35 +31,41 @@ module Rubernetes
       # `mode` is the default permission for every file; `modes` overrides it
       # per relative path (Kubernetes `defaultMode` and per-item `mode`).
       def write(files, generation: nil, secret: false, mode: nil, modes: {})
-        @mutex.synchronize do
-          normalized = normalize_files(files)
-          per_file_modes = normalize_modes(modes)
-          ensure_target!(secret: secret)
-          ensure_root!
+        normalized = normalize_files(files)
+        raise ValidationError, "default file mode must be between 0 and 0777" if mode && !(mode.is_a?(Integer) && mode.between?(0, 0o777))
+
+        per_file_modes = normalize_modes(modes)
+        ensure_target!(secret: secret)
+        ensure_root!
+        # A recovering agent may open the same volume through a new writer. Lock
+        # its directory before creating a generation or reclaiming an interrupted one.
+        File.open(@root, File::RDONLY | File::NOFOLLOW) do |directory|
+          directory.flock(File::LOCK_EX)
+          prepare_mountpoints!
+          previous = current_generation
           generation_name = generation_name(normalized, generation)
           generation_path = File.join(@root, generation_name)
           ensure_generation_directory!(generation_path)
+          published = false
           begin
-            normalized.each do |path, content|
-              destination = secure_child(generation_path, path)
-              FileUtils.mkdir_p(File.dirname(destination))
-              flags = File::WRONLY | File::CREAT | File::EXCL
-              flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
-              File.open(destination, flags, per_file_modes.fetch(path) { mode || (secret ? 0o400 : 0o444) }) do |file|
-                file.write(content)
-                file.flush
-                file.fsync if @fsync == true
-              end
+            # A non-root reader must be able to traverse ..data even when
+            # the node agent runs with a restrictive umask.
+            File.chmod(0o755, generation_path)
+            normalized.each do |path, file|
+              permissions = file.mode || per_file_modes.fetch(path) { mode || (secret ? 0o400 : 0o444) }
+              write_file(generation_path, path, file, permissions)
             end
-            fsync_directory(generation_path)
+            sync_generation(generation_path, normalized) if @fsync == true
             swap_data_link(generation_name)
+            published = true
+            expose_files(normalized)
             remove_stale_exposed_files(normalized.keys)
-            expose_files(normalized.keys)
+            retire_generations(generation_name, previous)
             fsync_directory(@root)
             {"generation" => generation_name, "root" => @root, "files" => normalized.keys.freeze,
              "secret" => secret == true}.freeze
           rescue StandardError
-            FileUtils.rm_rf(generation_path) if File.exist?(generation_path) && !File.symlink?(generation_path)
+            FileUtils.rm_rf(generation_path) unless published
             raise
           end
         end
@@ -93,12 +99,49 @@ module Rubernetes
 
       private
 
+      def write_file(generation_path, path, content, mode)
+        destination = secure_child(generation_path, path)
+        FileUtils.mkdir_p(File.dirname(destination), mode: 0o755)
+        flags = File::WRONLY | File::CREAT | File::EXCL
+        flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+        File.open(destination, flags, mode) do |file|
+          file.chown(content.owner, content.group) if content.owner || content.group
+          file.write(content.bytes)
+          file.chmod(mode) # open(2) applies the node process umask.
+          file.flush
+          file.fsync if @fsync == true
+        end
+      end
+
       def ensure_target!(secret:)
         return true unless secret == true
 
         return if @tmpfs || (@mount_adapter && tmpfs_mount_present?)
 
         raise SecretPersistenceError, "Secret projection requires an injected tmpfs mount"
+      end
+
+      def validate_mountpoint(path)
+        relative = validate_relative(path)
+        raise PathSecurityError, "projection mountpoint uses a reserved component" if relative.split("/").any? { |part| part.start_with?("..") }
+
+        relative
+      end
+
+      def prepare_mountpoints!
+        @mountpoints.each_key do |relative|
+          current = @root
+          relative.split("/").each do |part|
+            current = File.join(current, part)
+            # The projection writer owns this tree. Never follow a link
+            # from a projected key when preparing directories in it.
+            begin
+              raise PathSecurityError, "projection mountpoint component is not a directory: #{relative}" unless File.lstat(current).directory?
+            rescue Errno::ENOENT
+              FileUtils.mkdir(current, mode: 0o755)
+            end
+          end
+        end
       end
 
       def tmpfs_mount_present?
@@ -132,10 +175,13 @@ module Rubernetes
             part.start_with?("..")
           end
 
-          content = value.is_a?(String) ? value.b : String(value).b
-          raise ValidationError, "projected file #{relative.inspect} exceeds 1 MiB" if content.bytesize > 1_048_576
+          file = value.is_a?(FileContent) ? value : FileContent.new(value, nil, nil, nil)
+          if file.mode && !(file.mode.is_a?(Integer) && file.mode.between?(0, 0o777))
+            raise ValidationError, "projected file mode for #{relative.inspect} must be between 0 and 0777"
+          end
 
-          result[relative] = content.freeze
+          # A signer projection can combine several individually size-limited ClusterTrustBundles.
+          result[relative] = file.with(bytes: String(file.bytes).b.freeze)
         end.freeze
       end
 
@@ -168,9 +214,9 @@ module Rubernetes
         # Hashed as bytes: a JSON round-trip refuses binary content
         # (ConfigMap binaryData, binary Secrets) with a GeneratorError.
         digest = Digest::SHA256.new
-        files.sort_by(&:first).each do |path, data|
+        files.sort_by(&:first).each do |path, file|
           path_bytes = String(path).b
-          data_bytes = String(data).b
+          data_bytes = file.bytes
           digest.update([path_bytes.bytesize].pack("N")).update(path_bytes)
           digest.update([data_bytes.bytesize].pack("N")).update(data_bytes)
         end
@@ -191,7 +237,10 @@ module Rubernetes
       def ensure_root!
         raise PathSecurityError, "projection root must not be a symlink" if File.symlink?(@root)
 
-        FileUtils.mkdir_p(@root)
+        unless File.directory?(@root)
+          FileUtils.mkdir_p(File.dirname(@root))
+          FileUtils.mkdir_p(@root, mode: 0o755)
+        end
         raise PathSecurityError, "projection root is not a directory" unless File.directory?(@root)
       rescue SystemCallError => error
         raise PathSecurityError, "projection root could not be prepared: #{error.message}"
@@ -200,8 +249,7 @@ module Rubernetes
       def ensure_generation_directory!(path)
         raise PathSecurityError, "projection generation must not be a symlink" if File.symlink?(path)
 
-        FileUtils.mkdir_p(path)
-        raise PathSecurityError, "projection generation is not a directory" unless File.directory?(path)
+        Dir.mkdir(path)
       rescue SystemCallError => error
         raise PathSecurityError, "projection generation could not be prepared: #{error.message}"
       end
@@ -233,14 +281,22 @@ module Rubernetes
       # exposed, as a symlink into ..data ("path" -> "..data/path").  A link per
       # nested file ("path/to/x" -> "..data/path/to/x") resolves its relative
       # target from the nested directory and dangles.
-      def expose_files(paths)
-        paths.map { |relative| relative.split("/").first }.uniq.each do |segment|
+      def expose_files(files)
+        owners = {}
+        files.each { |relative, file| owners[relative.split("/", 2).first] ||= file.owner }
+        owners.each do |segment, owner|
           link = File.join(@root, segment)
           raise PathSecurityError, "projected file #{segment.inspect} was replaced by a non-symlink" if File.exist?(link) && !File.symlink?(link)
 
-          temporary = "#{link}.tmp-#{Process.pid}-#{SecureRandom.hex(4)}"
           target = File.join(DATA_LINK, segment)
+          if File.symlink?(link) && File.readlink(link) == target
+            File.lchown(owner, nil, link) if owner && File.lstat(link).uid != owner
+            next
+          end
+
+          temporary = "#{link}.tmp-#{Process.pid}-#{SecureRandom.hex(4)}"
           File.symlink(target, temporary)
+          File.lchown(owner, nil, temporary) if owner
           File.rename(temporary, link)
         rescue SystemCallError => error
           File.delete(temporary) if temporary && File.symlink?(temporary)
@@ -255,9 +311,11 @@ module Rubernetes
 
       def walk_exposed(directory, prefix, desired)
         Dir.children(directory).each do |name|
-          next if name == DATA_LINK || generation_directory?(name)
+          next if name == DATA_LINK || (prefix.empty? && named_generation?(name))
 
           relative = prefix.empty? ? name : "#{prefix}/#{name}"
+          next if @mountpoints.key?(relative)
+
           path = File.join(directory, name)
           if File.symlink?(path)
             File.delete(path) unless desired.key?(relative)
@@ -270,23 +328,48 @@ module Rubernetes
         raise SecurityError, "projected stale-file cleanup failed: #{error.message}"
       end
 
+      def retire_generations(current, previous)
+        Dir.children(@root).each do |name|
+          next if name == current
+          next unless generation_directory?(name) || (name == previous && named_generation?(name))
+
+          FileUtils.remove_entry(File.join(@root, name))
+        end
+      end
+
+      def named_generation?(name)
+        name != DATA_LINK && name.match?(/\A\.\.[A-Za-z0-9_-]{1,128}\z/)
+      end
+
       def generation_directory?(name)
         name.match?(/\A\.\.[0-9a-f]+-[0-9a-f]{24}(?:-[0-9a-f]{8})?\z/)
+      end
+
+      # Directory entries for nested keys must reach disk before publishing
+      # their parent. A file fsync alone does not persist its directory entry.
+      def sync_generation(root, files)
+        directories = {root => true}
+        files.each_key do |key|
+          dir = File.dirname(File.join(root, key))
+          until directories.key?(dir)
+            directories[dir] = true
+            dir = File.dirname(dir)
+          end
+        end
+        directories.keys.sort_by(&:bytesize).reverse_each { |dir| fsync_directory(dir) }
       end
 
       def fsync_directory(path)
         return unless @fsync == true
 
-        directory = File.open(path, File::RDONLY | (defined?(File::O_DIRECTORY) ? File::O_DIRECTORY : 0))
-        directory.fsync
-        directory.close
+        File.open(path, File::RDONLY | (defined?(File::O_DIRECTORY) ? File::O_DIRECTORY : 0), &:fsync)
       rescue SystemCallError => error
         raise SecurityError, "projected generation durability sync failed: #{error.message}"
       end
     end
 
     class TokenRotator
-      Token = Struct.new(:value, :audience, :pod_uid, :issued_at, :expires_at, keyword_init: true) do
+      Token = Struct.new(:value, :audience, :pod_uid, :issued_at, :expires_at, :requested_ttl, :refresh_jitter, keyword_init: true) do
         def to_h
           {"value" => value, "audience" => audience, "podUid" => pod_uid,
            "issuedAt" => issued_at, "expiresAt" => expires_at}
@@ -301,7 +384,8 @@ module Rubernetes
         end
 
         def rotate_due?(now)
-          remaining(now) <= lifetime * 0.2
+          age = now.to_f - issued_at.to_f
+          age >= [lifetime * 0.8, 24 * 60 * 60].min - refresh_jitter.to_i
         end
       end
 
@@ -336,8 +420,8 @@ module Rubernetes
         value, expiry = normalize(raw, issued_at, requested_ttl, audience: audience, pod_uid: pod_uid)
         raise SecurityError, "token provider returned an expired token" unless expiry > issued_at
 
-        Token.new(value: value.freeze, audience: audience.freeze, pod_uid: pod_uid.freeze,
-                  issued_at: issued_at, expires_at: expiry).freeze
+        Token.new(value: value.freeze, audience: audience.freeze, pod_uid: pod_uid.freeze, issued_at: issued_at,
+                  expires_at: expiry, requested_ttl: requested_ttl, refresh_jitter: rand(10)).freeze
       end
 
       def rotate(token, now: @clock.call)
@@ -347,7 +431,16 @@ module Rubernetes
         # kubelet's token manager re-requests the token with the same
         # expirationSeconds; issuing for the *remaining* time produced a
         # replacement that expired at the very same instant as the original.
-        issue(audience: token.audience, pod_uid: token.pod_uid, ttl: [token.lifetime.ceil, @minimum_ttl].max)
+        ttl = token.requested_ttl if token.is_a?(Token)
+        begin
+          issue(audience: token.audience, pod_uid: token.pod_uid, ttl: ttl || token.lifetime.ceil)
+        rescue StandardError
+          # Keep a still-valid projection readable when TokenRequest is temporarily
+          # unavailable. The next sync retries. An expired token cannot be reused.
+          raise unless token.expires_at > [timestamp(now), timestamp(@clock.call)].max
+
+          token
+        end
       end
 
       private
@@ -404,8 +497,7 @@ module Rubernetes
 
           source_files.each do |path, value|
             path = String(path)
-            raise ValidationError, "projected path collision at #{path.inspect}" if files.key?(path)
-
+            # Kubelet collects resolved sources in order, including their per-file metadata.
             files[path] = value
           end
         end
@@ -416,8 +508,8 @@ module Rubernetes
       def project_token(audience:, pod_uid:, path: "token", ttl: nil, generation: nil)
         raise UnsupportedError, "token rotator is not configured" unless @token_rotator
 
-        @token = @token_rotator.issue(audience: audience, pod_uid: pod_uid, ttl: ttl)
-        @writer.write({path => @token.value}, generation: generation, secret: true).merge("token" => @token.to_h).freeze
+        issued = @token_rotator.issue(audience: audience, pod_uid: pod_uid, ttl: ttl)
+        publish_token(issued, path, generation)
       end
 
       def rotate_token(now: @clock.call, path: "token", generation: nil)
@@ -427,8 +519,15 @@ module Rubernetes
         rotated = @token_rotator.rotate(@token, now: now)
         return @token.to_h unless rotated != @token
 
-        @token = rotated
-        @writer.write({path => @token.value}, generation: generation, secret: true).merge("token" => @token.to_h).freeze
+        publish_token(rotated, path, generation)
+      end
+
+      private
+
+      def publish_token(issued, path, generation)
+        result = @writer.write({path => issued.value}, generation: generation, secret: true)
+        @token = issued
+        result.merge("token" => issued.to_h).freeze
       end
     end
 
