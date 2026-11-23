@@ -25,11 +25,12 @@ module Rubernetes
         TYPE_TXT = 16
         TYPE_AAAA = 28
         TYPE_SRV = 33
+        TYPE_DNAME = 39
         TYPE_OPT = 41
         TYPE_ANY = 255
         TYPE_NAMES = {
           TYPE_A => "A", TYPE_NS => "NS", TYPE_CNAME => "CNAME", TYPE_SOA => "SOA", TYPE_PTR => "PTR",
-          TYPE_TXT => "TXT", TYPE_AAAA => "AAAA", TYPE_SRV => "SRV", TYPE_OPT => "OPT", TYPE_ANY => "ANY"
+          TYPE_TXT => "TXT", TYPE_AAAA => "AAAA", TYPE_SRV => "SRV", TYPE_DNAME => "DNAME", TYPE_OPT => "OPT", TYPE_ANY => "ANY"
         }.freeze
         TYPE_VALUES = TYPE_NAMES.invert.freeze
 
@@ -57,6 +58,8 @@ module Rubernetes
         FLAG_TC = 0x0200
         FLAG_RD = 0x0100
         FLAG_RA = 0x0080
+        FLAG_CD = 0x0010
+        EDNS_FLAG_DO = 0x8000
 
         HEADER_BYTES = 12
         MAX_NAME_BYTES = 255
@@ -104,10 +107,10 @@ module Rubernetes
           end
         end
 
-        Message = Struct.new(:id, :qr, :opcode, :aa, :tc, :rd, :ra, :rcode, :questions, :answers, :authority,
+        Message = Struct.new(:id, :qr, :opcode, :aa, :tc, :rd, :ra, :cd, :rcode, :questions, :answers, :authority,
                              :additional, :edns, keyword_init: true) do
           def initialize(**attributes)
-            defaults = {qr: false, opcode: OPCODE_QUERY, aa: false, tc: false, rd: false, ra: false,
+            defaults = {qr: false, opcode: OPCODE_QUERY, aa: false, tc: false, rd: false, ra: false, cd: false,
                         rcode: RCODE_NOERROR, questions: [], answers: [], authority: [], additional: [], edns: nil}
             super(**defaults.merge(attributes))
           end
@@ -143,7 +146,8 @@ module Rubernetes
           id, flags, qdcount, ancount, nscount, arcount = buffer.unpack("n6")
           message = Message.new(
             id: id, qr: flags.anybits?(FLAG_QR), opcode: (flags >> 11) & 0x0f, aa: flags.anybits?(FLAG_AA),
-            tc: flags.anybits?(FLAG_TC), rd: flags.anybits?(FLAG_RD), ra: flags.anybits?(FLAG_RA), rcode: flags & 0x0f
+            tc: flags.anybits?(FLAG_TC), rd: flags.anybits?(FLAG_RD), ra: flags.anybits?(FLAG_RA), cd: flags.anybits?(FLAG_CD),
+            rcode: flags & 0x0f
           )
           offset = HEADER_BYTES
           qdcount.times do
@@ -234,9 +238,8 @@ module Rubernetes
                      raise FormatError, "AAAA RDATA must be 16 bytes" unless rdlength == 16
 
                      IPAddr.new_ntoh(rdata).to_s
-                   when TYPE_CNAME, TYPE_PTR, TYPE_NS
-                     target, _end = decode_name(buffer, rdata_start)
-                     target
+                   when TYPE_CNAME, TYPE_DNAME, TYPE_PTR, TYPE_NS
+                     decode_rdata_name(buffer, rdata_start, offset)
                    when TYPE_SRV
                      raise FormatError, "SRV RDATA too short" if rdlength < 7
 
@@ -284,6 +287,13 @@ module Rubernetes
           [Record.new(name: name, type: type, klass: klass, ttl: ttl, rdata: parsed), offset]
         end
 
+        def decode_rdata_name(buffer, start, limit)
+          target, name_end = decode_name(buffer, start)
+          raise FormatError, "RDATA name does not match RDLENGTH" if name_end != limit
+
+          target
+        end
+
         # Encode a message.  Names are compressed against every earlier owner
         # name and RDATA name.  When `max_size` is given and the message does
         # not fit, records are dropped from the end of the additional,
@@ -324,6 +334,7 @@ module Rubernetes
           flags |= FLAG_TC if truncated
           flags |= FLAG_RD if message.rd
           flags |= FLAG_RA if message.ra
+          flags |= FLAG_CD if message.cd
           flags |= Integer(message.rcode) & 0x0f
           extra = message.edns ? 1 : 0
           buffer << [Integer(message.id) & 0xffff, flags, message.questions.length, answers.length, authority.length,
@@ -360,6 +371,9 @@ module Rubernetes
             buffer << IPAddr.new(String(rdata)).hton
           when TYPE_CNAME, TYPE_PTR, TYPE_NS
             encode_name(buffer, String(rdata), compression)
+          when TYPE_DNAME
+            # RFC 6672 §2.1 requires an uncompressed DNAME target.
+            encode_name(buffer, String(rdata), nil)
           when TYPE_SRV
             hash = rdata.transform_keys(&:to_s)
             buffer << [Integer(hash.fetch("priority")), Integer(hash.fetch("weight")), Integer(hash.fetch("port"))].pack("n3")
