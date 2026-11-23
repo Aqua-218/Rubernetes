@@ -12,16 +12,18 @@ require "rubernetes/consensus"
 class ConsensusProductionTimingTest < Minitest::Test
   Timing = Rubernetes::Consensus::Node::Timing
 
-  def test_production_timing_follows_etcd_defaults
+  def test_production_timing_keeps_the_heartbeat_and_a_long_election_timeout
     timing = Timing.production.validate!
 
     assert_in_delta(0.100, timing.heartbeat_interval)
-    assert_in_delta(1.0, timing.election_timeout_min)
-    assert_in_delta(2.0, timing.election_timeout_max)
+    assert_in_delta(5.0, timing.election_timeout_min)
+    assert_in_delta(10.0, timing.election_timeout_max)
   end
 
-  def test_a_pause_of_half_a_second_does_not_reach_the_election_timeout
-    assert_operator Timing.production.election_timeout_min, :>, 0.5
+  # On the demo VM a healthy leader with a 3.5 GB heap went silent for up to
+  # 2.8 s and a follower took over every 1-2 minutes.
+  def test_a_pause_of_three_seconds_does_not_reach_the_election_timeout
+    assert_operator Timing.production.election_timeout_min, :>, 3.0
   end
 
   def test_the_apiserver_uses_production_timing_unless_configured
