@@ -29,6 +29,27 @@ module Rubernetes
           annotations.key?(StaticPods::CONFIG_MIRROR) || annotations.key?(StaticPods::CONFIG_MIRROR.to_sym)
         end
 
+        # A complete API list finds Pods deleted while this node was down.
+        # The runtime supplies only durable, locally owned API-Pod log paths.
+        def resync_cri_pod_logs(current, resource_version)
+          cri_log_backends.each do |backend|
+            backend.cri_log_pods(node_name: @node_name).each do |metadata|
+              next if current.key?(metadata.fetch("uid"))
+
+              pod = {"metadata" => metadata, "spec" => {"nodeName" => @node_name}}
+              @sync_loop.enqueue_pod(pod, action: "DELETED", request_id: resource_version)
+            end
+          rescue StandardError => error
+            @error_handler&.call(error, :cri_log_gc)
+          end
+        end
+
+        def cri_log_backends
+          return [] unless defined?(Runtime::CRI::Backend)
+
+          (runtime_backends&.values || [@runtime]).grep(Runtime::CRI::Backend).uniq
+        end
+
         # kubelet HandlePodUpdates: an update of a Pod on this node that needs
         # a feature the node does not declare is reported (Warning
         # FailedNodeDeclaredFeaturesCheck); the API server's
@@ -58,9 +79,33 @@ module Rubernetes
         def running_pods_for_pod_resources
           @lifecycle.records.values.filter_map do |record|
             next unless record.is_a?(Hash) && record[:state] == "Running"
+            next if %w[Succeeded Failed].include?(record[:phase].to_s)
 
             pod = record[:pod]
             pod.is_a?(Hash) ? Helpers.string_keys(pod) : nil
+          end
+        end
+
+        def initialize_pods_api(directory)
+          directory ||= File.join(@kubelet_root || "/var/lib/rubernetes", "pods-api")
+          @pods_api = PodsAPI.new(directory: directory, pods: method(:pods_api_snapshot))
+          changed = lambda do
+            @pods_api.changed
+          rescue StandardError => error
+            @error_handler&.call(error)
+          end
+          @sync_loop.pods_changed = changed
+          @static_pods.pods_changed = changed if @static_pods
+          @status.pods_changed = changed
+        end
+
+        def pods_api_snapshot
+          (@sync_loop.pods + Array(@static_pods&.pods)).filter_map do |pod|
+            uid = pod.dig("metadata", "uid")
+            next if uid.to_s.empty? || mirror_pod?(pod)
+
+            current = @status.status_for(uid)
+            current ? pod.merge("status" => current) : pod
           end
         end
       end
