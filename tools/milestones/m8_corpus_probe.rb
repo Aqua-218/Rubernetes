@@ -7,6 +7,7 @@
 # is reported as exactly that.
 
 require_relative "m8_probe_support"
+require_relative "../conformance/k6_evidence"
 
 module M8CorpusProbe
   S = M8ProbeSupport
@@ -41,6 +42,7 @@ module M8CorpusProbe
       cases << {"id" => "client_matrix_pinned", "passed" => false, "detail" => "#{MATRIX} is missing"}
     end
 
+    projects = []
     if File.file?(CORPUS)
       corpus = YAML.safe_load_file(CORPUS)
       projects = Array(corpus["projects"])
@@ -71,15 +73,25 @@ module M8CorpusProbe
       cases << {"id" => "corpus_minimums", "passed" => false, "detail" => "#{CORPUS} is missing"}
     end
 
-    k6 = S.run_manifests.flat_map { |manifest| S.lane_results(manifest, "K6") }
-    cases << {"id" => "k6_executed",
-              "passed" => k6.any? { |lane| lane["status"] == "COMPLETE" && lane["passed"] == true },
-              "runs" => k6.length,
-              "detail" => k6.empty? ? "no K6 run is recorded" : k6.first["reason"]}
+    cases << executed_case(S.run_manifests, projects, File.file?(CORPUS) ? S.digest_file(CORPUS) : nil)
 
     S.emit(S.report(kind: "m8_corpus", measurement_level: "integration_tested",
                     started_at: started_at, cases: cases))
     cases.all? { |entry| entry.fetch("passed") } ? 0 : 1
+  end
+
+  def executed_case(manifests, projects, corpus_sha256)
+    runs = manifests.flat_map do |manifest|
+      S.lane_results(manifest, "K6").map do |lane|
+        evidence = Conformance::K6Evidence.archived(manifest, lane, root: S::ROOT, projects: projects, corpus_sha256: corpus_sha256)
+        evidence.merge("manifest" => manifest["_path"], "recorded_status" => lane["status"])
+      end
+    end
+
+    verified = runs.count { |run| run.fetch("passed") }
+    detail = runs.first&.fetch("detail", nil) || "no K6 run is recorded" if verified.zero?
+    {"id" => "k6_executed", "passed" => verified.positive?, "runs" => runs.length, "runtime_verified_runs" => verified,
+     "detail" => detail, "observations" => runs}
   end
 end
 
