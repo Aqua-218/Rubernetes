@@ -51,6 +51,32 @@ class NativeRuntimeLifecycleTest < Minitest::Test
     assert_equal(1, @runtime.sandboxes.length)
   end
 
+  def test_binary_image_payload_is_verified_and_replayed_without_retaining_the_blob
+    bytes = "\xff\x00layer".b
+    input = {"image_bytes" => bytes, "image_digest" => "sha256:#{Digest::SHA256.hexdigest(bytes)}"}
+    first = @runtime.run_sandbox(input, request_id: "blob")
+    restarted = Native.new(journal: @runtime.ledger.journal)
+
+    refute @runtime.sandbox(first).config.key?("image_bytes")
+    [@runtime, restarted].each do |runtime|
+      assert_equal first, runtime.run_sandbox(input, request_id: "blob")
+      assert_raises(Native::OwnershipConflict) { runtime.run_sandbox(input.merge("image_bytes" => "changed"), request_id: "blob") }
+    end
+    assert_raises(Native::Filesystem::DigestMismatch) { @runtime.run_sandbox(input.merge("image_bytes" => "changed"), request_id: "fresh") }
+  end
+
+  def test_replays_an_image_receipt_written_before_binary_payloads_were_supported
+    input = {"image_bytes" => "old image", "qos" => "besteffort"}
+    checksum = Digest::SHA256.hexdigest(JSON.generate(input))
+    @runtime.ledger.begin_operation(operation_id: "old", owner: "sandbox:old", config_digest: checksum, request_id: "legacy")
+    %w[Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped].each do |state|
+      @runtime.ledger.transition(operation_id: "old", to: state)
+    end
+
+    assert_equal "old", @runtime.run_sandbox(input, request_id: "legacy")
+    assert_raises(Native::OwnershipConflict) { @runtime.run_sandbox(input.merge("image_bytes" => "\xff".b), request_id: "legacy") }
+  end
+
   def test_unsafe_rootfs_entry_fails_before_sandbox_effects
     error = assert_raises(Native::Filesystem::UnsafeEntry) do
       @runtime.run_sandbox({"request_id" => "unsafe", "rootfs_entries" => [{"path" => "../escape"}]})
