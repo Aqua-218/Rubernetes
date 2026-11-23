@@ -43,7 +43,9 @@ class NodeDeclaredFeaturesAgentTest < Minitest::Test
     # A gate that is on for a feature the node does not implement declares nothing.
     refute_includes Node::DeclaredFeatures.discover(implemented: Node::DeclaredFeatures::IMPLEMENTED.merge("ExtendWebSocketsToKubelet" => false)),
                     "ExtendWebSocketsToKubelet"
-    refute_includes Node::DeclaredFeatures.discover(feature_gates: {"UserNamespacesHostNetworkSupport" => true},
+    refute_includes Node::DeclaredFeatures.discover(feature_gates: {"UserNamespacesHostNetworkSupport" => true}),
+                    "UserNamespacesHostNetworkSupport"
+    assert_includes Node::DeclaredFeatures.discover(feature_gates: {"UserNamespacesHostNetworkSupport" => true},
                                                     runtime_features: {"userNamespacesHostNetwork" => true}),
                     "UserNamespacesHostNetworkSupport"
   end
