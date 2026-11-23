@@ -53,16 +53,18 @@ module Rubernetes
         raise ArgumentError, "clock must respond to call" unless clock.respond_to?(:call)
 
         @key_func = key_func || Support.method(:object_key)
+        # Custom key functions receive an editable copy. The default can use the delta's snapshot.
+        @copy_for_key = Support.method(key_func ? :deep_copy : :immutable_copy)
         @clock = clock
         @mutex = Mutex.new
         @condition = ConditionVariable.new
         @items = {}
-        @order = []
         @queued = {}
+        @retry_at = {}
+        @next_retry_at = nil
         # informer_processing_latency_seconds: when each queued key was first
         # queued (until it is popped) and, once popped, until it is done.
         @enqueued_at = {}
-        @popped_age = {}
         @processing = {}
         @latest = {}
         @resource_version = nil
@@ -97,9 +99,9 @@ module Rubernetes
       # done before the mutex is acquired so malformed lists cannot partially
       # replace a cache.
       def replace(objects, resource_version: nil)
-        incoming = Array(objects).map { |object| Support.deep_copy(object) }
         incoming_by_key = {}
-        incoming.each do |object|
+        Array(objects).each do |input|
+          object = @copy_for_key.call(input)
           key = key_for(object)
           raise ArgumentError, "replace contains duplicate key #{key.inspect}" if incoming_by_key.key?(key)
 
@@ -119,7 +121,7 @@ module Rubernetes
             append_locked(Delta.new(type: :sync, key: key, object: object, resource_version: version))
           end
           @resource_version = version if Support.version_newer?(version, @resource_version)
-          signal_locked
+          @condition.broadcast
         end
         self
       end
@@ -137,10 +139,8 @@ module Rubernetes
           loop do
             key = shift_ready_key_locked
             if key
-              @processing[key] = true
               deltas = @items.delete(key) || []
-              queued_at = @enqueued_at.delete(key)
-              @popped_age[key] = queued_at ? [queued_at, @clock.call] : nil
+              @processing[key] = @enqueued_at.delete(key)
               return [key, deltas.freeze]
             end
             return nil if @closed
@@ -154,7 +154,7 @@ module Rubernetes
       # Seconds since the popped +key+ was queued (its wait plus the caller's
       # processing so far; nil when unknown); available until #done.
       def queued_seconds(key)
-        queued_at, = @mutex.synchronize { @popped_age[normalize_key(key)] }
+        queued_at = @mutex.synchronize { @processing[normalize_key(key)] }
         queued_at && (@clock.call - queued_at)
       end
 
@@ -162,32 +162,40 @@ module Rubernetes
         normalized = normalize_key(key)
         @mutex.synchronize do
           @processing.delete(normalized)
-          @popped_age.delete(normalized)
           # Events that arrived while the caller was processing the key stay
           # pending and must be made visible exactly once after completion.
           if @closed
             @items.delete(normalized)
             @queued.delete(normalized)
-          elsif @items.key?(normalized)
+          elsif @items.key?(normalized) && !@retry_at.key?(normalized)
             enqueue_order_locked(normalized)
           end
-          signal_locked
+          @condition.broadcast
         end
         self
       end
 
-      def requeue(key, deltas)
+      # Delay applies to the key, including later deltas appended behind the
+      # failed batch. Other keys remain available while it waits.
+      def requeue(key, deltas, delay: 0)
         normalized = normalize_key(key)
         normalized_deltas = Array(deltas).map { |delta| normalize_delta(delta, normalized) }
+        delay = validate_timeout(delay)
         @mutex.synchronize do
           ensure_open_locked!
-          @processing.delete(normalized)
+          queued_at = @processing.delete(normalized)
           existing = @items[normalized] || []
           @items[normalized] = normalized_deltas + existing
-          @items[normalized].each { |delta| update_latest_locked(delta) }
+          latest = @items[normalized].last
+          update_latest_locked(latest) if latest
           @has_synced ||= normalized_deltas.any? { |delta| delta.type == :sync }
-          enqueue_order_locked(normalized)
-          signal_locked
+          @enqueued_at[normalized] ||= queued_at || @clock.call
+          if delay.positive?
+            defer_key_locked(normalized, @clock.call + delay)
+          elsif !@retry_at.key?(normalized)
+            enqueue_order_locked(normalized)
+          end
+          @condition.broadcast
         end
         self
       end
@@ -197,7 +205,7 @@ module Rubernetes
       end
 
       def length
-        @mutex.synchronize { @order.length }
+        @mutex.synchronize { @queued.length + @retry_at.length }
       end
 
       alias size length
@@ -211,7 +219,7 @@ module Rubernetes
       end
 
       def keys
-        @mutex.synchronize { @order.dup.freeze }
+        @mutex.synchronize { (@queued.keys + @retry_at.keys).freeze }
       end
 
       def pending?(key)
@@ -223,8 +231,11 @@ module Rubernetes
         @mutex.synchronize do
           @closed = true
           @items.clear
-          @order.clear
           @queued.clear
+          @retry_at.clear
+          @next_retry_at = nil
+          @enqueued_at.clear
+          @processing.transform_values! { nil }
           @latest.clear
           @condition.broadcast
         end
@@ -244,19 +255,16 @@ module Rubernetes
       private
 
       def enqueue(type, object, old_object: nil, resource_version: nil)
-        normalized_type = type.respond_to?(:to_sym) ? type.to_sym : nil
-        raise ArgumentError, "unknown delta type #{type.inspect}" unless VALID_TYPES.include?(normalized_type)
-
-        snapshot = Support.deep_copy(object)
+        snapshot = @copy_for_key.call(object)
         key = key_for(snapshot)
         version = resource_version || Support.resource_version(snapshot)
-        delta = Delta.new(type: normalized_type, key: key, object: snapshot, old_object: old_object,
+        delta = Delta.new(type: type, key: key, object: snapshot, old_object: old_object,
                           resource_version: version)
         @mutex.synchronize do
           ensure_open_locked!
           append_locked(delta)
           @resource_version = version.to_s.freeze if version && Support.version_newer?(version.to_s, @resource_version)
-          signal_locked
+          @condition.broadcast
         end
         self
       end
@@ -267,7 +275,7 @@ module Rubernetes
         @items[key] << delta
         update_latest_locked(delta)
         @has_synced = true if delta.type == :sync
-        enqueue_order_locked(key) unless @processing.key?(key)
+        enqueue_order_locked(key) unless @processing.key?(key) || @retry_at.key?(key)
       end
 
       def update_latest_locked(delta)
@@ -282,14 +290,31 @@ module Rubernetes
         return if @queued.key?(key)
 
         @queued[key] = true
-        @enqueued_at[key] = @clock.call
-        @order << key
+        @enqueued_at[key] ||= @clock.call
       end
 
       def shift_ready_key_locked
-        key = @order.shift
-        @queued.delete(key) if key
-        key
+        if @next_retry_at
+          now = @clock.call
+          release_retries_locked(now) if now >= @next_retry_at
+        end
+        @queued.shift&.first
+      end
+
+      def defer_key_locked(key, ready_at)
+        @queued.delete(key)
+        @retry_at[key] = [@retry_at.fetch(key, ready_at), ready_at].max
+        @next_retry_at = [@next_retry_at || ready_at, @retry_at.fetch(key)].min
+      end
+
+      def release_retries_locked(now)
+        @retry_at.delete_if do |key, ready_at|
+          next false if ready_at > now
+
+          enqueue_order_locked(key)
+          true
+        end
+        @next_retry_at = @retry_at.values.min
       end
 
       def normalize_delta(delta, key)
@@ -340,16 +365,11 @@ module Rubernetes
         raise IOError, "DeltaFIFO is shut down" if @closed
       end
 
-      def signal_locked
-        @condition.broadcast
-      end
-
       def wait_locked(deadline, wall_deadline)
-        return @condition.wait(@mutex) if deadline.nil?
-
-        remaining = deadline - @clock.call
-        remaining = [remaining, wall_deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)].min
-        return if remaining <= 0
+        now = @clock.call
+        remaining = @next_retry_at && (@next_retry_at - now)
+        remaining = [deadline - now, wall_deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), remaining].compact.min if deadline
+        return if remaining && remaining <= 0
 
         @condition.wait(@mutex, remaining)
       end
