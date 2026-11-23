@@ -47,30 +47,27 @@ module Rubernetes
                  else
                    raise TypeError, "expected a Hash-like object, got #{value.class}"
                  end
-        normalize_hash(source)
+        DEEP_FROZEN.key?(source) ? source : normalize_hash(source)
       end
 
-      def normalize(value)
-        return value if DEEP_FROZEN.key?(value)
+      def normalize(value, detach: false)
+        return detach ? deep_copy(value) : value if DEEP_FROZEN.key?(value)
 
         case value
-        when Hash
-          normalize_hash(value)
-        when Array
-          value.map { |child| normalize(child) }
-        when Struct
-          normalize_hash(value.to_h)
+        when Hash then normalize_hash(value, detach: detach)
+        when Array then value.map { |child| normalize(child, detach: detach) }
+        when String then detach ? value.dup : value
         else
-          value.respond_to?(:to_h) && !value.nil? && !value.is_a?(String) ? normalize_hash(value.to_h) : value
+          value.respond_to?(:to_h) && !value.nil? ? normalize_hash(value.to_h, detach: detach) : value
         end
       end
 
-      def normalize_hash(source)
+      def normalize_hash(source, detach: false)
         source.each_with_object({}) do |(key, child), result|
           canonical_key = key.to_s
           raise ArgumentError, "duplicate scheduler field #{canonical_key.inspect}" if result.key?(canonical_key)
 
-          result[canonical_key] = normalize(child)
+          result[canonical_key] = normalize(child, detach: detach)
         end
       end
 
@@ -118,7 +115,7 @@ module Rubernetes
       def snapshot(value)
         return value if DEEP_FROZEN.key?(value)
 
-        deep_freeze(deep_copy(normalize(value)))
+        deep_freeze(normalize(value, detach: true))
       end
 
       def deep_frozen?(value)
@@ -315,9 +312,11 @@ module Rubernetes
       end
 
       def subtract_maps(left, right)
-        keys = quantity_map(left).keys | quantity_map(right).keys
+        left = quantity_map(left)
+        right = quantity_map(right)
+        keys = left.keys | right.keys
         keys.each_with_object({}) do |resource, result|
-          amount = quantity_map(left).fetch(resource, Rational(0)) - quantity_map(right).fetch(resource, Rational(0))
+          amount = left.fetch(resource, 0) - right.fetch(resource, 0)
           result[resource] = amount.negative? ? Rational(0) : amount
         end
       end
@@ -328,12 +327,8 @@ module Rubernetes
       # says it was allocated and actuated (in-place resize).  A container
       # limit without a request counts as the request -- the API server's
       # defaulting, applied here to Pods that did not come through it.
-      def requests_for(pod)
-        source = object_hash(pod)
-        defaulted = source.merge("spec" => request_defaulted_spec(object_hash(value(source, "spec", {}))))
-        Rubernetes::ResourceHelpers.pod_requests(defaulted, use_status_resources: true).to_h do |name, amount|
-          [name, amount.value]
-        end
+      def requests_for(pod, use_dra_node_allocatable: false, skip_pod_level: false)
+        pod_requests(pod, skip_pod_level: skip_pod_level, use_dra_node_allocatable: use_dra_node_allocatable)
       end
 
       # schedutil.DefaultMilliCPURequest / DefaultMemoryRequest: what a
@@ -343,13 +338,14 @@ module Rubernetes
       NON_ZERO_DEFAULTS = {"cpu" => Rubernetes::Schema::Quantity.parse("100m"),
                            "memory" => Rubernetes::Schema::Quantity.parse("209715200")}.freeze
 
-      def non_zero_requests_for(pod, skip_pod_level: false)
+      def non_zero_requests_for(pod, skip_pod_level: false, use_dra_node_allocatable: false)
+        pod_requests(pod, non_missing: NON_ZERO_DEFAULTS, skip_pod_level: skip_pod_level, use_dra_node_allocatable: use_dra_node_allocatable)
+      end
+
+      def pod_requests(pod, **)
         source = object_hash(pod)
         defaulted = source.merge("spec" => request_defaulted_spec(object_hash(value(source, "spec", {}))))
-        Rubernetes::ResourceHelpers.pod_requests(defaulted, use_status_resources: true, non_missing: NON_ZERO_DEFAULTS,
-                                                            skip_pod_level: skip_pod_level).to_h do |name, amount|
-          [name, amount.value]
-        end
+        Rubernetes::ResourceHelpers.pod_requests(defaulted, use_status_resources: true, **).transform_values(&:value)
       end
 
       def request_defaulted_spec(spec)
@@ -382,7 +378,9 @@ module Rubernetes
 
       def sum_container_requests(containers)
         Array(containers).each_with_object({}) do |container, result|
-          result.replace(sum_maps(result, effective_requests(value(container, "resources", {}))))
+          effective_requests(value(container, "resources", {})).each do |resource, amount|
+            result[resource] = result.fetch(resource, 0) + amount
+          end
         end
       end
 
