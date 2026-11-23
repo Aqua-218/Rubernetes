@@ -8,6 +8,7 @@ module Rubernetes
   module Volume
     class Node
       include OperationSupport
+      include SharedCSIStages
 
       def initialize(manager = nil, **options)
         @manager = manager || options.delete(:manager) || Manager.new(**options)
@@ -23,8 +24,14 @@ module Rubernetes
         id = Types.identifier(id, "volume id")
         readonly = Types.bool(readonly)
         path = secure_path(path)
+        target, stage_key = stage_destination(id, path, node)
+        payload = {"id" => id, "path" => path, "readonly" => readonly, "node" => node}
+        if stage_key
+          payload["stageTarget"] = target
+          payload["sharedCSIStage"] = stage_key
+        end
         execute_operation(key: id, operation: "stage:#{path}", token: token,
-                          payload: {"id" => id, "path" => path, "readonly" => readonly, "node" => node}) do |effect_boundary|
+                          payload: payload) do |effect_boundary|
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record)
           record = ensure_attached(record, node)
@@ -37,17 +44,9 @@ module Rubernetes
 
           backend = @manager.backends.fetch(id)
           modes = Array(Types.key(record.spec, "accessModes", []))
-          effective_context = @manager.context_for_node(record, effective_node, context)
-          result = stage_on_backend(backend, path: path, node: effective_node,
-                                             readonly: readonly || modes.include?("ReadOnlyMany"),
-                                             context: effective_context, effect_boundary: effect_boundary)
-          record = expand_node_if_required(backend, record, path, token, effect_boundary)
-          result["node"] = effective_node
-          begin
-            record_stage(id, record, backend, path, result)
-          rescue StandardError => error
-            raise_with_cleanup(error) { backend.unstage(path: path, identity: result, context: effective_context) }
-          end
+          stage_volume(backend, record, path, target: target, stage_key: stage_key, node: effective_node,
+                                              readonly: readonly || modes.include?("ReadOnlyMany"), context: context,
+                                              token: token, effect_boundary: effect_boundary)
         end
       end
 
@@ -106,40 +105,29 @@ module Rubernetes
         validate_fs_group!(fs_group)
         target = secure_path(container_path)
         pod_id = pod_identifier(pod)
-        execute_operation(key: id, operation: "publish:#{pod_id}:#{target}", token: token,
-                          payload: {"id" => id, "pod" => pod_id, "target" => target, "readonly" => readonly, "node" => node,
-                                    "subPath" => sub_path, "fsGroup" => fs_group, "selinux" => selinux_label,
-                                    "propagation" => mount_propagation}) do |effect_boundary|
-          record = @manager.fetch_record(id)
-          @manager.ensure_known!(record)
-          ensure_publishable!(record, id, readonly)
-          stage_path = stage_for(record, node)
-          backend = @manager.backends.fetch(id)
-          effective_node = node || attached_node(record)
-          @manager.ensure_attach_policy!(record, node: effective_node, pod: pod_id)
-          publish_key = "#{pod_id}\0#{target}"
-          next reusable_publish(record.publishes.fetch(publish_key), id, readonly) if record.publishes.key?(publish_key)
+        with_csi_publish_access(id, pod_id) do
+          execute_operation(key: id, operation: "publish:#{pod_id}:#{target}", token: token,
+                            payload: {"id" => id, "pod" => pod_id, "target" => target, "readonly" => readonly, "node" => node,
+                                      "subPath" => sub_path, "fsGroup" => fs_group, "selinux" => selinux_label,
+                                      "propagation" => mount_propagation}) do |effect_boundary|
+            record = @manager.fetch_record(id)
+            @manager.ensure_known!(record)
+            ensure_publishable!(record, id, readonly)
+            stage_path = stage_for(record, node)
+            backend = @manager.backends.fetch(id)
+            effective_node = node || attached_node(record)
+            @manager.ensure_attach_policy!(record, node: effective_node, pod: pod_id)
+            publish_key = "#{pod_id}\0#{target}"
+            next reusable_publish(record.publishes.fetch(publish_key), id, readonly) if record.publishes.key?(publish_key)
 
-          effective_context = @manager.context_for_node(record, effective_node, context)
-          # A kubelet CSI node plugin: fsGroup goes to the driver
-          # (VOLUME_MOUNT_GROUP) or is applied to the published target
-          # afterwards, per the CSIDriver's fsGroupPolicy.
-          csi_fs_group = backend.is_a?(RemoteBackend) ? backend.csi_fs_group_mode(fs_group, readonly: readonly) : nil
-          effective_context = effective_context.merge("volumeMountGroup" => fs_group.to_s) if csi_fs_group == :delegate
-          apply_security!(backend, stage_path: stage_path, pod: pod, readonly: readonly, fs_group: csi_fs_group ? nil : fs_group,
-                                   selinux_label: selinux_label, mount_propagation: mount_propagation, context: context)
-          result = publish_on_backend(backend, stage_path: stage_path, target: target, node: effective_node, pod: pod,
-                                               readonly: readonly, sub_path: sub_path, context: effective_context,
-                                               effect_boundary: effect_boundary)
-          record = expand_node_if_required(backend, record, target, token, effect_boundary)
-          begin
-            if csi_fs_group == :kubelet
-              apply_security!(backend, stage_path: target, pod: pod, readonly: readonly, fs_group: fs_group,
-                                       selinux_label: nil, mount_propagation: nil, context: context)
+            with_publish_ownership(record, backend, stage_path, fs_group, sub_path) do |local_in_use|
+              publish_secured(
+                record, backend, pod, target,
+                stage_path: stage_path, node: effective_node, token: token, readonly: readonly, fs_group: fs_group,
+                selinux_label: selinux_label, mount_propagation: mount_propagation, sub_path: sub_path,
+                context: context, effect_boundary: effect_boundary, local_in_use: local_in_use
+              )
             end
-            record_publish(id, record, backend, result, pod_id: pod_id, target: target, stage_path: stage_path, node: effective_node)
-          rescue StandardError => error
-            raise_with_cleanup(error) { backend.unpublish(target: target, identity: result, context: context) }
           end
         end
       end
@@ -206,7 +194,7 @@ module Rubernetes
 
       def unpublish(id, pod, container_path, token:)
         id = Types.identifier(id, "volume id")
-        target = secure_path(container_path)
+        target = secure_path(container_path, teardown: true)
         pod_id = pod_identifier(pod)
         execute_operation(key: id, operation: "unpublish:#{pod_id}:#{target}", token: token,
                           payload: {"id" => id, "pod" => pod_id, "target" => target}) do |effect_boundary|
@@ -248,28 +236,16 @@ module Rubernetes
           @manager.ensure_known!(record, action: "Cleanup")
           raise ConflictError, "volume #{id} still has published consumers" unless record.publishes.empty?
 
-          if record.stages.key?(path)
-            entry = record.stages.fetch(path)
+          entry = record.stages[path] || interrupted_shared_stage(record, path)
+          if entry
             transitional = record.with(state: "Unstaged", generation: record.generation + 1)
             @manager.volume_store[id] = transitional
             begin
-              backend = @manager.backends.fetch(id)
-              effective_context = @manager.context_for_node(record, entry["node"], context)
-              if backend.is_a?(RemoteBackend)
-                backend.unstage(path: path, identity: entry, context: effective_context,
-                                effect_boundary: effect_boundary)
-              else
-                backend.unstage(path: path, identity: entry, context: effective_context)
-              end
+              teardown_stage(transitional, path, entry, context, effect_boundary)
             rescue StandardError => error
               restore_after_failed_teardown(id, record, error)
               raise
             end
-            @manager.mount_ledger.remove(identity: mount_identity(entry), expected: entry)
-            stages = Types.deep_copy(transitional.stages)
-            stages.delete(path)
-            state = transitional.attachments.empty? ? "Detached" : "Attached"
-            @manager.volume_store[id] = transitional.with(state: state, stages: stages, generation: transitional.generation + 1)
           end
           true
         end
@@ -312,13 +288,15 @@ module Rubernetes
         end
       end
 
-      def record_stage(id, record, backend, path, result)
+      def record_stage(id, record, backend, path, result, register: true)
         # A stage that the CSI plugin completed without a kernel mount
         # owns nothing in the mount table; only kernel identities enter
         # the ledger (spec 5.11.3).
-        unless result["mounted"] == false && !Types.present?(result["mountId"])
-          @manager.register_mount_identity(volume_id: id, identity: result, target: path,
-                                           owner: "volume:#{id}", stage_path: path,
+        if register && !(result["mounted"] == false && !Types.present?(result["mountId"]))
+          owner = result["sharedCSIStage"] || id
+          target = result.fetch("target")
+          @manager.register_mount_identity(volume_id: owner, identity: result, target: target,
+                                           owner: "volume:#{owner}", stage_path: target,
                                            generation: record.generation, secret: backend.secret?)
         end
         stages = Types.deep_copy(record.stages)
@@ -329,6 +307,88 @@ module Rubernetes
       end
 
       # -- publish steps -------------------------------------------------------
+
+      def with_csi_publish_access(id, pod_id)
+        record = @manager.volume_store[id]
+        backend = @manager.backends[id]
+        return yield unless backend.is_a?(RemoteBackend) && Array(record&.spec&.dig("accessModes")).include?("ReadWriteOncePod")
+
+        identity = backend.kubelet_volume_identity
+        return yield unless identity
+
+        # Separate Pod volume records can refer to the same CSI volume.
+        @manager.with_volume_lock("csi-publish:#{Types.digest(identity)}") do
+          if @manager.volume_store.each_value.any? { |other| csi_published_to_another_pod?(other, identity, pod_id) }
+            raise MultiAttachError, "volume uses the ReadWriteOncePod access mode and is already in use by another pod"
+          end
+
+          yield
+        end
+      end
+
+      def csi_published_to_another_pod?(record, identity, pod_id)
+        return false if record.publishes.empty? && record.state != "Unknown"
+
+        backend = @manager.backends[record.id]
+        return false unless backend.is_a?(RemoteBackend) && backend.kubelet_volume_identity == identity
+        return true if record.publishes.each_value.any? { |entry| entry["pod"] != pod_id }
+
+        operation = record.operation
+        record.state == "Unknown" && operation && operation["name"].to_s.start_with?("publish:") &&
+          operation.dig("payload", "pod") != pod_id
+      end
+
+      def with_publish_ownership(record, backend, stage_path, fs_group, sub_path)
+        return yield(nil) unless backend.is_a?(LocalBackend) && sub_path.nil?
+
+        # Separate Pod volume records can bind the same filesystem directory.
+        identity = record.stages.fetch(stage_path)
+        device_id, root = identity.values_at("deviceId", "root")
+        source = root ? "#{device_id}:#{root}" : backend.source_path
+        @manager.with_volume_lock("local-publish:#{source}") do
+          yield(fs_group && @manager.mount_ledger.published_bind_of?(identity))
+        end
+      end
+
+      def publish_secured(record, backend, pod, target, stage_path:, node:, token:, readonly:, fs_group:, selinux_label:,
+                          mount_propagation:, sub_path:, context:, effect_boundary:, local_in_use:)
+        effective_context = @manager.context_for_node(record, node, context)
+        # CSI fsGroup belongs to the driver (VOLUME_MOUNT_GROUP) or runs on the
+        # published target according to CSIDriver.fsGroupPolicy.
+        csi_fs_group = backend.is_a?(RemoteBackend) ? backend.csi_fs_group_mode(fs_group, readonly: readonly) : nil
+        effective_context = effective_context.merge("volumeMountGroup" => fs_group.to_s) if csi_fs_group == :delegate
+        stage_group = fs_group unless csi_fs_group || backend.is_a?(LocalBackend)
+        apply_security!(backend, stage_path: stage_path, pod: pod, readonly: readonly, fs_group: stage_group,
+                                 selinux_label: selinux_label, mount_propagation: mount_propagation, context: context)
+        result = publish_on_backend(backend, record: record, stage_path: stage_path, target: target, node: node, pod: pod,
+                                             readonly: readonly, sub_path: sub_path, context: effective_context,
+                                             effect_boundary: effect_boundary)
+        record = expand_node_if_required(backend, record, target, token, effect_boundary) unless result["kubeletSubPath"]
+        begin
+          if csi_fs_group == :kubelet
+            apply_security!(backend, stage_path: target, pod: pod, readonly: readonly, fs_group: fs_group,
+                                     selinux_label: nil, mount_propagation: nil, context: context)
+          end
+          apply_local_ownership(backend, pod, result, fs_group, local_in_use)
+          record_publish(record.id, record, backend, result, pod_id: pod_identifier(pod), target: target, stage_path: stage_path, node: node)
+        rescue StandardError => error
+          raise_with_cleanup(error) { backend.unpublish(target: target, identity: result, context: context) }
+        end
+      end
+
+      def apply_local_ownership(backend, pod, result, fs_group, already_mounted)
+        return if already_mounted.nil?
+
+        fs_group = Integer(fs_group)
+        target = result.fetch("target")
+        if already_mounted
+          current_group = File.stat(target).gid
+          result["localFsGroupConflict"] = {"requested" => fs_group, "current" => current_group} if current_group != fs_group
+        elsif !result["readonly"]
+          apply_security!(backend, stage_path: target, pod: pod, readonly: false, fs_group: fs_group,
+                                   selinux_label: nil, mount_propagation: nil, context: {})
+        end
+      end
 
       def validate_mount_propagation!(mount_propagation)
         return unless mount_propagation && !%w[None HostToContainer Bidirectional].include?(mount_propagation.to_s)
@@ -362,9 +422,9 @@ module Rubernetes
         existing
       end
 
-      def publish_on_backend(backend, effect_boundary:, **request)
+      def publish_on_backend(backend, record:, effect_boundary:, **request)
         if backend.is_a?(RemoteBackend)
-          backend.publish(**request, effect_boundary: effect_boundary)
+          backend.publish(**request, effect_boundary: effect_boundary, pod_publishes: record.publishes.values)
         else
           backend.publish(**request)
         end
@@ -377,7 +437,7 @@ module Rubernetes
         publishes = Types.deep_copy(record.publishes)
         publishes["#{pod_id}\0#{target}"] = result.merge("pod" => pod_id, "target" => target)
         attachments = Types.deep_copy(record.attachments)
-        attachments[node] ||= {"node" => node, "pods" => []}
+        attachments[node] ||= {"node" => node, "generation" => record.generation + 1, "pods" => []}
         attachments[node]["pods"] = (Array(attachments[node]["pods"]) + [pod_id]).uniq
         @manager.volume_store[id] = record.with(state: "Published", publishes: publishes, attachments: attachments,
                                                 generation: record.generation + 1)
@@ -443,7 +503,7 @@ module Rubernetes
 
       # -- shared helpers ------------------------------------------------------
 
-      def secure_path(path)
+      def secure_path(path, teardown: false)
         value = String(path)
         raise PathSecurityError, "volume path must be absolute" unless value.start_with?("/")
         raise PathSecurityError, "volume path contains NUL" if value.include?("\0")
@@ -454,7 +514,12 @@ module Rubernetes
                 "volume path contains traversal"
         end
 
-        @manager.path_security.validate_target!(value)
+        security = @manager.path_security
+        if teardown && security.is_a?(PathSecurity)
+          security.validate_unmount_target!(value)
+        else
+          security.validate_target!(value)
+        end
         value
       rescue TypeError
         raise PathSecurityError, "volume path must be a string"
