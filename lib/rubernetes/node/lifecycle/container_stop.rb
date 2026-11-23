@@ -11,28 +11,88 @@ module Rubernetes
         def stop_containers(record, grace: nil)
           grace ||= record[:grace_override] || grace_seconds(record[:pod])
           record[:containers].reverse_each do |entry|
-            next unless entry[:started]
-
-            event(record, "container.term", name: entry[:name], container_id: entry[:id])
-            # kubelet: events.Killing "Stopping container <name>"
-            event(record, "container.killing", name: entry[:name], container_id: entry[:id], reason: "Killing",
-                                               message: "Stopping container #{entry[:name]}")
-            (@stop_details ||= {}).delete(entry[:id])
-            stopped = stop_one(entry[:id], grace)
-            raise LifecycleError, "container #{entry[:name].inspect} did not reach a confirmed stopped state" unless stopped
-
-            entry[:started] = false
-            terminated = stopped_termination(entry[:id])
-            entry[:status] = {"state" => "terminated", "exitCode" => terminated.fetch("exitCode"), "reason" => terminated.fetch("reason"),
-                              "terminated" => terminated, "ready" => false, "started" => false,
-                              "restartCount" => entry[:status]["restartCount"].to_i}
+            stop_entry(record, entry, grace) if entry[:started]
           end
+        end
+
+        def stop_entry(record, entry, grace)
+          event(record, "container.term", name: entry[:name], container_id: entry[:id])
+          event(record, "container.killing", name: entry[:name], container_id: entry[:id], reason: "Killing",
+                                             message: "Stopping container #{entry[:name]}")
+          (@stop_details ||= {}).delete(entry[:id])
+          stopped = stop_one(entry[:id], grace)
+          raise LifecycleError, "container #{entry[:name].inspect} did not reach a confirmed stopped state" unless stopped
+
+          @probes.unregister(entry[:id])
+          entry[:started] = false
+          terminated = stopped_termination(entry)
+          entry[:status] = {"state" => "terminated", "exitCode" => terminated.fetch("exitCode"), "reason" => terminated.fetch("reason"),
+                            "terminated" => terminated, "ready" => false, "started" => false,
+                            "restartCount" => entry[:status]["restartCount"].to_i}
+        end
+
+        # Each container runs preStop and stops independently against the
+        # same deadline. Sidecars also wait for the app containers and the
+        # next sidecar to stop, for as long as that deadline allows.
+        def stop_with_sidecar_order(record, entries, grace, minimum_grace: Termination::MINIMUM_GRACE_PERIOD_SECONDS)
+          sidecars, others = entries.select { |entry| entry[:started] }.partition { |entry| entry[:category] == "sidecar" }
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace
+          threads = []
+          main = others.reverse_each.filter_map do |entry|
+            thread = launch_stop(record, entry, deadline, minimum_grace, [])
+            threads << thread
+            thread if entry[:category] == "app"
+          end
+          previous = nil
+          sidecars.reverse_each do |entry|
+            prerequisites = previous ? main + [previous] : main
+            previous = launch_stop(record, entry, deadline, minimum_grace, prerequisites)
+            threads << previous
+          end
+          error = threads.filter_map(&:value).first
+          raise error if error
+        end
+
+        def launch_stop(record, entry, deadline, minimum_grace, prerequisites)
+          Thread.new do
+            run_termination_hook(record, entry, deadline)
+            wait_for_stop_prerequisites(prerequisites, deadline)
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            grace = [remaining.ceil, minimum_grace].max
+            stop_entry(record, entry, grace)
+            nil
+          rescue StandardError => error
+            error
+          end
+        end
+
+        def wait_for_stop_prerequisites(prerequisites, deadline)
+          prerequisites.each do |thread|
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            break unless remaining.positive? && thread.join(remaining)
+            next unless thread.value
+
+            # An error did not confirm the predecessor's exit. Keep the
+            # sidecar available until the shared deadline in that case.
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            sleep(remaining) if remaining.positive?
+            break
+          end
+        end
+
+        def run_termination_hook(record, entry, deadline)
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          run_pre_stop_hooks(record[:pod], record, budget: remaining, entries: [entry])
+        rescue StandardError => error
+          event(record, "container.failed_prestop", name: entry[:name], reason: "FailedPreStopHook",
+                                                    message: "PreStopHook failed: #{Helpers.failure_message(error)}")
         end
 
         # The termination the runtime reports after a stop: a SIGKILL after the
         # grace period exits 137 (Error); otherwise the runtime status (exit
         # code, reason, termination message) is used when it is available.
-        def stopped_termination(container_id)
+        def stopped_termination(entry)
+          container_id = entry[:id]
           details = (@stop_details ||= {})[container_id] || {}
           status = status_after_stop(container_id)
           terminated = Helpers.key(status, "terminated", status)
@@ -44,12 +104,12 @@ module Rubernetes
           reason = Helpers.key(terminated, "reason", nil)
           reason = "OOMKilled" if status["oom_killed"] == true
           reason = exit_code.zero? ? "Completed" : "Error" if reason.nil? || reason.to_s.empty?
-          result = {"exitCode" => exit_code, "reason" => reason.to_s, "finishedAt" => Helpers.now(@clock).iso8601(6)}
+          started_at = terminated["startedAt"] || entry[:started_at]
+          finished_at = terminated["finishedAt"] || Helpers.now(@clock).iso8601(6)
+          result = {"exitCode" => exit_code, "reason" => reason.to_s, "finishedAt" => finished_at, "containerID" => container_id}
+          result["startedAt"] = started_at if started_at
           message = Helpers.key(terminated, "message", nil)
-          if message.nil? || message.to_s.empty?
-            entry = @records.values.flat_map { |candidate| candidate[:containers] }.find { |candidate| candidate[:id] == container_id }
-            message = termination_message_for(entry, exit_code: exit_code, reason: reason) if entry
-          end
+          message = termination_message_for(entry, exit_code: exit_code, reason: reason) if message.nil? || message.to_s.empty?
           result["message"] = message.to_s unless message.nil? || message.to_s.empty?
           result
         end
@@ -76,6 +136,8 @@ module Rubernetes
             options[:release_process] = release_process if accepts_keyword?(@runtime, :stop_container, :release_process)
             invoke(@runtime, :stop_container, container_id, **options)
           rescue StandardError => error
+            raise if cri_unavailable?(error)
+
             # A container the runtime no longer knows (the host
             # rebooted, or recovery released its sandbox) has nothing
             # left to stop.  Waiting out the grace period for it kept
@@ -110,6 +172,11 @@ module Rubernetes
           return false if result.nil? || result == false
 
           confirm_stopped(container_id, result)
+        end
+
+        def cri_unavailable?(error)
+          defined?(Runtime::CRI::Client::Error) && error.is_a?(Runtime::CRI::Client::Error) &&
+            error.code == Runtime::CRI::Client::UNAVAILABLE
         end
 
         def confirm_stopped(container_id, result)
