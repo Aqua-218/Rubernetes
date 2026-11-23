@@ -41,11 +41,12 @@ module Rubernetes
         @env = env
       end
 
-      # Returns one or more resource mappings in document order. A List object is expanded.
-      def load(path)
+      # Returns resource mappings in document order, expanding List objects.
+      # For a sandboxed Ruby manifest the optional block receives declaration lines.
+      def load(path, &)
         file_path = path.to_s
         raise ManifestError, "manifest path must be a non-empty string" if file_path.empty?
-        return load_ruby(file_path) if File.extname(file_path).casecmp?(".rb")
+        return load_ruby(file_path, &) if File.extname(file_path).casecmp?(".rb")
 
         content = read_file(file_path)
         parse(content, filename: file_path)
@@ -70,7 +71,7 @@ module Rubernetes
 
       private
 
-      def load_ruby(path)
+      def load_ruby(path, &)
         unless @allow_code
           raise RubyManifestIsolationError,
                 "Ruby manifest execution requires explicit --allow-code and an isolated child process"
@@ -80,7 +81,7 @@ module Rubernetes
                 "Ruby manifest execution requires an isolated child process; no sandbox runner is configured"
         end
 
-        resources = @sandbox.compile(path, allow_code: true, environment: @environment, env: @env)
+        resources = @sandbox.compile(path, allow_code: true, environment: @environment, env: @env, &)
         normalize_sandbox_resources(resources, path)
       rescue ManifestError
         raise
