@@ -59,7 +59,8 @@ class ImageResolverSingleFlightTest < Minitest::Test
     end.map(&:value)
 
     assert_equal 1, outcomes.count { |outcome| outcome.is_a?(Image::RegistryError) }, "only the leader sees its own failure"
-    assert(outcomes.any? { |outcome| outcome.respond_to?(:rootfs) })
+    assert_equal 2, puller.pulls
+    assert_equal 1, outcomes.filter_map { |outcome| outcome.rootfs if outcome.respond_to?(:rootfs) }.uniq.size
   ensure
     resolved = outcomes&.find { |outcome| outcome.respond_to?(:rootfs) }
     resolver&.release(resolved) if resolved
