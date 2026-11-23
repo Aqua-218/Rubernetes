@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "pod_status_observed_generation"
+
 module Rubernetes
   module API
     class Server
@@ -9,18 +11,18 @@ module Rubernetes
       module SubresourceUpdates
         private
 
-        # E2 status writes keep metadata unless the kind's status strategy resets it
-        # Kinds whose status strategy calls rest.ResetObjectMetaForStatus
-        # (pkg/registry/**/strategy.go): only these discard metadata changes
-        # sent on the status subresource.  Every other kind (Namespace,
-        # Deployment, ...) applies labels/annotations/finalizers/ownerReferences
-        # from a status write, and the conformance suite relies on it.
+        # Registry strategies that restore all four mutable metadata fields
+        # from the stored object on a status write.
         STATUS_META_RESET_KINDS = %w[
-          Pod ServiceCIDR VolumeAttachment ResourceClaim DeviceTaintRule StorageVersionMigration
+          FlowSchema PriorityLevelConfiguration APIService ServiceCIDR VolumeAttachment ResourceClaim DeviceTaintRule StorageVersionMigration
           ResourcePoolStatusRequest PodGroup ValidatingAdmissionPolicy PodCertificateRequest StorageVersion
         ].freeze
 
         STATUS_META_UPDATABLE_FIELDS = %w[labels annotations finalizers ownerReferences].freeze
+        STATUS_META_FIELDS_BY_KIND = {
+          "Pod" => %w[labels annotations finalizers],
+          "Deployment" => %w[annotations finalizers ownerReferences]
+        }.freeze
 
         # The /approval subresource of a CertificateSigningRequest writes exactly
         # one thing: the approval conditions.  registry/certificates/
@@ -82,15 +84,18 @@ module Rubernetes
 
         def status_update(existing, candidate, resource: nil)
           result = deep_copy(existing)
-          result["status"] = deep_copy(candidate["status"] || {})
+          if (resource&.custom? && !candidate.key?("status")) || (resource_pool_status_request_resource?(resource) && candidate["status"].nil?)
+            result.delete("status")
+          else
+            result["status"] = deep_copy(candidate["status"] || {})
+          end
           best_effort { record_csr_honored_duration(existing, result) } if resource && csr_resource?(resource)
           result["metadata"] ||= {}
           metadata = candidate.is_a?(Hash) && candidate["metadata"].is_a?(Hash) ? candidate["metadata"] : {}
+          result["metadata"]["uid"] = metadata["uid"] if !resource&.custom? && metadata.key?("uid")
           kind = resource ? resource.kind.to_s : nil
-          unless kind && STATUS_META_RESET_KINDS.include?(kind)
-            STATUS_META_UPDATABLE_FIELDS.each do |field|
-              next unless metadata.key?(field)
-
+          unless resource&.custom? || STATUS_META_RESET_KINDS.include?(kind)
+            STATUS_META_FIELDS_BY_KIND.fetch(kind, STATUS_META_UPDATABLE_FIELDS).each do |field|
               if metadata[field].nil?
                 result["metadata"].delete(field)
               else
@@ -100,15 +105,91 @@ module Rubernetes
           end
           fields = metadata["managedFields"]
           result["metadata"]["managedFields"] = deep_copy(fields) if fields
+          prepare_persistent_volume_status!(existing, result) if resource && persistent_volume_resource?(resource)
           # "the Pod QoS is immutable and populated at creation time by the
           # kube-apiserver ... backfill it" (registry/core/pod/strategy.go:225).
           # A kubelet that omits qosClass from its status write must not erase it.
-          if kind == "Pod"
+          if kind == "Pod" && !resource.custom?
             status = result["status"] ||= {}
             previous_qos = existing.dig("status", "qosClass")
             status["qosClass"] = previous_qos if status["qosClass"].to_s.empty? && !previous_qos.to_s.empty?
+            PodStatusObservedGeneration.preserve!(status, existing["status"])
           end
           result
+        end
+
+        # PersistentVolumeStatusStrategy.PrepareForUpdate. A merge patch
+        # usually carries the old time forward, just like a PUT based on GET.
+        def prepare_persistent_volume_status!(existing, result)
+          current = result["status"]
+          return unless current.is_a?(Hash)
+
+          previous = existing["status"].is_a?(Hash) ? existing["status"] : {}
+          key = "lastPhaseTransitionTime"
+          requested = current[key]
+          stored = previous[key]
+          if current["phase"].to_s == previous["phase"].to_s
+            return unless requested.nil?
+
+            stored.nil? ? current.delete(key) : current[key] = stored
+          elsif requested.nil? || equal_persistent_volume_times?(requested, stored)
+            current[key] = @clock.call.utc.iso8601
+          end
+        end
+
+        def equal_persistent_volume_times?(first, second)
+          return false if second.nil?
+
+          first == second || Time.iso8601(first.to_s) == Time.iso8601(second.to_s)
+        rescue ArgumentError
+          false
+        end
+
+        POD_CONTAINER_STATUS_FIELDS = %w[containerStatuses initContainerStatuses ephemeralContainerStatuses].freeze
+
+        def prepare_image_volume_status!(route, existing, object)
+          return unless route.subresource == "status" && pod_resource?(route.resource)
+
+          if feature_gate_enabled?("ImageVolumeWithDigest")
+            causes = image_volume_status_causes(object["status"])
+            return if causes.empty?
+
+            detail = causes.map { |cause| "#{cause["field"]}: #{cause["message"]}" }.join(", ")
+            raise Status::Invalid.new("Pod #{route.name.inspect} is invalid: #{detail}",
+                                      details: {"kind" => "Pod", "name" => route.name}, causes: causes)
+          end
+          return if image_volume_mount_statuses(existing&.dig("status")).any? { |mount, _| !mount["volumeStatus"].nil? }
+
+          image_volume_mount_statuses(object["status"]).each { |mount, _| mount.delete("volumeStatus") }
+        end
+
+        def image_volume_status_causes(status)
+          image_volume_mount_statuses(status).filter_map do |mount, path|
+            image = mount.dig("volumeStatus", "image")
+            next unless image.is_a?(Hash)
+
+            ref = image["imageRef"].to_s
+            field = "#{path}.volumeStatus.imageVolumeStatus.imageRef"
+            if ref.empty?
+              {"field" => field, "reason" => "FieldValueRequired", "message" => "Required value: imageRef must not be empty"}
+            elsif ref.bytesize > 256
+              {"field" => field, "reason" => "FieldValueTooLong", "message" => "Too long: may not be more than 256 bytes"}
+            end
+          end
+        end
+
+        def image_volume_mount_statuses(status)
+          return [] unless status.is_a?(Hash)
+
+          POD_CONTAINER_STATUS_FIELDS.flat_map do |field|
+            Array(status[field]).each_with_index.flat_map do |container, index|
+              next [] unless container.is_a?(Hash)
+
+              Array(container["volumeMounts"]).each_with_index.filter_map do |mount, mount_index|
+                [mount, "status.#{field}[#{index}].volumeMounts[#{mount_index}]"] if mount.is_a?(Hash)
+              end
+            end
+          end
         end
 
         def pod_resize_route?(route)
@@ -119,11 +200,16 @@ module Rubernetes
         # approval conditions, a Pod's resources -- and through the resource
         # itself, everything but the stored status.
         def apply_subresource_strategy(route, existing, object)
+          has_status = route.resource.subresource("status")
           if route.subresource == "status" then status_update(existing, object, resource: route.resource)
           elsif approval_subresource?(route) then approval_update(existing, object)
           elsif pod_resize_route?(route) then resize_update(existing, object)
           else
-            object["status"] = deep_copy(existing["status"]) if existing.key?("status")
+            return object if route.resource.custom? && !has_status
+
+            return object.merge("status" => deep_copy(existing["status"])) if existing.key?("status")
+            return object.except("status") if has_status || resource_pool_status_request_resource?(route.resource)
+
             object
           end
         end
@@ -163,6 +249,7 @@ module Rubernetes
           result["spec"]["initContainers"] = init_containers if old_spec.key?("initContainers")
           # ResetObjectMetaForStatus keeps the stored metadata; the request's
           # resourceVersion still guards the write.
+          result["metadata"]["uid"] = metadata_value(candidate, "uid")
           rv = metadata_value(candidate, "resourceVersion")
           result["metadata"]["resourceVersion"] = rv unless rv.nil?
           managed = candidate.dig("metadata", "managedFields")
