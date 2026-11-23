@@ -1,17 +1,31 @@
 # frozen_string_literal: true
 
+require_relative "../volume_groups"
+
 module Rubernetes
   module Node
     class Lifecycle
       # The Pod sandbox and what is attached to it: the sandbox itself, its
       # network and host ports, sysctls, and the Pod's own files.
       module SandboxSetup
+        attr_writer :pod_cgroup_manager
+
         private
+
+        def with_native_pod_cgroup(pod, &)
+          return yield unless @pod_cgroup_manager
+
+          runtime = runtime_for_pod(pod)
+          return yield unless runtime.is_a?(Runtime::Native)
+
+          qos = Runtime::Native::Resources.qos_class(pod)
+          @pod_cgroup_manager.with_pod_cgroup(pod.dig("metadata", "uid"), qos, &)
+        end
 
         def create_sandbox(pod, record)
           event(record, "sandbox.create")
-          runtime_class = Helpers.key(Helpers.key(pod, "spec", {}), "runtimeClassName", nil)
-          runtime_class = @runtime_class_resolver.call(pod) if @runtime_class_resolver
+          spec = Helpers.key(pod, "spec", {})
+          runtime_class = pod_runtime_class(pod)
           runtime_input = pod
           unless record[:images].empty?
             runtime_input = Helpers.deep_copy(pod)
@@ -21,12 +35,64 @@ module Rubernetes
               image_to_hash(image)["rootfs"]
             end.uniq
           end
-          if @container_spec
+          if @container_spec && Helpers.key(spec, "hostNetwork", false) != true
             runtime_input = Helpers.deep_copy(runtime_input) if runtime_input.equal?(pod)
             # kubelet: the UTS hostname is spec.hostname or the Pod name.
             runtime_input["hostname"] = @container_spec.pod_hostname(pod)
           end
+          if @pod_files.is_a?(PodFiles)
+            record[:dns_config] = @pod_files.dns_config(pod, host_network: spec["hostNetwork"] == true, node_ips: @host_ips) do |scope, reason, message|
+              event(record, "dns.warning", scope: scope, reason: reason, message: message)
+            end
+            runtime_input = runtime_input.merge("dns_config" => record[:dns_config])
+          end
+          security = Helpers.key(spec, "securityContext", {}) || {}
+          with_volume_groups = VolumeGroups.apply(security, record[:volume])
+          unless with_volume_groups.equal?(security)
+            runtime_input = Helpers.deep_copy(runtime_input) if runtime_input.equal?(pod)
+            runtime_input["spec"] = spec.merge("securityContext" => with_volume_groups)
+          end
+          if %w[rubernetes-firecracker rubernetes-firecracker-restricted].include?(runtime_class)
+            block_volumes = sandbox_block_volumes(pod, record[:volume])
+            unless block_volumes.empty?
+              runtime_input = Helpers.deep_copy(runtime_input) if runtime_input.equal?(pod)
+              runtime_input["block_volumes"] = block_volumes
+            end
+          end
           invoke(@runtime, :run_sandbox, runtime_input, runtime_class: runtime_class)
+        rescue PodHostname::Error, PodFiles::Error => error
+          record[:reason] = "FailedCreatePodSandBox"
+          raise LifecycleError, "Failed to create pod sandbox: #{error.message}"
+        end
+
+        def pod_runtime_class(pod)
+          return @runtime_class_resolver.call(pod) if @runtime_class_resolver
+
+          Helpers.key(Helpers.key(pod, "spec", {}), "runtimeClassName", nil)
+        end
+
+        def runtime_for_pod(pod)
+          return @runtime unless defined?(Runtime::Multiplexer) && @runtime.is_a?(Runtime::Multiplexer)
+
+          @runtime.backend_for(@runtime.handler_for(pod, runtime_class: pod_runtime_class(pod)))
+        end
+
+        def cri_runtime_for_pod?(pod)
+          defined?(Runtime::CRI::Backend) && runtime_for_pod(pod).is_a?(Runtime::CRI::Backend)
+        end
+
+        def sandbox_block_volumes(pod, handle)
+          return {} unless handle.is_a?(Hash) && handle["mounts"].is_a?(Hash)
+
+          spec = Helpers.key(pod, "spec", {})
+          names = %w[initContainers containers ephemeralContainers].flat_map do |group|
+            Array(Helpers.key(spec, group, [])).flat_map do |container|
+              Array(Helpers.key(container, "volumeDevices", [])).map { |entry| Helpers.key(entry, "name").to_s }
+            end
+          end
+          handle["mounts"].slice(*names).filter_map do |name, volume|
+            [name, {"source" => volume.fetch("path"), "readonly" => volume["readonly"] == true}] if volume["volumeMode"] == "Block"
+          end.to_h
         end
 
         def native_runtime?
@@ -69,7 +135,10 @@ module Rubernetes
 
         def connect_network(pod, record)
           event(record, "network.connect", sandbox_id: record[:sandbox_id])
-          return nil unless @network
+          unless @network
+            refresh_runtime_pod_ips(record)
+            return nil
+          end
 
           sandbox = network_sandbox_context(record)
 
@@ -79,11 +148,24 @@ module Rubernetes
           result
         end
 
+        # With no node network configured, the runtime's CNI owns the Pod
+        # network. Keep the addresses without claiming the network resource.
+        def refresh_runtime_pod_ips(record)
+          return false if @network || !record[:sandbox_id] || !runtime_supports?(:sandbox_network_ips)
+          return false if record[:runtime_pod_ips]&.any? || record.dig(:pod, "spec", "hostNetwork") == true
+
+          ips = best_effort { invoke(@runtime, :sandbox_network_ips, record[:sandbox_id]) }
+          return false if ips.nil? || ips.empty?
+
+          record[:runtime_pod_ips] = ips
+          true
+        end
+
         # containerPort.hostPort has to be programmed on the node once the Pod
         # has an address; nothing did, so a Pod with a hostPort was scheduled and
         # then unreachable.
         def publish_host_ports(pod, record)
-          return if @host_ports.nil?
+          return if @host_ports.nil? || Helpers.key(Helpers.key(pod, "spec", {}), "hostNetwork", false) == true
 
           mappings = Network::HostPort.mappings_for(pod)
           return if mappings.empty?
@@ -131,12 +213,12 @@ module Rubernetes
           return unless @pod_root
 
           directory = File.join(pod_directory(record), "etc")
-          writer = @pod_files || PodFiles.new
           host_network = Helpers.key(Helpers.key(pod, "spec", {}), "hostNetwork", false) == true
-          ips = host_network ? [@host_ip].compact : pod_ips(record)
+          ips = pod_ips(record)
           begin
-            record[:pod_files] = writer.write(pod, directory: directory, pod_ips: ips, host_network: host_network,
-                                                   hostname: @container_spec ? @container_spec.pod_hostname(pod) : nil)
+            options = {directory: directory, pod_ips: ips, host_network: host_network, hostname: @container_spec&.pod_hostname(pod)}
+            options[:dns_config] = record[:dns_config] if record[:dns_config]
+            record[:pod_files] = @pod_files.write(pod, **options)
           rescue PodFiles::Error => error
             record[:reason] = "CreateContainerConfigError"
             raise LifecycleError, error.message
