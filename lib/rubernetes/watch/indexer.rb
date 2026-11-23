@@ -8,16 +8,57 @@ module Rubernetes
     # indexes.  The mutex protects the object map and every index as one unit;
     # callers therefore never observe an object whose index update is partial.
     class Indexer
+      # Keep each object's memberships so changing one Pod never scans other
+      # Pods' buckets. User callbacks run before any index mutation.
+      class SecondaryIndex
+        def initialize(function)
+          @function = function
+          @buckets = {}
+          @memberships = {}
+        end
+
+        def values_for(object)
+          Array(@function.call(object)).compact.map { |value| -value.to_s }.uniq
+        end
+
+        def replace(key, values)
+          return if @memberships[key] == values
+
+          delete(key)
+          return if values.empty?
+
+          @memberships[key] = values
+          values.each { |value| (@buckets[value] ||= {})[key] = true }
+        end
+
+        def delete(key)
+          @memberships.delete(key)&.each do |value|
+            bucket = @buckets.fetch(value)
+            bucket.delete(key)
+            @buckets.delete(value) if bucket.empty?
+          end
+        end
+
+        def keys_for(value) = @buckets.fetch(value, {}).keys
+
+        def clear
+          @buckets.clear
+          @memberships.clear
+        end
+      end
+      private_constant :SecondaryIndex
+
       def initialize(key_func: nil, indices: {}, freeze_objects: true)
         raise ArgumentError, "key_func must respond to call" if key_func && !key_func.respond_to?(:call)
         raise ArgumentError, "indices must be a Hash" unless indices.is_a?(Hash)
         raise ArgumentError, "freeze_objects must be true" unless freeze_objects == true
 
         @key_func = key_func || Support.method(:object_key)
-        @freeze_objects = true
+        @metadata_keys = @key_func == Support.method(:object_key)
         @mutex = Mutex.new
         @objects = {}
         @indices = {}
+        @list_version = 0
         indices.each { |name, function| add_index(name, &function) }
       end
 
@@ -25,22 +66,22 @@ module Rubernetes
       # make concurrent listers disagree about ownership, so duplicate names
       # fail closed instead of silently changing query semantics.
       def add_index(name, &function)
-        raise ArgumentError, "index function is required" unless function.respond_to?(:call)
+        raise ArgumentError, "index function is required" unless function
 
         index_name = normalize_index_name(name)
         loop do
-          objects = @mutex.synchronize do
+          objects, version = @mutex.synchronize do
             raise ArgumentError, "index #{index_name.inspect} is already registered" if @indices.key?(index_name)
 
-            @objects.dup
+            [@objects.dup, @list_version]
           end
-          values = Hash.new { |hash, key| hash[key] = {} }
-          objects.each { |key, object| add_index_values_locked(values, key, yield(object)) }
+          index = SecondaryIndex.new(function)
+          objects.each { |key, object| index.replace(key, index.values_for(object)) }
           registered = @mutex.synchronize do
             raise ArgumentError, "index #{index_name.inspect} is already registered" if @indices.key?(index_name)
-            next false unless @objects.keys == objects.keys && objects.all? { |key, object| @objects[key].equal?(object) }
+            next false unless version == @list_version
 
-            @indices[index_name] = {function: function, values: values}
+            @indices = @indices.merge(index_name => index)
             true
           end
           break if registered
@@ -67,24 +108,8 @@ module Rubernetes
       # functions run before acquiring the cache mutex so an application
       # callback cannot deadlock the cache by recursively reading it.
       def upsert(object, replace: true)
-        value = copy_for_storage(object)
-        key = key_for(value)
-        loop do
-          index_values = build_index_values(value)
-          result = @mutex.synchronize do
-            if index_values.keys.sort == @indices.keys.sort
-              raise KeyError, "object #{key.inspect} already exists" if !replace && @objects.key?(key)
-
-              remove_indexes_locked(key)
-              @objects[key] = value
-              invalidate_list_locked
-              @indices.each_key do |name|
-                add_index_values_locked(@indices.fetch(name).fetch(:values), key, index_values.fetch(name))
-              end
-              read_copy(value)
-            end
-          end
-          return result unless result.nil?
+        write_object(object) do |key|
+          raise KeyError, "object #{key.inspect} already exists" if !replace && @objects.key?(key)
         end
       end
 
@@ -94,34 +119,19 @@ module Rubernetes
       # that arrives after the object's DELETED event must not put the object
       # back.  Answers whether the entry was replaced.
       def refresh(object)
-        value = copy_for_storage(object)
-        key = key_for(value)
-        loop do
-          index_values = build_index_values(value)
-          result = @mutex.synchronize do
-            next nil unless index_values.keys.sort == @indices.keys.sort
-
-            current = @objects[key]
-            next false if current.nil? || Support.version_newer?(Support.resource_version(current), Support.resource_version(value))
-
-            remove_indexes_locked(key)
-            @objects[key] = value
-            invalidate_list_locked
-            @indices.each_key do |name|
-              add_index_values_locked(@indices.fetch(name).fetch(:values), key, index_values.fetch(name))
-            end
-            true
-          end
-          return result unless result.nil?
+        write_object(object) do |key, value|
+          current = @objects[key]
+          return false if current.nil? || Support.version_newer?(Support.resource_version(current), Support.resource_version(value))
         end
+        true
       end
 
       # Replace the cache with one list snapshot.  This is used by relist and
       # intentionally validates duplicate keys before changing any state.
       def replace_all(objects)
-        incoming = Array(objects).map { |object| copy_for_storage(object) }
         keyed = {}
-        incoming.each do |object|
+        Array(objects).each do |input|
+          object = copy_for_storage(input)
           key = key_for(object)
           raise ArgumentError, "replace_all contains duplicate object keys" if keyed.key?(key)
 
@@ -129,21 +139,15 @@ module Rubernetes
         end
 
         loop do
-          prepared = keyed.transform_values { |object| [object, build_index_values(object)] }
+          indices = @mutex.synchronize { @indices }
+          values = keyed.transform_values { |object| build_index_values(indices, object) }
           replaced = @mutex.synchronize do
-            index_names = @indices.keys.sort
-            prepared_names = prepared.values.first ? prepared.values.first.last.keys.sort : index_names
-            next false unless index_names == prepared_names
+            next false unless indices.equal?(@indices)
 
-            @objects.clear
+            @objects = keyed
+            indices.each_value(&:clear)
+            values.each { |key, entries| index_object_locked(key, entries) }
             invalidate_list_locked
-            @indices.each_value { |index| index.fetch(:values).clear }
-            prepared.each do |key, (object, values)|
-              @objects[key] = object
-              @indices.each_key do |name|
-                add_index_values_locked(@indices.fetch(name).fetch(:values), key, values.fetch(name))
-              end
-            end
             true
           end
           break if replaced
@@ -161,14 +165,16 @@ module Rubernetes
           existing = @objects.delete(key)
           invalidate_list_locked
 
-          remove_indexes_locked(key)
-          read_copy(existing)
+          @indices.each_value { |index| index.delete(key) }
+          existing
         end
       end
 
+      def metadata_keys? = @metadata_keys
+
       def get(key)
         normalized = normalize_key(key)
-        @mutex.synchronize { @objects.key?(normalized) ? read_copy(@objects.fetch(normalized)) : nil }
+        @mutex.synchronize { @objects[normalized] }
       end
 
       alias fetch get
@@ -181,28 +187,22 @@ module Rubernetes
 
       alias key? include?
 
-      # The sorted list is memoised until the next mutation.  Every controller
-      # that routes an event lists a kind from here -- a Pod event lists
-      # Services, Pods, ReplicaSets ... once per controller -- and re-sorting
-      # three thousand Pods per call put the Pod informer 90 events and 20 s
-      # behind during a rollout, so a DaemonSet controller reading stale
-      # readiness deleted every old Pod at once ("Daemon set should rollback
-      # without unnecessary restarts").  Stored values are frozen and replaced
-      # rather than edited, so handing out one frozen array is safe.
+      # Controllers share one sorted list per cache revision. Sort a snapshot
+      # outside the mutex so writers can continue while a reader builds it.
       def list
-        cached, version, objects = @mutex.synchronize { [@sorted_list, @list_version, @objects.values.dup] }
-        return cached if cached
+        objects, version = @mutex.synchronize do
+          return @sorted_list if @sorted_list
 
-        # Key functions run outside the mutex (a custom one may read the
-        # cache); the result is kept only if nothing changed meanwhile.
-        sorted = objects.sort_by { |object| key_for(object) }.map { |value| read_copy(value) }.freeze
+          [@objects.dup, @list_version]
+        end
+        sorted = objects.values_at(*objects.keys.sort).freeze
         @mutex.synchronize { @sorted_list = sorted if @list_version == version }
         sorted
       end
 
       def invalidate_list_locked
         @sorted_list = nil
-        @list_version = (@list_version || 0) + 1
+        @list_version += 1
       end
 
       alias values list
@@ -233,18 +233,24 @@ module Rubernetes
         @mutex.synchronize do
           @objects.clear
           invalidate_list_locked
-          @indices.each_value { |index| index.fetch(:values).clear }
+          @indices.each_value(&:clear)
         end
         self
       end
 
       def by_index(index_name, lookup_key)
+        by_index_values(index_name, [lookup_key])
+      end
+
+      # Resolve a union against one cache revision; a concurrent selector
+      # change cannot move an object between two reads of individual buckets.
+      def by_index_values(index_name, lookup_keys)
         name = normalize_index_name(index_name)
-        value = normalize_index_value(lookup_key)
+        values = lookup_keys.map { |key| normalize_index_value(key) }
         @mutex.synchronize do
           index = @indices.fetch(name) { raise KeyError, "unknown index #{index_name.inspect}" }
-          keys = index.fetch(:values).fetch(value, {}).keys.sort
-          keys.map { |key| read_copy(@objects.fetch(key)) }.freeze
+          keys = values.flat_map { |value| index.keys_for(value) }.uniq.sort
+          @objects.values_at(*keys).freeze
         end
       end
 
@@ -257,9 +263,7 @@ module Rubernetes
       # Return a detached immutable mapping suitable for diagnostics or a
       # resync source.  It is never the mutable internal object map.
       def snapshot
-        @mutex.synchronize do
-          Support.immutable_copy(@objects.transform_values { |value| Support.deep_copy(value) })
-        end
+        @mutex.synchronize { @objects.dup.freeze }
       end
 
       private
@@ -305,42 +309,37 @@ module Rubernetes
       end
 
       def copy_for_storage(object)
-        copy = Support.deep_copy(object)
-        @freeze_objects ? Support.immutable_copy(copy) : copy
+        Support.immutable_copy(object)
       rescue StandardError => error
         raise ArgumentError, "failed to copy indexed object: #{error.message}"
       end
 
-      # Stored values are deep-frozen copies nobody else holds (see
-      # copy_for_storage), so a reader can be handed the stored value itself:
-      # it cannot change it, and the cache replaces rather than edits entries.
-      # Copying and re-freezing on every read made a 3000-Pod list take
-      # 0.75 s, and the controllers list from here on every reconcile -- the
-      # endpointslice controller spent 1.06 s per Service and
-      # "[sig-network] Service endpoints latency should not be very high"
-      # measured a 29 s median.
-      def read_copy(object)
-        return object if @freeze_objects && object.frozen?
+      # add_index publishes a new registry. If one appeared while the index
+      # callbacks ran outside the lock, compute its entries before committing.
+      def write_object(object)
+        value = copy_for_storage(object)
+        key = key_for(value)
+        loop do
+          indices = @mutex.synchronize { @indices }
+          entries = build_index_values(indices, value)
+          @mutex.synchronize do
+            next unless indices.equal?(@indices)
 
-        copy = Support.deep_copy(object)
-        @freeze_objects ? Support.immutable_copy(copy) : copy
-      end
-
-      def build_index_values(object)
-        functions = @mutex.synchronize { @indices.transform_values { |index| index.fetch(:function) } }
-        functions.transform_values do |function|
-          Array(function.call(object)).compact.map(&:to_s).uniq.freeze
+            yield(key, value)
+            @objects[key] = value
+            index_object_locked(key, entries)
+            invalidate_list_locked
+            return value
+          end
         end
       end
 
-      def add_index_values_locked(values, key, raw_values)
-        Array(raw_values).compact.each { |value| values[value.to_s][key] = true }
+      def build_index_values(indices, object)
+        indices.transform_values { |index| index.values_for(object) }
       end
 
-      def remove_indexes_locked(key)
-        @indices.each_value do |index|
-          index.fetch(:values).each_value { |keys| keys.delete(key) }
-        end
+      def index_object_locked(key, entries)
+        entries.each { |name, values| @indices.fetch(name).replace(key, values) }
       end
     end
 
