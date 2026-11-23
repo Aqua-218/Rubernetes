@@ -23,11 +23,11 @@ class SecurityAdmissionPluginsTest < Minitest::Test
   end
 
   def attributes(operation, resource:, group: "", object: nil, old: nil, namespace: "team", name: nil, subresource: "", user: nil,
-                 kind: nil)
+                 kind: nil, dry_run: false)
     A::Attributes.new(operation: operation, user: user || S::UserInfo.new(name: "alice"), group: group, version: "v1", resource: resource,
                       kind: kind || resource.capitalize, namespace: namespace, name: name || object&.dig("metadata", "name") || old&.dig("metadata",
                                                                                                                                          "name") || "",
-                      object: object, old_object: old, subresource: subresource)
+                      object: object, old_object: old, subresource: subresource, dry_run: dry_run)
   end
 
   def pod(name, containers: [{"name" => "c", "image" => "i"}], extra: {})
@@ -63,6 +63,20 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     end
   end
 
+  def test_namespace_auto_provision_skips_dry_run_creates
+    @context.define_singleton_method(:create_namespace) do |name|
+      put("namespaces", nil, name, {"metadata" => {"name" => name}})
+    end
+    provision = plugin("NamespaceAutoProvision")
+    object = {"metadata" => {"name" => "settings"}}
+    provision.admit(attributes("CREATE", resource: "configmaps", object: object, namespace: "preview", dry_run: true))
+
+    assert_nil @context.namespace("preview")
+    provision.admit(attributes("CREATE", resource: "configmaps", object: object, namespace: "preview"))
+
+    assert_equal "preview", @context.namespace("preview").dig("metadata", "name")
+  end
+
   def test_service_account_defaults_and_mounts_projected_token
     sa = plugin("ServiceAccount")
     attrs = attributes("CREATE", resource: "pods", object: pod("web"))
@@ -80,6 +94,38 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     sa.admit(off)
 
     assert_nil off.object.dig("spec", "volumes")
+  end
+
+  def test_service_account_admission_waits_for_namespace_default_to_be_created
+    service_account = plugin("ServiceAccount")
+    attrs = attributes("CREATE", resource: "pods", object: pod("web"), namespace: "new-team")
+    waits = []
+    create_default = lambda do |seconds|
+      waits << seconds
+      @context.put("serviceaccounts", "new-team", "default", {"metadata" => {"name" => "default", "uid" => "new-sa"}})
+    end
+    service_account.stub(:sleep, create_default) { service_account.admit(attrs) }
+
+    assert_equal 1, waits.size
+    assert_includes (0.100..0.199), waits.first
+    assert_equal "token", attrs.object.dig("spec", "volumes", 0, "projected", "sources", 0, "serviceAccountToken", "path")
+  end
+
+  def test_service_account_supplies_pull_secret_references_independently_of_token_mounts
+    inherited = [{"name" => "registry-first"}, {"name" => "registry-second"}]
+    account = {"metadata" => {"name" => "builder"}, "imagePullSecrets" => inherited}
+    @context.put("serviceaccounts", "team", "builder", account)
+    service_account = plugin("ServiceAccount")
+    explicit = [{"name" => "registry-explicit"}]
+
+    [{}, {"imagePullSecrets" => []}, {"imagePullSecrets" => explicit}].zip([inherited, inherited, explicit]).each do |extra, expected|
+      pod_spec = {"serviceAccountName" => "builder", "automountServiceAccountToken" => false}.merge(extra)
+      attrs = attributes("CREATE", resource: "pods", object: pod("pull", extra: pod_spec))
+      service_account.admit(attrs)
+
+      assert_equal expected, attrs.object.dig("spec", "imagePullSecrets")
+      assert_nil attrs.object.dig("spec", "volumes")
+    end
   end
 
   def test_limit_ranger_defaults_and_enforces
@@ -129,6 +175,36 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     assert_raises(A::Rejected) { ranger.validate(bare) }
   end
 
+  def test_limit_ranger_reports_every_resize_violation_and_ignores_other_pod_updates
+    limits = {"type" => "Container", "min" => {"cpu" => "50m", "memory" => "50Mi"}}
+    @context.put("limitranges", "team", "limits", {"spec" => {"limits" => [limits]}})
+    ranger = plugin("LimitRanger")
+    resources = {"requests" => {"cpu" => "10m", "memory" => "10Mi"}, "limits" => {"cpu" => "10m", "memory" => "10Mi"}}
+    candidate = pod("small", containers: [{"name" => "c", "resources" => resources}])
+    resize = attributes("UPDATE", resource: "pods", object: candidate, subresource: "resize")
+
+    error = assert_raises(A::Rejected) { ranger.validate(resize) }
+    assert_equal 'pods "small" is forbidden: [minimum cpu usage per Container is 50m, but request is 10m, ' \
+                 "minimum memory usage per Container is 50Mi, but request is 10Mi]", error.message
+    %w[status ephemeralcontainers].each do |subresource|
+      ranger.validate(attributes("UPDATE", resource: "pods", object: candidate, subresource: subresource))
+    end
+    ranger.validate(attributes("UPDATE", resource: "pods", object: candidate))
+  end
+
+  def test_limit_ranger_checks_persistent_volume_claim_requests_against_maximum
+    limits = {"type" => "PersistentVolumeClaim", "max" => {"storage" => "2Gi"}}
+    @context.put("limitranges", "team", "limits", {"spec" => {"limits" => [limits]}})
+    ranger = plugin("LimitRanger")
+    claim = {"metadata" => {"name" => "claim"}, "spec" => {"resources" => {"requests" => {"storage" => "2Gi"}}}}
+    ranger.validate(attributes("CREATE", resource: "persistentvolumeclaims", object: claim))
+    claim.dig("spec", "resources", "requests")["storage"] = "3Gi"
+
+    error = assert_raises(A::Rejected) { ranger.validate(attributes("CREATE", resource: "persistentvolumeclaims", object: claim)) }
+
+    assert_match(/maximum storage usage per PersistentVolumeClaim is 2Gi, but request is 3Gi/, error.message)
+  end
+
   def test_priority_default_toleration_and_taint_plugins
     @context.put("priorityclasses", nil, "high", {"metadata" => {"name" => "high"}, "value" => 1000, "preemptionPolicy" => "Never"},
                  group: "scheduling.k8s.io")
@@ -156,6 +232,52 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     assert_equal "node.kubernetes.io/not-ready", node.object.dig("spec", "taints", 0, "key")
   end
 
+  def test_default_priority_is_unique_and_the_lowest_existing_default_is_used
+    priority = plugin("Priority")
+    [20, 10].each do |value|
+      name = "default-#{value}"
+      @context.put("priorityclasses", nil, name, {"metadata" => {"name" => name}, "globalDefault" => true, "value" => value}, group: "scheduling.k8s.io")
+    end
+    klass = {"metadata" => {"name" => "default-10"}, "globalDefault" => true}
+    create = attributes("CREATE", group: "scheduling.k8s.io", resource: "priorityclasses", object: klass)
+    update = attributes("UPDATE", group: "scheduling.k8s.io", resource: "priorityclasses", object: klass)
+
+    assert_raises(A::Rejected) { priority.validate(create) }
+    assert_nil(priority.validate(update))
+    attrs = attributes("CREATE", resource: "pods", object: pod("p"))
+    priority.admit(attrs)
+
+    assert_equal([10, "default-10"], attrs.object.fetch("spec").values_at("priority", "priorityClassName"))
+    assert_raises(A::Rejected) { priority.admit(attributes("CREATE", resource: "pods", object: pod("q", extra: {"priority" => 20}))) }
+    assert_raises(A::Rejected) { priority.admit(attributes("CREATE", resource: "pods", object: pod("q", extra: {"preemptionPolicy" => "Never"}))) }
+  end
+
+  def test_ingress_and_storage_defaults_use_the_newest_creation_second_then_the_first_name
+    [["storageclasses", "storage.k8s.io", "storageclass.beta.kubernetes.io/is-default-class"],
+     ["ingressclasses", "networking.k8s.io", "ingressclass.kubernetes.io/is-default-class"]].each do |resource, group, key|
+      {"old" => "00:00:00", "z" => "01:00:00", "a" => "01:00:00"}.each do |name, time|
+        @context.put(resource, nil, name,
+                     {"metadata" => {"name" => name, "creationTimestamp" => "2026-11-19T#{time}Z", "annotations" => {key => "true"}}}, group: group)
+      end
+    end
+    ingress = attributes("CREATE", resource: "ingresses", group: "networking.k8s.io", object: {"spec" => {"ingressClassName" => nil}})
+    plugin("DefaultIngressClass").admit(ingress)
+    pvc = attributes("CREATE", resource: "persistentvolumeclaims", object: {"spec" => {"volumeName" => "prebound"}})
+    plugin("DefaultStorageClass").admit(pvc)
+
+    assert_equal "a", ingress.object.dig("spec", "ingressClassName")
+    assert_equal "a", pvc.object.dig("spec", "storageClassName")
+
+    %w[gold empty].each do |key|
+      legacy = attributes("CREATE", resource: "persistentvolumeclaims", object: {
+                            "metadata" => {"annotations" => {"volume.beta.kubernetes.io/storage-class" => (key == "empty" ? "" : key)}}, "spec" => {}
+                          })
+      plugin("DefaultStorageClass").admit(legacy)
+
+      refute legacy.object.fetch("spec").key?("storageClassName")
+    end
+  end
+
   def test_storage_defaults_and_protection
     @context.put("storageclasses", nil, "fast",
                  {"metadata" => {"name" => "fast", "annotations" => {"storageclass.kubernetes.io/is-default-class" => "true"}},
@@ -174,6 +296,19 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     resize.validate(attributes("UPDATE", resource: "persistentvolumeclaims", object: grown, old: bound))
     unbound = bound.merge("status" => {"phase" => "Pending"})
     assert_raises(A::Rejected) { resize.validate(attributes("UPDATE", resource: "persistentvolumeclaims", object: grown, old: unbound)) }
+  end
+
+  def test_volume_attributes_class_protection_applies_on_creation
+    attrs = attributes("CREATE", group: "storage.k8s.io", resource: "volumeattributesclasses",
+                                 object: {"metadata" => {"name" => "fast", "finalizers" => ["fixture.example/cleanup"]}})
+    protection = plugin("StorageObjectInUseProtection")
+    protection.admit(attrs)
+
+    assert_equal ["fixture.example/cleanup"], attrs.object.dig("metadata", "finalizers")
+    @context.feature_gates["VolumeAttributesClass"] = true
+    2.times { protection.admit(attrs) }
+
+    assert_equal ["fixture.example/cleanup", "kubernetes.io/vac-protection"], attrs.object.dig("metadata", "finalizers")
   end
 
   def test_node_restriction_limits_kubelets
@@ -253,6 +388,39 @@ class SecurityAdmissionPluginsTest < Minitest::Test
                                           object: pod("light2",
                                                       containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "200m"}}}])))
     end
+  end
+
+  def test_resource_quota_checks_dry_run_without_consuming_capacity
+    @context.put("resourcequotas", "team", "q", {"metadata" => {"name" => "q"},
+                                                 "status" => {"hard" => {"pods" => "1"}, "used" => {"pods" => "0"}}})
+    quota = plugin("ResourceQuota")
+    preview = attributes("CREATE", resource: "pods", object: pod("preview"), dry_run: true)
+    quota.validate(preview)
+
+    assert_equal "0", @context.get("resourcequotas", "team", "q").dig("status", "used", "pods")
+    quota.validate(attributes("CREATE", resource: "pods", object: pod("actual")))
+
+    assert_raises(A::Rejected) { quota.validate(preview) }
+    assert_equal "1", @context.get("resourcequotas", "team", "q").dig("status", "used", "pods")
+  end
+
+  def test_resource_quota_checks_and_charges_the_delta_for_a_pod_resize
+    hard = {"pods" => "2", "cpu" => "800m", "memory" => "800Mi"}
+    used = {"pods" => "2", "cpu" => "600m", "memory" => "600Mi"}
+    @context.put("resourcequotas", "team", "resize", {"metadata" => {"name" => "resize"}, "status" => {"hard" => hard, "used" => used}})
+    quota = plugin("ResourceQuota")
+    original = pod("app", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "300m", "memory" => "300Mi"}}}])
+    candidate = pod("app", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "600m", "memory" => "750Mi"}}}])
+    resize = -> { attributes("UPDATE", resource: "pods", object: candidate, old: original, subresource: "resize") }
+
+    error = assert_raises(A::Rejected) { quota.validate(resize.call) }
+    assert_match(/exceeded quota: resize, requested: cpu=300m,memory=450Mi, used: cpu=600m,memory=600Mi, limited: cpu=800m,memory=800Mi/, error.message)
+    assert_equal used, @context.get("resourcequotas", "team", "resize").dig("status", "used")
+
+    candidate.dig("spec", "containers", 0, "resources")["requests"] = {"cpu" => "500m", "memory" => "400Mi"}
+    quota.validate(resize.call)
+
+    assert_equal({"pods" => "2", "cpu" => "800m", "memory" => "700Mi"}, @context.get("resourcequotas", "team", "resize").dig("status", "used"))
   end
 
   # plugin/pkg/admission/resourcequota: a failed quota lookup fails the request.
