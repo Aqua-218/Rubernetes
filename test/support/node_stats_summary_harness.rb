@@ -72,10 +72,10 @@ module NodeStatsSummaryHarness
      "u2" => {uid: "u2", state: "Removed", sandbox_id: "s2", pod: {"metadata" => {"name" => "gone"}}, containers: []}}
   end
 
-  def provider(runtime)
+  def provider(runtime, **)
     Rubernetes::Node::StatsProvider.new(node_name: "node-a", lifecycle: Lifecycle.new(records), runtime: runtime, pod_root: @dir,
                                         cgroup_root: @cgroup, proc_root: @proc, allocatable_memory: 1024 * MI,
-                                        clock: -> { Time.utc(2026, 1, 1, 0, 1) }, monotonic: -> { @mono })
+                                        clock: -> { Time.utc(2026, 1, 1, 0, 1) }, monotonic: -> { @mono }, **)
   end
 
   # expfmt writes every sample as a float64 ("4.194304e+08").
