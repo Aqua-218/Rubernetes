@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require_relative "../test_helper"
 require "rubernetes/node"
 
@@ -12,7 +13,11 @@ class LifecycleDevicePluginsTest < Minitest::Test
   DP = Rubernetes::Node::DevicePlugins
 
   class Plugins
-    def initialize(error: nil) = @error = error
+    def initialize(error: nil, host_mount: "/tmp")
+      @error = error
+      @host_mount = host_mount
+    end
+
     def remove_stale(_uids) = nil
 
     def allocate_pod(_pod)
@@ -22,7 +27,7 @@ class LifecycleDevicePluginsTest < Minitest::Test
     def container_allocation(_uid, name)
       return nil unless name == "gpu"
 
-      {"envs" => {"VISIBLE" => "d1"}, "mounts" => [{"container_path" => "/opt/drv", "host_path" => "/tmp", "read_only" => true}],
+      {"envs" => {"VISIBLE" => "d1"}, "mounts" => [{"container_path" => "/opt/drv", "host_path" => @host_mount, "read_only" => true}],
        "devices" => [{"container_path" => "/dev/fake0", "host_path" => "/dev/null"}], "annotations" => {}, "cdi_devices" => []}
     end
   end
@@ -59,5 +64,17 @@ class LifecycleDevicePluginsTest < Minitest::Test
     end
     assert_match(/UnexpectedAdmissionError: Allocate failed due to requested number of devices unavailable/, error.message)
     assert_equal "UnexpectedAdmissionError", record[:admission_reason]
+  end
+
+  def test_native_device_plugin_mount_prepares_an_absent_host_source_directory
+    Dir.mktmpdir("rbn-device-plugin-mount-") do |root|
+      host_mount = File.join(root, "driver-mount")
+      lifecycle = subject(Plugins.new(host_mount: host_mount))
+      lifecycle.instance_variable_set(:@pod_root, root)
+      spec = lifecycle.send(:apply_device_plugin_allocation, {uid: "u"}, {}, {"name" => "gpu"})
+
+      assert_equal host_mount, spec.fetch("mounts").first["source"]
+      assert File.directory?(host_mount)
+    end
   end
 end
