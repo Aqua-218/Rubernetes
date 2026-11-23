@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 module Rubernetes
   module Schema
     # One semantic difference between two schema objects.
@@ -260,16 +262,7 @@ module Rubernetes
 
       alias after_value before_value
 
-      def deep_copy(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, item), result| result[key.to_s] = deep_copy(item) }
-        when Array
-          value.map { |item| deep_copy(item) }
-        else
-          value
-        end
-      end
+      def deep_copy(value) = ObjectTree.stringify_keys(value)
     end
   end
 end
