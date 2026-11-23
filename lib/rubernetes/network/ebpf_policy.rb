@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 # Native TC/eBPF NetworkPolicy enforcement. The program parser is deliberately
 # separate from the Service program: a policy revision is compiled into a
 # bounded verifier-visible rule sequence and a fresh flow map, then attached
@@ -45,20 +47,13 @@ module Rubernetes
 
       private
 
-      def stringify_hash(value)
-        case value
-        when Hash then value.each_with_object({}) { |(key, child), result| result[key.to_s] = stringify_hash(child) }
-        when Array then value.map { |child| stringify_hash(child) }
-        else value
-        end
-      end
+      def stringify_hash(value) = ObjectTree.stringify_keys(value)
 
       def build_policy_program(a)
         # Keep the skb and data pointers in callee-saved registers while the
         # parser and map helpers operate on the packet.
         a.mov_reg(8, 1)
-        a.mov_reg(6, 1)
-        a.load_mem(Assembler::BPF_W, 2, 1, 76)
+        a.load_mem(Assembler::BPF_W, 6, 1, 76)
         a.load_mem(Assembler::BPF_W, 7, 1, 80)
         a.load_mem(Assembler::BPF_W, 4, 1, 0)
         a.store_mem(Assembler::BPF_W, 10, STACK_META + 8, source: 4)
@@ -122,34 +117,50 @@ module Rubernetes
         map_lookup(a, "flows", STACK_REVERSE_KEY, 0)
         a.jump(Assembler::BPF_JNE, destination: 0, immediate: 0, label: :pass)
 
-        @rules.each_with_index do |rule, index|
-          next_label = :"policy_rule_next_#{index}"
-          emit_rule_match(a, rule, next_label)
-          a.ja(:new_flow_allowed)
-          a.label(next_label)
-        end
-        targets = (@targets + @rules.filter_map do |rule|
-          next unless rule["target"]
-
-          {"direction" => rule["direction"], "target" => rule["target"], "family" => rule["family"]}
-        end).uniq { |entry| entry.values_at("direction", "target", "family") }
-        targets.each_with_index do |target, index|
-          next_label = :"policy_target_next_#{index}"
-          emit_target_match(a, target, next_label)
-          a.ja(:drop)
-          a.label(next_label)
-        end
-        # A revision without any allow rule (pure default-deny) has no path
-        # into the flow-commit block.  The verifier rejects a program with
-        # unreachable instructions, so the block is emitted only when a rule
-        # can jump to it; the pass-through above is then the final exit.
+        # Track whether either leg had an explicit allowance. A new flow is
+        # stored only after both legs have passed and at least one was selected.
+        a.mov_imm(9, 0) unless @rules.empty?
+        emit_direction_policy(a, "egress")
+        emit_direction_policy(a, "ingress")
         return a.ja(:pass) if @rules.empty?
 
-        a.ja(:pass)
-        a.label(:new_flow_allowed)
+        a.jump(Assembler::BPF_JEQ, destination: 9, immediate: 0, label: :pass)
         map_update(a, "flows", STACK_CONNTRACK_KEY, FLOW_VALUE_STACK, :drop)
         map_update(a, "flows", STACK_REVERSE_KEY, FLOW_VALUE_STACK, :drop)
         a.ja(:pass)
+      end
+
+      def emit_direction_policy(a, direction)
+        rules = @rules.select { |rule| rule.fetch("direction") == direction }
+        matched = :"policy_#{direction}_matched"
+        done = :"policy_#{direction}_done"
+        rules.each_with_index do |rule, index|
+          next_rule = :"policy_#{direction}_rule_next_#{index}"
+          emit_rule_match(a, rule, next_rule)
+          a.ja(matched)
+          a.label(next_rule)
+        end
+        direction_targets(direction, rules).each_with_index do |(address, family), index|
+          next_target = :"policy_#{direction}_target_next_#{index}"
+          emit_target_match(a, address, family, direction, next_target)
+          a.ja(:drop)
+          a.label(next_target)
+        end
+        return if rules.empty?
+
+        a.ja(done)
+        a.label(matched)
+        a.mov_imm(9, 1)
+        a.label(done)
+      end
+
+      def direction_targets(direction, rules)
+        targets = @targets.filter_map do |entry|
+          next unless entry.fetch("direction") == direction
+
+          [entry["ip"] || entry.fetch("target"), entry.fetch("family")]
+        end
+        targets.concat(rules.map { |rule| rule.values_at("target", "family") }).uniq
       end
 
       def set_flow_header(a, offset)
@@ -208,12 +219,10 @@ module Rubernetes
         end
       end
 
-      def emit_target_match(a, target, failure_label)
-        family = target.fetch("family") == "ipv6" ? NFPROTO_IPV6 : NFPROTO_IPV4
-        # Selected-pod targets from the policy engine carry "ip"; rule
-        # targets carry "target".  Both name the protected pod address.
-        emit_address_match(a, target["target"] || target.fetch("ip"), family,
-                           target.fetch("direction") == "ingress" ? STACK_DST_IP : STACK_SRC_IP, failure_label)
+      def emit_target_match(a, address, family, direction, failure_label)
+        protocol_family = family == "ipv6" ? NFPROTO_IPV6 : NFPROTO_IPV4
+        stack_offset = direction == "ingress" ? STACK_DST_IP : STACK_SRC_IP
+        emit_address_match(a, address, protocol_family, stack_offset, failure_label)
       end
 
       def emit_address_match(a, address, family, stack_offset, failure_label)
@@ -516,17 +525,13 @@ module Rubernetes
         raise PolicyError, "native NetworkPolicy #{name} family does not match address" unless family == expected
       end
 
-      def stringify_hash(value)
-        case value
-        when Hash then value.each_with_object({}) { |(key, child), result| result[key.to_s] = stringify_hash(child) }
-        when Array then value.map { |child| stringify_hash(child) }
-        else value
-        end
-      end
+      def stringify_hash(value) = ObjectTree.stringify_keys(value)
 
       def resolve_policy_ifindices(kernel: nil)
         candidates = @interfaces
-        candidates = Array(kernel["pods"]).filter_map { |pod| pod["interface"] } if candidates.empty? && kernel
+        if candidates.empty? && kernel
+          candidates = Array(kernel["pods"]).filter_map { |pod| pod["interface"] if pod["local"] != false }
+        end
         raise PolicyError, "eBPF NetworkPolicy requires at least one pod veth interface" if candidates.empty?
 
         candidates.map do |entry|
@@ -544,7 +549,7 @@ module Rubernetes
       def attach_policy_filter(ifindex, direction, program, replace: false)
         parent = direction == :ingress ? TC_PARENT_INGRESS : TC_PARENT_EGRESS
         handle = DEFAULT_HANDLE + (direction == :ingress ? 11 : 12)
-        info = (ETH_P_ALL << 16) | DEFAULT_PRIORITY
+        info = (DEFAULT_PRIORITY << 16) | ETH_P_ALL_NETWORK
         options = [
           TCNetlink.attribute(TCA_BPF_FD, [program.fd].pack("L<")),
           TCNetlink.attribute(TCA_BPF_NAME, "#{@policy_program_name}\0"),
@@ -657,13 +662,13 @@ module Rubernetes
         map_info = @maps.each_with_object({}) do |(name, map), result|
           result[name] = @bpf.map_info(map, resource_id: "network:policy:ebpf:map:#{name}:readback")
         end
-        filter_info = send(:read_filters, ifindex)
+        filter_info = send(:read_filters, ifindex).select { |entry| entry.fetch(:ifindex) == ifindex }
         expected_ids = @links.select { |link| link.fetch(:ifindex) == ifindex }
-          .map { |link| [link.fetch(:direction), link.fetch(:handle)] }
+          .map { |link| link.values_at(:direction, :handle, :priority) }
         actual_ids = filter_info.filter_map do |entry|
-          next unless entry[:program_id] == @program.id
+          next unless entry[:program_id] == @program.id && (entry.fetch(:info) & 0xffff) == ETH_P_ALL_NETWORK
 
-          [entry[:direction], entry[:handle]]
+          entry.values_at(:direction, :handle, :priority)
         end
         raise "TC policy filter readback did not contain the loaded program identity" unless actual_ids.uniq.sort == expected_ids.uniq.sort
 
