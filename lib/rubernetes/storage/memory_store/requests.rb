@@ -8,15 +8,46 @@ module Rubernetes
 
       private
 
-      def request_fingerprint(operation, key, object, precondition)
-        MemoryStoreSupport.digest(operation: operation.to_s, key: key, object: object, precondition: precondition)
+      def request_fingerprint(operation, key, object, precondition, related_versions = nil)
+        payload = {operation: operation.to_s, key: key, object: object, precondition: precondition}
+        payload[:related_versions] = related_versions if related_versions && !related_versions.empty?
+        MemoryStoreSupport.digest(payload)
       end
+
+      RequestLock = Struct.new(:monitor, :users)
+      private_constant :RequestLock
 
       def with_request_lock(request_uid, &)
         return yield if request_uid.nil?
 
-        lock = @monitor.synchronize { @request_locks[request_uid] ||= Monitor.new }
-        lock.synchronize(&)
+        # Count queued callers as well as the owner so a third caller never
+        # gets a different monitor while the first two are handing it over.
+        entry = @monitor.synchronize do
+          lock = @request_locks[request_uid] ||= RequestLock.new(Monitor.new, 0)
+          lock.users += 1
+          lock
+        end
+        entry.monitor.synchronize(&)
+      ensure
+        if entry
+          @monitor.synchronize do
+            entry.users -= 1
+            @request_locks.delete(request_uid) if entry.users.zero?
+          end
+        end
+      end
+
+      # Called under the store monitor. commit_locked returns the frozen
+      # revision shared by the MVCC history, so replay can return it directly.
+      def commit_request(uid, fingerprint, operation, key)
+        return yield if uid.nil?
+
+        replay = replay_request(uid, fingerprint, operation, key)
+        return replay unless replay.equal?(NO_REPLAY)
+
+        result = yield
+        remember_request(uid, fingerprint, operation, key, result)
+        result
       end
 
       def replay_request(request_uid, fingerprint, operation, key)
@@ -30,7 +61,7 @@ module Rubernetes
                                        key)
         end
 
-        immutable_response(stored.result)
+        stored.result
       end
 
       def remember_request(request_uid, fingerprint, operation, key, result)
