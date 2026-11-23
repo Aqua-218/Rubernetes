@@ -5,6 +5,10 @@ require "digest"
 require "json"
 require "time"
 
+require_relative "../support/object_graph"
+require_relative "../api/status"
+require_relative "../api/selectors"
+
 module Rubernetes
   module Controller
     # The controller manager's registry (component-base legacyregistry: the
@@ -64,6 +68,13 @@ module Rubernetes
         Array.new(length) { GENERATE_NAME_ALPHABET[SecureRandom.random_number(GENERATE_NAME_ALPHABET.length)] }.join
       end
 
+      def unique_pod_name(prefix, names)
+        loop do
+          name = "#{prefix}-#{random_suffix}"
+          return name if names.add?(name)
+        end
+      end
+
       def value(hash, key, default = nil)
         return default unless hash.is_a?(Hash)
 
@@ -91,6 +102,77 @@ module Rubernetes
       def status(object)
         candidate = value(object, "status", {})
         candidate.is_a?(Hash) ? candidate : {}
+      end
+
+      def service_endpoint_labels(service)
+        result = labels(service).except("service.kubernetes.io/headless")
+        cluster_ip = value(spec(service), "clusterIP")
+        result["service.kubernetes.io/headless"] = "" if cluster_ip.to_s.empty? || cluster_ip == "None"
+        result
+      end
+
+      # endpointslice/util: completed Pods are excluded from both endpoint APIs.
+      def pod_in_endpoints?(pod, include_terminating:)
+        pod_status = status(pod)
+        return false if %w[Succeeded Failed].include?(value(pod_status, "phase"))
+        return false if !include_terminating && terminating_endpoint_pod?(pod)
+
+        primary_ip = value(pod_status, "podIP") || value(pod_status, "podIp")
+        !primary_ip.to_s.empty? || !Array(value(pod_status, "podIPs")).empty?
+      end
+
+      def terminating_endpoint_pod?(pod)
+        !value(metadata(pod), "deletionTimestamp").nil?
+      end
+
+      def pod_endpoint_ips(pod)
+        pod_status = status(pod)
+        ips = Array(value(pod_status, "podIPs")).filter_map do |entry|
+          ip = value(entry, "ip").to_s
+          ip unless ip.empty?
+        end
+        return ips unless ips.empty?
+
+        primary_ip = value(pod_status, "podIP") || value(pod_status, "podIp")
+        primary_ip.to_s.empty? ? [] : [primary_ip.to_s]
+      end
+
+      def endpoint_hostname(pod, service)
+        pod_spec = spec(pod)
+        hostname = value(pod_spec, "hostname")
+        return if hostname.to_s.empty? || value(pod_spec, "subdomain") != name(service)
+
+        hostname if namespace(pod).to_s == namespace(service).to_s
+      end
+
+      # endpointslice.FindPort resolves a named Service port on each Pod.
+      # App containers take precedence, followed by restartable init containers.
+      def service_endpoint_ports(service, pod, include_empty_name:)
+        Array(value(spec(service), "ports")).filter_map do |port|
+          protocol = value(port, "protocol", "TCP")
+          target = value(port, "targetPort") || value(port, "port")
+          number = target.is_a?(String) ? named_container_port(pod, target, protocol) : target
+          next unless number.is_a?(Integer) && number.positive?
+
+          result = {"port" => number, "protocol" => protocol}
+          name = value(port, "name").to_s
+          result["name"] = name if include_empty_name || !name.empty?
+          app_protocol = value(port, "appProtocol")
+          result["appProtocol"] = app_protocol unless app_protocol.to_s.empty?
+          result
+        end
+      end
+
+      def named_container_port(pod, name, protocol)
+        %w[containers initContainers].each do |group|
+          Array(value(spec(pod), group)).each do |container|
+            next if group == "initContainers" && value(container, "restartPolicy") != "Always"
+
+            match = Array(value(container, "ports")).find { |port| value(port, "name") == name && value(port, "protocol", "TCP") == protocol }
+            return value(match, "containerPort") if match
+          end
+        end
+        nil
       end
 
       def name(object)
@@ -126,61 +208,12 @@ module Rubernetes
         nil
       end
 
-      def deep_copy(value, seen = nil)
-        case value
-        when Hash
-          return seen.fetch(value) if seen&.key?(value)
-
-          copy = {}
-          (seen ||= {}.compare_by_identity)[value] = copy
-          value.each { |key, child| copy[deep_copy(key, seen)] = deep_copy(child, seen) }
-          copy
-        when Array
-          return seen.fetch(value) if seen&.key?(value)
-
-          copy = []
-          (seen ||= {}.compare_by_identity)[value] = copy
-          value.each { |child| copy << deep_copy(child, seen) }
-          copy
-        when String
-          value.dup
-        else
-          value
-        end
-      end
-
-      def deep_freeze(value, seen = nil)
-        return value if value.nil? || value.is_a?(Numeric) || value == true || value == false
-        return value if seen&.key?(value)
-
-        (seen ||= {}.compare_by_identity)[value] = true
-        case value
-        when Hash
-          value.each do |key, child|
-            deep_freeze(key, seen)
-            deep_freeze(child, seen)
-          end
-        when Array
-          value.each { |child| deep_freeze(child, seen) }
-        end
-        value.freeze
-      end
-
-      # Values this module has already frozen all the way down are shared
-      # rather than copied again: a caller cannot mutate them either way.
       DEEP_FROZEN = ObjectSpace::WeakMap.new
 
-      def immutable_copy(value)
-        return value if DEEP_FROZEN.key?(value)
-
-        result = deep_freeze(deep_copy(value))
-        DEEP_FROZEN[result] = true if result.is_a?(Hash) || result.is_a?(Array)
-        result
-      end
-
-      def deep_frozen?(value)
-        DEEP_FROZEN.key?(value)
-      end
+      def deep_copy(value, seen = nil) = ObjectGraph.copy(value, seen)
+      def deep_freeze(value, seen = nil) = ObjectGraph.deep_freeze(value, seen)
+      def immutable_copy(value) = ObjectGraph.immutable_copy(value, DEEP_FROZEN)
+      def deep_frozen?(value) = DEEP_FROZEN.key?(value)
 
       def canonical(value)
         case value
@@ -264,55 +297,79 @@ module Rubernetes
       end
 
       def selector_matches?(selector, object)
-        return true if selector.nil? || selector == {} || selector.to_s.empty?
-        return !!selector.call(object) if selector.respond_to?(:call)
+        selector_predicate(selector).call(object)
+      end
 
-        labels = labels(object)
+      # Compile once per reconciliation when one selector is tested against a
+      # collection. Never cache across updates to the owning resource.
+      def selector_predicate(selector)
+        return ->(object) { !!selector.call(object) } if selector.respond_to?(:call)
+        return ->(_object) { true } if selector.nil?
+
         if selector.is_a?(Hash)
-          match_labels = value(selector, "matchLabels", nil)
-          match_expressions = value(selector, "matchExpressions", nil)
-          # A LabelSelector (either field, even without matchLabels) rather
-          # than a plain label map.
-          if match_labels.is_a?(Hash) || !match_expressions.nil? ||
-             selector.key?("matchLabels") || selector.key?(:matchLabels)
-            return false if match_labels.is_a?(Hash) && !match_labels.empty? && !selector_matches?(match_labels, object)
+          return ->(object) { selector_labels_match?(selector, labels(object)) } unless structured_label_selector?(selector)
 
-            expressions = Array(match_expressions)
-            return expressions.all? do |expression|
-              key = value(expression, "key", "").to_s
-              operator = value(expression, "operator", "In").to_s
-              values = Array(value(expression, "values", [])).map(&:to_s)
-              actual = labels[key]
-              case operator
-              when "In" then values.include?(actual.to_s)
-              when "NotIn" then !values.include?(actual.to_s)
-              when "Exists" then labels.key?(key)
-              when "DoesNotExist" then !labels.key?(key)
-              else false
-              end
-            end
+          match_labels = value(selector, "matchLabels")
+          requirements = Array(value(selector, "matchExpressions")).map do |expression|
+            operator = LABEL_EXPRESSION_OPERATORS[value(expression, "operator", "In").to_s]
+            return ->(_object) { false } unless operator
+
+            API::Selector::Requirement.new(key: value(expression, "key", ""), operator: operator, values: value(expression, "values", []))
           end
-          return selector.all? do |key, expected|
-            actual = labels[key.to_s] || labels[key.to_sym]
-            expected.is_a?(Array) ? expected.map(&:to_s).include?(actual.to_s) : actual.to_s == expected.to_s
-          end
+        else
+          requirements = API::Selector.parse(selector, skip_empty_terms: true).requirements
         end
-
-        selector.to_s.split(",").all? do |expression|
-          text = expression.strip
-          next true if text.empty?
-
-          if (match = text.match(/\A(.+?)\s+in\s*\(([^)]*)\)\z/i))
-            Array(match[2].split(",")).map(&:strip).include?((labels[match[1].strip] || "").to_s)
-          elsif (match = text.match(/\A(.+?)\s+notin\s*\(([^)]*)\)\z/i))
-            !Array(match[2].split(",")).map(&:strip).include?((labels[match[1].strip] || "").to_s)
-          elsif (match = text.match(/\A(.+?)\s*(!=|==|=)\s*(.*)\z/))
-            actual = labels[match[1].strip]
-            match[2] == "!=" ? actual.to_s != match[3].strip : actual.to_s == match[3].strip
-          else
-            labels.key?(text)
-          end
+        lambda do |object|
+          candidate = labels(object)
+          (!match_labels.is_a?(Hash) || selector_labels_match?(match_labels, candidate)) &&
+            requirements.all? { |requirement| label_requirement_matches?(requirement, candidate) }
         end
+      rescue API::Selector::Error
+        ->(_object) { false }
+      end
+
+      LABEL_EXPRESSION_OPERATORS = {"In" => :in, "NotIn" => :not_in,
+                                    "Exists" => :exists, "DoesNotExist" => :not_exists}.freeze
+
+      def structured_label_selector?(selector)
+        # These field names are also legal plain label keys. Recognize the
+        # structured form by its value shapes so a Service map can use them.
+        match_labels = value(selector, "matchLabels")
+        expressions = value(selector, "matchExpressions")
+        match_labels.is_a?(Hash) || (expressions.is_a?(Array) && expressions.all?(Hash)) ||
+          (match_labels.nil? && (selector.key?("matchLabels") || selector.key?(:matchLabels)))
+      end
+
+      # Some callers also accept a legacy matchLabels wrapper for a plain
+      # map. Only unwrap when the value is itself a map.
+      def unwrap_match_labels(selector)
+        match_labels = value(selector, "matchLabels")
+        match_labels.is_a?(Hash) ? match_labels : selector
+      end
+
+      def selector_labels_match?(selector, labels)
+        selector.all? do |key, expected|
+          key = key.to_s
+          key = key.to_sym unless labels.key?(key)
+          next false unless labels.key?(key)
+
+          actual = labels[key].to_s
+          expected.is_a?(Array) ? expected.any? { |candidate| candidate.to_s == actual } : actual == expected.to_s
+        end
+      end
+
+      def text_selector_matches?(selector, labels)
+        API::Selector.parse(selector, skip_empty_terms: true).requirements.all? do |requirement|
+          label_requirement_matches?(requirement, labels)
+        end
+      rescue API::Selector::Error
+        false
+      end
+
+      def label_requirement_matches?(requirement, labels)
+        key = requirement.key
+        key = key.to_sym unless labels.key?(key)
+        requirement.matches?(labels[key], present: labels.key?(key))
       end
 
       def owner_references(object)
@@ -320,8 +377,20 @@ module Rubernetes
         refs.is_a?(Array) ? refs.grep(Hash) : []
       end
 
+      def controller_owner_reference(object)
+        owner_references(object).find { |ref| ref_value(ref, "controller", false).to_s.casecmp?("true") }
+      end
+
       def ref_value(ref, key, default = nil)
         value(ref, key, default)
+      end
+
+      # RecheckDeletionTimestamp before claiming an orphan from an informer.
+      def adoption_allowed?(adapter, owner, descriptor)
+        return true unless Builtins::AdapterCapability.live_reads?(adapter)
+
+        fresh = adapter.find_live(descriptor, name: name(owner), namespace: namespace(owner))
+        !fresh.nil? && uid(fresh).to_s == uid(owner).to_s && value(metadata(fresh), "deletionTimestamp", nil).nil?
       end
 
       def owner_reference(owner, controller: true, block_owner_deletion: true)
@@ -453,6 +522,26 @@ module Rubernetes
 
         transition = parse_time(value(condition(pod, "Ready"), "lastTransitionTime", nil))
         !transition.nil? && !now.nil? && transition + minimum <= now
+      end
+
+      QUANTITY_SUFFIXES = {
+        "Ki" => 1024.0, "Mi" => 1024.0**2, "Gi" => 1024.0**3, "Ti" => 1024.0**4,
+        "Pi" => 1024.0**5, "Ei" => 1024.0**6, "n" => 1e-9, "u" => 1e-6,
+        "m" => 1e-3, "k" => 1e3, "M" => 1e6, "G" => 1e9, "T" => 1e12,
+        "P" => 1e15, "E" => 1e18
+      }.freeze
+
+      def quantity_to_base(value)
+        return value.to_f if value.is_a?(Numeric)
+
+        text = value.to_s.strip
+        return 0.0 if text.empty?
+        return text.to_f if text.match?(/\A-?(?:\d+(?:\.\d+)?|\.\d+)\z/)
+
+        suffix, multiplier = QUANTITY_SUFFIXES.find { |candidate, _| text.end_with?(candidate) }
+        return text.to_f unless suffix
+
+        text.delete_suffix(suffix).to_f * multiplier
       end
 
       def quantity(value, total, mode: :floor, default: 0)
