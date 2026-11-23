@@ -56,6 +56,28 @@ class EndpointSlicePlaceholderTest < Minitest::Test
     assert_empty deletes(result), "the placeholder must not be deleted"
   end
 
+  def test_placeholder_labels_follow_the_service_and_protect_reserved_keys
+    svc = service
+    svc["spec"]["clusterIP"] = "None"
+    svc["metadata"]["labels"] = {"team" => "blue", Controller::SERVICE_LABEL => "spoof", "service.kubernetes.io/headless" => "spoof"}
+    placeholder = Rubernetes::Controller::Support.deep_copy(creates(reconcile(svc)).first.object)
+    labels = placeholder.dig("metadata", "labels")
+
+    assert_equal "", labels.fetch("service.kubernetes.io/headless")
+    assert_equal "blue", labels.fetch("team")
+    assert_equal "example-empty-selector", labels.fetch(Controller::SERVICE_LABEL)
+
+    svc["metadata"]["labels"].delete("team")
+    svc["spec"]["clusterIP"] = "10.96.0.8"
+    placeholder["metadata"]["name"] = "server-generated-name"
+    operations = reconcile(svc, slices: [placeholder]).operations
+
+    assert_equal [:update], operations.map(&:action)
+    assert_equal "server-generated-name", operations.first.object.dig("metadata", "name")
+    assert_equal({Controller::SERVICE_LABEL => "example-empty-selector", Controller::MANAGED_BY_LABEL => Controller::MANAGED_BY},
+                 operations.first.object.dig("metadata", "labels"))
+  end
+
   def test_a_service_without_a_selector_gets_no_placeholder
     result = reconcile(service(selector: {}))
 
@@ -95,6 +117,19 @@ class EndpointSlicePlaceholderTest < Minitest::Test
 
     assert_equal 1, creates(result).length
     assert_empty Array(creates(result).first.object["endpoints"])
+  end
+
+  def test_a_service_owner_reference_does_not_transfer_management_of_a_slice
+    svc = service(selector: nil)
+    metadata = svc.fetch("metadata")
+    slice = {"apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice", "addressType" => "IPv4",
+             "metadata" => {"name" => "addon", "namespace" => "ns",
+                            "labels" => {Controller::SERVICE_LABEL => metadata.fetch("name"), Controller::MANAGED_BY_LABEL => "addon.example"},
+                            "ownerReferences" => [{"apiVersion" => "v1", "kind" => "Service", "name" => metadata.fetch("name"),
+                                                   "uid" => metadata.fetch("uid"), "controller" => true}]},
+             "endpoints" => [{"addresses" => ["10.0.0.9"]}]}
+
+    assert_empty reconcile(svc, slices: [slice]).operations
   end
 
   class MissingServiceStore < Rubernetes::Controller::StoreAdapter
