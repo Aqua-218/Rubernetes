@@ -6,8 +6,8 @@ module Rubernetes
     class MemoryStore
       private
 
-      def selector_callable(selector, kind: :combined)
-        ExternalSelectorPredicate.new(selector, kind: kind)
+      def selector_callable(selector, kind: :combined, shard: nil)
+        ExternalSelectorPredicate.new(selector, kind: kind, shard: shard)
       end
 
       # {"labels" => ..., "fields" => ...}, as opposed to a Hash of label values.
@@ -17,14 +17,14 @@ module Rubernetes
 
       # The one Selector a list or watch filters with, whichever of the three
       # selector keywords the caller used.
-      def build_selector(selector, label_selector, field_selector)
+      def build_selector(selector, label_selector, field_selector, shard: nil)
         if labels_and_fields?(selector)
           label_selector ||= selector["labels"] || selector[:labels]
           field_selector ||= selector["fields"] || selector[:fields]
           selector = nil
         end
         if external_selector?(selector)
-          selector = selector_callable(selector, kind: :combined)
+          selector = selector_callable(selector, kind: :combined, shard: shard)
           label_selector = nil
           field_selector = nil
         else
@@ -81,15 +81,10 @@ module Rubernetes
         value
       end
 
-      def validate_limit(value, name, allow_nil:)
-        return nil if value.nil? && allow_nil
-
-        number = Integer(value)
-        raise ArgumentError, "#{name} must not be negative" if number.negative?
-
-        number
-      rescue TypeError, ArgumentError
-        raise ArgumentError, "#{name} must be a non-negative integer or nil"
+      def validate_history_revisions(value)
+        validate_positive_limit(value, "history_revisions", allow_zero: true) unless value.nil?
+      rescue ArgumentError
+        raise ArgumentError, "history_revisions must be a non-negative integer or nil"
       end
 
       def validate_positive_limit(value, name, allow_zero: false)
@@ -102,24 +97,15 @@ module Rubernetes
         raise ArgumentError, "#{name} must be an #{allow_zero ? "non-negative" : "positive"} number"
       end
 
-      def validate_interval(value, name)
-        number = Float(value)
-        raise ArgumentError, "#{name} must be non-negative" if number.negative?
-
-        number
-      rescue TypeError, ArgumentError
-        raise ArgumentError, "#{name} must be a non-negative number"
-      end
-
-      def validate_duration(value, name)
-        return nil if value.nil?
+      def validate_interval(value, name, optional: false)
+        return if optional && value.nil?
 
         number = Float(value)
-        raise ArgumentError, "#{name} must be non-negative" if number.negative?
+        return number unless number.negative?
 
-        number
+        raise ArgumentError
       rescue TypeError, ArgumentError
-        raise ArgumentError, "#{name} must be a non-negative number or nil"
+        raise ArgumentError, "#{name} must be a non-negative number#{" or nil" if optional}"
       end
     end
   end
