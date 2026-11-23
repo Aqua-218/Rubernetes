@@ -53,10 +53,11 @@ module Rubernetes
           step(:boot_source) { put("/boot-source", body) }
         end
 
-        def drive(drive_id:, path_on_host:, is_root_device:, is_read_only:, io_engine: nil)
+        def drive(drive_id:, path_on_host:, is_root_device:, is_read_only:, io_engine: nil, cache_type: nil)
           body = {"drive_id" => drive_id, "path_on_host" => path_on_host, "is_root_device" => is_root_device,
                   "is_read_only" => is_read_only}
           body["io_engine"] = io_engine if io_engine
+          body["cache_type"] = cache_type if cache_type
           step(:drives) { put("/drives/#{drive_id}", body) }
         end
 
