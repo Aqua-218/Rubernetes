@@ -178,6 +178,26 @@ class ControllerManagerMetricsTest < Minitest::Test
                  count(%(endpoint_slice_controller_endpointslices_changed_per_sync_count{topology="Disabled",traffic_distribution="PreferClose"}))
   end
 
+  def test_service_replacement_and_removal_update_only_its_gauges
+    Controller::EndpointSliceController::SERVICE_CACHE.clear
+    planner = Controller::EndpointSliceController.new
+    services = %w[first second].map do |name|
+      {"kind" => "Service", "metadata" => {"namespace" => "ns", "name" => name},
+       "spec" => {"selector" => {"app" => name}, "ipFamilies" => ["IPv4"], "trafficDistribution" => "PreferClose"}}
+    end
+    services.each { |service| planner.plan(service, pods: [], endpoint_slices: []) }
+    services.first["spec"]["trafficDistribution"] = "PreferSameZone"
+    planner.plan(services.first, pods: [], endpoint_slices: [])
+
+    assert_equal 2, count("endpoint_slice_controller_num_endpoint_slices")
+    assert_equal 1, count(%(endpoint_slice_controller_services_count_by_traffic_distribution{traffic_distribution="PreferClose"}))
+    planner.forget_service("ns/first")
+    planner.forget_service("ns/first")
+
+    assert_equal 1, count("endpoint_slice_controller_num_endpoint_slices")
+    refute_match(/^endpoint_slice_controller_services_count_by_traffic_distribution.*PreferSameZone/, @registry.render)
+  end
+
   def test_endpoint_slice_mirroring_controller_metrics
     Controller::EndpointSliceMirroringController::ENDPOINTS_CACHE.clear
     endpoints = {"apiVersion" => "v1", "kind" => "Endpoints", "metadata" => {"name" => "ext", "namespace" => "ns", "uid" => "e"},
