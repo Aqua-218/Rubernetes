@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "base64"
+require "digest"
 require "json"
 require "net/http"
 require "openssl"
@@ -8,6 +10,8 @@ require "time"
 require "uri"
 
 require_relative "structural_schema"
+require_relative "openapi_metadata"
+require_relative "openapi_routes"
 require_relative "../registry"
 
 module Rubernetes
@@ -29,7 +33,7 @@ module Rubernetes
 
         class ConversionError < StandardError; end
 
-        Served = Struct.new(:crd_name, :group, :versions, :storage_version, :names, :digest, :deprecations, keyword_init: true)
+        Served = Struct.new(:crd_name, :group, :versions, :storage_version, :names, :digest, :deprecations, :terminating, keyword_init: true)
 
         attr_reader :served
 
@@ -55,16 +59,14 @@ module Rubernetes
           name = crd.dig("metadata", "name")
           spec = crd["spec"] || {}
           @mutex.synchronize do
-            if crd.dig("metadata", "deletionTimestamp")
-              withdraw(name)
-              return []
-            end
+            terminating = Array(crd.dig("status", "conditions")).any? { |condition| condition.values_at("type", "status") == %w[Terminating True] }
             # Every apiserver re-syncs a CRD each time the object changes,
             # status writes included.  Withdrawing and re-registering an
             # unchanged definition left a window in which its resources
             # answered 404, so an unchanged spec keeps what is served.
             digest = JSON.generate(spec)
             if @served[name]&.digest == digest
+              @served[name].terminating = terminating
               touch_regeneration("apiextensions_openapi_v2_regeneration_count", {"crd" => name, "reason" => "update"})
               return conditions(crd, accepted: true, established: true)
             end
@@ -106,7 +108,7 @@ module Rubernetes
               [version["name"], warning.nil? ? "#{spec["group"]}/#{version["name"]} #{names["kind"]} is deprecated" : warning.to_s]
             end
             @served[name] = Served.new(crd_name: name, group: spec["group"], versions: served_versions.map { |version| version["name"] },
-                                       storage_version: storage_version, names: names, digest: digest, deprecations: deprecations)
+                                       storage_version: storage_version, names: names, digest: digest, deprecations: deprecations, terminating: terminating)
             conditions(crd, accepted: true, established: true)
           end
         end
@@ -119,8 +121,13 @@ module Rubernetes
           entry&.deprecations&.fetch(version.to_s, nil)
         end
 
-        # The CRD is gone (deleted, terminating, or no longer established):
-        # its OpenAPI specs are removed.
+        # A terminating definition stays served so controllers can remove
+        # finalizers from existing instances.
+        def terminating?(name)
+          @mutex.synchronize { @served[name]&.terminating == true }
+        end
+
+        # Remove discovery and OpenAPI after the definition disappears.
         def withdraw(name)
           @mutex.synchronize do
             entry = @served[name]
@@ -164,7 +171,7 @@ module Rubernetes
           gvr = GVR.new(group: spec["group"], version: Resource::CUSTOM_STORAGE_VERSION,
                         resource: spec.dig("names", "plural"))
           count = 0
-          @store.list("registry/#{gvr}").items.each do |object|
+          @store.list("registry/#{gvr}/").items.each do |object|
             yield(object)
             count += 1
           end
@@ -255,6 +262,7 @@ module Rubernetes
             categories: Array(names["categories"]), list_kind: names["listKind"], singular_name: names["singular"],
             verbs: %w[delete deletecollection get list patch create update watch], subresources: subresources,
             schema: contract, storage_version: storage_version, converter: converter,
+            storage_version_hash: crd_storage_hash(spec["group"], storage_version, names["kind"]),
             printer_columns: Array(version["additionalPrinterColumns"]),
             selectable_fields: Array(version["selectableFields"]).map { |field| field["jsonPath"] },
             custom: true
@@ -262,6 +270,12 @@ module Rubernetes
           @registry.register(resource)
           @openapi.publish(group: spec["group"], version: version["name"], owner: crd.dig("metadata", "name"),
                            document: openapi_document(crd, version, schema))
+        end
+
+        def crd_storage_hash(group, version, kind)
+          return unless version
+
+          Base64.strict_encode64(Digest::SHA256.digest("#{group}/#{version}/#{kind}").byteslice(0, 8))
         end
 
         def conditions(_crd, accepted:, established: nil, reason: nil, message: nil)
@@ -282,117 +296,37 @@ module Rubernetes
           list
         end
 
-        # The canonical wording, from apimachinery meta/v1 types.go TypeMeta and
-        # ObjectMeta -- the same strings every built-in kind publishes.
-        TYPE_META_DESCRIPTIONS = {
-          "apiVersion" => "APIVersion defines the versioned schema of this representation of an object. " \
-                          "Servers should convert recognized schemas to the latest internal value, and " \
-                          "may reject unrecognized values. More info: " \
-                          "https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
-          "kind" => "Kind is a string value representing the REST resource this object represents. " \
-                    "Servers may infer this from the endpoint the client submits requests to. " \
-                    "Cannot be updated. In CamelCase. More info: " \
-                    "https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
-          "metadata" => "Standard object's metadata. More info: " \
-                        "https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata"
-        }.freeze
-
         def openapi_document(crd, version, schema)
           spec = crd["spec"] || {}
           names = spec["names"] || {}
           group = spec["group"]
           kind = names["kind"]
           plural = names["plural"]
-          definition_name = "#{group.split(".").reverse.join(".")}.#{version["name"]}.#{kind}"
-          base = "/apis/#{group}/#{version["name"]}"
-          collection = spec["scope"] == "Namespaced" ? "#{base}/namespaces/{namespace}/#{plural}" : "#{base}/#{plural}"
+          prefix = "#{group.split(".").reverse.join(".")}.#{version["name"]}"
+          definition_name = "#{prefix}.#{kind}"
+          list_kind = names["listKind"] || "#{kind}List"
+          list_name = "#{prefix}.#{list_kind}"
           gvk = {"group" => group, "kind" => kind, "version" => version["name"]}
           object_schema = JSON.parse(JSON.generate(schema.schema))
           object_schema["x-kubernetes-group-version-kind"] = [gvk]
-          object_schema["properties"] ||= {}
-          # apiextensions-apiserver copies the TypeMeta and ObjectMeta property
-          # definitions -- descriptions and all -- into every published CRD
-          # schema (controller/openapi/builder/builder.go addTypeMetaProperties
-          # and the metadata property it sets alongside).  Publishing bare
-          # "type: string" instead left `kubectl explain` printing
-          # "<no description>" for apiVersion, kind and metadata, which is what
-          # "[sig-api-machinery] CustomResourcePublishOpenAPI works for CRD
-          # with validation schema" matches on.
-          object_schema["properties"]["apiVersion"] ||= {
-            "type" => "string", "description" => TYPE_META_DESCRIPTIONS.fetch("apiVersion")
-          }
-          object_schema["properties"]["kind"] ||= {
-            "type" => "string", "description" => TYPE_META_DESCRIPTIONS.fetch("kind")
-          }
-          object_schema["properties"]["metadata"] ||= {
-            "$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta",
-            "description" => TYPE_META_DESCRIPTIONS.fetch("metadata")
-          }
-          list_schema = {"type" => "object", "required" => ["items"],
-                         "properties" => {"apiVersion" => {"type" => "string"}, "kind" => {"type" => "string"},
-                                          "metadata" => {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
-                                          "items" => {"type" => "array", "items" => {"$ref" => "#/components/schemas/#{definition_name}"}}},
-                         "x-kubernetes-group-version-kind" => [gvk.merge("kind" => names["listKind"] || "#{kind}List")]}
-          paths = {}
-          paths[collection] = operations(definition_name, plural, gvk, collection: true, namespaced: spec["scope"] == "Namespaced")
-          paths["#{collection}/{name}"] =
-            operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced")
-          if version.dig(
-            "subresources", "status"
+          OpenAPIMetadata.add_properties(object_schema)
+          list_schema = OpenAPIMetadata.list_schema(definition_name, plural, gvk, list_kind)
+          selectable = Array(version["selectableFields"]).map { |field| {"fieldPath" => field.fetch("jsonPath").delete_prefix(".")} }
+          unless selectable.empty?
+            object_schema["x-kubernetes-selectable-fields"] = selectable
+            list_schema["x-kubernetes-selectable-fields"] = selectable
+          end
+          routes = OpenAPIRoutes.new(
+            @openapi,
+            gvk: gvk, plural: plural, definition_name: definition_name, list_name: list_name,
+            namespaced: spec["scope"] == "Namespaced", subresources: version["subresources"]
           )
-            paths["#{collection}/{name}/status"] =
-              operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced",
-                                                       subresource: "status")
-          end
-          if spec["scope"] == "Namespaced"
-            all = operations(definition_name, plural, gvk, collection: true, namespaced: false)
-            all["get"] =
-              all["get"].merge("operationId" => all["get"]["operationId"].sub(/\Alist/, "list").sub(/(Collection)?#{kind}\z/,
-                                                                                                    "#{kind}ForAllNamespaces"))
-            paths["#{base}/#{plural}"] = {"get" => all["get"], "parameters" => all["parameters"]}
-          end
           {
             "openapi" => "3.0.0",
-            "info" => {"title" => "Kubernetes CRD Swagger", "version" => "v0.1.0"},
-            "paths" => paths,
-            "components" => {"schemas" => {definition_name => object_schema, "#{definition_name}List" => list_schema}}
+            "info" => {"title" => OpenAPIRoutes::TITLE, "version" => "v0.1.0"},
+            "paths" => routes.paths,
+            "components" => {"schemas" => {definition_name => object_schema, list_name => list_schema}}
           }
-        end
-
-        def operations(definition_name, _plural, gvk, collection:, namespaced:, subresource: nil)
-          parameters = if namespaced
-                         [{"name" => "namespace", "in" => "path", "required" => true,
-                           "schema" => {"type" => "string", "uniqueItems" => true}}]
-                       else
-                         []
-                       end
-          unless collection
-            parameters << {"name" => "name", "in" => "path", "required" => true,
-                           "schema" => {"type" => "string", "uniqueItems" => true}}
-          end
-          reference = {"$ref" => "#/components/schemas/#{definition_name}"}
-          operation = lambda do |verb, action, response_ref, body: false|
-            operation_id = "#{verb}#{gvk["group"].split(".").first.capitalize}#{gvk["version"].capitalize}" \
-                           "#{"Collection" if collection}#{gvk["kind"]}#{subresource.capitalize if subresource}"
-            document = {"operationId" => operation_id,
-                        "responses" => {"200" => {"description" => "OK", "content" => {"application/json" => {"schema" => response_ref}}}},
-                        "x-kubernetes-action" => action, "x-kubernetes-group-version-kind" => gvk}
-            document["requestBody"] = {"content" => {"application/json" => {"schema" => reference}}, "required" => true} if body
-            document
-          end
-          list_reference = {"$ref" => "#/components/schemas/#{definition_name}List"}
-          methods = if collection
-                      {"get" => operation.call("list", "list", list_reference), "post" => operation.call("create", "post", reference, body: true),
-                       "delete" => operation.call("deletecollection", "deletecollection",
-                                                  {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.Status"})}
-                    else
-                      {"get" => operation.call("read", "get", reference), "put" => operation.call("replace", "put", reference, body: true),
-                       "patch" => operation.call("patch", "patch", reference, body: true),
-                       "delete" => operation.call("delete", "delete", {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.Status"})}
-                    end
-          methods.delete("delete") if subresource
-          methods.delete("post") if subresource
-          methods.merge("parameters" => parameters)
         end
 
         # Schema contract consumed by API::Server#apply_schema / validate_object!.
@@ -406,7 +340,7 @@ module Rubernetes
           end
 
           def default(object)
-            @schema.prune(@schema.apply_defaults(object))
+            @schema.apply_defaults(@schema.prune(object))
           end
 
           # Server-side field validation asks the schema what it would prune.
