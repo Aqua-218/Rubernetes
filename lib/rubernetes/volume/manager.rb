@@ -10,6 +10,7 @@ require "tmpdir"
 require_relative "../platform/linux/openat2"
 require_relative "deferred_fsync"
 require_relative "record_files"
+require_relative "linux_storage_devices"
 
 module Rubernetes
   module Volume
@@ -102,6 +103,7 @@ module Rubernetes
 end
 
 require_relative "manager/volume_store"
+require_relative "manager/shared_csi_stages"
 require_relative "manager/operation_support"
 require_relative "manager/remote_backend"
 require_relative "manager/controller"
@@ -140,16 +142,19 @@ module Rubernetes
                      resolver: nil, store: nil, operation_ledger: nil, mount_ledger: nil, csi: nil,
                      binder: nil, snapshot_store: nil, clock: -> { Time.now.utc }, fsync: false,
                      identity: nil, capabilities: nil, device_adapter: nil, require_real_readback: false,
-                     secret_resolver: nil, token_provider: nil)
+                     secret_resolver: nil, token_provider: nil, storage_devices: nil, project_quota: nil)
         @data_dir = File.expand_path((data_dir || root || File.join(Dir.tmpdir, "rubernetes-volumes")).to_s)
         @root = File.expand_path((root || File.join(@data_dir, "volumes")).to_s)
         FileUtils.mkdir_p(@root)
         ensure_real_readback_adapter!(require_real_readback, mount_adapter, adapter)
         @token_provider = token_provider
+        @project_quota = project_quota
         assign_adapters(adapter: adapter, mount_adapter: mount_adapter, device_adapter: device_adapter,
                         require_real_readback: require_real_readback, fsync: fsync)
+        @storage_devices = storage_devices || (LinuxStorageDevices.new(data_dir: @data_dir, fsync: fsync) if @require_real_readback)
         @default_path_security = path_security.nil? && resolver.nil?
         @path_security = path_security || default_path_security(resolver, csi)
+        pin_configured_volume_roots!(@data_dir, @root) if data_dir || root
         @volume_store = store || VolumeStore.new(path: File.join(@data_dir, "volumes.json"), fsync: fsync)
         @reconstruction_stats = reconstruct_from_store
         @operations = operation_ledger || OperationLedger.new(path: File.join(@data_dir, "operations.json"), fsync: fsync, clock: clock)
@@ -159,6 +164,7 @@ module Rubernetes
         @volume_lock = Monitor.new
         @csi = csi
         @secret_resolver = secret_resolver
+        @csi_secret_mutex = Mutex.new
         @volatile_csi_secrets = {}
         @secret_redactions = []
         @identity_value = identity || Identity.new(supports: %w[STAGE_UNSTAGE GET_VOLUME_STATS EXPAND_VOLUME SNAPSHOT CLONE])
@@ -173,10 +179,55 @@ module Rubernetes
         @controller = Controller.new(self)
         @node = Node.new(self)
         recover_backends_from_store!
+      rescue StandardError
+        close
+        raise
       end
 
       attr_reader :volume_store, :backends, :operations, :mount_ledger, :controller, :node, :binder, :snapshot_manager, :adapter,
-                  :mount_adapter, :device_adapter, :path_security, :data_dir, :require_real_readback, :reconstruction_stats, :root
+                  :mount_adapter, :device_adapter, :path_security, :data_dir, :require_real_readback, :reconstruction_stats, :root,
+                  :kubelet_csi_paths
+
+      def close
+        @path_security.close if @path_security && @path_security.is_a?(PathSecurity)
+      end
+
+      def pin_configured_volume_roots!(*paths)
+        return unless defined?(NativeMountAdapter) && @mount_adapter.is_a?(NativeMountAdapter) && @path_security.is_a?(PathSecurity)
+
+        paths.uniq.each do |path|
+          FileUtils.mkdir_p(path)
+          @path_security.pin_configured_root!(path) do
+            NativeMountAdapter.parse_mountinfo(File.binread("/proc/self/mountinfo"))
+          end
+        end
+      end
+
+      def configure_kubelet_csi_paths(root)
+        return unless @mount_adapter.is_a?(NativeMountAdapter)
+
+        root = @path_security.validate_target!(File.expand_path(root))
+        paths = SharedCSIStages::KubeletPaths.new(root)
+        path = @path_security.validate_target!(paths.directory)
+        FileUtils.mkdir_p(path)
+        mount = Rubernetes::Platform::Linux::Mount.new
+        @path_security.allow_mount_boundary!(root) if @path_security.root != root && mount.mountinfo_entry(root)
+        # Give stages a shared mount under the CSI plugin's
+        # HostPath. Leave the rest of the kubelet root untouched: rebinding
+        # it would duplicate existing live mount IDs after an agent upgrade.
+        mount.ensure_shared_self_bind(target: path, recursive_bind: true)
+        @path_security.allow_mount_boundary!(path) unless @path_security.root == path
+        @kubelet_csi_paths = paths
+      end
+
+      def legacy_csi_stage_path(key)
+        File.join(@data_dir, "csi-staging", key)
+      end
+
+      def kubelet_csi_filesystem?(id)
+        backend = @backends[id]
+        @mount_adapter.is_a?(NativeMountAdapter) && backend.is_a?(RemoteBackend) && backend.kubelet_filesystem_publish?
+      end
 
       def identity
         @identity_value.is_a?(Identity) ? @identity_value : Identity.new(**@identity_value.to_h.transform_keys(&:to_sym))
@@ -276,11 +327,11 @@ module Rubernetes
 
       # The summary API's stats for a kubelet CSI volume published at +path+
       # (see RemoteBackend#kubelet_volume_stats).
-      def csi_volume_stats(id, path)
+      def csi_volume_stats(id, path, health: false)
         backend = backends[id.to_s]
         return nil unless backend.is_a?(RemoteBackend)
 
-        backend.kubelet_volume_stats(path)
+        backend.kubelet_volume_stats(path, health: health)
       end
 
       # ExpandInUseVolume on the node: NodeExpandVolume on the Pod's
@@ -301,6 +352,16 @@ module Rubernetes
 
       def stats(id, path: nil)
         node.stats(id, path: path)
+      end
+
+      def project_quota_usage(id, path)
+        return unless @project_quota && id
+
+        record = volume_store[id]
+        return unless record&.backend == "emptyDir"
+
+        project = record.spec.dig("backendResult", "projectQuotaId")
+        @project_quota.usage(File.join(root, record.id), project, published_path: path) if project
       end
 
       # -- queries -------------------------------------------------------------
@@ -394,10 +455,9 @@ module Rubernetes
       def default_path_security(resolver, csi)
         if resolver
           PathSecurity.new(root: @root, resolver: resolver)
-        elsif csi
-          # Public Manager construction is a supported CSI entry point. Keep
-          # it descriptor-safe just like the production Assembler instead of
-          # silently dispatching raw paths.
+        elsif csi || (defined?(NativeMountAdapter) && @mount_adapter.is_a?(NativeMountAdapter))
+          # Native volume and CSI targets use descriptor-relative validation
+          # for direct Manager callers as well as the production Assembler.
           descriptor_path_security
         else
           PathSecurity.new(root: "/", require_openat2: true)
