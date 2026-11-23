@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../schema/codec/kubernetes_cbor"
+
 require "cgi"
 require "json"
 require "yaml"
@@ -34,10 +36,10 @@ module Rubernetes
 
       # [status, headers, body] for /statusz.
       def statusz(component:, start_time:, binary_version:, emulation_version: nil, runtime_version: RUBY_DESCRIPTION,
-                  paths: [], accept: nil, now: Time.now, random: Random)
+                  paths: [], accept: nil, now: Time.now, random: Random, cbor: false)
         listed = aggregate_paths(paths)
         uptime = [(now - start_time).to_i, 0].max
-        respond(accept, "Statusz") do |format, version|
+        respond(accept, "Statusz", cbor: cbor) do |format, version|
           if format == :text
             delimiter = CGI.escapeHTML(DELIMITERS.sample(random: random))
             emulation = emulation_version.to_s.empty? ? "" : "Emulation version#{delimiter} #{CGI.escapeHTML(emulation_version.to_s)}"
@@ -61,8 +63,8 @@ module Rubernetes
 
       # [status, headers, body] for /flagz; +flags+ maps a flag name to its
       # value (strings).
-      def flagz(component:, flags:, accept: nil, random: Random)
-        respond(accept, "Flagz") do |format, version|
+      def flagz(component:, flags:, accept: nil, random: Random, cbor: false)
+        respond(accept, "Flagz", cbor: cbor) do |format, version|
           if format == :text
             separator = DELIMITERS.sample(random: random)
             header(component, "flagz") + flags.sort.map { |name, value| "#{name}#{separator}#{value}\n" }.join
@@ -127,13 +129,14 @@ module Rubernetes
         end
       end
 
-      def respond(accept, kind)
+      def respond(accept, kind, cbor: false)
         return [200, {"content-type" => "text/plain; charset=utf-8"}, yield(:text, nil)] if accept.to_s.strip.empty?
 
-        choice = negotiate(accept, kind)
+        choice = negotiate(accept, kind, cbor: cbor)
         if choice.nil?
+          supported = cbor ? ACCEPTED + [Schema::Codec::KubernetesCBOR::CONTENT_TYPE] : ACCEPTED
           body = {"kind" => "Status", "apiVersion" => "v1", "metadata" => {}, "status" => "Failure",
-                  "message" => "only the following media types are accepted: #{ACCEPTED.join(", ")}", "reason" => "NotAcceptable", "code" => 406}
+                  "message" => "only the following media types are accepted: #{supported.join(", ")}", "reason" => "NotAcceptable", "code" => 406}
           return [406, {"content-type" => "application/json"}, JSON.generate(body)]
         end
 
@@ -143,12 +146,20 @@ module Rubernetes
         headers = {"content-type" => media}
         headers["warning"] = format(DEPRECATION_WARNING, kind.downcase) if DEPRECATED_VERSIONS.include?(version)
         object = yield(:structured, version)
-        [200, headers, media == "application/yaml" ? YAML.dump(object.compact).delete_prefix("---\n") : JSON.generate(object)]
+        bytes = case media
+                when "application/yaml" then YAML.dump(object.compact).delete_prefix("---\n")
+                when Schema::Codec::KubernetesCBOR::CONTENT_TYPE
+                  Schema::Codec::KubernetesCBOR.encode(object, deterministic: false)
+                else JSON.generate(object)
+                end
+        [200, headers, bytes]
       end
 
       # The first acceptable Accept entry: text/plain (no parameters), or
       # JSON/YAML naming this kind in config.k8s.io at a served version.
-      def negotiate(accept, kind)
+      def negotiate(accept, kind, cbor: false)
+        media_types = %w[application/json application/yaml */*]
+        media_types << Schema::Codec::KubernetesCBOR::CONTENT_TYPE if cbor
         accept.to_s.split(",").each do |entry|
           media, *parameters = entry.split(";").map(&:strip)
           options = parameters.to_h { |parameter| parameter.split("=", 2).map(&:strip) }
@@ -161,7 +172,7 @@ module Rubernetes
 
             next
           end
-          next unless %w[application/json application/yaml].include?(media) || media == "*/*"
+          next unless media_types.include?(media)
           next unless options["as"] == kind && options["g"] == GROUP && VERSIONS.include?(options["v"])
 
           return [media == "*/*" ? "application/json" : media, options["v"]]
