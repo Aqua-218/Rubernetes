@@ -14,6 +14,7 @@ module Rubernetes
     class NamespaceController < BaseController
       NAMESPACE = ResourceDescriptor.parse("Namespace")
       KUBERNETES_FINALIZER = "kubernetes"
+      CONTENT_RECHECK_SECONDS = 2
 
       # pkg/controller/namespace/deletion/status_condition_utils.go: the
       # deleter publishes ALL of these on every pass, "False" with the ok
@@ -51,12 +52,9 @@ module Rubernetes
         # them for an Active one costs a list per namespaced kind -- over a
         # hundred of them -- on every namespace event, for an answer that is
         # never used.
-        objects ||= if !terminating_namespace
-                      []
-                    elsif adapter.respond_to?(:namespaced_contents)
-                      adapter.namespaced_contents(Support.name(namespace))
-                    elsif adapter
-                      adapter.all
+        descriptors = {}.compare_by_identity
+        objects ||= if terminating_namespace && adapter
+                      adapter.namespaced_contents(Support.name(namespace)) { |object, resource| descriptors[object] = resource }
                     else
                       []
                     end
@@ -68,33 +66,17 @@ module Rubernetes
         terminating = terminating_namespace
         desired_phase = terminating ? "Terminating" : "Active"
         operations = []
-        pods = contents.select { |object| Support.kind(object) == POD_KIND }
-        deletable = pods.empty? ? contents : pods
         if terminating
-          deletable.each do |object|
-            operations << operation_delete(object, descriptor: ResourceDescriptor.parse(object),
+          pods = contents.select { |object| Support.kind(object) == POD_KIND }
+          (pods.empty? ? contents : pods).each do |object|
+            operations << operation_delete(object, descriptor: descriptors.fetch(object) { ResourceDescriptor.parse(object) },
                                                    reason: "namespace content deletion")
           end
         end
 
-        candidate = Support.deep_copy(namespace)
-        candidate["status"] = Support.deep_copy(Support.status(namespace))
-        candidate["status"]["phase"] = desired_phase
-        if terminating && observed && contents.empty?
-          candidate["spec"] = Support.deep_copy(Support.spec(namespace))
-          raw_finalizers = Support.value(candidate["spec"], "finalizers", nil)
-          raw_finalizers ||= Support.value(Support.metadata(namespace), "finalizers", nil)
-          finalizers = Array(raw_finalizers).map(&:to_s)
-          finalizers.delete(KUBERNETES_FINALIZER)
-          candidate["spec"]["finalizers"] = finalizers unless raw_finalizers.nil? && finalizers.empty?
-        end
-        if Support.spec(namespace) != Support.spec(candidate)
-          spec_candidate = Support.deep_copy(namespace)
-          spec_candidate["spec"] = Support.deep_copy(candidate["spec"])
-          operations << operation_update(namespace, spec_candidate, descriptor: NAMESPACE,
-                                                                    reason: "namespace finalizer removal")
-        end
-        status = Support.deep_copy(candidate.fetch("status"))
+        finalization = finalize_namespace(namespace) if terminating && observed && contents.empty?
+        operations << finalization if finalization
+        status = Support.deep_copy(Support.status(namespace)).merge("phase" => desired_phase)
         status["conditions"] = deletion_conditions(status["conditions"], contents) if terminating && observed
         events = if terminating && !contents.empty?
                    [{"type" => "Warning", "reason" => "NamespaceDeletionContentFailure",
@@ -102,10 +84,21 @@ module Rubernetes
                  else
                    []
                  end
-        result_for(namespace, operations, status: status, events: events)
+        result_for(namespace, operations, status: status, status_first: !finalization.nil?, events: events,
+                                          requeue_after: (CONTENT_RECHECK_SECONDS if terminating && !contents.empty?))
       end
 
       private
+
+      def finalize_namespace(namespace)
+        spec = Support.deep_copy(Support.spec(namespace))
+        finalizers = Support.value(spec, "finalizers", nil) || Support.value(Support.metadata(namespace), "finalizers", nil)
+        return if finalizers.nil?
+
+        spec["finalizers"] = Array(finalizers).map(&:to_s) - [KUBERNETES_FINALIZER]
+        candidate = Support.deep_copy(namespace).merge("spec" => spec)
+        operation_update(namespace, candidate, descriptor: NAMESPACE, subresource: "finalize", reason: "namespace finalizer removal")
+      end
 
       # Every condition on every pass: the failing ones carry what remains, the
       # rest carry their "ok" wording.
