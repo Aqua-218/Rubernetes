@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
 require "securerandom"
+require_relative "../volume/csi_migration"
+require_relative "../taint_toleration"
+require_relative "pod_topology_spread"
 require_relative "../node_declared_features"
 
 module Rubernetes
@@ -256,30 +261,30 @@ module Rubernetes
           terms = Array(Support.value(required, "nodeSelectorTerms", []))
           return true if terms.empty?
 
-          terms.any? do |term|
-            Array(Support.value(term, "matchExpressions", [])).all? do |expression|
-              requirement_matches?(expression, node.labels)
-            end && Array(Support.value(term, "matchFields", [])).all? do |expression|
-              requirement_matches?(expression, {"metadata.name" => node.name})
-            end
-          end
+          terms.any? { |term| node_term_matches?(term, node, default_operator: "In") }
         end
 
-        def requirement_matches?(expression, labels)
-          expression = Support.object_hash(expression)
+        def node_term_matches?(term, node, default_operator: "")
+          expressions = Array(Support.value(term, "matchExpressions", []))
+          fields = Array(Support.value(term, "matchFields", []))
+          expressions.all? { |item| requirement_matches?(item, node.labels, default_operator: default_operator) } &&
+            fields.all? { |item| requirement_matches?(item, {"metadata.name" => node.name}, default_operator: default_operator) }
+        end
+
+        def requirement_matches?(expression, labels, default_operator: "In")
+          match_requirement_fields?(Support.object_hash(expression), labels, default_operator: default_operator)
+        end
+
+        def match_requirement_fields?(expression, labels, default_operator: "")
           key = Support.value(expression, "key", "").to_s
-          operator = Support.value(expression, "operator", "In").to_s
+          operator = Support.value(expression, "operator", default_operator).to_s
           values = Array(Support.value(expression, "values", [])).map(&:to_s)
           present = labels.key?(key)
           actual = labels[key].to_s
           case operator
-          when "In" then present && values.include?(actual)
-          when "NotIn" then !present || !values.include?(actual)
-          when "Exists" then present
-          when "DoesNotExist" then !present
           when "Gt" then present && numeric_compare(actual, values.first, :>)
           when "Lt" then present && numeric_compare(actual, values.first, :<)
-          else false
+          else LabelRequirement.matches?(operator, actual, values, present: present)
           end
         end
 
@@ -308,6 +313,8 @@ module Rubernetes
           node_name = pod.node_name
           return fallback if node_name.empty? && fallback
 
+          return context.node_for_pod(pod) || fallback if context.is_a?(CycleContext)
+
           context_nodes(context).find { |item| item.name == node_name } || fallback
         end
 
@@ -315,7 +322,7 @@ module Rubernetes
           return value.labels if value.is_a?(Pod) || value.is_a?(Node)
 
           raw = Support.object_hash(value)
-          if raw.key?("metadata")
+          if raw["metadata"].is_a?(Hash)
             Support.labels(raw)
           else
             Support.deep_freeze(raw.transform_values(&:to_s))
@@ -344,46 +351,39 @@ module Rubernetes
           node.labels[key.to_s]
         end
 
-        def namespaces_for(term, pod)
+        def namespace_matches?(target, term, owner, context)
           explicit = Array(Support.value(term, "namespaces", nil)).map(&:to_s)
-          return explicit unless explicit.empty?
+          return true if explicit.include?(target.namespace)
 
           selector = Support.value(term, "namespaceSelector", nil)
-          return ["*"] if selector && selector_matches?({}, selector)
+          return explicit.empty? && owner.namespace == target.namespace if selector.nil?
 
-          [pod.namespace]
+          labels = if context.respond_to?(:namespace_labels)
+                     context.namespace_labels(target.namespace)
+                   elsif context.is_a?(Hash)
+                     Support.value(Support.value(context, "namespace_data", {}), target.namespace, {})
+                   else
+                     {}
+                   end
+          selector_matches?(labels, selector)
         end
 
-        def namespace_matches?(existing_pod, term, pending_pod, context)
-          explicit_namespaces = Array(Support.value(term, "namespaces", nil)).map(&:to_s)
-          selector = Support.value(term, "namespaceSelector", nil)
-          if selector
-            namespace_labels = if context.respond_to?(:namespace_labels)
-                                 context.namespace_labels(existing_pod.namespace)
-                               else
-                                 {}
-                               end
-            return true if selector_matches?(namespace_labels, selector)
-            return explicit_namespaces.include?(existing_pod.namespace) unless explicit_namespaces.empty?
-
-            return false
-          end
-
-          namespaces = explicit_namespaces.empty? ? [pending_pod.namespace] : explicit_namespaces
-          namespaces.include?("*") || namespaces.include?(existing_pod.namespace)
-        end
-
-        def effective_selector(term, pending_pod)
+        def effective_selector(term, pending_pod, mismatch: true)
           selector = Support.object_hash(Support.value(term, "labelSelector", {}))
+          matching_keys = Array(Support.value(term, "matchLabelKeys", []))
+          mismatching_keys = mismatch ? Array(Support.value(term, "mismatchLabelKeys", [])) : []
+          return selector if matching_keys.empty? && mismatching_keys.empty?
+
+          selector = Support.deep_copy(selector)
           labels = pending_pod.labels
-          Array(Support.value(term, "matchLabelKeys", [])).each do |key|
+          matching_keys.each do |key|
             key = key.to_s
             next unless labels.key?(key)
 
             selector["matchLabels"] = Support.object_hash(Support.value(selector, "matchLabels", {}))
             selector["matchLabels"][key] = labels[key]
           end
-          Array(Support.value(term, "mismatchLabelKeys", [])).each do |key|
+          mismatching_keys.each do |key|
             key = key.to_s
             next unless labels.key?(key)
 
@@ -393,27 +393,87 @@ module Rubernetes
           selector
         end
 
-        def matching_pod?(existing_pod, term, pending_pod, context)
-          namespace_matches?(existing_pod, term, pending_pod, context) &&
-            selector_matches?(existing_pod.labels, effective_selector(term, pending_pod))
+        def matching_pod?(target, term, owner, context)
+          # The API materializes matchLabelKeys and mismatchLabelKeys when the
+          # owner is created. The persisted selector survives later label edits.
+          selector = Support.value(term, "labelSelector", nil)
+          return false if selector.nil?
+
+          namespace_matches?(target, term, owner, context) && selector_matches?(target, selector)
         end
 
-        def in_same_domain?(_existing_pod, existing_node, candidate_node, topology_key)
-          existing_value = topology_value(existing_node, topology_key)
-          candidate_value = topology_value(candidate_node, topology_key)
-          !existing_value.nil? && !candidate_value.nil? && existing_value == candidate_value
+        def affinity_placements(nodes, pods)
+          placements = {}
+          pods.each do |pod|
+            typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
+            node = nodes[typed.node_name]
+            placements[pod_identity(typed)] = [typed, node].freeze if node
+          end
+          nodes.each_value do |node|
+            node.pods.each { |pod| placements[pod_identity(pod)] ||= [pod, node].freeze }
+          end
+          placements.values.freeze
+        end
+
+        def pod_identity(pod)
+          uid = pod.uid
+          uid.empty? ? [pod.namespace, pod.name] : uid
+        end
+
+        def affinity_placements_for(context, node)
+          return context.affinity_placements if context.is_a?(CycleContext) && context.node_snapshot?(node)
+
+          nodes = context_nodes(context).map { |entry| entry.is_a?(Node) ? entry : Node.new(entry) }.to_h { |entry| [entry.name, entry] }
+          nodes[node.name] = node
+          affinity_placements(nodes, context_pods(context))
+        end
+
+        def required_anti_affinity_terms(pod)
+          Array(pod.dig("spec", "affinity", "podAntiAffinity", "requiredDuringSchedulingIgnoredDuringExecution"))
+        end
+
+        def required_anti_affinity_owners(placements)
+          placements.filter_map do |owner, node|
+            terms = required_anti_affinity_terms(owner)
+            [owner, node, terms].freeze unless terms.empty?
+          end.freeze
+        end
+
+        def forbidden_anti_affinity_domains(owners, target, context)
+          owners.each_with_object({}) do |(owner, node, terms), domains|
+            next if pod_identity(owner) == pod_identity(target)
+
+            labels = node.labels
+            terms.each do |term|
+              key = Support.value(term, "topologyKey", "").to_s
+              next if key.empty? || !labels.key?(key)
+              next unless matching_pod?(target, term, owner, context)
+
+              domains[[key, labels.fetch(key)].freeze] = true
+            end
+          end.freeze
+        end
+
+        def existing_anti_affinity_violation?(pod, node, context)
+          domains = if context.is_a?(CycleContext) && context.node_snapshot?(node)
+                      context.forbidden_anti_affinity_domains(pod)
+                    else
+                      owners = required_anti_affinity_owners(affinity_placements_for(context, node))
+                      forbidden_anti_affinity_domains(owners, pod, context)
+                    end
+          !domains.empty? && node.labels.any? { |key, value| domains.key?([key, value]) }
         end
 
         def term_has_matching_pod?(term, pod, node, context)
           topology_key = Support.value(term, "topologyKey", "").to_s
           return false if topology_key.empty?
 
-          context_pods(context, node).any? do |existing_pod|
-            next false if existing_pod.uid == pod.uid && !pod.uid.empty?
+          domain = topology_value(node, topology_key)
+          return false if domain.nil?
 
-            existing_node = node_for_pod(existing_pod, context)
-            existing_node && in_same_domain?(existing_pod, existing_node, node, topology_key) &&
-              matching_pod?(existing_pod, term, pod, context)
+          affinity_placements_for(context, node).any? do |existing, existing_node|
+            pod_identity(existing) != pod_identity(pod) && topology_value(existing_node, topology_key) == domain &&
+              matching_pod?(existing, term, pod, context)
           end
         end
 
@@ -427,37 +487,14 @@ module Rubernetes
           return false if topology_key.empty? || topology_value(node, topology_key).nil?
           return false unless matching_pod?(pod, term, pod, context)
 
-          context_pods(context, node).none? do |existing_pod|
-            next false if existing_pod.uid == pod.uid && !pod.uid.empty?
-            next false unless node_for_pod(existing_pod, context)
-
-            matching_pod?(existing_pod, term, pod, context)
+          affinity_placements_for(context, node).none? do |existing, _existing_node|
+            pod_identity(existing) != pod_identity(pod) && matching_pod?(existing, term, pod, context)
           end
         end
 
-        def tolerates?(toleration, taint)
-          toleration = Support.object_hash(toleration)
-          taint = Support.object_hash(taint)
-          taint_effect = Support.value(taint, "effect", "").to_s
-          tolerance_effect = Support.value(toleration, "effect", "").to_s
-          return false unless tolerance_effect.empty? || tolerance_effect == taint_effect
-
-          key = Support.value(toleration, "key", "").to_s
-          operator = Support.value(toleration, "operator", "").to_s
-          value = Support.value(toleration, "value", "").to_s
-          taint_key = Support.value(taint, "key", "").to_s
-          taint_value = Support.value(taint, "value", "").to_s
-          if operator.empty?
-            operator = value.empty? ? "Exists" : "Equal"
-          end
-          case operator
-          when "Exists"
-            key.empty? || key == taint_key
-          when "Equal"
-            !key.empty? && key == taint_key && value == taint_value
-          else
-            false
-          end
+        def tolerates?(toleration, taint, context = nil)
+          enabled = context.is_a?(CycleContext) && context.taint_comparisons
+          ::Rubernetes::TaintToleration.matches?(toleration, taint, comparisons: enabled)
         end
       end
 
@@ -579,12 +616,17 @@ module Rubernetes
         RESTRICTED_SOURCES = %w[gcePersistentDisk awsElasticBlockStore iscsi rbd].freeze
 
         def call(pod, node, context = nil)
-          existing = Helpers.context_pods(context, node).reject { |candidate| candidate.uid == pod.uid && !pod.uid.empty? }
+          return true if pod.volumes.empty?
+
+          existing = nil
           pod.volumes.each do |volume|
             source = Helpers.volume_source(volume, pod, context)
             next unless source && RESTRICTED_SOURCES.include?(source.fetch("kind"))
 
+            existing ||= Helpers.context_pods(context, node)
             existing.each do |candidate|
+              next if candidate.uid == pod.uid && !pod.uid.empty?
+
               candidate.volumes.each do |existing_volume|
                 next unless Helpers.volume_source(existing_volume, candidate, context) == source
                 next if Helpers.volume_read_only?(volume) && Helpers.volume_read_only?(existing_volume)
@@ -797,7 +839,7 @@ module Rubernetes
               claim_name = "#{pod.name}-#{Support.value(volume, "name", "")}"
               ephemeral = true
             else
-              inline(volume, csi_node, result)
+              inline(volume, csi_node, result, pod.namespace)
               next
             end
             raise ArgumentError, "PersistentVolumeClaim had no name" if claim_name.empty?
@@ -832,12 +874,12 @@ module Rubernetes
         end
 
         # checkAttachableInlineVolume.
-        def inline(volume, csi_node, result)
-          plugin, (driver, key) = IN_TREE.find { |_plugin, (_driver, source)| Support.value(volume, source, nil) }
+        def inline(volume, csi_node, result, namespace)
+          plugin, = IN_TREE.find { |_plugin, (_driver, source)| Support.value(volume, source, nil) }
           return unless plugin && migration_on?(csi_node, plugin)
 
-          handle = in_tree_handle(key, Support.value(volume, key, {}), nil)
-          result["#{driver}/#{handle}"] = driver if handle
+          csi = Volume::CSIMigration.inline_spec(volume, namespace: namespace).fetch("csi")
+          result["#{csi.fetch("driver")}/#{csi.fetch("volumeHandle")}"] = csi.fetch("driver")
         end
 
         # getCSIDriverInfo.
@@ -852,10 +894,12 @@ module Rubernetes
           csi = Support.value(spec, "csi", nil)
           return [Support.value(csi, "driver", "").to_s, Support.value(csi, "volumeHandle", "").to_s] if csi
 
-          plugin, (driver, key) = IN_TREE.find { |_plugin, (_driver, source)| Support.value(spec, source, nil) }
+          plugin, = IN_TREE.find { |_plugin, (_driver, source)| Support.value(spec, source, nil) }
           return [nil, nil] unless plugin && MIGRATED.include?(plugin) && migration_on?(csi_node, plugin)
 
-          [driver, in_tree_handle(key, Support.value(spec, key, {}), pv)]
+          Volume::CSIMigration.persistent_spec(pv).fetch("csi").values_at("driver", "volumeHandle")
+        rescue Volume::CSIMigration::Invalid
+          [nil, nil]
         end
 
         # getCSIDriverInfoFromSC.
@@ -881,30 +925,6 @@ module Rubernetes
         end
 
         def migration_on?(csi_node, plugin) = !csi_node.nil? && MIGRATED.include?(plugin)
-
-        # The volume handle csi-translation-lib gives each in-tree source.
-        def in_tree_handle(key, source, pv)
-          case key
-          when "awsElasticBlockStore"
-            id = Support.value(source, "volumeID", "").to_s
-            id.start_with?("aws://") ? id.split("/").last : id
-          when "gcePersistentDisk"
-            labels = Support.value(Support.value(pv, "metadata", {}), "labels", {}) if pv
-            zone = pv && (Support.value(labels, "topology.kubernetes.io/zone",
-                                        nil) || Support.value(labels, "failure-domain.beta.kubernetes.io/zone", nil))
-            zones = zone.to_s.split("__")
-            disk = Support.value(source, "pdName", "")
-            if zones.length > 1
-              "projects/UNSPECIFIED/regions/#{zones.first.sub(/-[^-]+\z/, "")}/disks/#{disk}"
-            else
-              "projects/UNSPECIFIED/zones/#{zones.first || "UNSPECIFIED"}/disks/#{disk}"
-            end
-          when "azureDisk" then Support.value(source, "diskURI", "").to_s
-          when "cinder", "portworxVolume" then Support.value(source, "volumeID", "").to_s
-          when "vsphereVolume" then Support.value(source, "volumePath", "").to_s
-          when "azureFile" then Support.value(source, "shareName", "").to_s
-          end
-        end
 
         # getVolumeLimits.
         def volume_limits(csi_node)
@@ -1080,61 +1100,18 @@ module Rubernetes
         end
       end
 
-      class PodTopologySpread
-        def call(pod, node, context = nil)
-          pod.topology_spread_constraints.each do |raw_constraint|
-            constraint = Support.object_hash(raw_constraint)
-            next unless Support.value(constraint, "whenUnsatisfiable", "DoNotSchedule").to_s == "DoNotSchedule"
-
-            topology_key = Support.value(constraint, "topologyKey", "").to_s
-            next if topology_key.empty?
-
-            candidate_domain = node.labels[topology_key]
-            return Helpers.reject("node lacks topology key #{topology_key.inspect}", code: "PodTopologySpread") if candidate_domain.nil?
-
-            domains = Helpers.context_nodes(context).filter_map { |item| item.labels[topology_key] }.uniq
-            domains = [candidate_domain] if domains.empty?
-            selector = Helpers.effective_selector(constraint, pod)
-            counts = domains.to_h { |domain| [domain, matching_count(domain, topology_key, selector, pod, context)] }
-            counts[candidate_domain] ||= 0
-            min_domains = Integer(Support.value(constraint, "minDomains", 1) || 1)
-            minimum = domains.length < min_domains ? 0 : counts.values.min
-            max_skew = Integer(Support.value(constraint, "maxSkew", 1) || 1)
-            if counts.fetch(candidate_domain) + 1 - minimum > max_skew
-              return Helpers.reject("node would violate topology spread maxSkew", code: "PodTopologySpread",
-                                                                                  details: {"topologyKey" => topology_key, "domain" => candidate_domain,
-                                                                                            "skew" => counts.fetch(candidate_domain) + 1 - minimum,
-                                                                                            "maxSkew" => max_skew})
-            end
-          rescue ArgumentError, TypeError
-            return Helpers.reject("pod topology spread constraint is invalid", code: "PodTopologySpread")
-          end
-          true
-        end
-
-        alias filter call
-
-        private
-
-        def matching_count(domain, topology_key, selector, pod, context)
-          Helpers.context_pods(context).count do |existing|
-            next false if existing.uid == pod.uid && !pod.uid.empty?
-
-            existing_node = Helpers.node_for_pod(existing, context)
-            existing_node && existing_node.labels[topology_key] == domain &&
-              Helpers.namespace_matches?(existing, {"labelSelector" => selector}, pod, context) &&
-              Helpers.selector_matches?(existing.labels, selector)
-          end
-        end
-      end
-
       # Kubernetes v1.36.2 keeps node unschedulability as a distinct default
       # plugin.  Readiness is checked here as well because this Ruby pipeline
       # has no separate node-condition plugin; the resulting rejection stays
       # observable at the same Filter boundary.
       class NodeUnschedulable
-        def call(_pod, node, _context = nil)
-          return Helpers.reject("node is unschedulable", code: "Unschedulable") if node.unschedulable?
+        def call(pod, node, context = nil)
+          if node.unschedulable?
+            taint = {"key" => "node.kubernetes.io/unschedulable", "effect" => "NoSchedule"}
+            unless pod.tolerations.any? { |entry| Helpers.tolerates?(entry, taint, context) }
+              return Helpers.reject("node is unschedulable", code: "Unschedulable")
+            end
+          end
           return true if node.ready?
 
           Helpers.reject("node is not Ready", code: "NodeNotReady")
@@ -1180,47 +1157,20 @@ module Rubernetes
           selector = Support.object_hash(required)
           terms = Array(Support.value(selector, "nodeSelectorTerms", []))
           return Helpers.reject("node affinity has no matching selector term", code: "NodeAffinity") if terms.empty?
-          return true if terms.any? { |term| term_matches?(Support.object_hash(term), node) }
+          return true if terms.any? { |term| Helpers.node_term_matches?(Support.object_hash(term), node) }
 
           Helpers.reject("node does not satisfy required node affinity", code: "NodeAffinity")
         end
 
         alias filter call
-
-        private
-
-        def term_matches?(term, node)
-          expressions = Array(Support.value(term, "matchExpressions", []))
-          fields = Array(Support.value(term, "matchFields", []))
-          expressions.all? { |item| requirement_matches?(item, node.labels) } &&
-            fields.all? { |item| requirement_matches?(item, {"metadata.name" => node.name}) }
-        end
-
-        def requirement_matches?(requirement, labels)
-          requirement = Support.object_hash(requirement)
-          key = Support.value(requirement, "key", "").to_s
-          operator = Support.value(requirement, "operator", "").to_s
-          values = Array(Support.value(requirement, "values", [])).map(&:to_s)
-          present = labels.key?(key)
-          actual = labels[key]
-          case operator
-          when "In" then present && values.include?(actual.to_s)
-          when "NotIn" then !present || !values.include?(actual.to_s)
-          when "Exists" then present
-          when "DoesNotExist" then !present
-          when "Gt" then present && Helpers.numeric_compare(actual, values.first, :>)
-          when "Lt" then present && Helpers.numeric_compare(actual, values.first, :<)
-          else false
-          end
-        end
       end
 
       class TaintToleration
-        def call(pod, node, _context = nil)
+        def call(pod, node, context = nil)
           untolerated = node.taints.select do |taint|
             effect = Support.value(taint, "effect", "").to_s
             %w[NoSchedule NoExecute].include?(effect) &&
-              pod.tolerations.none? { |toleration| Helpers.tolerates?(toleration, taint) }
+              pod.tolerations.none? { |toleration| Helpers.tolerates?(toleration, taint, context) }
           end
           return true if untolerated.empty?
 
@@ -1245,11 +1195,14 @@ module Rubernetes
 
       class PodAntiAffinity
         def call(pod, node, context = nil)
-          terms = Array(Support.value(pod.pod_anti_affinity, "requiredDuringSchedulingIgnoredDuringExecution", []))
-          return true if terms.empty?
-          return true if terms.none? { |term| Helpers.term_has_matching_pod?(Support.object_hash(term), pod, node, context) }
+          if Helpers.required_anti_affinity_terms(pod).any? { |term| Helpers.term_has_matching_pod?(term, pod, node, context) }
+            return Helpers.reject("node violates required pod anti-affinity", code: "PodAntiAffinity")
+          end
+          if Helpers.existing_anti_affinity_violation?(pod, node, context)
+            return Helpers.reject("node(s) didn't satisfy existing pods anti-affinity rules", code: "PodAntiAffinity")
+          end
 
-          Helpers.reject("node violates required pod anti-affinity", code: "PodAntiAffinity")
+          true
         end
 
         alias filter call
