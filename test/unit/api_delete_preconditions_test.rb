@@ -108,6 +108,28 @@ class APIDeletePreconditionsTest < Minitest::Test
     assert_equal [%w[forbid 1131]], store.deletes
   end
 
+  def test_a_replacement_between_uid_check_and_delete_is_preserved
+    store = Rubernetes::API::MemoryStore.new
+    api = Rubernetes::API::Server.new(store: store)
+    path = "/api/v1/namespaces/ns/configmaps"
+    original = api.call(method: "POST", path: path, body: {"metadata" => {"name" => "fixture"}}).body
+    original_delete = store.method(:delete)
+    replace = true
+    store.define_singleton_method(:delete) do |key = nil, **options|
+      if replace
+        replace = false
+        original_delete.call(key, **options.except(:resource_version))
+        create(key, {"metadata" => {"name" => "fixture", "uid" => "replacement"}}, **options.slice(:gvr, :namespace, :name))
+      end
+      original_delete.call(key, **options)
+    end
+
+    response = api.call(method: "DELETE", path: "#{path}/fixture", body: {"preconditions" => {"uid" => original.dig("metadata", "uid")}})
+
+    assert_equal 409, response.status
+    assert_equal "replacement", api.call(method: "GET", path: "#{path}/fixture").body.dig("metadata", "uid")
+  end
+
   private
 
   def route
