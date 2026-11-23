@@ -187,6 +187,64 @@ class MicroVMProtocolTest < Minitest::Test
     end
   end
 
+  def test_snapshot_pool_keeps_previous_artifacts_out_of_restore_and_rejects_a_mislabeled_manifest
+    Dir.mktmpdir do |dir|
+      pool = M::SnapshotPool.new(root: File.join(dir, "pool"))
+      runtime_class = "rubernetes-firecracker"
+      previous = store_snapshot(pool, dir, "previous", "old-artifact")
+
+      assert_nil pool.latest(runtime_class, artifact_digest: "current-artifact")
+      assert pool.verify!(pool.latest(runtime_class, artifact_digest: "old-artifact"), artifact_digest: "old-artifact")
+
+      current = store_snapshot(pool, dir, "current", "current-artifact")
+      write_snapshot_manifest(current, "artifact_digest" => "old-artifact")
+      selected = pool.latest(runtime_class, artifact_digest: "current-artifact")
+
+      assert_equal current.id, selected.id
+      error = assert_raises(M::SnapshotCorruption) { pool.verify!(selected, artifact_digest: "current-artifact") }
+      assert_includes error.message, "bound to current-artifact"
+
+      pool.remove(runtime_class, current.id)
+      write_snapshot_manifest(previous, "artifact_digest" => "current-artifact")
+      selected = pool.latest(runtime_class, artifact_digest: "current-artifact")
+
+      assert_equal previous.id, selected.id
+      error = assert_raises(M::SnapshotCorruption) { pool.verify!(selected, artifact_digest: "current-artifact") }
+      assert_includes error.message, "bound to old-artifact"
+    end
+  end
+
+  def test_snapshot_pool_can_restore_legacy_manifests_but_requires_new_bindings
+    Dir.mktmpdir do |dir|
+      pool = M::SnapshotPool.new(root: File.join(dir, "pool"))
+      base = store_snapshot(pool, dir, "base-1", "artifact")
+      File.delete(File.join(base.directory, M::SnapshotPool::ARTIFACT_BINDING))
+      selected = pool.latest(base.runtime_class, artifact_digest: "artifact")
+
+      error = assert_raises(M::SnapshotCorruption) { pool.verify!(selected, artifact_digest: "artifact") }
+      assert_includes error.message, "missing its artifact binding"
+
+      write_snapshot_manifest(base, "schema_version" => 1)
+      legacy = pool.latest(base.runtime_class, artifact_digest: "artifact")
+
+      assert pool.verify!(legacy, artifact_digest: "artifact")
+      assert_nil pool.latest(base.runtime_class, artifact_digest: "replacement-artifact")
+    end
+  end
+
+  private def store_snapshot(pool, directory, id, artifact_digest)
+    mem = File.join(directory, "mem")
+    vmstate = File.join(directory, "vmstate")
+    File.binwrite(mem, "M" * 4096)
+    File.binwrite(vmstate, "V" * 512)
+    pool.store(id: id, runtime_class: "rubernetes-firecracker", mem_path: mem, vmstate_path: vmstate, artifact_digest: artifact_digest,
+               drive_layout: [], machine: {"vcpu_count" => 1}, guest_hello: {"phase" => "base"}, pause_ack: {"nonce" => "n"})
+  end
+
+  private def write_snapshot_manifest(base, overrides)
+    File.write(File.join(base.directory, M::SnapshotPool::MANIFEST), JSON.generate(base.manifest.merge(overrides)))
+  end
+
   def test_broker_reauthorizes_every_call_and_fails_closed
     resolver = Object.new
     resolver.define_singleton_method(:getaddresses) { |name| name == "api.example.com" ? ["10.1.0.5", "10.1.0.6"] : ["203.0.113.9"] }
