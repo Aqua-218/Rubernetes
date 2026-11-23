@@ -1,0 +1,19 @@
+snapshotsEnabled: false
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero
+      default: true
+      config:
+        region: us-east-1
+        s3ForcePathStyle: "true"
+        s3Url: http://k6-s3:8333
+credentials:
+  existingSecret: velero-k6-credentials
+initContainers:
+  - name: velero-plugin-for-aws
+    image: docker.io/velero/velero-plugin-for-aws:v1.14.0@sha256:7e82f717f44e89671212e0dfce7e061321c386ea84a33bca64a671670ca6c278
+    volumeMounts:
+      - name: plugins
+        mountPath: /target
