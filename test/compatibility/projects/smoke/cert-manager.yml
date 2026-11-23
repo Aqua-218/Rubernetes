@@ -1,0 +1,17 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: k6-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k6-smoke
+spec:
+  secretName: k6-smoke-tls
+  dnsNames:
+    - k6-smoke.example.invalid
+  issuerRef:
+    name: k6-selfsigned
