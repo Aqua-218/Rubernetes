@@ -6,10 +6,10 @@
     "swallowed": 0
   },
   "totals": {
-    "lines": 77905,
-    "longest_method": 7071,
-    "respond_to": 2105,
-    "swallowed": 323
+    "lines": 69477,
+    "longest_method": 6365,
+    "respond_to": 2034,
+    "swallowed": 306
   },
   "files": {
     "lib/rubernetes/api/aggregator.rb": {
@@ -18,12 +18,11 @@
       "swallowed": 4
     },
     "lib/rubernetes/api/crd/manager.rb": {
-      "longest_method": 61,
       "respond_to": 1,
       "swallowed": 3
     },
     "lib/rubernetes/api/crd/structural_schema.rb": {
-      "longest_method": 109,
+      "longest_method": 108,
       "swallowed": 4
     },
     "lib/rubernetes/api/field_manager_registry.rb": {
@@ -40,17 +39,13 @@
       "swallowed": 1
     },
     "lib/rubernetes/api/memory_store.rb": {
-      "longest_method": 62,
-      "respond_to": 12
+      "respond_to": 11
     },
     "lib/rubernetes/api/node_endpoint_resolver.rb": {
       "respond_to": 5
     },
     "lib/rubernetes/api/object_validation.rb": {
-      "longest_method": 76
-    },
-    "lib/rubernetes/api/openapi_v2_protobuf.rb": {
-      "respond_to": 1
+      "longest_method": 70
     },
     "lib/rubernetes/api/patch.rb": {
       "respond_to": 1
@@ -73,16 +68,15 @@
       "swallowed": 1
     },
     "lib/rubernetes/api/service_allocator.rb": {
-      "longest_method": 63,
-      "respond_to": 5,
+      "respond_to": 4,
       "swallowed": 2
     },
     "lib/rubernetes/api/storage_adapter.rb": {
-      "respond_to": 37,
-      "swallowed": 3
+      "respond_to": 32,
+      "swallowed": 2
     },
     "lib/rubernetes/api/subresource_bridge.rb": {
-      "lines": 1075,
+      "lines": 1072,
       "respond_to": 39
     },
     "lib/rubernetes/api/table_printer.rb": {
@@ -96,11 +90,11 @@
       "longest_method": 66
     },
     "lib/rubernetes/bootstrap/agent_service.rb": {
-      "respond_to": 34
+      "respond_to": 32
     },
     "lib/rubernetes/bootstrap/api_server_service.rb": {
-      "longest_method": 96,
-      "respond_to": 15,
+      "longest_method": 92,
+      "respond_to": 13,
       "swallowed": 1
     },
     "lib/rubernetes/bootstrap/assembler.rb": {
@@ -115,11 +109,11 @@
       "swallowed": 1
     },
     "lib/rubernetes/bootstrap/config.rb": {
-      "lines": 1349,
-      "longest_method": 153
+      "lines": 1339,
+      "longest_method": 145
     },
     "lib/rubernetes/bootstrap/control_plane_services.rb": {
-      "lines": 2878,
+      "lines": 2828,
       "longest_method": 65,
       "respond_to": 41,
       "swallowed": 8
@@ -128,7 +122,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/bootstrap/security_assembly.rb": {
-      "longest_method": 126,
+      "longest_method": 85,
       "respond_to": 3,
       "swallowed": 3
     },
@@ -140,12 +134,12 @@
       "respond_to": 2
     },
     "lib/rubernetes/client/http_client.rb": {
-      "lines": 1150,
-      "respond_to": 38,
+      "lines": 1135,
+      "respond_to": 37,
       "swallowed": 2
     },
     "lib/rubernetes/client/kubernetes_client.rb": {
-      "lines": 1114,
+      "lines": 1084,
       "longest_method": 64,
       "respond_to": 26
     },
@@ -156,7 +150,7 @@
       "longest_method": 62
     },
     "lib/rubernetes/consensus/node.rb": {
-      "lines": 1462,
+      "lines": 1461,
       "longest_method": 65,
       "respond_to": 2,
       "swallowed": 1
@@ -186,10 +180,10 @@
       "respond_to": 3
     },
     "lib/rubernetes/controller.rb": {
-      "longest_method": 111
+      "longest_method": 84
     },
     "lib/rubernetes/controller/advanced_misc.rb": {
-      "lines": 1623,
+      "lines": 1455,
       "longest_method": 101,
       "respond_to": 8,
       "swallowed": 1
@@ -206,7 +200,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/controller/deployment_controller.rb": {
-      "lines": 1183,
+      "lines": 1180,
       "longest_method": 80,
       "respond_to": 1,
       "swallowed": 1
@@ -215,11 +209,10 @@
       "respond_to": 2
     },
     "lib/rubernetes/controller/endpointslice_mirroring_controller.rb": {
-      "respond_to": 1,
       "swallowed": 1
     },
     "lib/rubernetes/controller/horizontal_pod_autoscaler_controller.rb": {
-      "lines": 1254,
+      "lines": 1238,
       "longest_method": 116,
       "respond_to": 18
     },
@@ -227,20 +220,15 @@
       "respond_to": 4
     },
     "lib/rubernetes/controller/job_controller.rb": {
-      "lines": 1501,
-      "longest_method": 135
+      "lines": 1486,
+      "longest_method": 131
     },
     "lib/rubernetes/controller/lease.rb": {
       "longest_method": 62,
       "respond_to": 2,
       "swallowed": 1
     },
-    "lib/rubernetes/controller/namespace_controller.rb": {
-      "longest_method": 65,
-      "respond_to": 1
-    },
     "lib/rubernetes/controller/ownership.rb": {
-      "longest_method": 78,
       "respond_to": 2,
       "swallowed": 1
     },
@@ -252,7 +240,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/controller/protection_publication.rb": {
-      "lines": 1046,
+      "lines": 912,
       "longest_method": 78,
       "respond_to": 6
     },
@@ -261,7 +249,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/controller/replicationcontroller_controller.rb": {
-      "longest_method": 99,
+      "longest_method": 89,
       "respond_to": 1,
       "swallowed": 1
     },
@@ -269,13 +257,13 @@
       "respond_to": 1
     },
     "lib/rubernetes/controller/runtime.rb": {
-      "lines": 1453,
-      "longest_method": 132,
+      "lines": 1414,
+      "longest_method": 127,
       "respond_to": 26,
       "swallowed": 10
     },
     "lib/rubernetes/controller/security_lifecycle.rb": {
-      "lines": 1683,
+      "lines": 1591,
       "respond_to": 16,
       "swallowed": 1
     },
@@ -294,33 +282,30 @@
       "swallowed": 1
     },
     "lib/rubernetes/dra/allocator.rb": {
-      "lines": 1211,
+      "lines": 1117,
       "longest_method": 97
     },
     "lib/rubernetes/dra/cel.rb": {
-      "longest_method": 79
+      "longest_method": 62
     },
     "lib/rubernetes/dra/extended_resources.rb": {
       "swallowed": 1
     },
-    "lib/rubernetes/image/content_store.rb": {
-      "longest_method": 66
-    },
     "lib/rubernetes/image/layer_extractor.rb": {
       "longest_method": 61,
-      "respond_to": 4
+      "respond_to": 3
     },
     "lib/rubernetes/image/pull_records.rb": {
       "respond_to": 1,
       "swallowed": 1
     },
     "lib/rubernetes/image/registry_client.rb": {
-      "lines": 940,
+      "lines": 892,
       "longest_method": 79,
-      "respond_to": 12
+      "respond_to": 11
     },
     "lib/rubernetes/image/resolver.rb": {
-      "respond_to": 12
+      "respond_to": 11
     },
     "lib/rubernetes/image/verifier.rb": {
       "respond_to": 2
@@ -333,15 +318,15 @@
       "swallowed": 6
     },
     "lib/rubernetes/network/dns.rb": {
-      "lines": 992,
-      "respond_to": 13
+      "lines": 870,
+      "respond_to": 5
     },
     "lib/rubernetes/network/dns_server.rb": {
       "respond_to": 1,
       "swallowed": 4
     },
     "lib/rubernetes/network/dns_wire.rb": {
-      "longest_method": 69
+      "longest_method": 68
     },
     "lib/rubernetes/network/ebpf_policy.rb": {
       "longest_method": 83,
@@ -352,14 +337,13 @@
       "respond_to": 2
     },
     "lib/rubernetes/network/interface.rb": {
-      "lines": 1118,
-      "longest_method": 165,
-      "respond_to": 43,
+      "lines": 1084,
+      "longest_method": 140,
+      "respond_to": 42,
       "swallowed": 2
     },
     "lib/rubernetes/network/ipam.rb": {
-      "lines": 842,
-      "longest_method": 75,
+      "longest_method": 69,
       "respond_to": 11
     },
     "lib/rubernetes/network/native_observer.rb": {
@@ -368,7 +352,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/network/netlink.rb": {
-      "lines": 1539,
+      "lines": 1500,
       "longest_method": 63,
       "respond_to": 20,
       "swallowed": 1
@@ -377,8 +361,7 @@
       "respond_to": 2
     },
     "lib/rubernetes/network/policy.rb": {
-      "lines": 807,
-      "respond_to": 24
+      "respond_to": 20
     },
     "lib/rubernetes/network/support.rb": {
       "respond_to": 5
@@ -398,12 +381,9 @@
     "lib/rubernetes/node/api_client_adapter.rb": {
       "respond_to": 11
     },
-    "lib/rubernetes/node/attach_service.rb": {
-      "respond_to": 2
-    },
     "lib/rubernetes/node/client_certificate_manager.rb": {
       "respond_to": 1,
-      "swallowed": 2
+      "swallowed": 1
     },
     "lib/rubernetes/node/container_manager.rb": {
       "respond_to": 1
@@ -433,7 +413,7 @@
       "respond_to": 3
     },
     "lib/rubernetes/node/device_plugins/broker.rb": {
-      "swallowed": 4
+      "swallowed": 1
     },
     "lib/rubernetes/node/device_plugins/manager.rb": {
       "swallowed": 2
@@ -441,11 +421,8 @@
     "lib/rubernetes/node/dns_service.rb": {
       "respond_to": 3
     },
-    "lib/rubernetes/node/dra_health.rb": {
-      "swallowed": 3
-    },
     "lib/rubernetes/node/dra_manager.rb": {
-      "longest_method": 90,
+      "longest_method": 64,
       "respond_to": 1,
       "swallowed": 2
     },
@@ -453,7 +430,7 @@
       "respond_to": 4
     },
     "lib/rubernetes/node/event_sink.rb": {
-      "respond_to": 3,
+      "respond_to": 2,
       "swallowed": 2
     },
     "lib/rubernetes/node/evented_pleg.rb": {
@@ -462,12 +439,9 @@
     },
     "lib/rubernetes/node/eviction_manager.rb": {
       "lines": 967,
-      "longest_method": 67,
+      "longest_method": 66,
       "respond_to": 1,
       "swallowed": 3
-    },
-    "lib/rubernetes/node/exec_service.rb": {
-      "respond_to": 2
     },
     "lib/rubernetes/node/garbage_collector.rb": {
       "respond_to": 9
@@ -489,7 +463,7 @@
       "respond_to": 1
     },
     "lib/rubernetes/node/kubelet_metrics.rb": {
-      "lines": 888,
+      "lines": 851,
       "respond_to": 7,
       "swallowed": 11
     },
@@ -513,12 +487,12 @@
     },
     "lib/rubernetes/node/pod_resources.rb": {
       "respond_to": 13,
-      "swallowed": 4
+      "swallowed": 1
     },
     "lib/rubernetes/node/pod_volumes.rb": {
-      "lines": 1185,
-      "longest_method": 75,
-      "respond_to": 33,
+      "lines": 1171,
+      "longest_method": 74,
+      "respond_to": 30,
       "swallowed": 2
     },
     "lib/rubernetes/node/port_forward_service.rb": {
@@ -541,9 +515,6 @@
     "lib/rubernetes/node/registration.rb": {
       "respond_to": 18
     },
-    "lib/rubernetes/node/resource_metrics.rb": {
-      "swallowed": 1
-    },
     "lib/rubernetes/node/resource_reader.rb": {
       "respond_to": 13,
       "swallowed": 1
@@ -553,8 +524,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/node/service.rb": {
-      "lines": 806,
-      "respond_to": 16,
+      "respond_to": 15,
       "swallowed": 1
     },
     "lib/rubernetes/node/serving_certificate_manager.rb": {
@@ -573,12 +543,12 @@
       "swallowed": 2
     },
     "lib/rubernetes/node/stats_provider.rb": {
-      "respond_to": 5,
-      "swallowed": 4
+      "respond_to": 3,
+      "swallowed": 1
     },
     "lib/rubernetes/node/status.rb": {
-      "lines": 947,
-      "longest_method": 101,
+      "lines": 921,
+      "longest_method": 93,
       "respond_to": 15,
       "swallowed": 1
     },
@@ -590,7 +560,7 @@
       "respond_to": 1
     },
     "lib/rubernetes/node/streaming_server.rb": {
-      "lines": 953,
+      "lines": 916,
       "respond_to": 38,
       "swallowed": 4
     },
@@ -615,7 +585,7 @@
       "respond_to": 4
     },
     "lib/rubernetes/observability/metrics.rb": {
-      "lines": 850,
+      "lines": 832,
       "respond_to": 1,
       "swallowed": 1
     },
@@ -644,9 +614,8 @@
       "respond_to": 1
     },
     "lib/rubernetes/platform/linux/process_supervisor.rb": {
-      "lines": 980,
-      "longest_method": 64,
-      "respond_to": 29
+      "lines": 979,
+      "respond_to": 28
     },
     "lib/rubernetes/platform/linux/seccomp_profile.rb": {
       "respond_to": 1
@@ -669,7 +638,7 @@
       "respond_to": 1
     },
     "lib/rubernetes/proxy/backend.rb": {
-      "lines": 1918,
+      "lines": 1868,
       "longest_method": 66,
       "respond_to": 68,
       "swallowed": 1
@@ -684,23 +653,22 @@
       "respond_to": 9
     },
     "lib/rubernetes/proxy/ebpf.rb": {
-      "lines": 1781,
+      "lines": 1700,
       "longest_method": 103,
-      "respond_to": 39,
+      "respond_to": 36,
       "swallowed": 11
     },
     "lib/rubernetes/proxy/ebpf_program.rb": {
-      "lines": 1651,
+      "lines": 1583,
       "longest_method": 77
     },
     "lib/rubernetes/proxy/engine.rb": {
-      "lines": 1567,
-      "longest_method": 82,
+      "lines": 1553,
+      "longest_method": 67,
       "respond_to": 46,
       "swallowed": 5
     },
     "lib/rubernetes/proxy/iptables.rb": {
-      "lines": 823,
       "longest_method": 216,
       "respond_to": 9,
       "swallowed": 3
@@ -709,12 +677,12 @@
       "swallowed": 5
     },
     "lib/rubernetes/proxy/model.rb": {
-      "longest_method": 105,
+      "longest_method": 100,
       "respond_to": 3
     },
     "lib/rubernetes/proxy/nftables_netlink.rb": {
-      "lines": 2019,
-      "longest_method": 145,
+      "lines": 1961,
+      "longest_method": 140,
       "respond_to": 16,
       "swallowed": 1
     },
@@ -742,7 +710,7 @@
       "respond_to": 1
     },
     "lib/rubernetes/runtime/cri/backend.rb": {
-      "respond_to": 2,
+      "respond_to": 1,
       "swallowed": 1
     },
     "lib/rubernetes/runtime/microvm/adapter.rb": {
@@ -755,12 +723,12 @@
       "respond_to": 1
     },
     "lib/rubernetes/runtime/microvm/guest/supervisor.rb": {
-      "lines": 1028,
+      "lines": 1012,
       "respond_to": 14,
       "swallowed": 6
     },
     "lib/rubernetes/runtime/microvm/session.rb": {
-      "longest_method": 70
+      "longest_method": 62
     },
     "lib/rubernetes/runtime/multiplexer.rb": {
       "respond_to": 14
@@ -793,7 +761,7 @@
       "respond_to": 12
     },
     "lib/rubernetes/runtime/ownership.rb": {
-      "lines": 1122,
+      "lines": 1009,
       "longest_method": 88,
       "respond_to": 6
     },
@@ -804,20 +772,19 @@
       "swallowed": 1
     },
     "lib/rubernetes/scheduler/dynamic_resources.rb": {
-      "lines": 836,
-      "longest_method": 68,
+      "longest_method": 63,
       "respond_to": 5,
       "swallowed": 2
     },
     "lib/rubernetes/scheduler/filters.rb": {
-      "lines": 1337,
+      "lines": 1290,
       "respond_to": 15
     },
     "lib/rubernetes/scheduler/framework.rb": {
-      "lines": 1822,
+      "lines": 1722,
       "longest_method": 184,
-      "respond_to": 33,
-      "swallowed": 6
+      "respond_to": 28,
+      "swallowed": 4
     },
     "lib/rubernetes/scheduler/metrics.rb": {
       "respond_to": 5,
@@ -830,7 +797,7 @@
       "respond_to": 2
     },
     "lib/rubernetes/scheduler/queue.rb": {
-      "respond_to": 10,
+      "respond_to": 8,
       "swallowed": 1
     },
     "lib/rubernetes/scheduler/queueing_hints.rb": {
@@ -840,23 +807,22 @@
       "respond_to": 1
     },
     "lib/rubernetes/scheduler/scores.rb": {
-      "longest_method": 78,
+      "longest_method": 73,
       "respond_to": 1
     },
     "lib/rubernetes/scheduler/support.rb": {
       "respond_to": 10
     },
     "lib/rubernetes/scheduler/types.rb": {
-      "respond_to": 5
+      "respond_to": 3
     },
     "lib/rubernetes/scheduler/volume_binding.rb": {
-      "lines": 821,
       "respond_to": 1
     },
     "lib/rubernetes/schema/catalog.rb": {
-      "lines": 1219,
-      "longest_method": 67,
-      "respond_to": 4
+      "lines": 1117,
+      "longest_method": 65,
+      "respond_to": 3
     },
     "lib/rubernetes/schema/codec.rb": {
       "respond_to": 31
@@ -883,13 +849,12 @@
       "respond_to": 3
     },
     "lib/rubernetes/schema/defaulting.rb": {
-      "lines": 845,
-      "longest_method": 169,
+      "longest_method": 164,
       "respond_to": 10,
       "swallowed": 1
     },
     "lib/rubernetes/schema/definition.rb": {
-      "longest_method": 68,
+      "longest_method": 67,
       "respond_to": 3
     },
     "lib/rubernetes/schema/kubernetes_validator/pod_resize.rb": {
@@ -911,7 +876,7 @@
       "swallowed": 3
     },
     "lib/rubernetes/security/admission/plugins/core.rb": {
-      "lines": 1133,
+      "lines": 1104,
       "respond_to": 4
     },
     "lib/rubernetes/security/admission/plugins/pod_security.rb": {
@@ -924,7 +889,7 @@
     },
     "lib/rubernetes/security/admission/plugins/webhooks.rb": {
       "lines": 1239,
-      "longest_method": 72,
+      "longest_method": 68,
       "respond_to": 10,
       "swallowed": 6
     },
@@ -951,9 +916,6 @@
     },
     "lib/rubernetes/security/authentication/request_context.rb": {
       "respond_to": 4
-    },
-    "lib/rubernetes/security/authentication/request_header.rb": {
-      "respond_to": 2
     },
     "lib/rubernetes/security/authentication/service_account.rb": {
       "longest_method": 68,
@@ -1021,7 +983,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/security/flowcontrol/apf.rb": {
-      "lines": 1571,
+      "lines": 1561,
       "longest_method": 101,
       "respond_to": 1,
       "swallowed": 8
@@ -1031,7 +993,7 @@
     },
     "lib/rubernetes/security/pipeline.rb": {
       "longest_method": 72,
-      "respond_to": 16,
+      "respond_to": 14,
       "swallowed": 4
     },
     "lib/rubernetes/storage/memory_store.rb": {
@@ -1046,9 +1008,9 @@
       "swallowed": 1
     },
     "lib/rubernetes/transport/http_server.rb": {
-      "lines": 1733,
+      "lines": 1700,
       "longest_method": 93,
-      "respond_to": 58,
+      "respond_to": 57,
       "swallowed": 2
     },
     "lib/rubernetes/transport/response.rb": {
@@ -1061,8 +1023,8 @@
       "respond_to": 5
     },
     "lib/rubernetes/volume/backends.rb": {
-      "lines": 1806,
-      "respond_to": 83
+      "lines": 1765,
+      "respond_to": 77
     },
     "lib/rubernetes/volume/binding.rb": {
       "respond_to": 10
@@ -1080,7 +1042,6 @@
       "swallowed": 2
     },
     "lib/rubernetes/volume/ledger.rb": {
-      "lines": 823,
       "respond_to": 12,
       "swallowed": 1
     },
@@ -1089,17 +1050,17 @@
       "swallowed": 1
     },
     "lib/rubernetes/volume/native_device_adapter.rb": {
-      "lines": 1032,
+      "lines": 1023,
       "respond_to": 17,
       "swallowed": 1
     },
     "lib/rubernetes/volume/native_mount_adapter.rb": {
-      "lines": 957,
-      "longest_method": 89,
+      "lines": 955,
+      "longest_method": 88,
       "respond_to": 18
     },
     "lib/rubernetes/volume/path_security.rb": {
-      "lines": 890,
+      "lines": 884,
       "longest_method": 81,
       "respond_to": 39
     },
@@ -1116,10 +1077,10 @@
       "respond_to": 2
     },
     "lib/rubernetes/watch/delta_fifo.rb": {
-      "respond_to": 5
+      "respond_to": 4
     },
     "lib/rubernetes/watch/indexer.rb": {
-      "respond_to": 2
+      "respond_to": 1
     },
     "lib/rubernetes/watch/informer.rb": {
       "respond_to": 11,
@@ -1130,7 +1091,7 @@
       "swallowed": 1
     },
     "lib/rubernetes/watch/support.rb": {
-      "respond_to": 7
+      "respond_to": 6
     },
     "lib/rubernetes/watch/work_queue.rb": {
       "respond_to": 2,
