@@ -12,14 +12,15 @@ module Rubernetes
       def plan(target, store: nil, cluster_roles: nil, roles: nil, **_options)
         return empty_result(target) unless Support.kind(target) == "ClusterRole"
 
-        adapter = adapter_for_storage(store)
+        adapter = adapter_for(store)
         cluster_roles ||= roles || list_storage_objects(adapter, CLUSTER_ROLE, namespace: :all)
         selectors = Array(Support.value(Support.value(target, "aggregationRule", {}), "clusterRoleSelectors", nil))
         return empty_result(target) if selectors.empty?
 
+        predicates = selectors.map { |selector| Support.selector_predicate(selector) }
         selected = Array(cluster_roles).select do |role|
           Support.kind(role) == "ClusterRole" && Support.name(role) != Support.name(target) &&
-            selectors.any? { |selector| Support.selector_matches?(selector, role) }
+            predicates.any? { |matches| matches.call(role) }
         end.sort_by { |role| Support.name(role) }
         rules = []
         seen = {}
