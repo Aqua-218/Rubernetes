@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../support/object_tree"
+
 require "securerandom"
 require "time"
 
@@ -85,13 +87,7 @@ module Rubernetes
           copy
         end
 
-        def deep_copy(value)
-          case value
-          when Hash then value.each_with_object({}) { |(key, child), hash| hash[key] = deep_copy(child) }
-          when Array then value.map { |child| deep_copy(child) }
-          else value
-          end
-        end
+        def deep_copy(value) = ObjectTree.copy(value)
       end
     end
   end
