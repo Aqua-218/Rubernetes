@@ -57,6 +57,8 @@ class ProxyIptablesBackendTest < Minitest::Test
 
   def build(runner: FakeRunner.new, metrics: nil)
     adapter = Iptables::Adapter.new(runner: runner, test_adapter: true)
+    adapter.define_singleton_method(:ensure_nfacct) { |_name| false }
+    adapter.define_singleton_method(:nfacct_counters) { {} }
     backend = Iptables::Backend.new(adapter: adapter, families: ["IPv4"], node_name: "worker-0", node_addresses: ["192.168.1.10"],
                                     test_adapter: true, cluster_cidr: "10.244.0.0/16")
     proxy = Proxy::Proxy.new(local_node: "worker-0", node_addresses: ["192.168.1.10"], backend: backend)
@@ -250,6 +252,16 @@ class ProxyIptablesBackendTest < Minitest::Test
     stdout, stderr, status = Open3.capture3("iptables-restore", "--test", "--noflush", stdin_data: program)
 
     assert_predicate status, :success?, "iptables-restore --test rejected the program: #{stderr} #{stdout}\n#{program}"
+  end
+
+  def test_empty_node_port_does_not_reject_the_other_ip_family
+    object = service(type: "NodePort", ports: [{"name" => "http", "port" => 80, "targetPort" => 8080, "nodePort" => 30_080}])
+    rules = Proxy::RuleCompiler.new.compile(object, endpoints: []).rules
+    ipv4 = Iptables::Renderer.new(family: "IPv4").render(rules).text
+    ipv6 = Iptables::Renderer.new(family: "IPv6").render(rules).text
+
+    assert_includes ipv4, "--dport 30080 -j REJECT"
+    refute_includes ipv6, "--dport 30080"
   end
 
   def test_nfacct_client_round_trip
