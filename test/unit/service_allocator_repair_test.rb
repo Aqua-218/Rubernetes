@@ -12,8 +12,9 @@ class ServiceAllocatorRepairTest < Minitest::Test
   def setup
     registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
     @metrics = Rubernetes::Observability::Metrics.new
+    @now = Time.utc(2026, 11, 19)
     @server = API::Server.new(registry: registry, store: API::MemoryStore.new, metrics: @metrics,
-                              service_cidrs: ["10.96.0.0/24"], node_port_range: 30_000..30_009)
+                              service_cidrs: ["10.96.0.0/24"], node_port_range: 30_000..30_009, clock: -> { @now })
     call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "team"}})
   end
 
@@ -33,7 +34,8 @@ class ServiceAllocatorRepairTest < Minitest::Test
   end
 
   def test_repair_recreates_missing_and_releases_leaked_ipaddresses
-    response = call("POST", "/api/v1/namespaces/team/services", {"metadata" => {"name" => "web"}, "spec" => {"ports" => [{"port" => 80}]}})
+    response = call("POST", "/api/v1/namespaces/team/services",
+                    {"metadata" => {"name" => "web"}, "spec" => {"clusterIP" => "10.96.0.10", "ports" => [{"port" => 80}]}})
     body = response.body.is_a?(String) ? JSON.parse(response.body) : response.body
     ip = body.dig("spec", "clusterIP")
 
@@ -48,11 +50,13 @@ class ServiceAllocatorRepairTest < Minitest::Test
     assert_equal 1, report["ip_errors"]["repair"]
     assert_equal 200, call("GET", "/apis/networking.k8s.io/v1/ipaddresses/#{ip}").status
 
-    # A managed IPAddress with no Service behind it: released.
+    # Give the allocating API server time to create the owning Service.
     stray = {"metadata" => {"name" => "10.96.0.200", "labels" => {"ipaddress.kubernetes.io/managed-by" => "ipallocator.kubernetes.io"}},
              "spec" => {"parentRef" => {"group" => "", "resource" => "services", "namespace" => "team", "name" => "gone"}}}
 
     assert_equal 201, call("POST", "/apis/networking.k8s.io/v1/ipaddresses", stray).status
+    assert_equal 0, @server.service_allocator.repair!["released"]
+    @now += API::ServiceAllocator::ADDRESS_ALLOCATION_GRACE_SECONDS + 1
     report = @server.service_allocator.repair!
 
     assert_equal 1, report["released"]
