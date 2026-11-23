@@ -421,6 +421,9 @@ module Rubernetes
                 end
                 assembler.emit(BPF_RET_K, k: return_value(rule.action, rule.errno_ret || profile.default_errno))
                 assembler.label(skip)
+                # An argument check overwrites the syscall-number accumulator.
+                # Reload it before testing the next chunk or rule.
+                assembler.emit(BPF_LD_W_ABS, k: SYSCALL_OFFSET) unless rule.args.empty?
               end
             end
             deny = return_value(profile.default_action, profile.default_errno)
