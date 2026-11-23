@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/controller"
+require "rubernetes/storage/memory_store"
 require "rubernetes/watch/work_queue"
 
 # Two properties of Manager#step that a conformance run depends on:
@@ -38,10 +39,10 @@ class ControllerManagerWorkerPoolTest < Minitest::Test
   end
 
   def manager(routes, workers:)
-    manager = Manager.allocate
-    {queue: Rubernetes::Watch::WorkQueue.new, elector: Elector.new(true), elector_mutex: Mutex.new,
-     worker_count: workers, reconciled_total: 0, reconciled_mutex: Mutex.new, key_time: Hash.new(0.0),
-     key_count: 0, queue_routes: {}, route_mutex: Mutex.new}.each { |name, value| manager.instance_variable_set(:"@#{name}", value) }
+    queue = Rubernetes::Watch::WorkQueue.new
+    registry = Rubernetes::Controller::ControllerRegistry.new(require_corpus: false)
+    manager = Manager.new(store: Rubernetes::Storage::MemoryStore.new, identity: "worker-pool-test", queue: queue, registry: registry, worker_count: workers)
+    manager.instance_variable_set(:@elector, Elector.new(true))
     manager.define_singleton_method(:orphan_controllers_for_key) { |_key| [] }
     manager.define_singleton_method(:controllers_for_key) { |key| routes.fetch(key).map { |controller| [controller, key] } }
     manager.define_singleton_method(:clear_route_if_idle) { |_key| nil }
