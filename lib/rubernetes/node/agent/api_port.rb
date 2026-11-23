@@ -12,7 +12,9 @@ module Rubernetes
         private
 
         def write_node(object)
-          @api.register_node(object)
+          return @api.register_node(object) if @register_node
+
+          @api.register_node(object, create: false) if node_adapter?
         end
 
         def persist_lease(object)
@@ -53,6 +55,15 @@ module Rubernetes
             labels = node.is_a?(Hash) ? node.dig("metadata", "labels") : nil
             labels.is_a?(Hash) ? @node_labels.merge(labels) : nil
           end
+        end
+
+        def refresh_node_taints
+          return unless node_adapter?
+
+          remember_node_taints(@api.read_object("nodes", @node_name))
+        rescue Client::Error, SystemCallError => error
+          @error_handler&.call(error, :admission_node_taints)
+          nil
         end
       end
     end
