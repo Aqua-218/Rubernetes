@@ -10,9 +10,9 @@ module Rubernetes
         class CgroupAdapter
           include CapabilityContract
 
-          def initialize(root:, adapter: CgroupV2::FileAdapter.new)
+          def initialize(root:, adapter: CgroupV2::FileAdapter.new, kubelet_layout: nil)
             @root = File.expand_path(String(root))
-            @delegate = CgroupV2.new(root: root, adapter: adapter)
+            @delegate = CgroupV2.new(root: root, adapter: adapter, kubelet_layout: kubelet_layout)
           end
 
           def native_capabilities
