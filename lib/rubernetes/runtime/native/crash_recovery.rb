@@ -11,6 +11,10 @@ module Rubernetes
       module CrashRecovery
         RECOVERY_CANDIDATE_STATES = %w[StateUnknown RollingBack CleanupPending].freeze
         RECOVERY_STOP_TIMEOUT_SECONDS = 10
+        SNAPSHOT_ATTEMPTS = 5
+
+        # A process of the snapshot exited before it could be adopted.
+        class StaleSnapshot < RecoveryRequired; end
 
         def recover(observer: nil, cleaner: nil, orphan_predicate: nil)
           # A post-crash in-memory inventory is not evidence of kernel state.
@@ -21,11 +25,7 @@ module Rubernetes
           raise RecoveryRequired, "native runtime recovery requires an external resource observer" if in_process_observer?(observer)
 
           cleaner ||= @adapters[:cleaner] || method(:cleanup_resource)
-          observed_snapshot = observe_recovery(observer)
-          mark_dead_operations_for_recovery!(observed_snapshot)
-          observed_snapshot = quiesce_dead_operations!(observed_snapshot, observer)
-          observed_snapshot = finish_retired_namespace_cleanup!(observed_snapshot, observer)
-          reconstruct_sandboxes_from_observed!(observed_snapshot)
+          observed_snapshot = reconstruct_from_snapshot!(observer)
           recovery = Support::Recovery.new(
             ledger: ledger,
             observer: -> { observed_snapshot },
@@ -39,6 +39,27 @@ module Rubernetes
         end
 
         private
+
+        # The snapshot is the kernel at one instant.  A container that exits
+        # after it was taken (a crash-looping one does so every few seconds)
+        # makes it stale for that sandbox, and adopting from it fails.  That
+        # is not a recovery failure: observe again, and the same rules now
+        # find the operation dead and hand it to Recovery.
+        def reconstruct_from_snapshot!(observer)
+          attempts = 0
+          begin
+            snapshot = observe_recovery(observer)
+            mark_dead_operations_for_recovery!(snapshot)
+            snapshot = quiesce_dead_operations!(snapshot, observer)
+            snapshot = finish_retired_namespace_cleanup!(snapshot, observer)
+            reconstruct_sandboxes_from_observed!(snapshot)
+            snapshot
+          rescue StaleSnapshot
+            attempts += 1
+            retry if attempts < SNAPSHOT_ATTEMPTS
+            raise
+          end
+        end
 
         def observe_recovery(observer)
           observed = normalize_inventory(invoke_observer(observer))
@@ -245,7 +266,8 @@ module Rubernetes
           end
           true
         rescue StandardError => error
-          raise RecoveryRequired, "native startup reconstruction failed closed: #{error.message}"
+          stale = error.is_a?(Platform::Linux::ProcessSupervisor::ProcessGone)
+          raise (stale ? StaleSnapshot : RecoveryRequired), "native startup reconstruction failed closed: #{error.message}"
         end
 
         # Empty cgroups still carry their exact kernel identity. The sandbox
