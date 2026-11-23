@@ -14,6 +14,7 @@ module Rubernetes
     end
 
     class ValidationError < Error; end
+    class LocalBlockDeviceError < ValidationError; end
     class UnsupportedError < Error; end
     class NotFoundError < Error; end
     class ConflictError < Error; end
@@ -27,6 +28,7 @@ module Rubernetes
     class OperationUnknown < OperationTokenError; end
     class SecurityError < Error; end
     class PathSecurityError < SecurityError; end
+    class LocalSourceNotFoundError < PathSecurityError; end
     class MountIdentityError < SecurityError; end
 
     # A cleanup response that is false, raises, or cannot be verified leaves
