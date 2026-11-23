@@ -63,4 +63,24 @@ class VolumeLedgerPrunesFinishedTest < Minitest::Test
       assert_equal "unknown", led.fetch(key: "vol-unknown", operation: "create").status
     end
   end
+
+  def test_failed_reservation_keeps_both_indexes_consistent_through_retries
+    Dir.mktmpdir do |dir|
+      @dir = dir
+      clock = -> { Time.utc(2026, 9, 21) }
+      led = ledger(clock)
+      reserve = ->(op, token) { led.begin!(key: "v", operation: op, token: token, fingerprint: op) }
+      reserve.call("stage", "old")
+      led.fail!(key: "v", operation: "stage", token: "old", error: IOError.new("unavailable"))
+      reserve.call("read", "occupied")
+
+      assert_raises(Rubernetes::Volume::OperationTokenConflict) { reserve.call("stage", "occupied") }
+      assert_equal "failed", led.fetch_token(key: "v", token: "old").status
+      assert_equal "new", reserve.call("stage", "replacement").status
+      [led, ledger(clock)].each do |view|
+        assert_nil view.fetch_token(key: "v", token: "old")
+        assert_equal "pending", view.fetch_token(key: "v", token: "replacement").status
+      end
+    end
+  end
 end
