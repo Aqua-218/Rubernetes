@@ -1,52 +1,98 @@
 # frozen_string_literal: true
 
-# Node Agent public entry point.  Keeping the requires here makes each
-# lifecycle component independently injectable while allowing applications to
-# depend on one stable `rubernetes/node` boundary.
-require_relative "node/service"
-require_relative "node/log_service"
-require_relative "node/streaming_server"
-require_relative "node/kubelet_auth"
-require_relative "node/kubelet_configz"
-require_relative "node/client_certificate_manager"
-require_relative "node/serving_certificate_manager"
-require_relative "node/evented_pleg"
-require_relative "node/pod_certificate_manager"
-require_relative "node/cri_support_check"
-require_relative "node/exec_service"
-require_relative "node/attach_service"
-require_relative "node/port_forward_service"
-require_relative "node/registration"
-require_relative "node/api_client_adapter"
-require_relative "node/source_manager"
-require_relative "node/admission"
-require_relative "node/resource_manager"
-require_relative "node/host_resources"
-require_relative "node/eviction_manager"
-require_relative "node/event_recorder"
-require_relative "node/event_sink"
-require_relative "node/image_credentials"
-require_relative "node/garbage_collector"
-require_relative "node/status"
-require_relative "node/restart_manager"
-require_relative "node/probe_manager"
-require_relative "node/probe_connectors"
-require_relative "node/resource_reader"
-require_relative "node/field_ref"
-require_relative "node/pod_volumes"
-require_relative "node/pod_files"
-require_relative "node/oom_score"
-require_relative "node/container_spec"
-require_relative "node/dns_service"
-require_relative "node/lifecycle"
-require_relative "node/pod_worker"
-require_relative "node/sync_loop"
-require_relative "node/wakeup_timer"
-require_relative "node/agent"
+require_relative "support/autoload"
 
 module Rubernetes
   module Node
-    NodeAgent = Agent unless const_defined?(:NodeAgent, false)
-    PodSyncLoop = SyncLoop unless const_defined?(:PodSyncLoop, false)
+    files = {
+      "admission" => %i[Admission NodeAdmission],
+      "agent" => %i[Agent NodeAgent],
+      "api_client_adapter" => %i[APIClientAdapter KubernetesAPIAdapter],
+      "attach_service" => %i[Attach AttachService],
+      "cdi" => %i[CDI],
+      "cdi_device_node" => %i[CDIDeviceNode],
+      "client_certificate_manager" => %i[ClientCertificateManager],
+      "container_manager" => %i[ContainerManager],
+      "container_spec" => %i[ContainerSpec],
+      "container_stream_service" => %i[ContainerStreamService],
+      "cpu_manager" => %i[CPUManager],
+      "credential_providers" => %i[CredentialProviders],
+      "cri_stats" => %i[CRIStats],
+      "cri_support_check" => %i[CRISupportCheck],
+      "csi_plugins" => %i[CSIPlugins],
+      "declared_features" => %i[DeclaredFeatures],
+      "device_plugins/manager" => %i[DevicePlugins],
+      "directory_usage" => %i[DirectoryUsage],
+      "dns_service" => %i[DNSService],
+      "dra_health" => %i[DRAHealth],
+      "dra_manager" => %i[DRAManager],
+      "env_file" => %i[EnvFile],
+      "event_recorder" => %i[EventRecorder NodeEventRecorder],
+      "event_sink" => %i[EventSink KubeletEventPublisher],
+      "evented_pleg" => %i[EventedPLEG],
+      "eviction_manager" => %i[EvictionManager NodeEvictionManager],
+      "exec_service" => %i[Exec ExecService],
+      "field_ref" => %i[FieldRef],
+      "garbage_collector" => %i[GarbageCollector NodeGarbageCollector],
+      "host_resources" => %i[HostResources],
+      "image_credentials" => %i[ImageCredentials],
+      "image_gc_manager" => %i[ImageGCManager],
+      "kubelet_api_rates" => %i[KubeletAPIRates],
+      "kubelet_auth" => %i[KubeletAuth],
+      "kubelet_configz" => %i[KubeletConfigz],
+      "kubelet_healthz" => %i[KubeletHealthz],
+      "kubelet_metrics" => %i[KubeletMetrics],
+      "kubelet_pod_metrics" => %i[KubeletPodMetrics],
+      "lifecycle" => %i[Lifecycle],
+      "log_service" => %i[LogService LogsService],
+      "memory_manager" => %i[MemoryManager],
+      "node_allocatable" => %i[NodeAllocatable],
+      "oom_score" => %i[OOMScore],
+      "plugins/manager" => %i[Plugins],
+      "pod_certificate_manager" => %i[PodCertificateManager],
+      "pod_dns" => %i[PodDNS],
+      "pod_files" => %i[PodFiles],
+      "pod_hostname" => %i[PodHostname],
+      "pod_logs_endpoint" => %i[PodLogsEndpoint],
+      "pod_resize" => %i[PodResize],
+      "pod_resources" => %i[PodResources],
+      "pod_startup_latency_tracker" => %i[PodStartupLatencyTracker],
+      "pod_volumes" => %i[PodVolumes],
+      "pod_worker" => %i[PodWorker PodWorkerPool],
+      "pods_api" => %i[PodsAPI],
+      "port_forward_service" => %i[PortForward PortForwardService PortForwardStream PortforwardService],
+      "preemption" => %i[Preemption],
+      "probe_connectors" => %i[ProbeConnectors],
+      "probe_endpoint" => %i[ProbeEndpoint],
+      "probe_manager" => %i[ProbeManager],
+      "qos_cgroup_manager" => %i[QOSCgroupManager],
+      "registration" => %i[NodeRegistration Registration Support],
+      "resource_manager" => %i[NodeResourceManager ResourceManager],
+      "resource_metrics" => %i[CadvisorMetrics ResourceMetrics],
+      "resource_reader" => %i[ResourceReader],
+      "restart_manager" => %i[RestartManager],
+      "service" => %i[AuthorizationError BackpressureError BidirectionalStream DuplexStream Error IOStream InvalidRequest RequestContext
+                      RuntimeUnavailable Service Stream StreamBuffer StreamClosed StreamTimeout],
+      "serving_certificate_manager" => %i[ServingCertificateManager],
+      "shutdown_manager" => %i[ShutdownManager],
+      "source_manager" => %i[PodSourceManager SourceManager],
+      "static_pod_file_watch" => %i[StaticPodFileWatch],
+      "static_pod_files" => %i[StaticPodFiles],
+      "static_pod_http" => %i[StaticPodHTTP],
+      "static_pods" => %i[StaticPods],
+      "stats_provider" => %i[StatsProvider],
+      "status" => %i[Helpers PodStatus Status],
+      "status_images" => %i[StatusImages],
+      "stream_proxy" => %i[StreamProxy],
+      "streaming_server" => %i[StreamingServer],
+      "streaming_session" => %i[Streaming],
+      "sync_loop" => %i[PodSyncLoop SyncLoop],
+      "system_logs" => %i[SystemLogs],
+      "system_oom_watcher" => %i[SystemOOMWatcher],
+      "topology_manager" => %i[TopologyManager],
+      "volume_groups" => %i[VolumeGroups],
+      "wakeup_timer" => %i[WakeupTimer]
+    }
+    Autoload.register(self, File.join(__dir__, "node"), files)
   end
 end
