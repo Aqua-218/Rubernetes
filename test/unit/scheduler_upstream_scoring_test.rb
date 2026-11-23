@@ -113,6 +113,20 @@ class SchedulerUpstreamScoringTest < Minitest::Test
     assert_operator scores.fetch("a"), :>, scores.fetch("b")
   end
 
+  def test_hard_spread_counts_follow_the_trial_placement
+    nodes = [node("a", "z1"), node("b", "z2")]
+    labels = {"app" => "web"}
+    hard = [{"topologyKey" => "topology.kubernetes.io/zone", "labelSelector" => {"matchLabels" => labels}}]
+    incoming = pod("next", labels: labels, spread: hard)
+    cycle = context(nodes, [pod("peer", labels: labels, node: "a")])
+    plugin = Scheduler::Filters::PodTopologySpread.new
+
+    refute_equal true, plugin.call(incoming, nodes.first, cycle)
+    assert_equal true, plugin.call(incoming, nodes.last, cycle)
+    assert_equal true, plugin.call(incoming, nodes.first, cycle.with(pods: []))
+    refute_equal true, plugin.call(incoming, nodes.first, cycle)
+  end
+
   def test_soft_constraints_only
     nodes = [node("a", "z1"), node("b", "z2")]
     hard = [{"maxSkew" => 1, "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "DoNotSchedule",
