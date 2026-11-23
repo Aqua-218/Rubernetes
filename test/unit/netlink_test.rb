@@ -58,6 +58,18 @@ class NetlinkTest < Minitest::Test
     end
   end
 
+  def test_interrupted_dump_does_not_return_a_partial_inventory
+    adapter = Object.new
+    adapter.define_singleton_method(:request) do |**request|
+      [{type: Netlink::NLMSG_DONE, flags: Netlink::NLM_F_DUMP_INTR, sequence: request.fetch(:sequence)}]
+    end
+    netlink = Netlink.new(adapter: adapter)
+
+    error = assert_raises(Rubernetes::Network::NetlinkError) { netlink.link_dump }
+
+    assert_match(/interrupted netlink dump/, error.message)
+  end
+
   def test_veth_encoder_uses_ifinfomsg_and_nested_peer_attributes
     socket = CaptureSocket.new
     netlink = Netlink.new(adapter: Netlink::SocketAdapter.new(socket_factory: -> { socket }), sequence: 0)
@@ -112,6 +124,31 @@ class NetlinkTest < Minitest::Test
     assert_equal(["\xC6\x12\x01\x07".b, "\xC6\x12\x01\x07".b], attributes.map { |entry| entry.fetch("value") })
   ensure
     socket&.close
+  end
+
+  def test_hairpin_mode_is_set_after_the_veth_joins_its_bridge
+    requests = []
+    factory = lambda do
+      CaptureSocket.new.tap { |socket| requests << socket }
+    end
+    netlink = Netlink.new(adapter: Netlink::SocketAdapter.new(socket_factory: factory))
+    netlink.link_set(index: 8, master: 5, bridge_hairpin: true)
+
+    assert_equal 2, requests.length
+    _, attachment = split_message(requests.first.message)
+
+    assert_equal Netlink::AF_UNSPEC, attachment.getbyte(0)
+    assert_equal Netlink::IFLA_MASTER, Netlink::TLV.decode(attachment.byteslice(16..)).first.fetch("type")
+    _, setting = split_message(requests.last.message)
+
+    assert_equal Netlink::AF_BRIDGE, setting.getbyte(0)
+    assert_equal 8, setting.byteslice(4, 4).unpack1("l<")
+    info = Netlink::TLV.decode(setting.byteslice(16..)).first
+
+    assert_equal Netlink::IFLA_PROTINFO, info.fetch("type")
+    mode = Netlink::TLV.decode(info.fetch("value")).first
+
+    assert_equal [Netlink::IFLA_BRPORT_MODE, "\x01"], mode.values_at("type", "value")
   end
 
   def test_address_encoder_rejects_an_address_without_any_prefix
