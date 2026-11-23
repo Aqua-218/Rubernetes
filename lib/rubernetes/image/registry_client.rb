@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "base64"
+require "ipaddr"
 require "json"
 require "net/http"
 require "openssl"
@@ -8,39 +9,20 @@ require "tempfile"
 require "timeout"
 require "uri"
 
+require_relative "../support/secure_compare"
 require_relative "digest"
 require_relative "errors"
 require_relative "manifest"
 require_relative "media_types"
 require_relative "reference"
+require_relative "registry_blob_downloads"
+require_relative "registry_response"
 require_relative "strict_json"
 
 module Rubernetes
   module Image
-    # Small response value used by both the stdlib transport and injected test transports.
-    class RegistryResponse
-      attr_reader :status, :headers, :body
-
-      def initialize(status:, headers: {}, body: "")
-        @status = Integer(status)
-        @headers = headers.each_with_object({}) { |(key, value), result| result[key.to_s.downcase] = value.to_s }.freeze
-        @body = body.nil? ? "".b : body.to_s.b
-        freeze
-      rescue ArgumentError, TypeError => error
-        raise RegistryError.new("registry transport returned an invalid response: #{error.message}", cause: error), cause: error
-      end
-
-      def success?
-        (200..299).cover?(status)
-      end
-
-      def [](name)
-        headers[name.to_s.downcase]
-      end
-    end
-
-    # Production HTTPS transport. It intentionally has no redirect handling: a
-    # registry or token endpoint must be explicitly trusted and remain HTTPS.
+    # Production HTTPS transport. A locally inferred registry may use HTTP on
+    # its explicit loopback port, matching common CRI registry defaults.
     class NetHTTPTransport
       DEFAULT_OPEN_TIMEOUT = 10
       DEFAULT_READ_TIMEOUT = 60
@@ -54,7 +36,8 @@ module Rubernetes
         read_timeout: DEFAULT_READ_TIMEOUT,
         write_timeout: DEFAULT_WRITE_TIMEOUT,
         ca_file: nil,
-        ca_data: nil
+        ca_data: nil,
+        loopback_endpoint: nil
       )
         @http_class = http_class
         @open_timeout = Integer(open_timeout)
@@ -62,6 +45,7 @@ module Rubernetes
         @write_timeout = Integer(write_timeout)
         @ca_file = ca_file
         @ca_data = ca_data
+        @loopback_endpoint = loopback_endpoint.dup.freeze if explicit_loopback_port?(loopback_endpoint)
         raise RegistryError, "registry transport timeout must be non-negative" if [@open_timeout, @read_timeout,
                                                                                    @write_timeout].any?(&:negative?)
       rescue ArgumentError, TypeError => error
@@ -71,14 +55,14 @@ module Rubernetes
       def request(method:, uri:, headers: {}, body: nil, sink: nil, max_bytes: DEFAULT_MAX_RESPONSE_BYTES)
         uri = URI.parse(uri.to_s)
         validate_uri!(uri)
+        uri = plaintext_uri(uri) if @loopback_http && loopback_request?(uri)
         request_class = Net::HTTP.const_get(method.to_s.upcase.capitalize)
         request = request_class.new(uri)
         headers.each { |key, value| request[key.to_s] = value.to_s }
         request.body = body unless body.nil?
         response_body = String.new(encoding: Encoding::BINARY)
         streamed_bytes = 0
-        # Net::HTTP#request returns the Net::HTTPResponse, not the block
-        # value; capture the normalized response explicitly.
+        # Net::HTTP#request returns its own response, outside this block.
         captured = nil
         build_http(uri).request(request) do |http_response|
           http_response.read_body do |chunk|
@@ -104,7 +88,12 @@ module Rubernetes
         captured || RegistryResponse.new(status: 599, headers: {}, body: response_body)
       rescue URI::InvalidURIError, SocketError, SystemCallError, IOError, Timeout::Error,
              OpenSSL::SSL::SSLError => error
-        raise RegistryError.new("registry HTTPS request failed: #{error.message}", cause: error), cause: error
+        if error.is_a?(OpenSSL::SSL::SSLError) && error.message.include?("wrong version number") &&
+           uri.scheme == "https" && loopback_request?(uri)
+          @loopback_http = true
+          retry
+        end
+        raise RegistryError.new("registry HTTP request failed: #{error.message}", cause: error), cause: error
       rescue NameError => error
         raise RegistryError.new("unsupported registry HTTP method: #{method.inspect}", cause: error), cause: error
       end
@@ -115,9 +104,29 @@ module Rubernetes
 
       private
 
+      def explicit_loopback_port?(uri)
+        return false unless uri&.scheme == "https" && uri.port.positive? && uri.port != 443
+
+        uri.hostname.casecmp?("localhost") || IPAddr.new(uri.hostname).loopback?
+      rescue IPAddr::InvalidAddressError
+        false
+      end
+
+      def loopback_request?(uri)
+        @loopback_endpoint && uri.hostname == @loopback_endpoint.hostname && uri.port == @loopback_endpoint.port
+      end
+
+      def plaintext_uri(uri)
+        URI::HTTP.build(host: uri.host, port: uri.port, path: uri.path, query: uri.query)
+      end
+
       def build_http(uri)
-        http = @http_class.new(uri.host, uri.port)
-        http.use_ssl = true
+        http = if loopback_request?(uri)
+                 @http_class.new(uri.hostname, uri.port, nil)
+               else
+                 @http_class.new(uri.hostname, uri.port)
+               end
+        http.use_ssl = uri.scheme == "https"
         http.verify_mode = OpenSSL::SSL::VERIFY_PEER
         if @ca_file
           http.ca_file = @ca_file
@@ -149,6 +158,8 @@ module Rubernetes
 
     # OCI Distribution client with injectable transport and challenge-based auth.
     class RegistryClient
+      include RegistryBlobDownloads
+
       DOCKER_HUB_ALIASES = %w[docker.io index.docker.io registry.hub.docker.com].freeze
       DOCKER_HUB_ENDPOINT = "registry-1.docker.io"
       WELL_KNOWN_TOKEN_REALMS = {"registry-1.docker.io" => %w[auth.docker.io]}.freeze
@@ -188,9 +199,7 @@ module Rubernetes
 
         @reference = reference && Reference.parse(reference)
         registry_value = registry || (@reference && @reference.registry)
-        # Docker Hub references normalise to "docker.io", whose host serves a web
-        # page, not the v2 API; the distribution endpoint is registry-1.docker.io
-        # (the same mapping containerd and the docker CLI apply).
+        # Docker Hub serves its distribution API on registry-1.docker.io.
         registry_value = DOCKER_HUB_ENDPOINT if DOCKER_HUB_ALIASES.include?(registry_value.to_s.downcase)
         endpoint_value = endpoint || if registry_value.to_s.match?(%r{\Ahttps?://})
                                        registry_value
@@ -201,8 +210,15 @@ module Rubernetes
 
         @endpoint = parse_endpoint(endpoint_value, allow_insecure: allow_insecure)
         @allow_insecure = !!allow_insecure
+        ca_data = ca_data.dup.freeze if ca_data
+        @blob_cache_trust = if transport || ca_file || http_class != Net::HTTP || allow_insecure
+                              Object.new.freeze
+                            else
+                              [ca_data, !!(endpoint || registry)].freeze
+                            end
         @transport = transport || NetHTTPTransport.new(
           http_class: http_class,
+          loopback_endpoint: endpoint || registry ? nil : @endpoint,
           ca_file: ca_file,
           ca_data: ca_data,
           open_timeout: open_timeout,
@@ -262,53 +278,20 @@ module Rubernetes
       end
 
       def fetch_blob(ref_or_digest, digest = nil, expected_size: nil, media_type: nil, io: nil)
-        image_reference, blob_digest = normalize_blob_arguments(ref_or_digest, digest)
-        validate_blob_media_type!(media_type)
-        raise LimitError, "registry blob exceeds the configured byte limit" if expected_size && Integer(expected_size) > @max_blob_bytes
-        raise RegistryError, "registry blob destination must implement write" if io && !io.respond_to?(:write)
-
-        path = "/v2/#{image_reference.repository}/blobs/#{blob_digest}"
         if io
-          raise RegistryError, "registry blob transport must implement streaming" unless @transport.respond_to?(:stream)
+          raise RegistryError, "registry blob destination must implement write" unless io.respond_to?(:write)
 
-          digest_state = ::Digest::SHA256.new
-          bytes = 0
-          temporary = Tempfile.new(["rubernetes-blob", ".part"])
-          temporary.binmode
+          temporary = download_blob(ref_or_digest, digest, expected_size: expected_size, media_type: media_type)
           begin
-            response = stream_request(
-              "GET",
-              path,
-              accept: media_type || "application/octet-stream",
-              scope: "repository:#{image_reference.repository}:pull",
-              max_bytes: @max_blob_bytes,
-              on_retry: lambda {
-                temporary.truncate(0)
-                temporary.rewind
-                digest_state = ::Digest::SHA256.new
-                bytes = 0
-              }
-            ) do |chunk|
-              chunk = chunk.to_s.b
-              bytes += chunk.bytesize
-              raise LimitError, "registry blob exceeds the configured byte limit" if bytes > @max_blob_bytes
-
-              digest_state.update(chunk)
-              temporary.write(chunk)
-            end
-            ensure_success!(response, "GET #{path}")
-            raise RegistryError, "registry blob size does not match the descriptor" if expected_size && bytes != Integer(expected_size)
-
-            verify_stream_digest!(digest_state, blob_digest, response["docker-content-digest"])
-            validate_response_media_type!(media_type, response["content-type"])
-            temporary.flush
-            temporary.rewind
-            IO.copy_stream(temporary, io)
-            return bytes
+            return IO.copy_stream(temporary, io)
           ensure
             temporary.close!
           end
         end
+
+        image_reference, blob_digest = normalize_blob_arguments(ref_or_digest, digest)
+        validate_blob_request!(expected_size, media_type)
+        path = "/v2/#{image_reference.repository}/blobs/#{blob_digest}"
         response = request("GET", path, accept: media_type || "application/octet-stream",
                                         scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
         ensure_success!(response, "GET #{path}")
@@ -317,12 +300,7 @@ module Rubernetes
 
         verify_response_digest!(body, blob_digest, response["docker-content-digest"])
         validate_response_media_type!(media_type, response["content-type"])
-        if io
-          io.write(body)
-          body.bytesize
-        else
-          body
-        end
+        body
       rescue ArgumentError, TypeError => error
         raise RegistryError.new("invalid registry blob size: #{error.message}", cause: error), cause: error
       end
@@ -335,14 +313,8 @@ module Rubernetes
         config, config_path = fetch_pull_config(pinned_reference, image_manifest.config, store)
         layers = image_manifest.layers.map do |descriptor|
           if store
-            temporary = fetch_blob_to_temp(pinned_reference, descriptor)
-            begin
-              temporary.rewind
-              path = store.put(descriptor.digest, io: temporary, size: descriptor.size, media_type: descriptor.media_type)
-              {descriptor: descriptor, bytes: nil, path: path}.freeze
-            ensure
-              temporary.close!
-            end
+            path = store_blob(pinned_reference, descriptor, store: store)
+            {descriptor: descriptor, bytes: nil, path: path}.freeze
           else
             bytes = fetch_blob(pinned_reference, descriptor.digest, expected_size: descriptor.size, media_type: descriptor.media_type)
             {descriptor: descriptor, bytes: bytes, path: nil}.freeze
@@ -351,10 +323,8 @@ module Rubernetes
         Image.new(reference: pinned_reference, manifest: image_manifest, config: config, config_path: config_path, layers: layers)
       end
 
-      # Returns a bearer token obtained from a Distribution WWW-Authenticate challenge.
-      # Credentials are sent only to the registry origin or an explicitly
-      # configured token_realm_allowlist origin. The token response is cached
-      # only until its advertised expiry.
+      # Cache challenge tokens until their advertised expiry. Only a trusted
+      # token realm receives configured registry credentials.
       def token_for(realm:, service: nil, scope: nil)
         uri = URI.parse(realm.to_s)
         validate_auth_uri!(uri)
@@ -412,6 +382,7 @@ module Rubernetes
 
       def fetch_pull_config(reference, descriptor, store)
         raise LimitError, "image config exceeds the configured byte limit" if descriptor.size > DEFAULT_MAX_CONFIG_BYTES
+        return store_config(reference, descriptor, store: store) if instance_of?(RegistryClient) && store.instance_of?(ContentStore)
 
         temporary = fetch_blob_to_temp(reference, descriptor)
         begin
@@ -431,21 +402,12 @@ module Rubernetes
       end
 
       def fetch_blob_to_temp(reference, descriptor)
-        temporary = Tempfile.new(["rubernetes-blob", ".part"])
-        temporary.binmode
-        fetch_blob(
-          reference,
-          descriptor.digest,
-          expected_size: descriptor.size,
-          media_type: descriptor.media_type,
-          io: temporary
-        )
-        temporary.flush
-        temporary.rewind
-        temporary
-      rescue StandardError
-        temporary.close! if defined?(temporary) && temporary
-        raise
+        download_blob(reference, descriptor.digest, expected_size: descriptor.size, media_type: descriptor.media_type)
+      end
+
+      def validate_blob_request!(expected_size, media_type)
+        validate_blob_media_type!(media_type)
+        raise LimitError, "registry blob exceeds the configured byte limit" if expected_size && Integer(expected_size) > @max_blob_bytes
       end
 
       def validate_blob_media_type!(media_type)
@@ -533,11 +495,8 @@ module Rubernetes
         response
       end
 
-      # OCI Distribution allows 3xx redirects for content downloads (blobs,
-      # and registry.k8s.io also redirects manifests).  Redirects are
-      # followed only for GET/HEAD, only to HTTPS, at most MAX_REDIRECTS
-      # times, and credentials are never forwarded to a different origin.
-      # The content digest is verified by the caller regardless of origin.
+      # Redirects for GET/HEAD may change the download origin. Forward
+      # credentials only on the original origin and always verify the digest.
       MAX_REDIRECTS = 5
       REDIRECT_STATUSES = [301, 302, 303, 307, 308].freeze
 
@@ -553,8 +512,7 @@ module Rubernetes
                      end
           return response unless REDIRECT_STATUSES.include?(response.status) && %w[GET HEAD].include?(String(method).upcase)
 
-          # A streamed redirect has already delivered its (non-content) body
-          # to the sink; the caller resets its digest/temporary state here.
+          # Discard any streamed redirect body before retrying.
           on_redirect&.call
           hops += 1
           raise RegistryError, "registry redirect limit exceeded" if hops > MAX_REDIRECTS
@@ -906,13 +864,7 @@ module Rubernetes
         Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
 
-      def secure_compare(left, right)
-        return false unless left.bytesize == right.bytesize
-
-        result = 0
-        left.bytes.zip(right.bytes) { |a, b| result |= a ^ b }
-        result.zero?
-      end
+      def secure_compare(left, right) = SecureCompare.call(left, right)
     end
 
     # Result returned by RegistryClient#pull.
