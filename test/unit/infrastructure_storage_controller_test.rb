@@ -113,7 +113,7 @@ class InfrastructureStorageControllerTest < Minitest::Test
     managed = %w[node-a node-b].map do |name|
       {"apiVersion" => "v1", "kind" => "Node",
        "metadata" => {"name" => name, "annotations" => {"volumes.kubernetes.io/controller-managed-attach-detach" => "true"}},
-       "status" => {"volumesInUse" => ["kubernetes.io/csi/example.csi^"]}}
+       "status" => {"volumesInUse" => ["kubernetes.io/csi/example.csi^data"]}}
     end
     result = Controller::PersistentVolumeAttachDetachController.new.plan(volume, pods: [pod_value], claims: [claim],
                                                                                  attachments: [existing], nodes: managed)
@@ -140,6 +140,33 @@ class InfrastructureStorageControllerTest < Minitest::Test
     assert_equal "20Gi", status_update.patch.dig("capacity", "storage")
     assert_equal "FileSystemResizePending", result.status.fetch("conditions").last.fetch("type")
     assert_equal "VolumeResizeSuccessful", result.events.first.fetch("reason")
+  end
+
+  def test_csi_expansion_waits_for_the_sidecar_and_node
+    claim = pvc("claim", storage_class: "fast", volume_name: "data", request: "20Gi")
+    claim["status"] = {"phase" => "Bound", "capacity" => {"storage" => "10Gi"},
+                       "allocatedResourceStatuses" => {"storage" => "NodeResizePending"}}
+    volume = pv("data", capacity: "20Gi", csi_driver: "example.csi")
+    result = Controller::PersistentVolumeExpanderController.new.plan(claim, persistent_volume: volume)
+
+    assert_empty result.operations
+    assert_equal claim["status"], result.status
+    assert_equal "ExternalExpanding", result.events.first.fetch("reason")
+  end
+
+  def test_csi_migration_announces_the_resizer_without_changing_capacity
+    claim = pvc("claim", storage_class: "fast", volume_name: "data", request: "20Gi")
+    claim["status"] = {"phase" => "Bound", "capacity" => {"storage" => "10Gi"}}
+    volume = pv("data", capacity: "20Gi")
+    volume.fetch("spec")["gcePersistentDisk"] = {"pdName" => "disk"}
+    controller = Controller::PersistentVolumeExpanderController.new
+    result = controller.plan(claim, persistent_volume: volume)
+    updated = result.operations.fetch(0).object
+
+    assert_equal "status", result.operations.fetch(0).subresource
+    assert_equal "pd.csi.storage.gke.io", updated.dig("metadata", "annotations", "volume.kubernetes.io/storage-resizer")
+    assert_equal claim["status"], result.status
+    assert_empty controller.plan(updated, persistent_volume: volume).operations
   end
 
   def test_cluster_role_aggregation_is_owned_and_idempotent
@@ -214,7 +241,7 @@ class InfrastructureStorageControllerTest < Minitest::Test
   def pv(name, storage_class: "", access_modes: ["ReadWriteOnce"], capacity: "1Gi", csi_driver: nil)
     spec = {"storageClassName" => storage_class, "accessModes" => access_modes,
             "capacity" => {"storage" => capacity}}
-    spec["csi"] = {"driver" => csi_driver} if csi_driver
+    spec["csi"] = {"driver" => csi_driver, "volumeHandle" => name} if csi_driver
     {"apiVersion" => "v1", "kind" => "PersistentVolume",
      "metadata" => {"name" => name, "uid" => "uid-#{name}"}, "spec" => spec,
      "status" => {"phase" => "Available"}}
