@@ -29,7 +29,7 @@ class NodeOpsAdmissionTest < Minitest::Test
 
   def test_rejects_wrong_node_os_arch_and_cpu_without_side_effects
     assert_equal("NodeNameMismatch", admission.admit(@pod.merge("spec" => @pod["spec"].merge("nodeName" => "node-b"))).reason)
-    assert_equal("UnsupportedOS", admission.admit(@pod.merge("spec" => @pod["spec"].merge("os" => {"name" => "windows"}))).reason)
+    assert_equal("PodOSNotSupported", admission.admit(@pod.merge("spec" => @pod["spec"].merge("os" => {"name" => "windows"}))).reason)
     assert_equal("UnsupportedArchitecture",
                  admission.admit(@pod.merge("metadata" => {"name" => "arm", "annotations" => {"kubernetes.io/arch" => "arm64"}})).reason)
     cpu_heavy = @pod.merge("spec" => @pod["spec"].merge("containers" => [{"name" => "main",
