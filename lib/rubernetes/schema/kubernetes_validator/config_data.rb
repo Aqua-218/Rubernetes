@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "base64"
+
 module Rubernetes
   module Schema
     # Secret and ConfigMap: data keys, total size, the keys each built-in
@@ -27,14 +29,10 @@ module Rubernetes
 
       def data_key_errors(root, kind)
         issues = []
-        total = 0
-        %w[data stringData binaryData].each do |section|
-          values = fetch(root, section)
-          next unless values.is_a?(Hash)
-
-          total += values.sum { |_key, value| value.to_s.bytesize }
+        if data_payload_size(root, kind) > MAX_SECRET_SIZE
+          path = kind == "Secret" ? %w[data] : [""]
+          issues << issue(path, :too_long, "may not be more than #{MAX_SECRET_SIZE} bytes")
         end
-        issues << issue(%w[data], :invalid, "must have at most #{MAX_SECRET_SIZE} bytes") if total > MAX_SECRET_SIZE
         %w[data stringData binaryData].each do |section|
           values = fetch(root, section)
           next unless values.is_a?(Hash)
@@ -49,8 +47,27 @@ module Rubernetes
             issues << issue(path, :invalid, "must not start with '..'") if key.start_with?("..") && key != ".."
           end
         end
-        _ = kind
         issues
+      end
+
+      def data_payload_size(root, kind)
+        data = fetch(root, "data")
+        data = {} unless data.is_a?(Hash)
+        if kind == "Secret"
+          plain = fetch(root, "stringData")
+          plain = {} unless plain.is_a?(Hash)
+          data.except(*plain.keys).values.sum { |value| decoded_data_size(value) } + plain.values.sum { |value| value.to_s.bytesize }
+        else
+          binary = fetch(root, "binaryData")
+          binary = {} unless binary.is_a?(Hash)
+          data.values.sum { |value| value.to_s.bytesize } + binary.values.sum { |value| decoded_data_size(value) }
+        end
+      end
+
+      def decoded_data_size(value)
+        Base64.strict_decode64(value.to_s.delete("\r\n")).bytesize
+      rescue ArgumentError
+        value.to_s.bytesize
       end
 
       # ValidateSecret (validation.go:7781-7811): each built-in Secret type
