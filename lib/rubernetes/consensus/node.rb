@@ -49,11 +49,18 @@ module Rubernetes
         # followers called an election every time the leader paused -- term
         # 124 two hours into a conformance round.  Every election stalled
         # reads and forwarded proposals, and the stalls compounded into
-        # minutes during which nothing reconciled.  These are etcd's defaults
-        # (--heartbeat-interval 100ms, --election-timeout 1000ms), with the
-        # upper bound doubled for randomization.
+        # minutes during which nothing reconciled.  etcd's defaults
+        # (--heartbeat-interval 100ms, --election-timeout 1000ms) were not
+        # enough either: on the demo VM (3 replicas, 3.5 GB heap each, GitLab
+        # on top) the leader went silent for 1.5-2.8 s -- no acks processed
+        # from either follower -- and a follower took over every 1-2 minutes
+        # (term 11,370 after 51 days; 185 leader changes in 6 hours, each
+        # stalling reads and writes for ~1.5 s).  The election timeout must
+        # outlast the longest pause of a healthy leader, so it is 5-10 s, as
+        # etcd advises for high-latency environments; the heartbeat stays at
+        # 100 ms, so a follower still sees a live leader 50 times per timeout.
         def self.production
-          default.with(election_timeout_min: 1.0, election_timeout_max: 2.0, heartbeat_interval: 0.100)
+          default.with(election_timeout_min: 5.0, election_timeout_max: 10.0, heartbeat_interval: 0.100)
         end
 
         def validate!
