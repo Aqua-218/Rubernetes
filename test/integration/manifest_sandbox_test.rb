@@ -20,14 +20,45 @@ class ManifestSandboxTest < Minitest::Test
         openapi_path: openapi_path
       )
 
+      declarations = nil
       resources = sandbox.compile(
         manifest_path,
         allow_code: true,
         environment: ["VISIBLE"],
         env: {"VISIBLE" => "allowed", "SECRET" => "hidden"}
-      )
+      ) { |lines| declarations = lines }
 
       assert_equal("allowed", resources.fetch(0).dig("data", "VISIBLE"))
+      assert_equal([1], declarations)
+    end
+  end
+
+  def test_compiler_errors_name_the_original_manifest_and_line
+    Dir.mktmpdir do |directory|
+      registry_path, openapi_path = write_schema(directory)
+      path = File.join(directory, "service_ports.rb")
+      sandbox = Rubernetes::Manifest::Sandbox.new(registry_path: registry_path, openapi_path: openapi_path)
+      ["config_map \"ok\"\nno_such_resource \"x\"\n", "config_map \"ok\"\n)\n"].each do |bad_source|
+        File.write(path, bad_source)
+        error = assert_raises(Rubernetes::Manifest::Error) { sandbox.compile(path, allow_code: true) }
+        assert_includes error.message, "service_ports.rb:2:"
+      end
+    end
+  end
+
+  def test_slow_manifest_returns_a_single_timeout_error
+    Dir.mktmpdir do |directory|
+      registry_path, openapi_path = write_schema(directory)
+      path = File.join(directory, "slow.rb")
+      File.write(path, "sleep 2")
+      sandbox = Rubernetes::Manifest::Sandbox.new(registry_path: registry_path, openapi_path: openapi_path, timeout: 0.25)
+
+      _, stderr = capture_subprocess_io do
+        error = assert_raises(Rubernetes::Manifest::Error) { sandbox.compile(path, allow_code: true) }
+        assert_equal "manifest sandbox exceeded 0.25 seconds", error.message
+      end
+
+      assert_empty stderr
     end
   end
 
