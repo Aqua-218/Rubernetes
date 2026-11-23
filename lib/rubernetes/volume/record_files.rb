@@ -38,7 +38,7 @@ module Rubernetes
           Dir.children(@directory).sort.each do |name|
             next unless name.end_with?(".json")
 
-            records << JSON.parse(File.read(File.join(@directory, name)))
+            records << JSON.parse(File.binread(File.join(@directory, name)))
           end
         end
         records
@@ -60,12 +60,15 @@ module Rubernetes
         FileUtils.mkdir_p(@directory)
         target = file_for(key)
         temporary = "#{target}.tmp-#{Process.pid}-#{SecureRandom.hex(6)}"
+        owned = false
         File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+          owned = true
           file.write(JSON.generate(record))
           file.flush
           file.fsync if durable && @fsync == true
         end
         File.rename(temporary, target)
+        owned = false
         if @fsync == true
           if durable
             File.open(@directory, File::RDONLY, &:fsync)
@@ -74,9 +77,8 @@ module Rubernetes
           end
         end
         true
-      rescue SystemCallError, IOError
-        File.delete(temporary) if temporary && File.exist?(temporary)
-        raise
+      ensure
+        FileUtils.rm_f(temporary) if owned
       end
 
       def delete(key)
@@ -102,7 +104,7 @@ module Rubernetes
       def legacy_records
         return nil unless File.file?(@path)
 
-        data = JSON.parse(File.read(@path))
+        data = JSON.parse(File.binread(@path))
         data.is_a?(Hash) ? data.values : data
       end
     end
