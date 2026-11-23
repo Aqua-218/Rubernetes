@@ -40,9 +40,22 @@ recover                                                → recovery_report
 - `projected`
 - `image`
 - local PV
+- NFS、iSCSI、Fibre Channel のインラインボリュームと静的 PV
 - loopとdevice-mapperによるボリューム
 
 外部のCSIドライバは、Kubernetes CSIのgRPCプロトコルという標準の拡張点を通じて接続できる。ただし、VolumeManager、状態機械、マウント、パスの検証、所有権、Secretの受け渡しはRubyが保持する。
+
+CSI の `volumeHandle` はドライバ固有の文字列として保持し、クラウドのリソースパスもそのままドライバに渡す。ノード上の管理 ID とマウント先は別に管理する。Kubernetes の CSI ボリュームでは、`NodeStageVolume`、`NodePublishVolume`、`NodeExpandVolume` のそれぞれが指定された Secret をノードの API クライアントでその都度取得する。再発行でも現在の値を取得し、復旧のために保存するのは Secret の名前と名前空間だけとする。
+
+native ノードでは、新規の CSI ファイルシステムボリュームを `<pod_root>/<Pod UID>/volumes/kubernetes.io~csi/<volume spec 名>/mount` に公開する。volume spec 名は PVC を参照する場合は PV 名、CSI インラインボリュームでは Pod のボリューム名を使う。別の名前で同じ PVC を参照する Pod では、最初のボリュームをこのパスに、後続の参照をそれぞれ従来のパスに公開する。再起動後の再発行、統計取得、解放は保存済みの公開先を参照する。CSI に移行されたインラインボリュームとブロックボリュームには従来のパスを使う。
+
+Pod のディレクトリをコンテナ内から参照する CSI ドライバには、ノードの実際の `pod_root` をドライバが参照するパスへマウント伝播付きで渡す。CSI hostpath のノード側ヘルスチェックが参照するパスは `/var/lib/kubelet/pods`。
+
+native ノードの新規インライン NFS ボリュームは、`<pod_root>/<Pod UID>/volumes/kubernetes.io~nfs/<volume 名>` に公開する。公開先とステージの解放が済んだ後に、空になったディレクトリを削除する。既存の Pod は保存済みの公開先から解放する。
+
+NFS は Linux の NFS クライアントでマウントし、PV の `mountOptions` と読み取り専用設定を適用する。iSCSI は Linux の iSCSI initiator と open-iscsi の `iscsiadm`、`iscsid` を使い、共有セッションは最後のボリュームの解放時にログアウトする。Fibre Channel はノードからアクセスできる LUN を WWN と LUN、または WWID で指定する。iSCSI と Fibre Channel の PV はネイティブ、CRI、MicroVM ランタイムで `volumeMode: Block` と `volumeDevices` を利用できる。
+
+MicroVM は Pod が `volumeDevices` で参照するブロックボリュームを、起動時に virtio ブロックデバイスとして接続する。読み取り専用設定は Firecracker とゲスト内のコンテナの両方に適用する。ブロックボリュームを使う Pod はコールドブートで起動する。1 Pod あたりの上限は `microvm` が 11 個、`microvm-restricted` が 12 個。デバイスをノードから解放する前に VM の停止を確認する。
 
 <a id="sec-5-11-2"></a>
 ## 5.11.2 ライフサイクルと所有権
@@ -76,6 +89,7 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 - SecretとServiceAccountのトークンはtmpfsだけに置く。swap、スナップショット、ログ、コアダンプ、ベースイメージに含めない。
 - トークンは、audience、有効期限、PodのUIDに結び付ける。有効期間の80%に達した時点でローテートする。
 - `subPath`とhostPathは、`openat2`とファイルディスクリプタで解決する。symlink、hardlink、マウントの差し替えによるTOCTOUを防ぐためである。
+- hostPathがマウントポイントを直接指定する場合は、親を検証してから、そのファイルディスクリプタを起点に指定されたマウントだけを開く。
 - `fsGroup`、SELinuxのラベル、読み取り専用、mountPropagationは、publishの前に適用する。適用に失敗した場合は、ワークロードを開始させない。
 - マウント元、マウント先、マウントID、ファイルシステムのUUID、デバイスIDを、ランタイムの台帳に記録する。
 
