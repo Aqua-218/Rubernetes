@@ -39,6 +39,35 @@ class ResourceQuotaComputeUsageTest < Minitest::Test
 
   def base(value) = controller.send(:quantity_to_base, value)
 
+  class CustomQuotaStore < Controller::StoreAdapter
+    attr_reader :reads
+
+    def initialize
+      super(Object.new)
+      @reads = []
+    end
+
+    def custom_resource_descriptors
+      ["example.com", "other.example.com"].map do |group|
+        Controller::ResourceDescriptor.parse("Widget", group: group, version: "v1", resource: "specialwidgets", scope: :namespaced)
+      end
+    end
+
+    def custom_resource_items(descriptor, namespace:)
+      @reads << [descriptor.group, namespace]
+      [{"kind" => "Widget"}]
+    end
+  end
+
+  def test_custom_quota_counts_the_fresh_collection_for_the_exact_group_and_namespace
+    store = CustomQuotaStore.new
+    hard = {"count/specialwidgets.example.com" => "2"}
+    result = controller.plan(quota(hard), store: store)
+
+    assert_equal({"count/specialwidgets.example.com" => "1"}, result.status.fetch("used"))
+    assert_equal [["example.com", "ns"]], store.reads
+  end
+
   def test_bare_compute_names_are_the_pod_requests
     hard = {"cpu" => "1", "memory" => "1Gi", "ephemeral-storage" => "50Gi", "pods" => "5"}
     pods = [pod("a", requests: {"cpu" => "500m", "memory" => "252Mi", "ephemeral-storage" => "30Gi"})]
