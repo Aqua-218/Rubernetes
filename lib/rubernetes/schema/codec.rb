@@ -30,59 +30,12 @@ module Rubernetes
         @strict = !!strict
       end
 
-      def load_json(input, strict: @strict, schema: nil, known_fields: nil, fields: nil,
-                    max_bytes: @max_bytes, max_depth: @max_depth, preserve_unknown: nil,
-                    unknown_fields: nil)
-        value = JSONCodec.load(
-          input,
-          strict: strict,
-          max_bytes: max_bytes,
-          max_depth: max_depth
-        )
-        schema = schema_definition_for(schema)
-        mode = unknown_mode(
-          unknown_fields: unknown_fields,
-          preserve_unknown: preserve_unknown,
-          schema: schema,
-          object: value,
-          operation: :load,
-          strict: strict
-        )
-        if schema
-          normalize_typed_value(value, schema, mode, path: [])
-        else
-          validate_schema_fields!(value, schema: schema, known_fields: known_fields || fields,
-                                         strict: strict, preserve_unknown: preserve_unknown,
-                                         unknown_fields: mode)
-        end
+      def load_json(input, **)
+        load_document(JSONCodec, input, **)
       end
 
-      def dump_json(object, canonical: false, strict: @strict, schema: nil, known_fields: nil, fields: nil,
-                    max_bytes: @max_bytes, max_depth: @max_depth, preserve_unknown: nil,
-                    unknown_fields: nil)
-        schema = schema_definition_for(schema) || schema_definition_for(object)
-        mode = unknown_mode(
-          unknown_fields: unknown_fields,
-          preserve_unknown: preserve_unknown,
-          schema: schema,
-          object: object,
-          operation: :dump,
-          strict: strict
-        )
-        normalized = if schema
-                       normalize_typed_value(object, schema, mode, path: [])
-                     else
-                       validate_schema_fields!(object, schema: schema, known_fields: known_fields || fields,
-                                                       strict: strict, preserve_unknown: preserve_unknown,
-                                                       unknown_fields: mode)
-                       object
-                     end
-        JSONCodec.dump(
-          normalized,
-          canonical: canonical,
-          max_bytes: max_bytes,
-          max_depth: max_depth
-        )
+      def dump_json(object, **)
+        dump_document(JSONCodec, object, **)
       end
 
       def canonical_json(object, **)
@@ -97,59 +50,12 @@ module Rubernetes
         dump_json(object, **, strict: true)
       end
 
-      def load_yaml(input, strict: @strict, schema: nil, known_fields: nil, fields: nil,
-                    max_bytes: @max_bytes, max_depth: @max_depth, preserve_unknown: nil,
-                    unknown_fields: nil)
-        value = YAMLCodec.load(
-          input,
-          strict: strict,
-          max_bytes: max_bytes,
-          max_depth: max_depth
-        )
-        schema = schema_definition_for(schema)
-        mode = unknown_mode(
-          unknown_fields: unknown_fields,
-          preserve_unknown: preserve_unknown,
-          schema: schema,
-          object: value,
-          operation: :load,
-          strict: strict
-        )
-        if schema
-          normalize_typed_value(value, schema, mode, path: [])
-        else
-          validate_schema_fields!(value, schema: schema, known_fields: known_fields || fields,
-                                         strict: strict, preserve_unknown: preserve_unknown,
-                                         unknown_fields: mode)
-        end
+      def load_yaml(input, **)
+        load_document(YAMLCodec, input, **)
       end
 
-      def dump_yaml(object, canonical: false, strict: @strict, schema: nil, known_fields: nil, fields: nil,
-                    max_bytes: @max_bytes, max_depth: @max_depth, preserve_unknown: nil,
-                    unknown_fields: nil)
-        schema = schema_definition_for(schema) || schema_definition_for(object)
-        mode = unknown_mode(
-          unknown_fields: unknown_fields,
-          preserve_unknown: preserve_unknown,
-          schema: schema,
-          object: object,
-          operation: :dump,
-          strict: strict
-        )
-        normalized = if schema
-                       normalize_typed_value(object, schema, mode, path: [])
-                     else
-                       validate_schema_fields!(object, schema: schema, known_fields: known_fields || fields,
-                                                       strict: strict, preserve_unknown: preserve_unknown,
-                                                       unknown_fields: mode)
-                       object
-                     end
-        YAMLCodec.dump(
-          normalized,
-          canonical: canonical,
-          max_bytes: max_bytes,
-          max_depth: max_depth
-        )
+      def dump_yaml(object, **)
+        dump_document(YAMLCodec, object, **)
       end
 
       def strict_load_yaml(input, **)
@@ -405,11 +311,33 @@ module Rubernetes
 
       def self.detect_cycle!(value, seen)
         object_id = value.object_id
-        return unless seen.key?(object_id)
+        raise UnsupportedTypeError, "cyclic codec value graph is not supported" if seen.key?(object_id)
 
-        raise UnsupportedTypeError, "cyclic codec value graph is not supported"
-      ensure
-        seen[object_id] = true if object_id && !seen.key?(object_id)
+        seen[object_id] = true
+      end
+
+      private def load_document(codec, input, strict: @strict, max_bytes: @max_bytes, max_depth: @max_depth,
+                                schema: nil, known_fields: nil, fields: nil, preserve_unknown: nil, unknown_fields: nil)
+        value = codec.load(input, strict: strict, max_bytes: max_bytes, max_depth: max_depth)
+        prepare_document(value, :load, strict: strict, schema: schema, known_fields: known_fields || fields,
+                                       preserve_unknown: preserve_unknown, unknown_fields: unknown_fields)
+      end
+
+      private def dump_document(codec, object, canonical: false, strict: @strict, max_bytes: @max_bytes, max_depth: @max_depth, **)
+        value = prepare_document(object, :dump, strict: strict, **)
+        codec.dump(value, canonical: canonical, max_bytes: max_bytes, max_depth: max_depth)
+      end
+
+      private def prepare_document(value, operation, strict:, schema: nil, known_fields: nil, fields: nil, preserve_unknown: nil, unknown_fields: nil)
+        definition = schema_definition_for(schema)
+        definition ||= schema_definition_for(value) if operation == :dump
+        mode = unknown_mode(unknown_fields: unknown_fields, preserve_unknown: preserve_unknown, schema: definition,
+                            object: value, operation: operation, strict: strict)
+        return normalize_typed_value(value, definition, mode, path: []) if definition
+
+        checked = validate_schema_fields!(value, schema: nil, known_fields: known_fields || fields, strict: strict,
+                                                 preserve_unknown: preserve_unknown, unknown_fields: mode)
+        operation == :load ? checked : value
       end
 
       def schema_definition_for(schema)
