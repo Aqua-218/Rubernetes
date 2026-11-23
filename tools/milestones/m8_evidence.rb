@@ -89,7 +89,7 @@ if options[:m7_manifest]
 else
   commands << M34EvidenceSupport.command_record("m7_gate", ["<missing M7 manifest: set RUBERNETES_M8_M7_MANIFEST or --m7-manifest>"],
                                                 M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
-                                                error: "M7 requires COMPLETE M7 evidence from the same source input")
+                                                error: "M8 requires COMPLETE M7 evidence from the same source input")
 end
 
 chain_ready = %w[M0 M1 M2 M3 M4 M5 M6 M7].all? do |milestone|
@@ -117,21 +117,21 @@ REPORT_SPECS.each do |name, specification|
                   M34EvidenceSupport.command_record("m8_#{name}", ["<empty adapter command>"], M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
                                                     error: "adapter command is empty")
                 else
-                  M34EvidenceSupport.run_command("m8_#{name}", command, destination, starting_input, env_prefix: "RUBERNETES_M7")
+                  M34EvidenceSupport.run_command("m8_#{name}", command, destination, starting_input, env_prefix: "RUBERNETES_M8")
                 end
   elsif options[:reports].key?(name)
     started = M34EvidenceSupport.now
     begin
       M34EvidenceSupport.copy_report(options[:reports].fetch(name), destination)
-      commands << M34EvidenceSupport.command_record("m7_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started,
+      commands << M34EvidenceSupport.command_record("m8_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started,
                                                     M34EvidenceSupport.now, 0)
     rescue StandardError => error
-      commands << M34EvidenceSupport.command_record("m7_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started,
+      commands << M34EvidenceSupport.command_record("m8_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started,
                                                     M34EvidenceSupport.now, 1, error: error.message)
     end
   else
     commands << M34EvidenceSupport.run_command("m8_#{name}", specification.fetch(:default), destination, starting_input,
-                                               env_prefix: "RUBERNETES_M7")
+                                               env_prefix: "RUBERNETES_M8")
   end
 end
 
