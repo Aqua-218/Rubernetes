@@ -57,8 +57,9 @@ module Rubernetes
       def serve(interface, socket)
         write_mutex = Mutex.new
         while (request = read_frame(socket))
-          id, name, args, kwargs = request
-          Thread.new do
+          # The socket loop can read its next frame before this thread runs.
+          # Bind the frame to the thread so each reply keeps its original ID.
+          Thread.new(*request) do |id, name, args, kwargs|
             opened = []
             reply = begin
               args = args.map { |argument| localize_namespace(argument, opened) }
