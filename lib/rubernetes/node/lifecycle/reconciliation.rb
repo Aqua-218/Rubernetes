@@ -142,6 +142,10 @@ module Rubernetes
             lose_sandbox!(object, existing)
             return result_for(existing)
           end
+          if existing[:sandbox_replacement]
+            lose_sandbox!(object, existing, LifecycleError.new(existing[:sandbox_replacement]))
+            return result_for(existing)
+          end
 
           config_changed = config_digest(existing.fetch(:pod)) != config_digest(object)
 
