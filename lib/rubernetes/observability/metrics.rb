@@ -227,15 +227,9 @@ module Rubernetes
       # tools/differential/metrics_inventory_differential.rb reports.
       no_list_to_log = "every LIST is served by the apiserver's local replica (apiserver_cache_list_*); none reaches the raft log"
       no_ring = "no per-resource watch cache ring: one shared MVCC history, sized by revisions and age"
-      no_exec_rotation = "an exec plugin's credential is used for the life of the client that asked for it: there is no certificate " \
-                         "rotation to age, and no plugin allowlist policy to count"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to " \
                               "SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
-      no_peer_proxy = "no UnknownVersionInteroperabilityProxy / peer aggregated discovery: every replica serves the same API set from the shared raft log, " \
-                      "so no request is rerouted to a peer and no peer discovery is fetched"
       no_delegation = "this is the kube-apiserver itself: delegated authn/authz (an aggregated server asking the kube-apiserver) is not a role it plays"
-      no_declarative = "declarative validation (DeclarativeValidation / +k8s: validation tags) is not implemented; every rule is hand-written in " \
-                       "Schema::KubernetesValidator"
       windows_only = "Windows HostProcess containers do not exist on Linux"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
@@ -243,22 +237,10 @@ module Rubernetes
           "apiserver_delegated_authn_request_total" => no_delegation,
           "apiserver_delegated_authz_request_duration_seconds" => no_delegation,
           "apiserver_delegated_authz_request_total" => no_delegation,
-          "apiserver_validation_declarative_validation_mismatch_total" => no_declarative,
-          "apiserver_validation_declarative_validation_panic_total" => no_declarative,
-          "apiserver_validation_declarative_validation_panics_total" => no_declarative,
-          "apiserver_validation_declarative_validation_parity_discrepancies_total" => no_declarative,
           "apiserver_stream_translator_requests_total" => no_stream_translation,
           "apiserver_stream_tunnel_requests_total" => no_stream_translation,
-          "apiserver_storage_decode_errors_total" => "stored objects live decoded in the replica; a record that fails to decode is WAL or snapshot " \
-                                                     "corruption, fatal at recovery, never a per-resource read error",
           "apiserver_storage_consistency_checks_total" => "no watch cache consistency checker: the local replica is the raft state machine itself, applied " \
                                                           "in log order, so there is no second store to compare it with",
-          "aggregator_discovery_nopeer_requests_total" => no_peer_proxy,
-          "aggregator_discovery_peer_aggregated_cache_hits_total" => no_peer_proxy,
-          "aggregator_discovery_peer_aggregated_cache_misses_total" => no_peer_proxy,
-          "apiserver_peer_discovery_sync_errors_total" => no_peer_proxy,
-          "apiserver_peer_proxy_errors_total" => no_peer_proxy,
-          "apiserver_rerouted_request_total" => no_peer_proxy,
           "etcd_lease_object_counts" => "no etcd leases: Events and other TTL'd objects expire through the raft store's own TTL index, not through attached " \
                                         "etcd leases",
           "apiserver_storage_list_total" => no_list_to_log,
@@ -278,41 +260,17 @@ module Rubernetes
         }.freeze
       }.freeze
 
-      # client-go families every component would serve but that measure
-      # machinery Rubernetes' client does not have.
-      SHARED_UNIMPLEMENTED = {
-        "rest_client_exec_plugin_certificate_rotation_age" => no_exec_rotation,
-        "rest_client_exec_plugin_policy_call_total" => no_exec_rotation
-      }.freeze
-
       # Every metric the inventory lists for +component+ ("kube-apiserver",
       # "kubelet", "kube-controller-manager", ...) that is not registered
       # yet; custom collectors and summaries are left to their collectors.
-      # Plain (label-less) families client-go registers unconditionally, so
-      # every upstream component shows them even when the feature behind
-      # them never runs: kept in the exposition for parity, listed as
-      # unimplemented for the inventory.  The exec plugin TTL gauge starts
-      # at +Inf upstream ("no credentials with an expiry").
-      ALWAYS_PRESENT_EMPTY = {
-        "rest_client_exec_plugin_certificate_rotation_age" => nil,
-        "rest_client_exec_plugin_ttl_seconds" => Float::INFINITY
-      }.freeze
-
+      # The exec plugin TTL gauge reads the earliest certificate's remaining
+      # validity at scrape time. It reports +Inf before any certificate use.
       def register_upstream(component, endpoint: "/metrics")
-        unimplemented = SHARED_UNIMPLEMENTED.merge(UNIMPLEMENTED.fetch(component, {}))
+        unimplemented = UNIMPLEMENTED.fetch(component, {})
         self.class.upstream.each do |name, entry|
           next unless entry["components"].include?(component)
           next unless Array(entry.dig("endpoints", component)).include?(endpoint)
 
-          if ALWAYS_PRESENT_EMPTY.key?(name)
-            type = UPSTREAM_TYPES[entry["type"]]
-            next unless type && !@mutex.synchronize { @metrics.key?(name) }
-
-            register(name, type: type)
-            initial = ALWAYS_PRESENT_EMPTY[name]
-            set(name, initial) if initial
-            next
-          end
           type = UPSTREAM_TYPES[entry["type"]]
           if unimplemented.key?(name)
             register_unimplemented(component, name, entry, unimplemented[name], type)
@@ -322,9 +280,17 @@ module Rubernetes
           next if @mutex.synchronize { @metrics.key?(name) }
 
           register(name, type: type)
+          register_exec_plugin_ttl if name == "rest_client_exec_plugin_ttl_seconds"
         end
         set("hidden_metrics_total", @hidden_names.length) unless @hidden_names.empty?
         self
+      end
+
+      def register_exec_plugin_ttl
+        add_collector do |registry|
+          ttl = defined?(Rubernetes::Client::ExecCredential) ? Rubernetes::Client::ExecCredential.certificate_ttl : Float::INFINITY
+          registry.set("rest_client_exec_plugin_ttl_seconds", ttl)
+        end
       end
 
       # A family whose feature Rubernetes does not have is still declared, so
@@ -387,6 +353,17 @@ module Rubernetes
 
       def increment(name, labels = {}, by: 1)
         observe_value(name, labels) { |current| current.to_f + by }
+      end
+
+      def declarative_validation_mismatch(identifier, count)
+        increment("apiserver_validation_declarative_validation_mismatch_total", by: count)
+        increment("apiserver_validation_declarative_validation_parity_discrepancies_total",
+                  {"validation_identifier" => identifier}, by: count)
+      end
+
+      def declarative_validation_panic(identifier)
+        increment("apiserver_validation_declarative_validation_panic_total")
+        increment("apiserver_validation_declarative_validation_panics_total", {"validation_identifier" => identifier})
       end
 
       # A family the component does not register in this configuration.
@@ -669,6 +646,11 @@ module Rubernetes
       private
 
       def register_apiserver_defaults
+        %w[mismatch panic].each do |event|
+          name = "apiserver_validation_declarative_validation_#{event}_total"
+          register(name, type: :counter)
+          touch(name)
+        end
         register("apiserver_request_total", type: :counter,
                                             help: "Counter of apiserver requests broken out for each verb, group, version, resource, scope and HTTP " \
                                                   "response code.")
