@@ -38,15 +38,16 @@ class MatchLabelKeysTest < Minitest::Test
       case entry["mode"]
       when "create"
         server.send(:merge_label_keys!, object)
-        issues = Validator.send(:label_keys_errors, object, "Pod", :create, nil)
+        object = Validator.prepare_topology_spread(object, nil, "Pod", [])
+        issues = Validator.label_keys_errors(object, "Pod") + Validator.topology_spread_errors(object, nil, "Pod", [])
         spec = JSON.parse(JSON.generate(want["spec"]))
         same(spec["affinity"], object.dig("spec", "affinity"), "#{entry["name"]}: merged affinity")
         same(spec["topologySpreadConstraints"], object.dig("spec", "topologySpreadConstraints"), "#{entry["name"]}: merged constraints")
       when "update"
-        issues = Validator.send(:label_keys_errors, object, "Pod", :update, entry["old"])
+        issues = Validator.label_keys_errors(object, "Pod") + Validator.topology_spread_errors(object, entry["old"], "Pod", [])
       else
         template = {"kind" => "PodTemplate", "template" => {"metadata" => object["metadata"], "spec" => object["spec"]}}
-        issues = Validator.send(:label_keys_errors, template, "PodTemplate", :create, nil)
+        issues = Validator.label_keys_errors(template, "PodTemplate") + Validator.topology_spread_errors(template, nil, "PodTemplate", [])
         object = template
       end
 
