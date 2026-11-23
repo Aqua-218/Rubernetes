@@ -16,6 +16,7 @@ class NodeRestartAllContainersTest < Minitest::Test
   # with the next scripted code for their name (default 0).
   class Runtime
     attr_reader :created, :removed, :stopped, :sandboxes
+    attr_accessor :startup_ready
 
     def initialize(init_exits: {})
       @counter = 0
@@ -42,6 +43,8 @@ class NodeRestartAllContainersTest < Minitest::Test
     end
 
     def start_container(_id) = true
+
+    def exec(_id, _command, tty: false) = startup_ready ? 0 : 1
 
     def wait_container(id)
       code = Array(@init_exits[@names[id]]).shift || 0
@@ -152,6 +155,65 @@ class NodeRestartAllContainersTest < Minitest::Test
 
     assert_equal "False", condition(final, "AllContainersRestarting")["status"]
     assert_equal "Running", final["phase"]
+  end
+
+  def test_restartable_init_gates_following_containers_until_startup_probe_succeeds
+    runtime = Runtime.new
+    subject = lifecycle(runtime)
+    sidecar = container("sidecar", policy: "Always").merge("startupProbe" => {"exec" => {"command" => ["check"]}})
+    spec = pod(init: [container("init"), sidecar, container("following-init")], containers: [container("app")])
+    subject.start(spec)
+
+    assert_equal %w[init sidecar], runtime.created
+    assert_equal "Pending", @reporter.statuses.last["phase"]
+    assert_equal "False", condition(@reporter.statuses.last, "Initialized")["status"]
+    assert_equal false, entry(subject, "sidecar")[:status]["started"]
+
+    runtime.startup_ready = true
+    subject.reconcile(spec)
+
+    assert_equal %w[init sidecar following-init app], runtime.created
+    assert_equal 1, runtime.sandboxes
+    assert_equal "Running", @reporter.statuses.last["phase"]
+    assert_equal "True", condition(@reporter.statuses.last, "Initialized")["status"]
+    assert_equal true, entry(subject, "sidecar")[:status]["started"]
+  end
+
+  def test_image_update_restarts_only_the_sidecar_blocked_in_startup
+    runtime = Runtime.new
+    subject = lifecycle(runtime)
+    sidecar = container("gated", policy: "Always").merge("startupProbe" => {"exec" => {"command" => ["check"]}, "failureThreshold" => 1})
+    spec = pod(init: [container("started", policy: "Always"), sidecar], containers: [container("app")])
+    subject.start(spec)
+
+    assert_equal 1, entry(subject, "gated")[:status]["restartCount"]
+    original_id = entry(subject, "started")[:id]
+    spec["spec"]["initContainers"][1]["image"] = "example/alternate"
+    subject.reconcile(spec)
+
+    assert_equal 1, runtime.sandboxes
+    assert_equal original_id, entry(subject, "started")[:id]
+    assert_equal "example/alternate", entry(subject, "gated")[:spec]["image"]
+    assert_operator entry(subject, "gated")[:status]["restartCount"], :>=, 2
+    assert_equal "Pending", @reporter.statuses.last["phase"]
+    refute_includes runtime.created, "app"
+  end
+
+  def test_running_image_update_preserves_the_other_container_and_sandbox
+    runtime = Runtime.new
+    subject = lifecycle(runtime)
+    spec = pod(containers: [container("app"), container("unchanged")])
+    subject.start(spec)
+    original_id = entry(subject, "unchanged")[:id]
+    spec["spec"]["containers"][0]["image"] = "example/alternate"
+    subject.reconcile(spec)
+
+    assert_equal %w[app unchanged app], runtime.created
+    assert_equal 1, runtime.sandboxes
+    assert_equal original_id, entry(subject, "unchanged")[:id]
+    assert_equal 0, entry(subject, "unchanged")[:status]["restartCount"]
+    assert_equal 1, entry(subject, "app")[:status]["restartCount"]
+    assert_equal "example/alternate", entry(subject, "app")[:spec]["image"]
   end
 
   def test_sidecar_exit_restarts_every_container
