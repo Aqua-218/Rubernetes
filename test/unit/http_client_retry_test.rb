@@ -9,6 +9,19 @@ require "rubernetes/observability/metrics"
 # cut short by a reset connection after one second, at most ten times; and
 # the rest_client_* metrics count every attempt and every retry.
 class HTTPClientRetryTest < Minitest::Test
+  def test_proxy_exclusions_match_ipv6_literals_and_networks
+    proxy_environment = Rubernetes::Client::HTTPClient::ProxyEnvironment
+    address = URI("https://[fd00:d8:ffff:2::1]:6443")
+
+    assert proxy_environment.bypass?(address, ["fd00:d8:ffff:2::1"])
+    assert proxy_environment.bypass?(address, ["fd00:d8:ffff::/48"])
+    assert proxy_environment.bypass?(address, ["[fd00:d8:ffff:2::1]:6443"])
+    refute proxy_environment.bypass?(address, ["[fd00:d8:ffff:2::1]:8443"])
+    refute proxy_environment.bypass?(address, ["fd00:d8:fffe::/48", "proxy.example:80"])
+    assert proxy_environment.bypass?(address, ["*"])
+    refute proxy_environment.bypass?(URI("https://registry.k8s.io"), ["fd00:d8:ffff::/48"])
+  end
+
   Response = Rubernetes::Client::HTTPClient::Response
 
   def client(answers, sleeps)
