@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "volume_secrets"
+
 require_relative "attributes"
 
 module Rubernetes
@@ -41,8 +43,6 @@ module Rubernetes
           # DynamicResourceAllocation (GA).
           {"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims], "verbs" => %w[get]},
           {"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceslices], "verbs" => %w[deletecollection]},
-          # ClusterTrustBundleProjection reads bundles on the node.
-          {"apiGroups" => ["certificates.k8s.io"], "resources" => %w[clustertrustbundles], "verbs" => %w[get list watch]},
           # KubeletServiceAccountTokenForCredentialProviders (Beta, on).
           {"apiGroups" => [""], "resources" => %w[serviceaccounts], "verbs" => %w[get]}
         ].freeze
@@ -93,6 +93,12 @@ module Rubernetes
             when ["resource.k8s.io", "resourceslices"] then return authorize_resource_slice(node_name, attributes)
             when ["", "nodes"] then return authorize_node(node_name, attributes)
             when ["", "pods"] then return authorize_pod(node_name, attributes)
+            when ["certificates.k8s.io", "clustertrustbundles"]
+              if feature?("ClusterTrustBundle", false) && attributes.subresource.empty? && %w[get list watch].include?(attributes.verb)
+                return allow("node rule")
+              end
+
+              return no_opinion
             when ["certificates.k8s.io", "podcertificaterequests"]
               return authorize_pod_certificate_request(node_name, attributes) if feature?("PodCertificateRequest", false)
 
@@ -371,22 +377,14 @@ module Rubernetes
           references
         end
 
-        # The claim's volume's kubelet-visible CSI secrets (VisitPVSecretNames).
+        # The claim's volume's kubelet-visible secrets (VisitPVSecretNames).
         def volume_secret_names(namespace, claim_name)
           claim = graph_call(:persistent_volume_claim, namespace, claim_name)
           volume_name = claim&.dig("spec", "volumeName").to_s
           return [] if volume_name.nil? || volume_name.empty?
 
           pv = graph_call(:persistent_volume, volume_name)
-          csi = pv&.dig("spec", "csi")
-          return [] unless csi.is_a?(Hash)
-
-          %w[nodePublishSecretRef nodeStageSecretRef nodeExpandSecretRef].filter_map do |field|
-            ref = csi[field]
-            next unless ref.is_a?(Hash) && !ref["name"].to_s.empty?
-
-            [:secrets, (ref["namespace"] || namespace).to_s, ref["name"].to_s]
-          end
+          pv ? VolumeSecrets.node_references(pv) : []
         end
 
         SECRET_REF_VOLUMES = %w[azureFile cephfs cinder flexVolume rbd scaleIO iscsi storageos].freeze
