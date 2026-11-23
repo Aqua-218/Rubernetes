@@ -53,6 +53,18 @@ class GarbageCollectorCycleTest < Minitest::Test
     assert_equal(%w[b], collector.plan([b]).operations.map { |operation| operation.object.dig("metadata", "name") })
   end
 
+  def test_deep_foreground_chain_is_deleted_leaf_first
+    root = object("ConfigMap", "root", uid: "root")
+    chain = [root]
+    4_000.times { |i| chain << object("ConfigMap", "c#{i}", uid: i.to_s, owners: [chain.last]) }
+
+    result = collector.deletion_plan(root, chain.reverse, propagation_policy: :foreground)
+
+    assert_empty result.events
+    assert_equal(chain.reverse.map { |item| item.dig("metadata", "uid") },
+                 result.operations.map { |op| op.object.dig("metadata", "uid") })
+  end
+
   def test_an_object_with_a_live_owner_is_kept
     owner = object("Service", "svc", uid: "svc-uid")
     slice = object("EndpointSlice", "slice", uid: "slice", owners: [owner])
