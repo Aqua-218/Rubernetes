@@ -1,0 +1,78 @@
+module Rubernetes
+  module Manifest
+    type resource = Hash[String, untyped]
+    type resource_name = String | Symbol
+    type service_type = "ClusterIP" | "NodePort" | "LoadBalancer" | :cluster_ip | :node_port | :load_balancer
+    type ingress_path_type = "Prefix" | "Exact" | "prefix" | "exact" | :Prefix | :Exact | :prefix | :exact
+    type disruption_threshold = Integer | String
+
+    class Error < StandardError
+    end
+
+    module Autoscale
+      def autoscale: (resource workload, replicas: Range[Integer], cpu: Integer, ?memory: Integer?,
+                      ?container: (String | Symbol)?, ?name: resource_name?) -> resource
+                   | (resource workload, replicas: Range[Integer], ?cpu: Integer?, memory: Integer,
+                      ?container: (String | Symbol)?, ?name: resource_name?) -> resource
+    end
+
+    module Expose
+      def expose: (resource workload, ports: Hash[String | Symbol, Integer], ?name: resource_name?,
+                    ?type: service_type, ?prefer: (:same_zone | :same_node)?,
+                    ?load_balancer_class: String?, ?allocate_node_ports: bool?) -> resource
+    end
+
+    module IngressFor
+      def ingress_for: (resource service, host: String, ?path: String, ?port: (Integer | String | Symbol)?,
+                        ?class_name: resource_name?, ?path_type: ingress_path_type) -> resource
+    end
+
+    module DisruptionBudget
+      def disruption_budget: (resource workload, max_unavailable: disruption_threshold,
+                               ?min_available: nil, ?name: resource_name?) -> resource
+                           | (resource workload, ?max_unavailable: nil, min_available: disruption_threshold,
+                               ?name: resource_name?) -> resource
+    end
+
+    class Builder
+      include Expose
+      include IngressFor
+      include Autoscale
+      include DisruptionBudget
+
+      def self.load: (registry_path: String | _ToPath, openapi_path: String | _ToPath) -> instance
+      def initialize: (registry: Hash[String, untyped], definitions: Hash[String, untyped]) -> void
+      attr_reader result: Array[resource]
+      def evaluate: (String source, String filename) -> Array[resource]
+      def declaration_lines: () -> Array[Integer?]
+
+      # This block keeps its lexical self.
+      def check: (String description) { (Array[resource] resources) -> untyped } -> nil
+      def in_namespace: [Result] (resource_name name) { () -> Result } -> Result
+
+      # Resource and nested object blocks run with an ObjectBuilder as self.
+      def resource: (api_version: String, kind: String, name: resource_name, ?namespace: resource_name?,
+                      **untyped metadata) ?{ () [self: ObjectBuilder] -> void } -> resource
+    end
+
+    class ObjectBuilder
+      # Generated setters forward the existing missing-value sentinel for the keyword and block forms.
+      def field: (resource_name json_name, untyped value) -> untyped
+               | (resource_name json_name, ?:__rubernetes_missing__ value, **untyped fields) -> untyped
+               | (resource_name json_name, ?:__rubernetes_missing__ value) { () [self: ObjectBuilder] -> void } -> resource
+      def type_name: () -> String
+    end
+
+    interface _Environment
+      def fetch: (String name) -> String
+    end
+
+    class Sandbox
+      def initialize: (registry_path: String | _ToPath, openapi_path: String | _ToPath,
+                       ?timeout: Integer | Float, ?max_output: Integer, ?max_resources: Integer) -> void
+
+      def compile: (String | _ToPath path, allow_code: bool, ?environment: Array[resource_name],
+                    ?env: _Environment) ?{ (Array[Integer?] declaration_lines) -> void } -> Array[resource]
+    end
+  end
+end
