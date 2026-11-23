@@ -54,7 +54,7 @@ module Rubernetes
         attr_accessor :object
 
         def initialize(operation:, user:, group:, version:, resource:, kind:, subresource: "", namespace: "", name: "", object: nil,
-                       old_object: nil, dry_run: false, options: nil)
+                       old_object: nil, dry_run: false, options: nil, kind_group: group, kind_version: version, webhook_decoder: nil)
           @operation = operation.to_s.upcase
           raise ArgumentError, "unknown admission operation #{operation}" unless OPERATIONS.include?(@operation)
 
@@ -63,6 +63,8 @@ module Rubernetes
           @version = version.to_s
           @resource = resource.to_s
           @kind = kind.to_s
+          @kind_group = kind_group.to_s
+          @kind_version = kind_version.to_s
           @subresource = subresource.to_s
           @namespace = namespace.nil? || namespace == :cluster || namespace == :all ? "" : namespace.to_s
           @name = name.to_s
@@ -70,13 +72,18 @@ module Rubernetes
           @old_object = old_object
           @dry_run = dry_run == true
           @options = options
+          @webhook_decoder = webhook_decoder
           @warnings = []
           @annotations = {}
           @reinvocation = false
         end
 
         def api_version
-          @group.empty? ? @version : "#{@group}/#{@version}"
+          @kind_group.empty? ? @kind_version : "#{@kind_group}/#{@kind_version}"
+        end
+
+        def decode_webhook_object(patched)
+          @webhook_decoder ? @webhook_decoder.call(gvk, patched) : patched
         end
 
         def gvr
@@ -84,7 +91,7 @@ module Rubernetes
         end
 
         def gvk
-          [@group, @version, @kind]
+          [@kind_group, @kind_version, @kind]
         end
 
         def warn(message)
