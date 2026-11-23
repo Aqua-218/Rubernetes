@@ -14,6 +14,7 @@ module Rubernetes
     end
 
     class ValidationError < Error; end
+    class ContainerConfigError < ValidationError; end
     class InvalidTransition < Error; end
     class OwnershipConflict < Error; end
     class JournalCorruption < Error; end
