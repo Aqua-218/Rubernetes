@@ -40,13 +40,22 @@ module Rubernetes
         referenced = reference(schema)
         return object(referenced, value, path) if referenced
 
-        if schema["type"] == "array" && value.is_a?(Array)
+        # An explicit null is meaningful to server-side apply (clear a field).
+        return if value.nil?
+
+        case schema["type"]
+        when "array"
+          check_type!(value.is_a?(Array), path, "array", value)
           items = schema["items"] || {}
           value.each_with_index.map { |item, index| coerce(items, item, "#{path}[#{index}]") }
-        elsif schema["additionalProperties"].is_a?(Hash) && value.is_a?(Hash)
-          value.to_h { |key, item| [String(key), coerce(schema["additionalProperties"], item, "#{path}.#{key}")] }
+        when "object"
+          check_type!(value.is_a?(Hash), path, "object", value)
+          items = schema["additionalProperties"]
+          return plain(value) unless items.is_a?(Hash)
+
+          value.to_h { |key, item| [String(key), coerce(items, item, "#{path}.#{key}")] }
         else
-          plain(value)
+          scalar(schema, value, path)
         end
       end
 
@@ -55,7 +64,9 @@ module Rubernetes
       # it is.
       def object(name, value, path)
         properties = self.defined?(name) ? definition(name)["properties"] : nil
-        return plain(value) unless properties && value.is_a?(Hash)
+        return plain(value) unless properties && !value.nil?
+
+        check_type!(value.is_a?(Hash), path, name.split(".").last, value)
 
         value.to_h do |key, item|
           json_name = json_name(properties, key) || raise(UnknownField, unknown_field(key, name, properties, path))
@@ -64,6 +75,23 @@ module Rubernetes
       end
 
       private
+
+      def scalar(schema, value, path)
+        type = schema["type"]
+        valid = case type
+                when "integer" then value.is_a?(Integer)
+                when "number" then value.is_a?(Integer) || (value.is_a?(Float) && value.finite?)
+                when "boolean" then value.equal?(true) || value.equal?(false)
+                when "string" then value.is_a?(String) || value.is_a?(Symbol) || (schema["format"] == "int-or-string" && value.is_a?(Integer))
+                else true
+                end
+        check_type!(valid, path, type, value)
+        plain(value)
+      end
+
+      def check_type!(valid, path, expected, value)
+        raise Error, "#{path}: expected #{expected}, got #{value.class}" unless valid
+      end
 
       def json_name(properties, key)
         text = String(key)
