@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "base64"
+
 require_relative "../test_helper"
 require "rubernetes/volume"
 require "rubernetes/bootstrap"
@@ -8,7 +10,8 @@ require "timeout"
 
 class CSIUDSClientTest < Minitest::Test
   class State
-    attr_accessor :after_create, :controller_advertised, :delete_status, :volume_context, :publish_context, :publish_status
+    attr_accessor :after_create, :controller_advertised, :delete_status, :volume_context, :publish_context, :publish_status,
+                  :node_multi_writer
     attr_reader :requests
 
     def initialize
@@ -158,7 +161,9 @@ class CSIUDSClientTest < Minitest::Test
     end
 
     def node_get_capabilities(_request, _call = nil)
-      capabilities = %i[STAGE_UNSTAGE_VOLUME GET_VOLUME_STATS EXPAND_VOLUME].map do |type|
+      types = %i[STAGE_UNSTAGE_VOLUME GET_VOLUME_STATS EXPAND_VOLUME]
+      types << :SINGLE_NODE_MULTI_WRITER if @state.node_multi_writer
+      capabilities = types.map do |type|
         Csi::V1::NodeServiceCapability.new(rpc: Csi::V1::NodeServiceCapability::RPC.new(type: type))
       end
       Csi::V1::NodeGetCapabilitiesResponse.new(capabilities: capabilities)
@@ -197,6 +202,38 @@ class CSIUDSClientTest < Minitest::Test
     end
   end
 
+  class VolumeAPI
+    attr_reader :objects
+
+    def initialize
+      @objects = {}
+    end
+
+    def get(resource, name, namespace:, api_version:)
+      return {"spec" => {"attachRequired" => false, "requiresRepublish" => true, "fsGroupPolicy" => "None"}} if resource == "csidrivers"
+
+      objects[[resource, namespace, name]]
+    end
+
+    def claim(name, source)
+      objects[["persistentvolumeclaims", "tenant", name]] = {
+        "spec" => {"volumeName" => name}, "status" => {"phase" => "Bound"}
+      }
+      objects[["persistentvolumes", nil, name]] = {
+        "metadata" => {"name" => name},
+        "spec" => {"accessModes" => ["ReadWriteOnce"], "capacity" => {"storage" => "64Mi"}}.merge(source)
+      }
+    end
+
+    def add_secret(name, value)
+      objects[["secrets", "tenant", name]] = {"data" => {"credential" => Base64.strict_encode64(value)}}
+    end
+
+    def remove_secret(name)
+      objects.delete(["secrets", "tenant", name])
+    end
+  end
+
   def setup
     @directory = Dir.mktmpdir("csi-uds")
     @socket = File.join(@directory, "plugin.sock")
@@ -222,6 +259,24 @@ class CSIUDSClientTest < Minitest::Test
     client = Rubernetes::Volume::CSIUDSClient.new(socket: @socket, timeout: 2)
     @clients << client
     client
+  end
+
+  def test_node_access_modes_follow_the_drivers_single_node_multi_writer_capability
+    {
+      false => {"ReadWriteOnce" => :SINGLE_NODE_WRITER, "ReadWriteOncePod" => :SINGLE_NODE_WRITER},
+      true => {"ReadWriteOnce" => :SINGLE_NODE_MULTI_WRITER, "ReadWriteOncePod" => :SINGLE_NODE_SINGLE_WRITER}
+    }.each do |advertised, modes|
+      @state.node_multi_writer = advertised
+      client = new_client
+      modes.each do |kubernetes, csi|
+        context = {"accessModes" => [kubernetes]}
+        client.stage("volume-1", "/staging/volume-1", token: "stage", context: context)
+        client.publish_node("volume-1", "/staging/volume-1", "/pods/pod-a", token: "publish", context: context)
+        client.expand_node("volume-1", "/pods/pod-a", token: "expand", capacity_bytes: 128, volume_capability: context)
+
+        %i[stage publish_node expand_node].each { |rpc| assert_equal csi, @state.request(rpc).volume_capability.access_mode.mode }
+      end
+    end
   end
 
   def test_real_uds_frames_cover_negotiation_controller_node_and_snapshot_paths
@@ -518,6 +573,81 @@ class CSIUDSClientTest < Minitest::Test
     refute_includes persisted, "memory-only-secret"
   end
 
+  def test_migrated_pvc_and_inline_volume_keep_cloud_handles_on_the_node_rpc
+    api = VolumeAPI.new
+    disk_handle = "/subscriptions/subscription/resourceGroups/rg/providers/Microsoft.Compute/disks/data"
+    share_handle = "#account#shared#share#tenant"
+    api.claim("disk", "azureDisk" => {"diskName" => "data", "diskURI" => disk_handle, "kind" => "Managed", "fsType" => "ext4"})
+    api.add_secret("azure-storage-account-account-secret", "share-stage-secret")
+    manager, _reopen = kubernetes_volume_manager(api)
+    pod = volume_pod(
+      {"name" => "disk", "persistentVolumeClaim" => {"claimName" => "disk"}},
+      {"name" => "share", "azureFile" => {"shareName" => "shared", "secretName" => "azure-storage-account-account-secret"}}
+    )
+    mounts = prepare_kubernetes_volumes(manager, api, pod).fetch("mounts")
+
+    assert_equal [disk_handle, share_handle], @state.requests_for(:stage).map(&:volume_id)
+    assert_equal [disk_handle, share_handle], @state.requests_for(:publish_node).map(&:volume_id)
+    assert_equal([{}, {"credential" => "share-stage-secret"}], @state.requests_for(:stage).map { |request| request.secrets.to_h })
+    assert_equal([{}, {}], @state.requests_for(:publish_node).map { |request| request.secrets.to_h })
+    assert_equal disk_handle, manager.volume(mounts.fetch("disk").fetch("id")).spec.dig("backendResult", "volumeId")
+    refute_includes mounts.fetch("disk").fetch("path"), "/subscriptions/"
+    assert_raises(Rubernetes::Volume::ValidationError) do
+      manager.create_volume({"id" => disk_handle, "emptyDir" => {}}, token: "bad-local-id")
+    end
+    assert_empty @state.requests_for(:create_volume)
+  end
+
+  def test_csi_rpc_secret_scope_survives_manager_reopen_and_reads_rotated_secret
+    api = VolumeAPI.new
+    handle = "projects/project/zones/zone/disks/data"
+    refs = %w[nodeStage nodePublish nodeExpand].to_h do |purpose|
+      [purpose, {"namespace" => "tenant", "name" => purpose.downcase}]
+    end
+    refs.each_value { |ref| api.add_secret(ref.fetch("name"), "original-#{ref.fetch("name")}-credential") }
+    source = {"driver" => "test.csi", "volumeHandle" => handle}
+    refs.each { |purpose, reference| source["#{purpose}SecretRef"] = reference }
+    api.claim("disk", "csi" => source)
+    manager, reopen = kubernetes_volume_manager(api)
+    pod = volume_pod({"name" => "disk", "persistentVolumeClaim" => {"claimName" => "disk"}})
+    id, target = prepare_kubernetes_volumes(manager, api, pod).fetch("mounts").fetch("disk").values_at("id", "path")
+
+    assert_equal({"credential" => "original-nodestage-credential"}, @state.request(:stage).secrets.to_h)
+    assert_equal({"credential" => "original-nodepublish-credential"}, @state.request(:publish_node).secrets.to_h)
+    assert_equal refs, manager.volume(id).spec.fetch("secretRefs")
+
+    api.add_secret("nodepublish", "rotated-publish-credential")
+
+    assert manager.node_republish(id, pod, target, token: "rotation")
+    assert_equal({"credential" => "rotated-publish-credential"}, @state.request(:publish_node).secrets.to_h)
+
+    api.add_secret("nodepublish", "recovered-publish-credential")
+    restarted = reopen.call
+
+    assert_empty restarted.recover(observed_mounts: manager.mount_ledger.entries).errors
+    assert restarted.node_republish(id, pod, target, token: "republish")
+    assert_equal handle, @state.request(:publish_node).volume_id
+    assert_equal({"credential" => "recovered-publish-credential"}, @state.request(:publish_node).secrets.to_h)
+
+    restarted.node_expand_in_use(id, pod, target, capacity_bytes: 128, token: "expand")
+
+    assert_equal handle, @state.request(:expand_node).volume_id
+    assert_equal({"credential" => "original-nodeexpand-credential"}, @state.request(:expand_node).secrets.to_h)
+
+    api.remove_secret("nodepublish")
+    publish_count = @state.requests_for(:publish_node).length
+    assert_raises(Rubernetes::Volume::CSIUnavailable) { restarted.node_republish(id, pod, target, token: "missing-secret") }
+    assert_equal publish_count, @state.requests_for(:publish_node).length
+
+    persisted = Dir.glob(File.join(restarted.data_dir, "**", "*.json")).map { |path| File.binread(path) }.join
+
+    refute_includes persisted, "original-nodestage-credential"
+    refute_includes persisted, "original-nodepublish-credential"
+    refute_includes persisted, "original-nodeexpand-credential"
+    refute_includes persisted, "rotated-publish-credential"
+    refute_includes persisted, "recovered-publish-credential"
+  end
+
   # Requirement: spec/node/volume.md §5.11.2. ROX is read-only at the
   # controller boundary and online expansion reaches every active node path.
   def test_manager_sends_rox_readonly_and_runs_node_expand_for_active_paths
@@ -640,5 +770,31 @@ class CSIUDSClientTest < Minitest::Test
     error = assert_raises(Rubernetes::Volume::CSIError) { client.delete_volume("maybe-gone", token: "delete-token-2") }
     assert_predicate error, :ambiguous?
     assert_equal "UNAVAILABLE", error.details.fetch("grpcCode")
+  end
+
+  private
+
+  def kubernetes_volume_manager(api)
+    bridge = Rubernetes::Volume::CSIBridge.new(socket: @socket, timeout: 2)
+    @clients << bridge.client
+    registry = Object.new
+    registry.define_singleton_method(:for_driver) do |driver|
+      Rubernetes::Volume::KubernetesCSIAdapter.new(driver: driver, bridge: bridge, api: api, node_name: "node-a")
+    end
+    assembler = Rubernetes::Bootstrap::Assembler.new(process_name: "rubernetes-agent")
+    process = {"runtime_profile" => "pure", "volume" => {"data_dir" => File.join(@directory, "manager"), "profile" => "test"}}
+    base = Rubernetes::Platform::Linux::Openat2.new(root: @directory, strict: true)
+    security = Rubernetes::Volume::PathSecurity.new(root: @directory, adapter: base, require_openat2: true)
+    reopen = -> { assembler.send(:build_volume, process, adapters: {csi: registry, volume_path_security: security}, client: api) }
+    [reopen.call, reopen]
+  end
+
+  def prepare_kubernetes_volumes(manager, api, pod)
+    reader = Rubernetes::Node::ResourceReader.new(client: api)
+    Rubernetes::Node::PodVolumes.new(volume: manager, reader: reader, node_name: "node-a").prepare(pod)
+  end
+
+  def volume_pod(*volumes)
+    {"metadata" => {"uid" => "pod-uid", "name" => "pod", "namespace" => "tenant"}, "spec" => {"volumes" => volumes}}
   end
 end
