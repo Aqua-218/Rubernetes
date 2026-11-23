@@ -118,6 +118,7 @@ module M2LifecycleProbe
       @names = {}
       @logs = Hash.new { |hash, key| hash[key] = +"" }
       @killed = {}
+      @stopped = {}
     end
 
     def name_for(id)
@@ -140,6 +141,7 @@ module M2LifecycleProbe
     def start_container(id)
       @calls << ["start", name_for(id)]
       @killed.delete(id)
+      @stopped.delete(id)
       true
     end
 
@@ -168,6 +170,7 @@ module M2LifecycleProbe
       return {"running" => false, "exitCode" => 137} if @killed[id]
       return false if @ignore_term
 
+      @stopped[id] = true if @stop_result == true
       @stop_result
     end
 
@@ -179,6 +182,7 @@ module M2LifecycleProbe
 
     def container_status(id)
       return {"state" => "terminated", "terminated" => {"exitCode" => 137, "reason" => "Error", "message" => @logs[id].dup}} if @killed[id]
+      return {"state" => "terminated", "exitCode" => 0} if @stopped[id]
 
       {"state" => "running", "running" => {}}
     end
@@ -489,9 +493,10 @@ module M2LifecycleProbe
       end
       # Liveness failures of the container that was (or is about to be) killed:
       # the kubelet counts the Unhealthy events recorded before the Killing event.
-      if kill_event.nil? || failures_before_kill.zero? || status["restartCount"].to_i >= 1
-        failures_before_kill = probes.failure_count(container_id,
-                                                    type: "liveness")
+      if kill_event
+        failures_before_kill = events.take_while { |event| event != kill_event }.count do |event|
+          event["type"] == "probe.unhealthy" && event["probe"] == "liveness" && event["container_id"] == container_id
+        end
       end
       break if status["restartCount"].to_i >= 1
     end
@@ -711,10 +716,7 @@ module M2LifecycleProbe
       apply_lifecycle_native_flow["measurement_source"] = "production_native_lifecycle"
       kernel_l3_available = M2ProbeSupport.l3_available?
       l3_available = kernel_l3_available && inventory_measurement.fetch("missing_resource_kinds").empty?
-      matrix_passed = sigkill_matrix.all? do |entry|
-        entry["kill_observed"] == true && entry["restart_observed"] == true && entry["wal_replayed"] == true &&
-          entry["live_wrong_deletion_count"] == 0 && entry["dead_residual_count"] == 0
-      end
+      matrix_passed = sigkill_matrix.all? { |entry| M2ProbeSupport.sigkill_sample_passed?(entry) }
       subresources_passed = subresource_e2e.values.all? { |entry| entry["passed"] == true }
       semantics_matrix = lifecycle_semantics_matrix
       lifecycle_oracle = M2KubernetesLifecycleOracle.run(input: input, actual_cases: semantics_matrix)
@@ -756,7 +758,7 @@ module M2LifecycleProbe
         "lifecycle_timeline_sha256" => lifecycle_oracle["timeline_sha256"],
         "oracle_difference_count" => oracle_difference_count,
         "failure_injection_count" => sigkill_matrix.length,
-        "live_leak_count" => live + sigkill_matrix.sum { |entry| entry.fetch("dead_residual_count", 1) },
+        "live_leak_count" => live + sigkill_matrix.sum { |entry| M2ProbeSupport.sigkill_sample_leaks(entry) },
         "orphan_count" => sigkill_matrix.sum { |entry| Array(entry.dig("recovery", "errors")).length },
         "measurement_level" => l3_available ? "L3" : "L2",
         "measurement_source" => "production_native_lifecycle",
