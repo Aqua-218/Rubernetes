@@ -75,6 +75,28 @@ class BootstrapTest < Minitest::Test
     end
   end
 
+  def test_static_pod_url_configuration_and_header_field_validation
+    valid = {"static_pod_url" => "https://example.invalid/pods",
+             "static_pod_url_header" => {"Authorization" => ["Bearer fixture"], "X-Fixture-Part" => %w[first second]},
+             "http_check_frequency_seconds" => 2}
+    factory = lambda do |options|
+      Tempfile.create(["rubernetes-static-url", ".yml"]) do |file|
+        file.write(JSON.generate({"processes" => {"rubernetes-agent" => options}}))
+        file.flush
+        Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
+      end
+    end
+    config = factory.call(valid)
+
+    assert_equal %w[first second], config.process.dig("static_pod_url_header", "X-Fixture-Part")
+    assert_equal 2, config.process.fetch("http_check_frequency_seconds")
+    assert_raises(Rubernetes::Bootstrap::Config::Error) { factory.call(valid.merge("static_pod_url" => "file:///tmp/pods")) }
+    assert_raises(Rubernetes::Bootstrap::Config::Error) { factory.call(valid.merge("http_check_frequency_seconds" => 0)) }
+    ["not-an-array", ["invalid\r\nfield"]].each do |values|
+      assert_raises(Rubernetes::Bootstrap::Config::Error) { factory.call(valid.merge("static_pod_url_header" => {"X-Fixture" => values})) }
+    end
+  end
+
   def test_config_rejects_invalid_csi_socket_and_peer_identity_ranges
     invalid_values = {
       "socket_uid" => -1,
@@ -100,6 +122,24 @@ class BootstrapTest < Minitest::Test
           Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
         end
         assert_match(/#{Regexp.escape(key)}/, error.message)
+      end
+    end
+  end
+
+  def test_config_validates_native_image_staging_root
+    Tempfile.create(["rubernetes-image-staging", ".yml"]) do |file|
+      file.write("processes:\n  rubernetes-agent:\n    node_name: n\n    image:\n      staging_root: /var/lib/rubernetes/images\n")
+      file.flush
+      config = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
+
+      assert_equal "/var/lib/rubernetes/images", config.process.dig("image", "staging_root")
+      file.rewind
+      file.truncate(0)
+      file.write("processes:\n  rubernetes-agent:\n    node_name: n\n    image:\n      staging_root: relative/images\n")
+      file.flush
+
+      assert_raises(Rubernetes::Bootstrap::Config::Error) do
+        Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
       end
     end
   end
