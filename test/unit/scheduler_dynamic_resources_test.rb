@@ -112,6 +112,136 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     {"resourceClaims" => api.claims.values, "resourceSlices" => slices, "deviceClasses" => [device_class]}
   end
 
+  def test_cel_runtime_error_preserves_queued_pod_for_retry_without_allocating
+    selected = claim("c1")
+    selected.dig("spec", "devices", "requests", 0, "exactly")["selectors"] = [
+      {"cel" => {"expression" => "device.attributes['#{DRIVER}'].exists"}}
+    ]
+    slices = [slice("n1", ["gpu-0"]), slice("n2", ["gpu-1"])]
+    slices.first.dig("spec", "devices", 0)["attributes"] = {"exists" => {"bool" => true}}
+    api = API.new([selected])
+    subject = framework(api)
+    subject.enqueue(pod("p1", claims: ["c1"]))
+
+    result = subject.schedule_next(nodes: [node("n1"), node("n2")], volume_data: volume_data(api, slices))
+
+    assert_predicate result, :requeued?
+    assert_equal "p1", result.pod.name
+    assert_instance_of Scheduler::FilterError, result.error
+    assert_includes result.error.message, "CEL runtime error: no such key: exists"
+    assert_equal 1, subject.queue.backoff_size
+    assert_empty api.calls
+  end
+
+  def test_list_attributes_use_cel_and_intersection_when_the_scheduler_gate_is_enabled
+    gpu_claim = claim("c1", count: 2)
+    devices = gpu_claim.fetch("spec").fetch("devices")
+    devices["constraints"] = [{"matchAttribute" => "#{DRIVER}/zones"}]
+    devices["requests"].first.fetch("exactly")["selectors"] = [
+      {"cel" => {"expression" => "device.attributes['#{DRIVER}'].zones.includes('blue')"}}
+    ]
+    gpu_slice = slice("n1", %w[gpu-0 gpu-1 gpu-2])
+    gpu_slice.dig("spec", "devices").zip([
+                                           {"strings" => %w[red blue]}, {"strings" => %w[red]}, {"string" => "blue"}
+                                         ]).each { |device, attribute| device["attributes"] = {"zones" => attribute} }
+
+    [false, true].each do |enabled|
+      api = API.new([gpu_claim])
+      subject = Scheduler::Framework.new(feature_gates: {"DRAListTypeAttributes" => enabled})
+      subject.dynamic_resources.api = api
+      schedule = lambda do
+        subject.schedule(pod("p1", claims: ["c1"]), [node("n1")], volume_data: volume_data(api, [gpu_slice]))
+      end
+
+      if enabled
+        result = schedule.call
+
+        assert_predicate result, :scheduled?, result.inspect
+        devices = api.get_claim("ns", "c1").dig("status", "allocation", "devices", "results")
+
+        assert_equal(%w[gpu-0 gpu-2], devices.map { |device| device.fetch("device") })
+      else
+        error = assert_raises(Scheduler::PluginError, &schedule)
+        assert_includes error.message, "unsupported attribute value"
+        assert_empty api.calls
+      end
+    end
+  end
+
+  def test_node_allocatable_claims_fit_and_account_for_the_footprint_of_bound_pods
+    gpu_slice = slice("n1", %w[gpu-0])
+    gpu_slice.dig("spec", "devices").first["nodeAllocatableResourceMappings"] = {"cpu" => {"allocationMultiplier" => "3"}}
+    first = pod("p1", claims: ["c1"])
+    first.dig("spec", "containers").first["resources"] = {"claims" => [{"name" => "c1"}], "requests" => {"cpu" => "500m"}}
+    statuses = [{"resourceClaimName" => "c1", "containers" => ["c"], "resources" => {"cpu" => "3"}}]
+
+    [false, true].each do |enabled|
+      api = API.new([claim("c1")])
+      subject = Scheduler::Framework.new(feature_gates: {"DRANodeAllocatableResources" => enabled})
+      subject.dynamic_resources.api = api
+      undersized = node("n1")
+      undersized["status"]["allocatable"]["cpu"] = "3"
+      result = subject.schedule(first, [undersized], volume_data: volume_data(api, [gpu_slice]))
+
+      assert_equal !enabled, result.scheduled?, result.inspect
+      next unless enabled
+
+      result = subject.schedule(first, [node("n1")], volume_data: volume_data(api, [gpu_slice]))
+
+      assert_predicate result, :scheduled?, result.inspect
+      assert_equal [["ns", "p1", {"nodeAllocatableResourceClaimStatuses" => statuses}]], api.pod_statuses
+      assert_equal statuses, result.pod.dig("status", "nodeAllocatableResourceClaimStatuses")
+
+      second = pod("p2")
+      second.dig("spec", "containers").first["resources"] = {"requests" => {"cpu" => "1"}}
+      result = subject.schedule(second, [node("n1"), node("n2")], pods: [result.pod])
+
+      assert_predicate result, :scheduled?, result.inspect
+      assert_equal "n2", result.node.name
+    end
+  end
+
+  def test_gang_members_share_a_pod_group_owned_claim_when_enabled
+    group = {"metadata" => {"namespace" => "ns", "name" => "batch", "uid" => "batch-uid"},
+             "spec" => {"schedulingPolicy" => {"gang" => {"minCount" => 2}},
+                        "resourceClaims" => [{"name" => "t", "resourceClaimTemplateName" => "template"}]}}
+    shared = claim("claim-batch")
+    shared["metadata"]["ownerReferences"] = [{"apiVersion" => "scheduling.k8s.io/v1alpha2", "kind" => "PodGroup",
+                                              "name" => "batch", "uid" => "batch-uid", "controller" => true}]
+    members = %w[p1 p2].map do |name|
+      pod(name, template: "template", status: {"resourceClaimStatuses" => [{"name" => "t", "resourceClaimName" => "claim-batch"}]}).tap do |object|
+        object["spec"]["schedulingGroup"] = {"podGroupName" => "batch"}
+      end
+    end
+
+    [false, true].each do |enabled|
+      api = API.new([shared])
+      bound = []
+      binder = lambda do |object, _node|
+        bound << object.name
+        true
+      end
+      subject = Scheduler::Framework.new(bind: binder,
+                                         feature_gates: {"GenericWorkload" => true, "GangScheduling" => true,
+                                                         "DRAWorkloadResourceClaims" => enabled})
+      subject.dynamic_resources.api = api
+      members.each { |member| subject.enqueue(member) }
+      result = subject.schedule_next(nodes: [node("n1")], pods: members, pod_groups: {"ns/batch" => group},
+                                     volume_data: volume_data(api, [slice("n1", %w[gpu-0])]))
+
+      assert_equal enabled, result.scheduled?, result.inspect
+      assert_equal(enabled ? %w[p1 p2] : [], bound.sort)
+      if enabled
+        ref = {"apiGroup" => "scheduling.k8s.io", "resource" => "podgroups", "name" => "batch", "uid" => "batch-uid"}
+
+        assert_equal [ref], api.get_claim("ns", "claim-batch").dig("status", "reservedFor")
+        assert_equal(1, api.calls.count { |op, _| op == :update_status })
+      else
+        assert_empty api.calls
+      end
+    end
+  end
+
   def test_pod_is_placed_where_devices_exist_and_claim_is_written
     api = API.new([claim("c1")])
     subject = framework(api)
