@@ -8,6 +8,8 @@ gem "rails", "~> 8.1.4"
 gem "propshaft"
 # Use sqlite3 as the database for Active Record
 gem "sqlite3", ">= 2.1"
+# Decode Prometheus protobuf scrapes.
+gem "google-protobuf", "4.36.0"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Ruby 3.4.11's default json; the shared gem dir must not grow a json 3.x that
