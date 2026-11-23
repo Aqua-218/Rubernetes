@@ -34,7 +34,64 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
     [response.status, body["spec"] || {}, body["message"].to_s]
   end
 
+  def test_get_and_list_normalize_stored_services_without_mutating_them
+    api = server(DUAL.reverse)
+    resource = api.registry.find_gvr(group: "", version: "v1", resource: "services")
+    base = "/api/v1/namespaces/team/services"
+    cases = {
+      "legacy" => [{"clusterIP" => "10.96.0.77", "ports" => [{"port" => 80}]}, [["10.96.0.77"], ["IPv4"], "SingleStack"]],
+      "both" => [{"clusterIP" => "fd00:d8:5::8", "clusterIPs" => ["fd00:d8:5::8", "10.96.0.8"]},
+                 [["fd00:d8:5::8", "10.96.0.8"], %w[IPv6 IPv4], "RequireDualStack"]],
+      "alias" => [{"type" => "ExternalName", "externalName" => "web.example", "internalTrafficPolicy" => "Local"}, [nil, nil, nil]],
+      "manual" => [{"clusterIP" => "None", "ports" => []}, [["None"], %w[IPv6 IPv4], "RequireDualStack"]],
+      "selected" => [{"clusterIP" => "None", "selector" => {"app" => "web"}}, [["None"], ["IPv6"], "SingleStack"]]
+    }
+    fields = %w[clusterIPs ipFamilies ipFamilyPolicy]
+    cases.each do |name, (spec, expected)|
+      original = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => name, "namespace" => "team"}, "spec" => spec}
+      stored = api.store.create(resource: resource, namespace: "team", object: original)
+      response = call(api, "GET", "#{base}/#{name}", nil)
+
+      assert_equal expected, response.body.fetch("spec").values_at(*fields)
+      refute response.body.fetch("spec").key?("internalTrafficPolicy") if name == "alias"
+      assert_equal [{"port" => 80, "targetPort" => 80, "protocol" => "TCP"}], response.body.dig("spec", "ports") if name == "legacy"
+      refute response.body.fetch("spec").key?("ports") if name == "manual"
+
+      assert_equal stored, api.store.get(resource: resource, namespace: "team", name: name)
+    end
+    listed = call(api, "GET", base, nil).body.fetch("items")
+
+    assert_equal(cases.transform_values(&:last), listed.to_h { |item| [item.dig("metadata", "name"), item.fetch("spec").values_at(*fields)] })
+    watch = api.call(method: "GET", path: base, query: {"watch" => "true", "sendInitialEvents" => "true",
+                                                        "resourceVersionMatch" => "NotOlderThan", "allowWatchBookmarks" => "true"},
+                     identity: {"username" => "admin", "groups" => ["system:masters"]})
+    events = watch.body.take(cases.length + 1)
+
+    assert_equal "BOOKMARK", events.last.type
+    assert_equal(cases.transform_values(&:last), events.take(cases.length).to_h do |event|
+      [event.object.dig("metadata", "name"), event.object.fetch("spec").values_at(*fields)]
+    end)
+  ensure
+    watch&.body&.close
+  end
+
   SELECTOR = {"selector" => {"app" => "x"}}.freeze
+
+  def test_replacing_a_legacy_service_keeps_its_original_address
+    api = server(SINGLE)
+    resource = api.registry.find_gvr(group: "", version: "v1", resource: "services")
+    api.store.create(resource: resource, namespace: "team", object: {
+                       "apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "legacy", "namespace" => "team"},
+                       "spec" => {"clusterIP" => "10.96.0.77", "ports" => [{"port" => 80}]}
+                     })
+    result = call(api, "PUT", "/api/v1/namespaces/team/services/legacy", {
+                    "metadata" => {"name" => "legacy"}, "spec" => {"ports" => [{"port" => 81}]}
+                  })
+
+    assert_equal 200, result.status
+    assert_equal ["10.96.0.77"], result.body.dig("spec", "clusterIPs")
+    assert_equal ["IPv4"], result.body.dig("spec", "ipFamilies")
+  end
 
   def test_headless_selectorless_defaults_to_dual_stack_on_a_dual_stack_cluster
     status, spec, = create(server(DUAL), "hl", {"clusterIP" => "None"})
