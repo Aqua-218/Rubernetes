@@ -7,6 +7,7 @@ require "time"
 require "digest"
 require_relative "../test_helper"
 require_relative "../../tools/milestones/m8_gate"
+require_relative "../../tools/milestones/m8_probe_support"
 
 class M8GateTest < Minitest::Test
   def report(kind, cases, extra = {})
@@ -23,6 +24,54 @@ class M8GateTest < Minitest::Test
 
     refute result.fetch("passed")
     assert_operator result.fetch("error_count"), :>, 0
+  end
+
+  def test_compatibility_report_accepts_the_producers_native_host_facts
+    errors = []
+    generated = M8ProbeSupport.report(kind: "m8_selection", measurement_level: "integration_tested", started_at: Time.now.utc.iso8601, cases: [])
+
+    M8Gate.send(:validate_host, "selection", generated, errors)
+
+    assert_empty errors
+
+    generated.fetch("host").delete("ruby")
+    M8Gate.send(:validate_host, "selection", generated, errors)
+
+    assert_equal ["selection report must record host architecture, kernel, and Ruby description"], errors
+  end
+
+  def test_report_binds_the_adapter_and_rejects_a_changed_source_digest
+    errors = []
+    generated = M8ProbeSupport.report(kind: "m8_selection", measurement_level: "integration_tested", started_at: Time.now.utc.iso8601, cases: [])
+    adapter = "tools/milestones/m8_selection_probe.rb"
+    source = generated.fetch("sources").find { |entry| entry.fetch("path") == adapter }
+    M8Gate.send(:validate_sources, "selection", generated, errors)
+
+    assert_empty errors
+    refute_nil source
+
+    source["sha256"] = "0" * 64
+    M8Gate.send(:validate_sources, "selection", generated, errors)
+
+    assert_equal ["selection source #{adapter} digest does not match the source tree"], errors
+  end
+
+  def test_report_cannot_bind_a_local_runtime_file_through_an_alias
+    errors = []
+    sources = [{"path" => "tools/../apps/dashboard/config/master.key", "sha256" => "0" * 64}]
+    M8Gate.send(:validate_sources, "selection", {"sources" => sources}, errors)
+
+    assert_equal ["selection report source entry is outside the source inventory"], errors
+  end
+
+  def test_cumulative_validation_requires_m7_under_its_own_milestone_name
+    errors = []
+    M8Gate.send(:validate_prior_milestones, {"prior_milestones" => {}}, Dir.tmpdir, [], errors)
+
+    assert_equal 8, errors.size
+    assert(errors.any? { |error| error.start_with?("COMPLETE M7 evidence") })
+    refute(errors.any? { |error| error.start_with?("COMPLETE M8 evidence") })
+    assert_equal File.join(M8Gate::PROJECT_ROOT, "tools/milestones/m7_gate.rb"), M8Gate::PRIOR_GATES.fetch("M7")
   end
 
   # A K1 run that selected fewer than the full conformance set, or that let a
