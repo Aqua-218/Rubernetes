@@ -19,7 +19,8 @@ module Rubernetes
 
         def csi_driver_id(record)
           result = Types.key(record.spec, "backendResult", {})
-          Types.key(result, "volumeId", Types.key(result, "volume_id"))&.to_s
+          handle = Types.key(result, "volumeId", Types.key(result, "volume_id"))
+          Types.csi_handle(handle) unless handle.nil?
         end
 
         def csi_published_nodes(observed)
@@ -121,6 +122,7 @@ module Rubernetes
           id = Types.key(hash, id_key, Types.key(hash, underscored_id_key, Types.key(hash, "id")))
           raise CSIError, "CSI #{operation} returned an entry without #{id_key}" unless Types.present?(id)
 
+          Types.csi_handle(id, "CSI #{id_key}")
           hash
         end
 
