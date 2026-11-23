@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/runtime"
+require "fileutils"
 require "tmpdir"
 
 class RuntimeResourceLedgerPropertyTest < Minitest::Test
@@ -44,5 +45,7 @@ class RuntimeResourceLedgerPropertyTest < Minitest::Test
     end
 
     assert_empty ledger.resources
+  ensure
+    FileUtils.remove_entry(directory) if directory
   end
 end
