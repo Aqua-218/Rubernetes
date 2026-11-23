@@ -98,6 +98,26 @@ class NativeKernelObserverTest < Minitest::Test
     assert_equal true, observe([namespace, workspace]).last.dig("metadata", "identity_mismatch")
   end
 
+  def test_an_unmounted_workspace_is_not_live_once_its_namespace_is_gone
+    Dir.mktmpdir("kernel-observer-") do |directory|
+      workspace = unmounted_workspace_claim(directory)
+      entry = observe([workspace]).fetch(0)
+
+      assert_equal(false, entry.dig("metadata", "live"), "a leftover directory must be cleanable, not wedge recovery")
+      assert_equal(workspace.fetch("identity"), entry.fetch("identity"), "it is the claimed directory, not a reused one")
+    end
+  end
+
+  def test_an_unmounted_workspace_stays_live_while_its_namespace_is
+    Dir.mktmpdir("kernel-observer-") do |directory|
+      namespace = {"kind" => "namespace", "id" => "holder", "identity" => "holder-identity", "owner" => "op-1",
+                   "metadata" => {"kernel_identity" => {"pid" => @pid, "start_time" => @start_time,
+                                                        "namespace_links" => {"mount" => File.readlink("/proc/self/ns/mnt")}}}}
+
+      assert_equal(true, observe([namespace, unmounted_workspace_claim(directory)]).last.dig("metadata", "live"))
+    end
+  end
+
   def test_declares_itself_external
     assert_predicate(Observer.new(ledger: FakeLedger.new([])), :external_observer?)
   end
@@ -116,6 +136,14 @@ class NativeKernelObserverTest < Minitest::Test
     {"kind" => "workspace", "id" => path, "identity" => "workspace:#{path}:#{inode}",
      "owner" => "op-1", "state" => "Running",
      "metadata" => {"path" => path, "device" => device, "inode" => inode}}
+  end
+
+  def unmounted_workspace_claim(directory)
+    stat = File.stat(directory)
+    {"kind" => "workspace", "id" => "sb.c1", "identity" => "workspace:sb.c1:#{stat.ino}",
+     "owner" => "op-1", "state" => "Owned",
+     "metadata" => {"root" => directory, "mounted" => false, "mount_identity" => nil,
+                    "root_identity" => {"device" => stat.dev, "inode" => stat.ino}}}
   end
 
   def real_start_time(pid)
