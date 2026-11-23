@@ -1,17 +1,20 @@
 # frozen_string_literal: true
 
 require "base64"
+require "delegate"
 require "digest"
 require "json"
 require "openssl"
 require "securerandom"
 
 require_relative "../identity"
+require_relative "../../storage/memory_store/errors"
 
 module Rubernetes
   module Security
     module Encryption
       class Error < Security::Error; end
+      class UnreadableEnvelope < Error; end
 
       # Envelope encryption at rest (spec 5.1.8).  Every object gets its own
       # data encryption key (DEK); the DEK is wrapped by the key encryption
@@ -54,13 +57,15 @@ module Rubernetes
         end
 
         def decrypt(envelope, associated_data)
-          raise Error, "envelope is not an aesgcm envelope" unless envelope.start_with?(PREFIX)
+          raise UnreadableEnvelope, "envelope is not an aesgcm envelope" unless envelope.start_with?(PREFIX)
 
           key_name, payload = envelope.delete_prefix(PREFIX).split(":", 2)
           key = @keys.find { |candidate| candidate.name == key_name }
-          raise Error, "no aesgcm key named #{key_name.inspect}" if key.nil?
+          raise UnreadableEnvelope, "no aesgcm key named #{key_name.inspect}" if key.nil?
 
-          bytes = Base64.strict_decode64(payload)
+          bytes = Base64.strict_decode64(payload.to_s)
+          raise UnreadableEnvelope, "aesgcm envelope is truncated" if bytes.bytesize < NONCE_BYTES + 16
+
           nonce = bytes.byteslice(0, NONCE_BYTES)
           tag = bytes.byteslice(-16, 16)
           ciphertext = bytes.byteslice(NONCE_BYTES, bytes.bytesize - NONCE_BYTES - 16)
@@ -71,7 +76,7 @@ module Rubernetes
           cipher.auth_data = associated_data
           cipher.update(ciphertext) + cipher.final
         rescue OpenSSL::Cipher::CipherError, ArgumentError => error
-          raise Error, "aesgcm decryption failed: #{error.message}"
+          raise UnreadableEnvelope, "aesgcm decryption failed: #{error.message}"
         end
 
         def current_key?(envelope)
@@ -184,9 +189,16 @@ module Rubernetes
         end
 
         def decrypt(envelope, associated_data)
-          raise Error, "envelope is not a kms v2 envelope for #{@name}" unless envelope.start_with?(prefix)
+          raise UnreadableEnvelope, "envelope is not a kms v2 envelope for #{@name}" unless envelope.start_with?(prefix)
 
           document = JSON.parse(Base64.strict_decode64(envelope.delete_prefix(prefix)))
+          raise UnreadableEnvelope, "kms v2 envelope must be an object" unless document.is_a?(Hash)
+
+          key_id = document.fetch("keyID")
+          nonce = Base64.strict_decode64(document.fetch("nonce").to_s)
+          bytes = Base64.strict_decode64(document.fetch("ciphertext").to_s)
+          raise UnreadableEnvelope, "kms v2 envelope is truncated" if nonce.bytesize != 12 || bytes.bytesize < 16
+
           wrapped = Base64.strict_decode64(document.fetch("encryptedDEK"))
           dek = @mutex.synchronize { @dek_cache[wrapped] }
           if dek.nil?
@@ -198,25 +210,26 @@ module Rubernetes
             end
             @last_miss_at = now
             dek = timed_kms("Decrypt") do
-              @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: document.fetch("keyID"),
+              @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: key_id,
                                        annotations: document.fetch("annotations", {}))
             end
+            raise Error, "kms v2 returned an invalid data key" unless dek.is_a?(String) && dek.bytesize == 32
+
             @mutex.synchronize do
               @dek_cache[wrapped] = dek
               @dek_cache.shift while @dek_cache.length > @cache_size
             end
             note_cache_state
           end
-          note_key_id(document.fetch("keyID"), "from_storage")
-          bytes = Base64.strict_decode64(document.fetch("ciphertext"))
+          note_key_id(key_id, "from_storage")
           cipher = OpenSSL::Cipher.new("aes-256-gcm").decrypt
           cipher.key = dek
-          cipher.iv = Base64.strict_decode64(document.fetch("nonce"))
+          cipher.iv = nonce
           cipher.auth_tag = bytes.byteslice(-16, 16)
           cipher.auth_data = associated_data
           cipher.update(bytes.byteslice(0, bytes.bytesize - 16)) + cipher.final
         rescue OpenSSL::Cipher::CipherError, ArgumentError, JSON::ParserError, KeyError => error
-          raise Error, "kms v2 decryption failed: #{error.message}"
+          raise UnreadableEnvelope, "kms v2 decryption failed: #{error.message}"
         end
 
         def current_key?(envelope)
@@ -368,7 +381,7 @@ module Rubernetes
 
         def decrypt(envelope, associated_data)
           provider = @providers.find { |candidate| envelope.start_with?(candidate.prefix) }
-          raise Error, "no encryption provider matches the stored envelope" if provider.nil?
+          raise UnreadableEnvelope, "no encryption provider matches the stored envelope" if provider.nil?
 
           [provider.decrypt(envelope, associated_data), provider.equal?(writer) && provider.current_key?(envelope)]
         end
@@ -390,9 +403,11 @@ module Rubernetes
         ENVELOPE_KEY = "__encrypted__"
         CLEAR_FIELDS = %w[apiVersion kind metadata].freeze
 
-        def initialize(store, transformer:, resources:, key_matcher: nil)
+        def initialize(store, transformer:, resources:, key_matcher: nil, corrupt_deletion: false)
           @store = store
           @transformer = transformer
+          @transformer_lock = Mutex.new
+          @corrupt_deletion = corrupt_deletion
           @resources = Array(resources).map(&:to_s)
           @key_matcher = key_matcher || lambda { |key|
             @resources.any? do |resource|
@@ -401,9 +416,13 @@ module Rubernetes
           }
         end
 
-        attr_reader :store, :resources
+        attr_reader :store, :resources, :corrupt_deletion
         # Swapped by the configuration reload controller.
-        attr_accessor :transformer
+        attr_reader :transformer
+
+        def transformer=(transformer)
+          @transformer_lock.synchronize { @transformer = transformer }
+        end
 
         # apiserver_storage_transformation_{operations_total,duration_seconds}
         # around one seal or unseal: the transformer prefix that handled it
@@ -457,14 +476,67 @@ module Rubernetes
         end
 
         def delete(key, **)
-          unseal(key, @store.delete(key, **))
+          expected = nil
+          if encrypted_key?(key)
+            current = get(key)
+            expected = current.dig("metadata", "resourceVersion")
+          end
+          delete_decoded(key, expected, **)
         end
+
+        def delete_corrupt(key)
+          return @store.delete_corrupt(key) if !encrypted_key?(key) && @store.respond_to?(:delete_corrupt)
+          raise Rubernetes::Storage::ObjectNotCorrupt unless @corrupt_deletion && encrypted_key?(key)
+
+          @transformer_lock.synchronize do
+            current = begin
+              @store.get(key)
+            rescue Rubernetes::Storage::CorruptObject
+              raise unless @store.respond_to?(:delete_corrupt)
+
+              return @store.delete_corrupt(key)
+            rescue Rubernetes::Storage::NotFound
+              raise Rubernetes::Storage::ObjectNotCorrupt
+            end
+            begin
+              unseal(key, current)
+            rescue Rubernetes::Storage::CorruptObject => error
+              raise if error.resource_version.to_s.empty?
+
+              begin
+                @store.delete(key, resource_version: error.resource_version)
+              rescue Rubernetes::Storage::NotFound
+                # A concurrent request has already removed this record.
+              end
+              return
+            end
+            raise Rubernetes::Storage::ObjectNotCorrupt
+          end
+        end
+
+        def delete_decoded(key, expected, **options)
+          options[:resource_version] = expected unless expected.nil? || options.values_at(:resource_version, :precondition, :prec).any? { |value| !value.nil? }
+          unseal(key, @store.delete(key, **options))
+        end
+        private :delete_decoded
 
         def list(prefix = "", **)
           result = @store.list(prefix, **)
           return result unless result.respond_to?(:items)
 
-          items = result.items.map { |item| unseal(key_of(prefix, item), item) }
+          failures = []
+          items = result.items.filter_map do |item|
+            unseal(key_of(prefix, item), item)
+          rescue Rubernetes::Storage::CorruptObject => error
+            raise unless @corrupt_deletion
+
+            failures << error
+            break if failures.size == 100
+          end
+          unless failures.empty?
+            _group, resource = Configuration.key_group_resource(failures.first.key)
+            raise Rubernetes::Storage::ReadErrors.new(resource, failures)
+          end
           Rubernetes::Storage::ListResult.new(items: items, resource_version: result.resource_version, continue_token: result.continue_token,
                                               remaining_item_count: result.remaining_item_count)
         end
@@ -497,13 +569,25 @@ module Rubernetes
         end
 
         def unseal(key, object)
-          return object unless object.is_a?(Hash) && object.key?(ENVELOPE_KEY)
+          return object unless encrypted_key?(key) && object.is_a?(Hash) && object.key?(ENVELOPE_KEY)
 
           envelope = object[ENVELOPE_KEY].to_s
-          prefix = @transformer.respond_to?(:prefix_of) ? @transformer.prefix_of(envelope) : ""
-          plaintext, _current = timed_transformation(key, "from_storage", prefix) { @transformer.decrypt(envelope, key.to_s) }
-          restored = object.reject { |field, _| field == ENVELOPE_KEY }.merge(JSON.parse(plaintext))
+          transformer = @transformer
+          prefix = transformer.respond_to?(:prefix_of) ? transformer.prefix_of(envelope) : ""
+          plaintext, _current = timed_transformation(key, "from_storage", prefix) { transformer.decrypt(envelope, key.to_s) }
+          decoded = JSON.parse(plaintext)
+          raise JSON::ParserError, "decoded encryption envelope must be an object" unless decoded.is_a?(Hash)
+
+          restored = object.reject { |field, _| field == ENVELOPE_KEY }.merge(decoded)
           object.frozen? ? Rubernetes::Storage::MemoryStoreSupport.deep_freeze(restored) : restored
+        rescue UnreadableEnvelope, JSON::ParserError, EncodingError => error
+          decode_error = !error.is_a?(UnreadableEnvelope)
+          message = unless @corrupt_deletion
+                      operation = decode_error ? "decode" : "transform"
+                      "unable to #{operation} key #{key.inspect}"
+                    end
+          raise Rubernetes::Storage::CorruptObject.new(key, resource_version: object.dig("metadata", "resourceVersion"),
+                                                            decode_error: decode_error, message: message), cause: error
         end
 
         # Key rotation: rewrite objects sealed with a non-current key.
@@ -535,10 +619,11 @@ module Rubernetes
           end
         end
 
-        class DecryptingWatch
+        class DecryptingWatch < SimpleDelegator
           include Enumerable
 
           def initialize(stream, store, prefix)
+            super(stream)
             @stream = stream
             @store = store
             @prefix = prefix
@@ -551,30 +636,28 @@ module Rubernetes
           def each(timeout: :default, &block)
             return enum_for(:each, timeout: timeout) unless block
 
-            if timeout == :default
-              @stream.each { |event| yield(translate(event)) }
-            else
-              @stream.each(timeout: timeout) { |event| yield(translate(event)) }
+            options = timeout == :default ? {} : {timeout: timeout}
+            @stream.each(**options) do |event|
+              decoded = translate(event)
+              yield decoded
+              break if decoded.type == "ERROR"
             end
             self
           end
 
           def to_a(timeout: :default)
-            (timeout == :default ? @stream.to_a : @stream.to_a(timeout: timeout)).map { |event| translate(event) }
+            events = []
+            options = timeout == :default ? {} : {timeout: timeout}
+            @stream.to_a(**options).each do |event|
+              decoded = translate(event)
+              events << decoded
+              break if decoded.type == "ERROR"
+            end
+            events
           end
 
           def each_json_line(timeout: :default, &block)
             each(timeout: timeout) { |event| yield(JSON.generate(event.to_h)) }
-          end
-
-          def method_missing(name, *, **keywords, &)
-            return super unless @stream.respond_to?(name)
-
-            @stream.public_send(name, *, **keywords, &)
-          end
-
-          def respond_to_missing?(name, include_private = false)
-            @stream.respond_to?(name, include_private) || super
           end
 
           private
@@ -584,6 +667,9 @@ module Rubernetes
 
             key = event.respond_to?(:key) && event.key ? event.key : @store.key_of(@prefix, event.object)
             Rubernetes::Storage::Event.new(type: event.type, object: @store.unseal(key, event.object), revision: event.revision, key: key)
+          rescue Rubernetes::Storage::CorruptObject => error
+            @stream.close
+            error.watch_event(event.revision, unreadable_delete: @store.corrupt_deletion && event.type == "DELETED")
           end
         end
       end
