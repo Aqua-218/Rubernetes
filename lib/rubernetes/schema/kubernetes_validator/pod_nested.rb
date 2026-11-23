@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../resource_helpers"
+
 module Rubernetes
   module Schema
     # Rules for the value-typed helper structs inside a Pod's spec (env
@@ -14,10 +16,9 @@ module Rubernetes
       module_function
 
       # What a nested rule needs to know about the Pod it belongs to.
-      PodScope = Data.define(:root, :operation, :volume_names)
+      PodScope = Data.define(:root, :operation, :volumes)
 
-      RESOURCE_FIELD_REF_RESOURCES = %w[limits.cpu limits.ephemeral-storage limits.memory requests.cpu requests.ephemeral-storage requests.memory].freeze
-      POD_CERTIFICATE_KEY_TYPES = %w[RSA3072 RSA4096 ECDSAP256 ECDSAP384 ECDSAP521 ED25519].freeze
+      RESOURCE_FIELD_REF_RESOURCES = ResourceHelpers::DOWNWARD_RESOURCE_FIELDS
 
       # The core Pod validator owns a large family of value-typed helper
       # structs.  OpenAPI captures their shape but not the one-of/reference
@@ -26,10 +27,11 @@ module Rubernetes
       def pod_nested_errors(root, operation = :create)
         issues = []
         spec = fetch(root, "spec")
-        pod = PodScope.new(root: root, operation: operation, volume_names: pod_volume_names(spec))
+        pod = PodScope.new(root: root, operation: operation, volumes: pod_volumes(spec))
         walk(root) do |value, path|
           next if path.include?("status")
           next unless value.is_a?(Hash)
+          next if path[3] == "projected" && path[0, 2] == %w[spec volumes]
           next if path.last.to_s == "tcpSocket" && unselected_probe_handler?(root, path)
 
           pod_struct_errors(value, path, pod, issues)
@@ -51,12 +53,12 @@ module Rubernetes
         issues
       end
 
-      def pod_volume_names(spec)
-        return [] unless spec.is_a?(Hash) && fetch(spec, "volumes").is_a?(Array)
+      def pod_volumes(spec)
+        return {} unless spec.is_a?(Hash) && fetch(spec, "volumes").is_a?(Array)
 
-        fetch(spec, "volumes").filter_map do |volume|
-          fetch(volume, "name") if volume.is_a?(Hash)
-        end.map(&:to_s)
+        fetch(spec, "volumes").each_with_object({}) do |volume, by_name|
+          by_name[fetch(volume, "name").to_s] = volume if volume.is_a?(Hash)
+        end
       end
 
       # Probe/LifecycleHandler one-of validation selects the first
@@ -79,11 +81,9 @@ module Rubernetes
         when "configMapRef", "secretRef" then pod_local_reference_errors(value, path, issues)
         when "configMapKeyRef", "secretKeyRef" then pod_key_selector_errors(value, path, issues)
         when "fileKeyRef" then pod_file_key_errors(value, path, pod, issues)
-        when "resourceFieldRef" then pod_resource_field_errors(value, path, issues)
-        when "fieldRef" then issues.concat(object_field_selector_issues(value, path))
         when "valueFrom" then pod_env_value_source_errors(value, path, issues)
         when "envFrom" then pod_env_from_source_errors(value, path, issues)
-        when "postStart", "preStop", "livenessProbe", "readinessProbe", "startupProbe"
+        when "postStart", "preStop"
           issues << issue(path, :required, "must specify a handler type") if value.empty?
         when "tcpSocket" then pod_tcp_socket_errors(value, path, issues)
         when "iscsi" then pod_iscsi_errors(value, path, issues)
@@ -91,10 +91,7 @@ module Rubernetes
         when "scaleIO", "storageos" then required(value, "volumeName", path, issues)
         when "configMap" then required(value, "name", path, issues)
         when "secret" then pod_secret_source_errors(value, path, issues)
-        when "downwardAPI" then pod_downward_api_errors(value, path, issues)
         when "ephemeral" then required(value, "volumeClaimTemplate", path, issues)
-        when "podCertificate" then (pod_certificate_projection_errors(value, path, issues) if pod.operation == :update)
-        when "clusterTrustBundle" then (pod_trust_bundle_projection_errors(value, path, issues) if pod.operation == :update)
         end
       end
 
@@ -116,16 +113,12 @@ module Rubernetes
       end
 
       def pod_file_key_errors(value, path, pod, issues)
-        volume_name = fetch(value, "volumeName")
-        issues << issue(path + ["volumeName"], :not_found, "") unless pod.volume_names.include?(volume_name.to_s)
-      end
-
-      def pod_resource_field_errors(value, path, issues)
-        resource = fetch(value, "resource")
-        return if RESOURCE_FIELD_REF_RESOURCES.include?(resource.to_s)
-
-        issues << issue(path + ["resource"], :unsupported,
-                        "supported values: #{RESOURCE_FIELD_REF_RESOURCES.map { |entry| JSON.generate(entry) }.join(", ")}")
+        volume = pod.volumes[fetch(value, "volumeName").to_s]
+        if volume.nil?
+          issues << issue(path + ["volumeName"], :not_found, "")
+        elsif !fetch(volume, "emptyDir").is_a?(Hash)
+          issues << issue(path + ["volumeName"], :invalid, "referenced volume must be of type emptyDir")
+        end
       end
 
       def pod_env_value_source_errors(value, path, issues)
@@ -168,49 +161,7 @@ module Rubernetes
         # the SecretVolumeSource/SecretProjection secretName field.
         return if path.include?("scaleIO") && value.empty?
 
-        if value.key?("secretName") || !path.include?("projected")
-          required(value, "secretName", path, issues)
-        else
-          required(value, "name", path, issues)
-        end
-      end
-
-      def pod_downward_api_errors(value, path, issues)
-        # ValidatePodSpec reports the one-of error on a downwardAPI
-        # volume source only when it contains an item.  A zero-value
-        # DownwardAPIVolumeSource/Projection is accepted, and projected
-        # sources have their own per-item checks.
-        items = fetch(value, "items")
-        return unless !path.include?("projected") && items.is_a?(Array) && !items.empty?
-
-        invalid_item = items.any? do |item|
-          item.is_a?(Hash) && %w[fieldRef resourceFieldRef].none? { |name| fetch(item, name).is_a?(Hash) }
-        end
-        issues << issue(path, :required, "one of fieldRef and resourceFieldRef is required") if invalid_item
-      end
-
-      # Update only: a created Pod's projection is validated by the schema.
-      def pod_certificate_projection_errors(value, path, issues)
-        paths = %w[credentialBundlePath keyPath certificateChainPath]
-        unless paths.any? { |name| !blank?(fetch(value, name)) }
-          issues << issue(path, :required, "specify at least one of credentialBundlePath, keyPath, and certificateChainPath")
-        end
-        key_type = fetch(value, "keyType")
-        unless POD_CERTIFICATE_KEY_TYPES.include?(key_type.to_s)
-          issues << issue(path + ["keyType"], :unsupported,
-                          "supported values: #{POD_CERTIFICATE_KEY_TYPES.map { |entry| JSON.generate(entry) }.join(", ")}")
-        end
-        signer = fetch(value, "signerName")
-        return if signer.is_a?(String) && signer.match?(%r{\A[a-z0-9.-]+/[a-z0-9][a-z0-9.-]*\z})
-
-        issues << issue(path + ["signerName"], :invalid,
-                        "must be a fully qualified domain and path of the form 'example.com/signer-name'")
-      end
-
-      def pod_trust_bundle_projection_errors(value, path, issues)
-        return unless blank?(fetch(value, "name")) && blank?(fetch(value, "signerName"))
-
-        issues << issue(path, :required, "either name or signerName must be specified")
+        required(value, "secretName", path, issues)
       end
 
       # Empty PVC templates in an ephemeral volume are validated as PVC
@@ -248,7 +199,6 @@ module Rubernetes
         when "envFrom" then pod_env_from_list_errors(list, path, issues)
         when "hostAliases" then pod_host_alias_errors(list, path, issues)
         when "tolerations" then pod_toleration_errors(list, path, pod, issues)
-        when "topologySpreadConstraints" then pod_topology_spread_errors(list, path, issues)
         when "options" then pod_dns_option_errors(list, path, issues)
         when "resourceClaims" then pod_resource_claim_source_errors(list, path, issues)
         when "claims" then (issues.concat(resource_claim_reference_errors(pod.root, list, path)) if path[-2] == "resources")
@@ -297,7 +247,7 @@ module Rubernetes
           next unless entry.is_a?(Hash)
 
           name = fetch(entry, "name")
-          issues << issue(path + [index.to_s, "name"], :not_found, "") unless pod.volume_names.include?(name.to_s)
+          issues << issue(path + [index.to_s, "name"], :not_found, "") unless pod.volumes.key?(name.to_s)
         end
       end
 
@@ -331,17 +281,6 @@ module Rubernetes
           count.times do
             issues << issue(path + [index.to_s, "operator"], :invalid,
                             "operator must be Exists when `key` is empty, which means \"match all values and all keys\"")
-          end
-        end
-      end
-
-      def pod_topology_spread_errors(list, path, issues)
-        list.each_with_index do |entry, index|
-          next unless entry.is_a?(Hash)
-
-          unless %w[DoNotSchedule ScheduleAnyway].include?(fetch(entry, "whenUnsatisfiable").to_s)
-            issues << issue(path + [index.to_s, "whenUnsatisfiable"], :unsupported,
-                            "supported values: \"DoNotSchedule\", \"ScheduleAnyway\"")
           end
         end
       end
@@ -384,13 +323,12 @@ module Rubernetes
         end
       end
 
-      private_class_method :pod_volume_names, :unselected_probe_handler?, :pod_struct_errors, :pod_local_reference_errors,
-                           :pod_key_selector_errors, :pod_file_key_errors, :pod_resource_field_errors, :pod_env_value_source_errors,
+      private_class_method :pod_volumes, :unselected_probe_handler?, :pod_struct_errors, :pod_local_reference_errors,
+                           :pod_key_selector_errors, :pod_file_key_errors, :pod_env_value_source_errors,
                            :pod_env_from_source_errors, :pod_tcp_socket_errors, :pod_iscsi_errors, :pod_secret_source_errors,
-                           :pod_downward_api_errors, :pod_certificate_projection_errors, :pod_trust_bundle_projection_errors,
                            :pod_claim_template_errors, :pod_restart_rules_policy_errors, :pod_list_errors, :pod_resize_policy_errors,
                            :pod_restart_rule_errors, :pod_volume_reference_errors, :pod_env_from_list_errors, :pod_host_alias_errors,
-                           :pod_toleration_errors, :pod_topology_spread_errors, :pod_dns_option_errors,
+                           :pod_toleration_errors, :pod_dns_option_errors,
                            :pod_resource_claim_source_errors, :pod_ephemeral_container_errors, :pod_service_account_token_errors
     end
   end
