@@ -55,15 +55,21 @@ module Rubernetes
         "DeviceTaintRule" => ["resource.k8s.io", "v1beta2", "devicetaintrules", :cluster],
         "ResourcePoolStatusRequest" => ["resource.k8s.io", "v1alpha3", "resourcepoolstatusrequests", :cluster],
         "PodGroup" => ["scheduling.k8s.io", "v1alpha2", "podgroups", :namespaced],
+        "Workload" => ["scheduling.k8s.io", "v1alpha2", "workloads", :namespaced],
         "IPAddress" => ["networking.k8s.io", "v1", "ipaddresses", :cluster],
         "ServiceCIDR" => ["networking.k8s.io", "v1", "servicecidrs", :cluster],
         "ValidatingAdmissionPolicy" => ["admissionregistration.k8s.io", "v1", "validatingadmissionpolicies", :cluster],
         "ValidatingAdmissionPolicyBinding" => ["admissionregistration.k8s.io", "v1", "validatingadmissionpolicybindings", :cluster],
         "StorageVersionMigration" => ["storagemigration.k8s.io", "v1beta1", "storageversionmigrations", :cluster],
         "StorageVersion" => ["internal.apiserver.k8s.io", "v1alpha1", "storageversions", :cluster]
-      }.freeze
+      }.each_value(&:freeze).freeze
 
       def self.parse(value, scope: nil, group: nil, version: nil, kind: nil, resource: nil)
+        if self == ResourceDescriptor && value.is_a?(String) && !scope && !group && !version && !kind && !resource
+          descriptor = BUILTINS[value]
+          return descriptor if descriptor
+        end
+
         if value.is_a?(self)
           return value if scope.nil? && group.nil? && version.nil? && kind.nil? && resource.nil?
 
@@ -202,6 +208,9 @@ module Rubernetes
 
         raise ScopeMismatchError, "resource scope must be :namespaced or :cluster"
       end
+
+      BUILTINS = KNOWN.keys.to_h { |name| [name, new(kind: name)] }.freeze
+      private_constant :BUILTINS
     end
 
     # `route` decides what a foreign-kind event addresses.  :fan_out (the
@@ -209,8 +218,9 @@ module Rubernetes
     # a watch that merely invalidates them, and wrong for a controller whose
     # job is to *create* its first own-kind object in response to the foreign
     # one, because there is nothing to fan out to yet.  :self routes the
-    # observed object itself through the watch's declared queue key.
-    ROUTES = %i[fan_out self namespace].freeze
+    # observed object itself through the watch's declared queue key. :mapped
+    # resolves the keys returned by the watch against the controller's own kind.
+    ROUTES = %i[fan_out self namespace mapped].freeze
     WatchSpec = Struct.new(:resource, :via, :predicate, :index_name, :queue_key, :scope, :route,
                            :selector_source, keyword_init: true) do
       # `selector_source` names the kind that carries the label selector for a
@@ -250,11 +260,11 @@ module Rubernetes
     end
 
     class Operation
-      attr_reader :action, :resource, :key, :object, :patch, :owner, :reason, :observer
+      attr_reader :action, :resource, :key, :object, :patch, :owner, :reason, :observer, :subresource
 
       # +observer+: ->(succeeded, error) once the operation was applied (a
       # controller's own metrics of what its writes did).
-      def initialize(action:, resource:, key: nil, object: nil, patch: nil, owner: nil, reason: nil, observer: nil)
+      def initialize(action:, resource:, key: nil, object: nil, patch: nil, owner: nil, reason: nil, observer: nil, subresource: nil)
         @action = action.to_sym
         @resource = resource
         @key = key&.to_s
@@ -263,13 +273,14 @@ module Rubernetes
         @owner = owner.nil? ? nil : Support.immutable_copy(owner)
         @reason = reason&.to_s
         @observer = observer
+        @subresource = subresource&.to_s&.freeze
         freeze
       end
 
       # The same operation, reporting its outcome to +block+.
       def observed(&block)
         Operation.new(action: action, resource: resource, key: key, object: object, patch: patch, owner: owner, reason: reason,
-                      observer: block)
+                      observer: block, subresource: subresource)
       end
 
       def notify(succeeded, error = nil)
@@ -287,12 +298,13 @@ module Rubernetes
       end
 
       def update?
-        %i[update patch status_update status_merge].include?(action)
+        %i[update patch strategic_patch json_patch status_update status_merge].include?(action)
       end
 
       def to_h
-        {action: action, resource: resource.to_h, key: key, object: object,
-         patch: patch, owner: owner, reason: reason}.freeze
+        value = {action: action, resource: resource.to_h, key: key, object: object, patch: patch, owner: owner, reason: reason}
+        value[:subresource] = subresource if subresource
+        value.freeze
       end
     end
 
