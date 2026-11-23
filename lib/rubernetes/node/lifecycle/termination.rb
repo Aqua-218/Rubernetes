@@ -7,14 +7,17 @@ module Rubernetes
       # stop within the grace period, reverse-order cleanup, terminal phase)
       # and carries out evictions.
       module Termination
+        POD_TERMINATING_REASON = "PodTerminating"
+
         # Terminate in the observable Kubernetes order and release resources in
         # reverse acquisition order.  Cleanup errors are retained alongside the
         # original failure instead of replacing it.
-        def terminate(pod_or_uid, request_id: nil, reason: "PodTerminating", terminal_phase: nil, message: nil, gone: false)
+        def terminate(pod_or_uid, request_id: nil, reason: POD_TERMINATING_REASON, terminal_phase: nil, message: nil, gone: false)
           object, uid, record = resolve_record(pod_or_uid)
           # One terminate per Pod at a time; a concurrent caller waits for the
           # running one and gets its outcome.
           first = @mutex.synchronize do
+            @terminating_done.wait(@mutex) while record && record[:sidecars_stopping]
             if @terminating.key?(uid.to_s)
               @terminating_done.wait(@mutex) while @terminating.key?(uid.to_s)
               false
@@ -32,6 +35,7 @@ module Rubernetes
                                                 message: message, gone: gone)
           ensure
             @mutex.synchronize do
+              @pending_removals.delete(uid.to_s)
               @terminating.delete(uid.to_s)
               @terminating_done.broadcast
             end
@@ -40,23 +44,41 @@ module Rubernetes
 
         def terminate_once(object, uid, record, request_id:, reason:, terminal_phase:, message:, gone:)
           unless record
-            # A Pod this node never started still has to be confirmed gone.  The
-            # API server sets a deletionTimestamp and waits for the kubelet
-            # whatever state the Pod reached, so one that was scheduled here and
-            # never ran -- admission refused it, the namespace went away first --
-            # has nothing to clean up and everything to confirm.  Returning
-            # without a word left it Terminating in the API for ever.
-            complete_graceful_deletion(object, {cleanup_errors: [], events: [], state: "Removed", uid: uid}) if object
+            return finish_untracked_removal(object, request_id: request_id) if object && gone
+
+            finish_unstarted_pod(object, uid, reason: reason, message: message) if object && !gone
             return nil
           end
 
+          gone ||= record[:source_gone]
+          if record[:restarting_after_sandbox_loss]
+            retry_reason = [ContainerExits::SANDBOX_LOST_REASON, "StartupRecovery", record[:reason]].include?(reason)
+            if gone || deletion_requested?(object) || !retry_reason
+              record.delete(:restarting_after_sandbox_loss)
+            else
+              terminal_phase ||= sandbox_replacement_phase(record)
+            end
+          end
+          if record[:pending_terminal_phase]
+            terminal_phase = record[:pending_terminal_phase]
+            reason = record[:reason] || reason
+            message = record[:termination_message]
+          elsif %w[Failed Succeeded].include?(terminal_phase)
+            record[:pending_terminal_phase] = terminal_phase
+          end
           begin_termination(object, uid, record, reason: reason, message: message, gone: gone)
-          stop_within_grace(object, record)
+          persist_state! if record[:pending_terminal_phase]
+          reporting_pod = object if !gone && record[:reason] == POD_TERMINATING_REASON
+          with_terminating_readiness(reporting_pod, record) do
+            stop_within_grace(object, record)
+          end
           cleanup_resources(record)
-          settle_terminated_record(record, terminal_phase)
+          settle_terminated_record(record, terminal_phase, deleting: deletion_requested?(object))
           publish_termination(object, uid, record, gone: gone)
         rescue StandardError => error
           record ||= new_record(object || {"metadata" => {"uid" => uid}}, request_id: request_id)
+          return defer_runtime_termination(record, error) if cri_unavailable?(error)
+
           fail_record(record, LifecycleError.new("Pod termination failed: #{Helpers.failure_message(error)}"), preserve_phase: true)
         end
 
@@ -85,15 +107,34 @@ module Rubernetes
           return nil unless record
 
           record[:grace_override] = Integer(grace_period_seconds) unless grace_period_seconds.nil?
-          if condition
-            record[:disruption_condition] = Helpers.string_keys(condition).merge(
-              "lastTransitionTime" => Helpers.now(@clock).iso8601(6)
-            )
-          end
+          record[:disruption_condition] = Helpers.string_keys(condition) if condition
           terminate(object || record[:pod], reason: reason, terminal_phase: "Failed", message: message)
         end
 
         private
+
+        # Without a runtime observation, retain the last reported phase and
+        # resource ownership. The normal cleanup retry resumes termination.
+        def defer_runtime_termination(record, error)
+          record_cleanup_error(record, "stop", "runtime unavailable during Pod termination: #{error.message}")
+          set_state(record, "CleanupPending")
+          persist_state!
+          result_for(record)
+        end
+
+        def finish_untracked_removal(object, request_id:)
+          return unless runtime_supports?(:remove_pod_logs)
+
+          @runtime.remove_pod_logs(Helpers.string_keys(object))
+          nil
+        rescue StandardError => error
+          record = new_record(object, request_id: request_id)
+          record[:source_gone] = true
+          record_cleanup_error(record, "pod_logs", "Pod log cleanup failed: #{Helpers.failure_message(error)}")
+          set_state(record, "CleanupPending")
+          persist_state!
+          result_for(record)
+        end
 
         def begin_termination(object, uid, record, reason:, message:, gone:)
           record[:phase] = "Running" if record[:phase].to_s.empty?
@@ -103,42 +144,28 @@ module Rubernetes
           # manager at once, so admission stops counting it even while its
           # containers are still being killed.  Counting it refused the Pods a
           # preemption made room for ("Node didn't have enough resource").
-          @mutex.synchronize { record[:config_removed] = true } if gone
+          if gone
+            @mutex.synchronize do
+              record[:config_removed] = true
+              record[:source_gone] = true
+            end
+          end
           remove_endpoints(object, uid)
           set_state(record, "Stopping") unless %w[Stopped Removed].include?(record[:state])
+          update_status(object, record) if object && !gone && record[:state] == "Stopping" && record[:phase] == "Running"
         end
 
         # preStop hooks, then the stop itself, both inside the grace period.
         def stop_within_grace(object, record)
           kill_grace = kill_grace_seconds(record, object)
-          hooks_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          begin
-            run_pre_stop_hooks(object, record, budget: kill_grace)
-          rescue StandardError => error
-            # A preStop hook that fails does not stop the kill.  kubelet records
-            # a FailedPreStopHook event and carries on
-            # (pkg/kubelet/kuberuntime/kuberuntime_container.go killContainer:
-            # "if the pre-stop hook fails, we still want to kill the container"),
-            # because the container has to go either way.  Counting it as a
-            # cleanup error instead left the Pod in CleanupPending, so the node
-            # never issued its final delete and the Pod stayed Terminating in the
-            # API for ever -- a failed hook made the Pod immortal.
-            event(record, "container.failed_prestop", reason: "FailedPreStopHook",
-                                                      message: "PreStopHook failed: #{Helpers.failure_message(error)}")
-          end
-          # killContainer: the preStop hook spends the grace period; what is
-          # left, at least the minimum, is the stop's -- unless an eviction
-          # overrides it, which applies last.
-          spent = Process.clock_gettime(Process::CLOCK_MONOTONIC) - hooks_started
-          stop_grace = [(kill_grace - spent).ceil, MINIMUM_GRACE_PERIOD_SECONDS].max
-          stop_grace = Integer(record[:grace_override]) unless record[:grace_override].nil?
-          stop_containers(record, grace: stop_grace)
+          minimum_grace = record[:grace_override].nil? ? MINIMUM_GRACE_PERIOD_SECONDS : [MINIMUM_GRACE_PERIOD_SECONDS, kill_grace].min
+          stop_with_sidecar_order(record, record[:containers], kill_grace, minimum_grace: minimum_grace)
           clear_cleanup_error(record, "stop")
           set_state(record, "Stopped") unless record[:state] == "Stopped"
         end
 
         # The state and phase the record ends in once cleanup has run.
-        def settle_terminated_record(record, forced_phase)
+        def settle_terminated_record(record, forced_phase, deleting:)
           if record[:cleanup_errors].empty?
             set_state(record, "Removed")
           else
@@ -154,11 +181,24 @@ module Rubernetes
             # for exceeding its deadline is Failed even when its containers were
             # stopped cleanly.
             record[:phase] = forced_phase || terminal_phase(record)
+            # A failed start stays Pending while kubelet retries it. Once a
+            # delete stops those retries, the Job controller needs terminal
+            # status to account for the Pod and release its tracking finalizer.
+            record[:phase] = "Failed" if deleting && record[:phase] == "Pending"
+            if deleting && record[:reason] == POD_TERMINATING_REASON
+              record[:reason] = nil
+              record[:error] = nil
+            end
             # A phase the kubelet forced (DeadlineExceeded, Evicted) is final
             # whatever the restart policy says.
             # A forced "Running" (a lost sandbox under Always/OnFailure, which
             # the next sync starts again) is a published phase, not a terminal one.
-            record[:forced_terminal] = true if forced_phase && %w[Failed Succeeded].include?(forced_phase.to_s)
+            if record.delete(:pending_terminal_phase)
+              record[:forced_terminal] = true
+              record[:error] = nil
+              condition = record[:disruption_condition]
+              condition["lastTransitionTime"] = Helpers.now(@clock).iso8601(6) if condition
+            end
           end
           record[:phase] = "Unknown" unless record[:cleanup_errors].empty?
           remember_finished(record)
@@ -213,6 +253,8 @@ module Rubernetes
         # should verify that a failing subpath expansion can be modified during
         # the lifetime of a container" waits for exactly that Pending).
         def terminal_phase(record)
+          return record[:phase] if record[:forced_terminal] && %w[Succeeded Failed].include?(record[:phase])
+
           app_entries = record[:containers].select { |entry| entry[:category] == "app" }
           ran = app_entries.any? { |entry| entry[:status].is_a?(Hash) }
           unless ran
@@ -224,6 +266,18 @@ module Rubernetes
             entry[:status].is_a?(Hash) && Integer(entry[:status]["exitCode"] || 0) != 0
           end
           failed ? "Failed" : "Succeeded"
+        end
+
+        def finish_unstarted_pod(pod, uid, reason:, message:)
+          return unless deletion_requested?(pod)
+
+          phase = Helpers.key(Helpers.key(pod, "status", {}), "phase", nil)
+          unless %w[Succeeded Failed].include?(phase)
+            terminal_reason = reason unless reason == POD_TERMINATING_REASON
+            @status.aggregate(pod: pod, state: {}, phase: "Failed", reason: terminal_reason, message: message,
+                              host_ip: @host_ip, host_ips: @host_ips)
+          end
+          complete_graceful_deletion(pod, {cleanup_errors: [], events: [], state: "Removed", uid: uid})
         end
 
         # The final delete of a Pod the API server marked for deletion.  Only for
