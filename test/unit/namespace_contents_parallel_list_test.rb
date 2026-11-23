@@ -28,6 +28,8 @@ class NamespaceContentsParallelListTest < Minitest::Test
     end
 
     def get(resource, namespace: nil, api_version: nil, query: nil)
+      return {"kind" => "CustomResourceDefinitionList", "metadata" => {"resourceVersion" => "1"}, "items" => []} if resource == "customresourcedefinitions"
+
       @mutex.synchronize do
         @listed << resource
         @in_flight += 1
@@ -69,6 +71,34 @@ class NamespaceContentsParallelListTest < Minitest::Test
     end
   end
 
+  def test_custom_namespace_content_is_planned_using_the_served_plural
+    client = Object.new
+    client.define_singleton_method(:get) do |resource, **|
+      items = case resource
+              when "customresourcedefinitions"
+                [{"kind" => "CustomResourceDefinition", "metadata" => {"name" => "flocks.example.com"},
+                  "spec" => {"group" => "example.com", "scope" => "Namespaced", "names" => {"kind" => "Sheep", "plural" => "flocks"},
+                             "versions" => [{"name" => "v1", "served" => true, "storage" => true}]},
+                  "status" => {"conditions" => [{"type" => "Established", "status" => "True"}]}}]
+              when "/apis/example.com/v1/namespaces/ns/flocks"
+                [{"metadata" => {"name" => "one", "namespace" => "ns", "uid" => "owned", "finalizers" => ["example.com/hold"]}}]
+              else
+                raise "unexpected collection #{resource}"
+              end
+      {"kind" => "List", "metadata" => {"resourceVersion" => "2"}, "items" => items}
+    end
+    adapter = Adapter.new(client: client, resource_descriptors: [Descriptor.parse("Namespace")])
+    namespace = {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "ns", "deletionTimestamp" => "2026-01-01T00:00:00Z"},
+                 "spec" => {"finalizers" => ["kubernetes"]}}
+    result = Rubernetes::Controller::NamespaceController.new.plan(namespace, store: adapter)
+    delete = result.operations.find { |operation| operation.action == :delete }
+
+    assert_equal "flocks", delete.resource.resource
+    assert_equal "/apis/example.com/v1/namespaces/ns/flocks", delete.resource.collection_path("ns")
+    assert_equal "owned", delete.resource.delete_options(nil, delete.object).dig("preconditions", "uid")
+    refute(result.operations.any? { |operation| operation.subresource == "finalize" })
+  end
+
   def test_cluster_scoped_kinds_and_the_namespace_itself_are_never_listed
     client = RecordingClient.new
     descriptors = [Descriptor.parse("ConfigMap"), Descriptor.parse("Node"),
@@ -77,6 +107,6 @@ class NamespaceContentsParallelListTest < Minitest::Test
 
     adapter.namespaced_contents("ns")
 
-    assert_equal ["configmaps"], client.listed
+    assert_equal %w[customresourcedefinitions configmaps], client.listed
   end
 end
