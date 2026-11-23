@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-09-06T10:21:36Z",
+  "verified_at": "2026-11-20T04:21:28Z",
   "purpose": "M7 MicroVM guest artifacts: Firecracker v1.16.1 release binaries, pinned guest kernel, read-only rootfs with the Ruby guest supervisor, dm-verity hash tree",
   "firecracker": {
     "version": "1.16.1",
@@ -24,9 +24,9 @@
   "guest_image": {
     "base": "ruby@sha256:c5a5064d190055633011c03aa800170cc36945ff3afb5f6c915329f92d6f1e00",
     "base_image_id": "sha256:d54af8cf8ed560904650c522557cbee50ba0f7611c127194b2f6727e0ee420c8",
-    "lib_tree_sha256": "75522b0210515965942121e274805621d35c4c21801546fdd51c39d7eb8f77ca",
+    "lib_tree_sha256": "b5c9389ea00eeed8cbfd84e9d7ed5eb079fb345b17c54a9fc49c7ad0e1b0c6e5",
     "extension_sha256": "b97e4054e85c447e4b4a26c8f0e0487198ab867bc84d5aa0ce33f4b2db3e2695",
-    "generated_platform_sha256": "f5bc74a55509d5971e40b74fdff2f66ffe00637a985b5fd127e7cd0531372920",
+    "generated_platform_sha256": "c7fb4f0aa800515ab42e454148e66aa401692f444530dd3ef4448ddf1c4c6583",
     "init": "lib/rubernetes/runtime/microvm/guest/init.rb",
     "size_mib": 768
   },
@@ -34,11 +34,11 @@
     "algorithm": "sha256",
     "data_block_size": 4096,
     "hash_block_size": 4096,
-    "root_hash": "e8114ee988804d7a0e35b65e3bb06fdb250996e8faaffbdf179241fd57cd8b5e",
-    "salt": "987696e06decfd94c320be07f2d9ab4feacddd83933639259dc54649b74212ed"
+    "root_hash": "8570014138583863f97fa52d3e65f81c65969402a1f96aae15a7fba7e4d71a56",
+    "salt": "ff4790746a7e0e3a8c6c067be8631d6e0213bf5c49ca6d29e87491a61ab5269a"
   },
   "guest_bundle": {
-    "sha256": "75522b0210515965942121e274805621d35c4c21801546fdd51c39d7eb8f77ca"
+    "sha256": "b5c9389ea00eeed8cbfd84e9d7ed5eb079fb345b17c54a9fc49c7ad0e1b0c6e5"
   },
   "files": {
     "firecracker": {
@@ -63,12 +63,12 @@
     },
     "rootfs": {
       "path": "build/microvm/artifacts/rootfs.ext4",
-      "sha256": "c05e233fb0ce01ad84a8e47a9fc2e08e3684ea46c457b8825de7a1b86b58b9c8",
+      "sha256": "11e2ef6ae216731cd1fcb038a5f0862e1e95deefdc4f627888791da1c61ea51c",
       "bytes": 805306368
     },
     "verity_hash": {
       "path": "build/microvm/artifacts/rootfs.verity",
-      "sha256": "595a661faa33104558ffccd5ee2255bdef7efcd75eae8f0794363357072f3ead",
+      "sha256": "f40b1d699d8a18d533db8ff9896110ffbe3f0471282ba0eff540e22541989909",
       "bytes": 6348800
     },
     "kernel_config": {
