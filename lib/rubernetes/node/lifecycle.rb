@@ -20,6 +20,8 @@ require_relative "device_plugins/manager"
 require_relative "dra_manager"
 require_relative "preemption"
 require_relative "../runtime/common/strict_json"
+require_relative "../runtime/common/errors"
+require_relative "../container_stop_signals"
 
 require_relative "lifecycle/errors"
 require_relative "lifecycle/state_store"
@@ -132,17 +134,23 @@ module Rubernetes
                      event_sink: nil, runtime_class_resolver: nil, image_resolver: nil,
                      state_store: nil, recovery_observer: nil, recovery_cleaner: nil,
                      container_spec: nil, pod_volumes: nil, pod_files: nil, pod_root: nil, host_ports: nil,
-                     pod_deleter: nil,
-                     resource_reader: nil, node_name: nil, host_ip: nil, node_allocatable: nil,
+                     pod_deleter: nil, node_image_config: nil,
+                     resource_reader: nil, node_name: nil, host_ip: nil, host_ips: nil, node_allocatable: nil,
                      cluster_domain: "cluster.local", dra_manager: nil, cdi_spec_dirs: CDI::DEFAULT_SPEC_DIRS,
-                     container_manager: nil, device_plugins: nil, credential_providers: nil, preemption: nil)
+                     container_manager: nil, device_plugins: nil, credential_providers: nil, preemption: nil,
+                     container_stop_signals: false, image_volume_with_digest: false, feature_gates: {})
         runtime ||= runtime_value
         raise ArgumentError, "runtime is required" unless runtime
 
         @runtime = runtime
+        @container_stop_signals = container_stop_signals
+        @image_volume_with_digest = image_volume_with_digest
+        @resize_feature_gates = Helpers.string_keys(feature_gates || {}).freeze
         @volume = volume
+        @cluster_trust_bundle_projection = Helpers.key(feature_gates, "ClusterTrustBundleProjection", false) == true
         @network = network
         @admission = admission
+        @node_image_config = node_image_config
         assign_resource_managers(preemption: preemption, credential_providers: credential_providers, device_plugins: device_plugins,
                                  container_manager: container_manager, dra_manager: dra_manager, cdi_spec_dirs: cdi_spec_dirs)
         # Programs containerPort.hostPort on the node.  Nil in unit fixtures
@@ -150,7 +158,8 @@ module Rubernetes
         @host_ports = host_ports || (network ? Network::HostPort.new : nil)
         @pod_deleter = pod_deleter
         @node_name = node_name.to_s
-        @host_ip = host_ip
+        @host_ips = Array(host_ips || host_ip).map(&:to_s).reject(&:empty?).uniq.freeze
+        @host_ip = @host_ips.first
         @pod_root = pod_root && File.expand_path(String(pod_root))
         @resource_reader = resource_reader
         @clock = clock
@@ -163,7 +172,7 @@ module Rubernetes
                               node_allocatable: node_allocatable, cluster_domain: cluster_domain)
         @image_resolver = image_resolver || (runtime_supports?(:image_resolver) ? runtime.image_resolver : nil)
         @state_store = state_store.is_a?(String) ? StateStore.new(state_store) : state_store
-        @status = status || Status.new(endpoint_manager: endpoint_manager, reporter: reporter, clock: clock)
+        @status = status || Status.new(endpoint_manager: endpoint_manager, reporter: reporter, clock: clock, feature_gates: feature_gates)
         @probes = probe_manager || ProbeManager.new(runtime: runtime, clock: clock, sleeper: sleeper)
         @restarts = restart_manager || RestartManager.new(clock: monotonic_clock, sleeper: sleeper)
         initialize_bookkeeping
@@ -190,11 +199,24 @@ module Rubernetes
         # The CPU/memory/topology managers' internal container lifecycle:
         # cpuset pinning at create, registration at start, release at removal.
         @container_manager = container_manager
+        wire_cpu_quota_exemptions(container_manager)
         # Dynamic Resource Allocation: claims prepared by their drivers before
         # the sandbox exists, CDI devices applied to the containers that name
         # them, claims unprepared once the containers are gone.
         @dra_manager = dra_manager
         @cdi_spec_dirs = Array(cdi_spec_dirs)
+      end
+
+      def wire_cpu_quota_exemptions(manager)
+        return unless manager.is_a?(ContainerManager)
+
+        runtime = @runtime
+        backends = defined?(Runtime::Multiplexer) && runtime.is_a?(Runtime::Multiplexer) ? runtime.backends.values : [runtime]
+        backends.each do |backend|
+          native = defined?(Runtime::Native) && backend.is_a?(Runtime::Native)
+          cri = defined?(Runtime::CRI::Backend) && backend.is_a?(Runtime::CRI::Backend)
+          backend.cpu_quota_exemptions = manager if native || cri
+        end
       end
 
       # The kubelet-side translation: Pod volumes to host paths, Pod files
@@ -204,11 +226,12 @@ module Rubernetes
       def build_pod_translation(pod_volumes:, container_spec:, pod_files:, node_allocatable:, cluster_domain:)
         @pod_volumes = pod_volumes
         if @volume && @pod_root
+          @volume.pin_configured_volume_roots!(@pod_root) if defined?(Volume::Manager) && @volume.is_a?(Volume::Manager)
           @pod_volumes ||= PodVolumes.new(volume: @volume, reader: @resource_reader, node_name: @node_name,
-                                          root: File.join(@pod_root, "volumes"), clock: @clock,
-                                          node_allocatable: node_allocatable)
+                                          root: File.join(@pod_root, "volumes"), kubelet_pod_root: @pod_root, clock: @clock,
+                                          node_allocatable: node_allocatable, cluster_trust_bundle_projection: @cluster_trust_bundle_projection)
         end
-        @pod_files = pod_files
+        @pod_files = pod_files || (PodFiles.new(cluster_domain: cluster_domain) if @pod_root)
         @container_spec = container_spec
         return unless @pod_root
 
@@ -218,11 +241,13 @@ module Rubernetes
 
       def initialize_bookkeeping
         @mutex = Mutex.new
+        @allocation_mutex = Mutex.new
         @persist_mutex = Mutex.new
         @persist_counter_mutex = Mutex.new
         @persist_requested = 0
         @persist_completed = 0
         @records = {}
+        @pending_removals = {}
         # Pods that ran to completion, by uid.  The API status cannot carry
         # this decision on its own: the node writes that status itself, so one
         # spurious restart makes the Pod look Running again and the node keeps
