@@ -74,12 +74,68 @@ class PodVolumeDirectPathTest < Minitest::Test
     end
   end
 
+  def test_first_sync_compares_the_current_configmap_to_the_files_actually_mounted
+    with_volumes do |_manager, volumes|
+      subject = pod({"name" => "cm", "mountPath" => "/etc/cm"})
+      handle = volumes.prepare(subject)
+      file = File.join(handle.dig("mounts", "cm", "path"), "k")
+      reader = volumes.instance_variable_get(:@reader)
+      reader.define_singleton_method(:get) { |*, **| {"data" => {"k" => "updated"}} }
+
+      assert_equal("v", File.read(file))
+      assert_equal(["cm"], volumes.refresh_contents(subject, handle))
+      assert_equal("updated", File.read(file))
+      assert_empty(volumes.refresh_contents(subject, handle))
+    ensure
+      volumes.release(subject, handle) if handle
+    end
+  end
+
   def test_only_node_written_backends_can_be_used_directly
     with_volumes do |manager, _volumes|
       id = manager.create_volume({"name" => "scratch", "backend" => "emptyDir", "podUid" => "u1", "attempt" => "a"},
                                  token: "create-scratch")
 
       assert_raises(Rubernetes::Volume::ValidationError) { manager.direct_path(id, pod: pod({})) }
+    end
+  end
+
+  def test_nested_projection_mountpoints_survive_configuration_refresh
+    with_volumes do |_manager, volumes|
+      subject = pod({"name" => "cm", "mountPath" => "/run/secrets/istio"})
+      spec = subject.fetch("spec")
+      spec.fetch("containers").first.fetch("volumeMounts").push(
+        {"name" => "middle", "mountPath" => "/run/secrets/istio/crl"},
+        {"name" => "inner", "mountPath" => "/run/secrets/istio/crl/secondary"}
+      )
+      spec.fetch("volumes").concat(%w[middle inner].map { |name| {"name" => name, "configMap" => {"name" => "cm"}} })
+      handle = volumes.prepare(subject)
+      outer = File.join(handle.dig("mounts", "cm", "path"), "crl")
+      middle = File.join(handle.dig("mounts", "middle", "path"), "secondary")
+
+      assert(File.directory?(outer))
+      assert(File.directory?(middle))
+      refute_path_exists(File.join(outer, "secondary"))
+      reader = volumes.instance_variable_get(:@reader)
+      reader.define_singleton_method(:get) { |*, **| {"data" => {"k" => "updated"}} }
+
+      assert_equal(%w[cm middle inner], volumes.refresh_contents(subject, handle))
+      assert(File.directory?(outer))
+      assert(File.directory?(middle))
+    ensure
+      volumes.release(subject, handle) if handle
+    end
+  end
+
+  def test_projection_mountpoints_refuse_existing_symlinks
+    Dir.mktmpdir do |dir|
+      root = File.join(dir, "projection")
+      Dir.mkdir(root)
+      File.symlink(dir, File.join(root, "link"))
+      writer = Rubernetes::Volume::AtomicWriter.new(root, mountpoints: ["link/nested"])
+
+      assert_raises(Rubernetes::Volume::PathSecurityError) { writer.write({"k" => "v"}) }
+      refute_path_exists(File.join(dir, "nested"))
     end
   end
 end
