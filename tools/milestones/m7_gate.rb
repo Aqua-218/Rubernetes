@@ -61,6 +61,7 @@ module M7Gate
 
       validate_manifest_shape(manifest, errors)
       artifacts = M4Gate.send(:validate_entries, manifest.fetch("artifacts", []), directory, errors, "artifact")
+      MilestoneReportOutput.validate(manifest["commands"], artifacts, errors)
       subjects = M4Gate.send(:validate_entries, manifest.fetch("subjects", []), directory, errors, "subject")
       artifact_index = M4Gate.send(:index_artifacts, artifacts, errors)
       validate_inventory(manifest, directory, artifact_index, errors)
