@@ -38,14 +38,14 @@ class SchedulerNominationWiringTest < Minitest::Test
     service
   end
 
-  def pod(name)
+  def pod(name, generation: 1)
     Rubernetes::Scheduler::Pod.new("apiVersion" => "v1", "kind" => "Pod",
-                                   "metadata" => {"name" => name, "namespace" => "ns", "uid" => "uid-#{name}"},
+                                   "metadata" => {"name" => name, "namespace" => "ns", "uid" => "uid-#{name}", "generation" => generation},
                                    "spec" => {"containers" => []})
   end
 
-  def result(nominated)
-    Rubernetes::Scheduler::ScheduleResult.new(status: :unschedulable, pod: pod("high"), trace: nil,
+  def result(nominated, generation: 1)
+    Rubernetes::Scheduler::ScheduleResult.new(status: :unschedulable, pod: pod("high", generation: generation), trace: nil,
                                               filtered: {"a" => {"reason" => "Insufficient cpu"}},
                                               nominated_node: nominated)
   end
@@ -84,6 +84,18 @@ class SchedulerNominationWiringTest < Minitest::Test
     scheduler.send(:mark_victim_disrupted, victim)
 
     assert_equal %i[strategic strategic], api.types
+    assert_equal 1, status_patches(api).last.dig("status", "conditions", 0, "observedGeneration")
+  end
+
+  def test_an_unchanged_scheduling_rejection_reports_a_new_generation
+    api = API.new
+    scheduler = service(api)
+    scheduler.send(:report_unschedulable, result(nil, generation: 1), 1)
+    scheduler.send(:report_unschedulable, result(nil, generation: 2), 1)
+
+    generations = status_patches(api).map { |patch| patch.dig("status", "conditions", 0, "observedGeneration") }
+
+    assert_equal [1, 2], generations
   end
 
   def test_no_nomination_leaves_the_field_alone
