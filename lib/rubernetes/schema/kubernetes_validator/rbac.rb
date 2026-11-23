@@ -63,14 +63,18 @@ module Rubernetes
         subjects = fetch(root, "subjects")
         return [] unless subjects.is_a?(Array)
 
-        subjects.each_with_index.filter_map do |subject, index|
-          next unless subject.is_a?(Hash)
+        subjects.each_with_index.flat_map do |subject, index|
+          next [] unless subject.is_a?(Hash)
 
+          issues = []
+          path = ["subjects", index.to_s]
+          required(subject, "name", path, issues)
           kind_value = fetch(subject, "kind")
-          next if %w[Group ServiceAccount User].include?(kind_value.to_s)
-
-          issue(["subjects", index.to_s, "kind"], :unsupported,
-                "supported values: \"ServiceAccount\", \"User\", \"Group\"")
+          unless %w[Group ServiceAccount User].include?(kind_value.to_s)
+            issues << issue(path + ["kind"], :unsupported,
+                            "supported values: \"ServiceAccount\", \"User\", \"Group\"")
+          end
+          issues
         end
       end
 
