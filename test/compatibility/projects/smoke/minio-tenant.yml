@@ -1,0 +1,45 @@
+apiVersion: minio.min.io/v2
+kind: Tenant
+metadata:
+  name: k6-smoke
+spec:
+  image: cgr.dev/chainguard/minio@sha256:16b824a0016ffad3dfa8b059755f83800aa42ca68fe86f1782cabd0c5a16d322
+  requestAutoCert: false
+  configuration:
+    name: k6-minio-config
+  mountPath: /export
+  pools:
+    - name: pool-0
+      servers: 1
+      volumesPerServer: 4
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      volumeClaimTemplate:
+        metadata:
+          name: data
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+  # The stock hostPath provisioner creates root-owned directories. Prepare
+  # the four fixture claims before starting the non-root MinIO server.
+  initContainers:
+    - name: data-ownership
+      image: registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+      command: ["chown", "1000:1000", "/export0", "/export1", "/export2", "/export3"]
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+          add: [CHOWN]
+      volumeMounts:
+        - {name: data0, mountPath: /export0}
+        - {name: data1, mountPath: /export1}
+        - {name: data2, mountPath: /export2}
+        - {name: data3, mountPath: /export3}
