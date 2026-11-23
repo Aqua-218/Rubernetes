@@ -38,10 +38,19 @@ There are four kinds of target:
 
 ### Time-series store
 
-Samples are stored by `lib/tsdb`, which is structured like Prometheus.
-Chunks are Gorilla-compressed, there is a write-ahead log, and samples are
-compacted into 2-hour blocks. Old data is deleted according to the retention
-period. The label index uses SQLite.
+The scraper negotiates the delimited Prometheus protobuf format with a text
+fallback. It ingests exponential native histograms from protobuf exporters
+and classic histogram buckets from either format. Set
+`DASHBOARD_CONVERT_CLASSIC_HISTOGRAMS_TO_NHCB=1` to convert classic
+histograms into native histograms with custom buckets. Set
+`DASHBOARD_ALWAYS_SCRAPE_CLASSIC_HISTOGRAMS=0` to omit the classic series
+when the scrape also yields a native histogram. The protobuf schema comes
+from Prometheus [client_model v0.6.2](https://github.com/prometheus/client_model/tree/v0.6.2).
+
+The time-series store in `lib/tsdb` uses Gorilla compression for float
+chunks. The write-ahead log and 2-hour blocks also store native histogram
+samples. Old data is deleted according to the retention period. The label
+index uses SQLite.
 
 ### PromQL
 
@@ -53,13 +62,25 @@ period. The label index uses SQLite.
 - aggregations and functions
 - vector matching with `on`, `ignoring`, `group_left` and `group_right`
 - set operators
+- `histogram_avg`, `histogram_count`, `histogram_sum`, `histogram_stddev` and
+  `histogram_stdvar` for native histograms
+- `histogram_quantile` and `histogram_fraction` for native and classic histograms
+
+For example, `histogram_avg(rate(http_request_duration_seconds[5m]))`
+returns the mean observation over the last five minutes from a native
+counter histogram.
 
 ### Rules and alerts
 
 Write recording and alerting rules in `config/rules.yml`, in the Prometheus
 rule-file format. An alert moves through pending, firing and resolved, and
 produces `ALERTS` series. Alerts can also be sent to an Alertmanager-style
-webhook.
+webhook. Rule labels and annotations can use `$labels`, `$value`,
+`$externalLabels` and `$externalURL` in templates. Templates support
+pipelines, variables, `if`, `with`, `range`, `break`, `continue`,
+`define`, `template`, `block` and helpers such as
+`query`, `first`, `value`, `humanizeDuration` and `graphLink`.
+Template queries run at the rule's evaluation timestamp.
 
 ### HTTP API
 
@@ -135,6 +156,8 @@ All configuration is through environment variables, defined in
 | `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | Where blocks, the WAL and the label index are stored |
 | `DASHBOARD_SCRAPE_INTERVAL` | `15` | Scrape interval, in seconds |
 | `DASHBOARD_SCRAPE_TIMEOUT` | `10` | Scrape timeout, in seconds |
+| `DASHBOARD_CONVERT_CLASSIC_HISTOGRAMS_TO_NHCB` | `0` | `1` converts classic histograms to native custom buckets |
+| `DASHBOARD_ALWAYS_SCRAPE_CLASSIC_HISTOGRAMS` | `1` | `0` omits classic samples when a native histogram is available |
 | `DASHBOARD_EVALUATION_INTERVAL` | same as the scrape interval | Rule evaluation interval |
 | `DASHBOARD_RETENTION` | `15d` | Retention period |
 | `DASHBOARD_BLOCK_RANGE` | `2h` | Block length |
@@ -150,7 +173,7 @@ through the proxy.
 ## Development
 
 ```sh
-bin/rails test                     # 79 tests: PromQL engine, TSDB, scraper, rules, API, pages
+bin/rails test                     # PromQL engine, TSDB, scraper, rules, API, pages
 bin/rails console
 ```
 
