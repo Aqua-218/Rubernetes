@@ -7,10 +7,23 @@ module Rubernetes
         private
 
         def revision_data_for(resource)
-          spec = Support.spec(resource)
-          template_value = Support.deep_copy(Support.value(spec, "template", {}))
+          template_value = revision_template_value(Support.value(Support.spec(resource), "template", {}))
           template_value["$patch"] = "replace" if template_value.is_a?(Hash)
           {"spec" => {"template" => template_value}}
+        end
+
+        # Kubernetes serializes a typed PodTemplate into the revision patch.
+        # Null fields such as ObjectMeta.annotations and Container.env are
+        # omitted from that projection, even if a chart rendered them.
+        def revision_template_value(value)
+          case value
+          when Hash
+            value.compact.transform_values { |child| revision_template_value(child) }
+          when Array
+            value.map { |child| revision_template_value(child) }
+          else
+            Support.deep_copy(value)
+          end
         end
 
         # getStatefulSetRevisions + truncateHistory.
@@ -152,13 +165,6 @@ module Rubernetes
         def revision_number(revision)
           Support.integer(Support.value(revision, "revision", nil),
                           Support.integer(Support.annotations(revision)["controller.kubernetes.io/revision"], 0))
-        end
-
-        def ensure_revision_owner(revision, owner)
-          candidate = Support.deep_copy(revision)
-          candidate["metadata"] ||= {}
-          candidate["metadata"]["ownerReferences"] = [Support.owner_reference(owner)]
-          candidate
         end
 
         def find_revision(revisions, revision)
