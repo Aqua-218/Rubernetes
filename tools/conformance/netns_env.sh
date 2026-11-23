@@ -59,7 +59,7 @@ unrule() {
 
 case "$command_name" in
   up)
-    ip netns list | grep -qx "$name" && { echo "netns $name already exists" >&2; exit 1; }
+    [ ! -e "/run/netns/$name" ] || { echo "netns $name already exists" >&2; exit 1; }
     ip netns add "$name"
     ip link add "$host_if" type veth peer name "$ns_if" netns "$name"
     ip addr add "$v4_host/30" dev "$host_if"
