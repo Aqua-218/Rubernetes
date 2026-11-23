@@ -6,6 +6,8 @@ require "fileutils"
 require "monitor"
 require "pathname"
 require "tmpdir"
+require_relative "filesystem_adapter"
+require_relative "../node/field_ref"
 
 module Rubernetes
   module Volume
@@ -38,147 +40,6 @@ module Rubernetes
         return value.to_h.transform_keys(&:to_s) if value.respond_to?(:to_h)
 
         {"value" => value}
-      end
-    end
-
-    # Safe default adapter used for unit tests and unprivileged deployments.
-    # Production must inject an adapter that performs real mount/device calls;
-    # this adapter never invokes a shell or silently performs a privileged op.
-    class FilesystemAdapter
-      def initialize(root: nil, fsync: false, tmpfs: true)
-        @root = root && File.expand_path(root.to_s)
-        @fsync = fsync
-        @tmpfs = tmpfs == true
-        @mounts = {}
-        @devices = {}
-        @mutex = Monitor.new
-        FileUtils.mkdir_p(@root) if @root
-      end
-
-      attr_reader :root
-
-      def mkdir(path, mode: 0o755)
-        FileUtils.mkdir_p(path)
-        File.chmod(mode, path) if mode
-        true
-      end
-
-      def create_file(path, mode: 0o640)
-        File.open(path, File::WRONLY | File::CREAT | File::EXCL, mode) { |file| file.write("") }
-        true
-      end
-
-      def remove(path)
-        FileUtils.rm_rf(path)
-        true
-      end
-
-      def stat(path)
-        File.stat(path)
-      end
-
-      def mount(source:, target:, filesystem: nil, readonly: false, options: {}, volume_id: nil, stage: false, **_kwargs)
-        mkdir(target)
-        source = source.to_s
-        target = File.expand_path(target.to_s)
-        identity = {
-          "mountId" => "mount-#{Digest::SHA256.hexdigest("#{source}\0#{target}")[0, 20]}",
-          "filesystemUuid" => "fs-#{Digest::SHA256.hexdigest(source)[0, 20]}",
-          "deviceId" => "dev-#{Digest::SHA256.hexdigest(filesystem.to_s + source)[0, 20]}",
-          "source" => source, "target" => target, "readonly" => readonly == true,
-          "filesystem" => filesystem, "options" => Types.deep_copy(options), "volumeId" => volume_id,
-          "stage" => stage == true
-        }
-        @mutex.synchronize { @mounts[identity["mountId"]] = identity }
-        identity
-      end
-
-      def bind(source:, target:, readonly: false, volume_id: nil, **)
-        mount(source: source, target: target, filesystem: "bind", readonly: readonly, volume_id: volume_id, stage: false, **)
-      end
-
-      def unmount(target:, mount_id: nil, **_kwargs)
-        target = File.expand_path(target.to_s)
-        @mutex.synchronize do
-          matches = @mounts.values.select do |mount|
-            mount["target"] == target && (!mount_id || mount["mountId"] == mount_id.to_s)
-          end
-          raise MountIdentityError, "mount #{mount_id} is not present at #{target}" if mount_id && matches.empty?
-
-          @mounts.delete_if { |_id, mount| matches.include?(mount) }
-        end
-        true
-      end
-
-      def list_mounts
-        @mutex.synchronize { @mounts.values.map { |entry| Types.deep_copy(entry) } }
-      end
-
-      def tmpfs?(path = nil)
-        return @tmpfs unless path
-
-        @mutex.synchronize do
-          @mounts.values.any? do |mount|
-            mount["target"] == File.expand_path(path.to_s) && mount["filesystem"] == "tmpfs"
-          end
-        end
-      end
-
-      def ensure_tmpfs(path, size_limit: nil, volume_id: nil)
-        return false unless @tmpfs
-
-        mount(source: "tmpfs", target: path, filesystem: "tmpfs", readonly: false,
-              options: {"size" => size_limit}, volume_id: volume_id)
-        true
-      end
-
-      def create_loop(path:, volume_id:, size_bytes: nil, **_kwargs)
-        identity = "loop-#{Digest::SHA256.hexdigest("#{volume_id}\0#{path}")[0, 20]}"
-        @mutex.synchronize do
-          @devices[identity] = {"id" => identity, "kind" => "loop", "path" => path, "volumeId" => volume_id, "sizeBytes" => size_bytes}
-        end
-        @devices[identity]
-      end
-
-      def create_dm(device:, volume_id:, size_bytes: nil, **_kwargs)
-        identity = "dm-#{Digest::SHA256.hexdigest("#{volume_id}\0#{device}")[0, 20]}"
-        @mutex.synchronize do
-          @devices[identity] =
-            {"id" => identity, "kind" => "device-mapper", "device" => device, "volumeId" => volume_id, "sizeBytes" => size_bytes}
-        end
-        @devices[identity]
-      end
-
-      def destroy_device(id:, **_kwargs)
-        @mutex.synchronize { @devices.delete(id.to_s) }
-        true
-      end
-
-      def list_devices
-        @mutex.synchronize { @devices.values.map { |entry| Types.deep_copy(entry) } }
-      end
-
-      def expand(source:, capacity_bytes:, **_kwargs)
-        {"source" => source, "capacityBytes" => Integer(capacity_bytes)}
-      end
-
-      def stats(path:, volume_id:, capacity_bytes: nil, **_kwargs)
-        used = directory_size(path)
-        capacity = capacity_bytes ? Integer(capacity_bytes) : used
-        Stats.new(volume_id: volume_id, used_bytes: used, capacity_bytes: capacity)
-      end
-
-      private
-
-      def directory_size(path)
-        info = File.lstat(path)
-        return 0 if info.symlink?
-        return info.size if info.file?
-        return 0 unless info.directory?
-
-        Dir.children(path).sum { |child| directory_size(File.join(path, child)) }
-      rescue SystemCallError
-        0
       end
     end
 
@@ -246,9 +107,11 @@ module Rubernetes
       end
 
       def stage(path:, node:, readonly: false, context: {})
+        mount_stage(path, source: source_path, readonly: readonly, options: mount_options(context))
+      end
+
+      protected def mount_stage(path, source:, readonly:, options:, source_handle: nil, requested_filesystem: filesystem)
         ensure_path!(path)
-        source = source_path
-        requested_filesystem = filesystem
         # A bind mount's target must be the same kind of object as its source:
         # binding a file (a hostPath onto /etc/hosts, say) over a directory is
         # EINVAL, and so is a bind that never sets MS_BIND because the source
@@ -256,15 +119,22 @@ module Rubernetes
         bind = requested_filesystem.nil?
         source_is_directory = directory_source?(source)
         target_lease = acquire_target_lease(path, directory: bind ? source_is_directory : target_directory?)
-        source_handle = source_handle_for(source)
-        requested_options = mount_options(context)
+        source_handle ||= source_handle_for(source)
+        requested_options = options
         if bind
-          requested_options = requested_options.respond_to?(:to_h) ? requested_options.to_h.merge("bind" => true) : {"bind" => true}
+          requested_options = if requested_options.is_a?(Array)
+                                requested_options + ["bind"]
+                              else
+                                requested_options.to_h.merge("bind" => true)
+                              end
         end
         mount_arguments = {source: source, target: path, filesystem: requested_filesystem,
                            readonly: readonly || readonly?, options: requested_options, volume_id: id,
                            stage: true, source_handle: source_handle}
         mount_arguments[:target_handle] = target_lease if target_lease
+        if @require_real_readback && block_filesystem_mount?(source: source, filesystem: requested_filesystem, bind: bind)
+          mount_arguments[:require_filesystem_uuid] = true
+        end
         identity = if @mount_adapter.respond_to?(:mount)
                      AdapterSupport.call(@mount_adapter, :mount, **mount_arguments)
                    else
@@ -340,17 +210,15 @@ module Rubernetes
         result["node"] = node.to_s
         result["pod"] = pod_identifier(pod)
         result
-      rescue StandardError
-        handle&.close
-        raise
       ensure
+        handle&.close
         target_lease&.close
       end
 
       def unpublish(target:, identity: nil, context: {})
-        target = ensure_path!(target)
+        target = ensure_path!(target, teardown: true)
         verify_mount_identity!(target, identity)
-        target_lease = acquire_target_lease(target, directory: nil, create: false)
+        target_lease = with_stale_unmount_fallback(target, identity) { acquire_target_lease(target, directory: nil, create: false) }
         begin
           result = unmount_owned_target(target, identity: identity, target_lease: target_lease,
                                                 operation: "unpublish", context: context)
@@ -359,6 +227,11 @@ module Rubernetes
         ensure
           target_lease&.close
         end
+      rescue PathSecurityError => error
+        raise unless identity_value(identity, "kubeletSubPath") == true && @mount_adapter.is_a?(NativeMountAdapter) &&
+                     StaleUnmount.stale_path?(error)
+
+        @mount_adapter.unmount_stale_nfs_subpath(target, identity: identity, path_security: @path_security, volume_id: id)
       end
 
       def stats(path:, capacity_bytes: nil)
@@ -490,6 +363,11 @@ module Rubernetes
         File.join(@root, id)
       end
 
+      def projection_writer(tmpfs: false, mount_adapter: nil)
+        AtomicWriter.new(source_path, fsync: false, tmpfs: tmpfs, mount_adapter: mount_adapter,
+                                      mountpoints: Types.key(spec, "nestedMountpoints", []))
+      end
+
       # A caller that already resolved the projection (the Node Agent, which
       # applied `items`, key selection and the downward API against the live
       # Pod) hands the finished file map in as `files`; the backend then
@@ -542,7 +420,7 @@ module Rubernetes
 
       protected
 
-      def ensure_path!(path)
+      def ensure_path!(path, teardown: false)
         value = File.expand_path(String(path))
         return value unless @path_security
 
@@ -550,7 +428,9 @@ module Rubernetes
         # symlink boundary as Node#stage/#publish.  Manager callers already
         # validate targets, but a direct backend invocation must not be able
         # to bypass it (especially for CSI paths that do not yet exist).
-        if @path_security.respond_to?(:validate_target!)
+        if teardown && @path_security.respond_to?(:validate_unmount_target!)
+          @path_security.validate_unmount_target!(value)
+        elsif @path_security.respond_to?(:validate_target!)
           @path_security.validate_target!(value)
         else
           @path_security.validate!(Pathname.new(value).relative_path_from(Pathname.new(@path_security.root)).to_s)
@@ -695,7 +575,7 @@ module Rubernetes
 
         options = hash["requestedOptions"] || hash["requested_options"] || hash["options"]
         return true if filesystem.to_s.casecmp?("bind")
-        return options.to_h.any? { |key, value| key.to_s.casecmp?("bind") && value != false } if options.respond_to?(:to_h)
+        return options.any? { |key, value| key.to_s.casecmp?("bind") && value != false } if options.is_a?(Hash)
 
         Array(options).any? { |option| option.to_s.split("=", 2).first.casecmp?("bind") }
       end
@@ -722,6 +602,11 @@ module Rubernetes
                      else
                        observed_hash[field] || observed_hash[field.gsub(/([A-Z])/, '_\\1').downcase]
                      end
+            if field == "root" && hash["bind"] == true && descriptor_mount_binding? &&
+               observed_hash["mountId"].to_s == hash.fetch("mountId").to_s && Types.deleted_mount_root?(expected, actual)
+              next
+            end
+
             raise MountIdentityError, "mount identity changed for #{path}: #{field} mismatch" if expected && actual && expected.to_s != actual.to_s
           end
         end
@@ -780,6 +665,19 @@ module Rubernetes
         @path_security.acquire_target!(path, directory: directory, create: create)
       end
 
+      def with_stale_unmount_fallback(path, identity)
+        yield
+      rescue PathSecurityError => error
+        raise unless identity && @mount_adapter.is_a?(NativeMountAdapter) && StaleUnmount.stale_path?(error)
+
+        observed = mount_identity_at(path)
+        raise unless observed && %w[nfs nfs4].include?(observed["filesystem"]) &&
+                     observed.fetch("mountId").to_s == identity_value(identity, "mountId").to_s
+
+        verify_mount_identity!(path, identity)
+        @path_security.acquire_stale_mount_target!(path, observed)
+      end
+
       def verify_target_lease!(lease, mount_identity: nil)
         return true unless lease && lease.respond_to?(:verify_original!)
 
@@ -826,6 +724,7 @@ module Rubernetes
           volume_id: id, context: context
         }
         arguments[:target_handle] = target_lease if target_lease
+        arguments[:isolate_propagation] = true if type == HostPathBackend::TYPE
         result = AdapterSupport.call(@mount_adapter, :unmount, **arguments)
         ensure_cleanup_result!(result, operation, path)
         true
@@ -968,6 +867,12 @@ module Rubernetes
       TYPE = "emptyDir"
       # pkg/volume/emptydir: world-writable so any runAsUser can use it.
       EMPTY_DIR_MODE = 0o777
+      TMPFS_ROOT_MODE = 0o1777
+
+      def initialize(project_quota: nil, **)
+        super(**)
+        @project_quota = project_quota
+      end
 
       def provision
         medium = Types.key(spec, "medium", "").to_s
@@ -977,12 +882,15 @@ module Rubernetes
           raise UnsupportedError, "emptyDir medium Memory requires a tmpfs-capable mount adapter" unless @mount_adapter.respond_to?(:ensure_tmpfs)
 
           mount_identity = ensure_tmpfs_mount!(source_path, size_limit: size_limit)
-          File.chmod(EMPTY_DIR_MODE, source_path) if File.directory?(source_path)
+          File.chmod(TMPFS_ROOT_MODE, source_path) if File.directory?(source_path)
         else
+          project = @project_quota&.provision(source_path) if medium.empty? && Types.key(spec, "quotaMonitor") == true
           ensure_directory(source_path, mode: EMPTY_DIR_MODE)
         end
         @mount_identity = mount_identity
-        {"source" => source_path, "backend" => type, "medium" => medium, "sizeLimit" => size_limit, "mountIdentity" => mount_identity}
+        result = {"source" => source_path, "backend" => type, "medium" => medium, "sizeLimit" => size_limit, "mountIdentity" => mount_identity}
+        result["projectQuotaId"] = project if project
+        result
       end
 
       def delete
@@ -1012,7 +920,8 @@ module Rubernetes
     class HostPathBackend < Backend
       TYPE = "hostPath"
       VALID_TYPES = %w[Directory DirectoryOrCreate File FileOrCreate Socket CharDevice BlockDevice].freeze
-      CREATE_TYPES = %w[DirectoryOrCreate FileOrCreate].freeze
+      # The CRI bind mount creates a missing source directory for an unset HostPath type.
+      CREATE_TYPES = ["", "DirectoryOrCreate", "FileOrCreate"].freeze
 
       def initialize(**kwargs)
         super
@@ -1023,11 +932,11 @@ module Rubernetes
       def source_path
         return @host_source_path if @host_source_path && @host_handle
 
-        validate_host_path_type!(host_path_type)
+        kind = host_path_type
+        validate_host_path_type!(kind)
         path = raw_host_path
-        handle = open_host_handle(path, kind: host_path_type, allow_missing: false)
-        @host_handle = handle
-        @host_source_path = resolved_host_path(handle, path)
+        handle = open_host_handle(path, kind: kind, allow_missing: false)
+        pin_host_source(handle, path, kind)
       end
 
       def provision
@@ -1041,14 +950,7 @@ module Rubernetes
           handle = open_host_handle(path, kind: kind, allow_missing: false)
         end
 
-        resolved = resolved_host_path(handle, path)
-        validate_host_stat!(host_path_stat(handle, resolved), resolved, kind)
-        @host_handle = handle
-        @host_source_path = resolved
-        {"source" => resolved, "backend" => type, "type" => kind}
-      rescue StandardError
-        handle&.close if handle && handle != @host_handle
-        raise
+        {"source" => pin_host_source(handle, path, kind), "backend" => type, "type" => kind}
       end
 
       def delete
@@ -1065,11 +967,28 @@ module Rubernetes
 
       protected
 
+      # The stage pins the source inode for later verification. It must not
+      # retain the host mount's peer group, where unpublishing could tear
+      # down a host submount that arrived after this shallow bind.
+      def mount_options(_context)
+        {"private" => true}
+      end
+
       def source_handle_for(_source)
         @host_handle
       end
 
       private
+
+      def pin_host_source(handle, path, kind)
+        resolved = resolved_host_path(handle, path)
+        validate_host_stat!(host_path_stat(handle, resolved), resolved, kind)
+        @host_handle = handle
+        @host_source_path = resolved
+      rescue StandardError
+        handle.close
+        raise
+      end
 
       def host_path_type
         Types.key(spec, "type", "").to_s
@@ -1115,7 +1034,9 @@ module Rubernetes
       end
 
       def open_host_handle(path, kind:, allow_missing:)
-        handle = @path_security.validate_host_path!(path, flags: host_open_flags(kind), resource_id: "hostPath:#{id}")
+        handle = @path_security.validate_host_path!(
+          path, flags: host_open_flags(kind), resource_id: "hostPath:#{id}", block_device: kind == "BlockDevice"
+        )
         host_path_stat(handle, path)
         handle
       rescue PathSecurityError => error
@@ -1159,8 +1080,10 @@ module Rubernetes
       end
 
       def validate_host_stat!(stat, path, kind)
+        return true if kind.empty?
+
         predicate = case kind
-                    when "", "Directory", "DirectoryOrCreate" then :directory?
+                    when "Directory", "DirectoryOrCreate" then :directory?
                     when "File", "FileOrCreate" then :file?
                     when "Socket" then :socket?
                     when "CharDevice" then :chardev?
@@ -1170,7 +1093,7 @@ module Rubernetes
                     end
         return true if stat.respond_to?(predicate) && stat.public_send(predicate)
 
-        raise ValidationError, "hostPath #{path} does not match type #{kind.empty? ? "Directory" : kind}"
+        raise ValidationError, "hostPath #{path} does not match type #{kind}"
       end
 
       def validate_create_parent!(path)
@@ -1198,7 +1121,7 @@ module Rubernetes
 
       def create_host_path!(path, kind)
         case kind
-        when "DirectoryOrCreate"
+        when "", "DirectoryOrCreate"
           if @adapter.respond_to?(:mkdir)
             AdapterSupport.call(@adapter, :mkdir, path, mode: 0o755)
           else
@@ -1234,7 +1157,7 @@ module Rubernetes
 
       def initialize(**kwargs)
         super
-        @writer = Types.key(spec, "writer") || AtomicWriter.new(source_path, fsync: false, tmpfs: false)
+        @writer = Types.key(spec, "writer") || projection_writer
       end
 
       def provision
@@ -1266,14 +1189,80 @@ module Rubernetes
       end
     end
 
-    class SecretBackend < Backend
+    # Secret, downwardAPI and projected use the kubelet's memory-backed emptyDir.
+    class MemoryProjectionBackend < Backend
+      def initialize(**kwargs)
+        super
+        previous = Types.key(spec, "backendResult")
+        @mount_identity = Types.key(previous || {}, "mountIdentity")
+        # A running Pod from an older node can still have a read-only bind
+        # of the public projection's directory. Refresh its existing files.
+        @legacy_directory = previous && @mount_identity.nil? && !secret?
+      end
+
+      def restore_source_mount!
+        ensure_tmpfs! unless @legacy_directory
+      end
+
+      def published_generation?
+        File.symlink?(File.join(source_path, AtomicWriter::DATA_LINK))
+      end
+
+      def delete
+        if @mount_identity
+          delete_tmpfs_mount!(source_path, identity: @mount_identity)
+        elsif @legacy_directory
+          raise MountIdentityError, "unexpected mount on legacy #{type} volume #{id}" if mount_identity_at(source_path)
+        else
+          # Provisioning can fail before it mounts anything (for example, a
+          # bound TokenRequest after Pod deletion). rmdir also refuses an
+          # unrecorded live mount or a nonempty directory.
+          return discard_unmounted_directory
+        end
+        remove_path(source_path)
+      end
+
+      private
+
+      def downward_api_files(source)
+        pod = Types.key(spec, "pod", {})
+        allocatable = Types.key(spec, "nodeAllocatable")
+        modes = file_modes
+        fallback = default_file_mode || 0o644
+        Array(Types.key(source, "items", [])).to_h do |item|
+          path = Types.key(item, "path")
+          bytes = Rubernetes::Node::FieldRef.resolve_item(item, pod, node_allocatable: allocatable)
+          mode = Types.key(item, "mode") || modes.fetch(path, fallback)
+          [path, AtomicWriter::FileContent.new(bytes, Integer(mode), nil, nil)]
+        end
+      rescue Rubernetes::Node::FieldRef::Error => error
+        raise ValidationError, error.message
+      end
+
+      def discard_unmounted_directory
+        raise MountIdentityError, "unrecorded mount on #{type} volume #{id}" if mount_identity_at(source_path)
+
+        begin
+          Dir.rmdir(source_path)
+        rescue Errno::ENOENT
+          # This declaration failed before creating its directory.
+        end
+        true
+      end
+
+      def ensure_tmpfs!
+        verify_mount_identity!(source_path, @mount_identity) if @mount_identity
+        @mount_identity = ensure_tmpfs_mount!(source_path)
+      end
+    end
+
+    class SecretBackend < MemoryProjectionBackend
       TYPE = "secret"
 
       def initialize(**kwargs)
         super
         @tmpfs = Types.key(spec, "tmpfs", true) == true
-        @mount_identity = Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
-        @writer = Types.key(spec, "writer") || AtomicWriter.new(source_path, fsync: false, tmpfs: @tmpfs, mount_adapter: @mount_adapter)
+        @writer = Types.key(spec, "writer") || projection_writer(tmpfs: @tmpfs, mount_adapter: @mount_adapter)
       end
 
       def secret?
@@ -1298,20 +1287,7 @@ module Rubernetes
         @writer.write(files, generation: generation, secret: true, mode: default_file_mode, modes: file_modes)
       end
 
-      def delete
-        delete_tmpfs_mount!(source_path, identity: mount_identity_for_cleanup)
-        remove_path(source_path)
-      end
-
       private
-
-      def ensure_tmpfs!
-        @mount_identity = ensure_tmpfs_mount!(source_path)
-      end
-
-      def mount_identity_for_cleanup
-        @mount_identity || Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
-      end
 
       def decode_data(data)
         data.each_with_object({}) do |(path, value), result|
@@ -1326,185 +1302,181 @@ module Rubernetes
       end
     end
 
-    class DownwardAPIBackend < Backend
+    class DownwardAPIBackend < MemoryProjectionBackend
       TYPE = "downwardAPI"
 
       def provision
-        files = precomputed_files || begin
-          pod = Types.key(spec, "pod", {})
-          items = Array(Types.key(spec, "items", []))
-          items.each_with_object({}) do |item, result|
-            item = item.to_h
-            path = Types.key(item, "path")
-            field = Types.key(item, "fieldRef") || Types.key(item, "resourceFieldRef")
-            result[path] = resolve_field(pod, field)
-          end
-        end
-        writer = Types.key(spec, "writer") || AtomicWriter.new(source_path, fsync: false, tmpfs: false)
+        files = precomputed_files || downward_api_files(spec)
+        mount_identity = ensure_tmpfs!
+        writer = Types.key(spec, "writer") || projection_writer
         writer.write(files, secret: false, mode: default_file_mode, modes: file_modes)
-        {"source" => source_path, "backend" => type, "generation" => writer.current_generation}
+        {"source" => source_path, "backend" => type, "generation" => writer.current_generation, "mountIdentity" => mount_identity}
       end
 
       def update(files:, generation: nil)
-        writer = Types.key(spec, "writer") || AtomicWriter.new(source_path, fsync: false, tmpfs: false)
+        ensure_tmpfs! unless @legacy_directory
+        writer = Types.key(spec, "writer") || projection_writer
         writer.write(files, generation: generation, secret: false, mode: default_file_mode, modes: file_modes)
-      end
-
-      private
-
-      def resolve_field(pod, reference)
-        field_path = Types.key(reference || {}, "fieldPath")
-        return "" unless field_path
-        return "" unless field_path.to_s.match?(/\A[a-zA-Z][a-zA-Z0-9_.-]*\z/)
-
-        value = field_path.to_s.split(".").reduce(pod) do |current, key|
-          current.respond_to?(:[]) ? (current[key] || current[key.to_sym]) : nil
-        end
-        String(value || "")
       end
     end
 
-    class ProjectedBackend < Backend
+    class ProjectedBackend < MemoryProjectionBackend
       TYPE = "projected"
 
       class << self
         # The node's PodCertificateManager (Node::PodVolumes#pod_certificates=).
         attr_accessor :pod_certificate_provider
+
+        def service_account_token_source?(sources)
+          Array(sources).any? do |source|
+            value = source.respond_to?(:to_h) ? source.to_h : source
+            value.respond_to?(:key?) && (value.key?("serviceAccountToken") || value.key?(:serviceAccountToken))
+          end
+        end
+
+        def credential_ownership(pod)
+          pod_spec = Types.key(pod, "spec", {})
+          security_context = Types.key(pod_spec, "securityContext", {})
+          pod_user = Types.key(security_context, "runAsUser")
+          users = %w[initContainers containers ephemeralContainers].flat_map do |kind|
+            Array(Types.key(pod_spec, kind)).map do |container|
+              Types.key(Types.key(container, "securityContext", {}), "runAsUser") || pod_user
+            end
+          end.uniq
+          {"fsUser" => (users.first if users.one?), "fsGroup" => Types.key(security_context, "fsGroup")}.compact
+        end
       end
 
       def initialize(**kwargs)
         super
-        @mount_identity = Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
         @token_rotator = Types.key(spec, "tokenRotator")
         # The provider object never reaches the ledger: a backend rebuilt
         # from a durable record finds the node's manager here.
         @pod_certificates = Types.key(spec, "podCertificateProvider") || self.class.pod_certificate_provider
         @certificate_versions = {}
-        @projected_files = {}
-        @token = nil
-        @token_path = nil
-        @projector = Types.key(spec, "projector") || Projector.new(writer: AtomicWriter.new(source_path, fsync: false,
-                                                                                                         tmpfs: false, mount_adapter: @mount_adapter),
+        @sources = Array(Types.key(spec, "sources", []))
+        @tokens = {}
+        ownership = Types.key(spec, "credentialOwnership") || self.class.credential_ownership(Types.key(spec, "pod", {}))
+        @credential_owner, @credential_group = ownership.values_at("fsUser", "fsGroup")
+        @projector = Types.key(spec, "projector") || Projector.new(writer: projection_writer(mount_adapter: @mount_adapter),
                                                                    token_rotator: @token_rotator)
       end
 
       def secret?
         return true if Types.key(spec, "secret", false) == true
 
-        Array(Types.key(spec, "sources", [])).any? do |source|
-          value = source.respond_to?(:to_h) ? source.to_h : source
-          value.respond_to?(:key?) && (value.key?("secret") || value.key?(:secret) || value.key?("serviceAccountToken") || value.key?(:serviceAccountToken) ||
-                                       value.key?("podCertificate") || value.key?(:podCertificate))
-        end
+        sensitive_sources?(Types.key(spec, "sources", []))
       end
 
       def provision
-        sources = normalize_sources(Array(Types.key(spec, "sources", [])))
-        @projected_files = merge_projected_files(sources)
-        mount_identity = secret? ? ensure_tmpfs! : nil
-        result = @projector.project(sources: sources, pod: Types.key(spec, "pod", {}), secret: secret?,
-                                    mode: default_file_mode, modes: file_modes)
-        result.merge("mountIdentity" => mount_identity, "source" => source_path, "backend" => type)
+        result = write_sources(@sources)
+        result.merge("mountIdentity" => @mount_identity, "source" => source_path, "backend" => type)
       end
 
       def update(sources:, generation: nil)
-        ensure_tmpfs! if secret?
-        normalized = normalize_sources(sources)
-        @projected_files = merge_projected_files(normalized)
-        @projector.project(sources: normalized, pod: Types.key(spec, "pod", {}), secret: secret?, generation: generation,
-                           mode: default_file_mode, modes: file_modes)
+        write_sources(sources, generation: generation)
       end
 
-      attr_reader :token
+      def token
+        @tokens.values.last
+      end
 
-      # kubelet's token manager refreshes a projected token once it is past
-      # 80% of its lifetime; the node asks on every periodic sync.
       def token_rotation_due?(now = Time.now.utc)
-        return false unless @token.respond_to?(:rotate_due?)
-
-        @token.rotate_due?(now.respond_to?(:utc) ? now.utc : Time.at(now.to_f).utc)
+        timestamp = now.respond_to?(:utc) ? now.utc : Time.at(now.to_f).utc
+        @tokens.each_value.any? { |issued| issued.respond_to?(:rotate_due?) && issued.rotate_due?(timestamp) }
       end
 
       def service_account_token_source?
-        Array(Types.key(spec, "sources", [])).any? do |source|
-          value = source.respond_to?(:to_h) ? source.to_h : source
-          value.respond_to?(:key?) && (value.key?("serviceAccountToken") || value.key?(:serviceAccountToken))
-        end
+        self.class.service_account_token_source?(Types.key(spec, "sources", []))
       end
 
       def rotate_token(**options)
-        return @projector.rotate_token(**options) unless @token_rotator && @token
+        return @projector.rotate_token(**options) unless @token_rotator && token
 
         now = Types.key(options, "now", Time.now.utc)
-        rotated = @token_rotator.rotate(@token, now: now)
-        return @token.to_h unless rotated != @token
+        rotated = @tokens.transform_values { |issued| @token_rotator.rotate(issued, now: now) }
+        return token.to_h.merge("rotated" => false) if rotated == @tokens
 
-        @token = rotated
-        @projected_files[@token_path] = @token.value
-        # The rewrite carries the same defaultMode / per-item modes as the
-        # first projection: the writer's own default for a secret is 0400
-        # root, which a non-root container cannot read (kube-api-access is
-        # 0644 by default).
-        @projector.writer.write(@projected_files, generation: options[:generation], secret: true,
-                                                  mode: default_file_mode, modes: file_modes).merge("token" => @token.to_h).freeze
-      end
-
-      def delete
-        delete_tmpfs_mount!(source_path, identity: mount_identity_for_cleanup) if secret?
-        remove_path(source_path)
+        write_sources(@sources, generation: options[:generation], tokens: rotated).merge("token" => token.to_h).freeze
       end
 
       private
 
-      def ensure_tmpfs!
-        @mount_identity = ensure_tmpfs_mount!(source_path)
+      def projected_credential(content)
+        return content if @credential_owner.nil? && @credential_group.nil?
+
+        # Publish the same permissions as the kubelet's fsGroup pass before
+        # exposing the new generation, including during a token refresh.
+        mode = @credential_group.nil? ? 0o600 : 0o640
+        AtomicWriter::FileContent.new(content, mode, @credential_owner, @credential_group)
       end
 
-      def mount_identity_for_cleanup
-        @mount_identity || Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
+      def sensitive_sources?(sources)
+        Array(sources).any? do |source|
+          source = source.to_h if source.respond_to?(:to_h)
+          next false unless source.is_a?(Hash)
+
+          %w[secret serviceAccountToken podCertificate].any? { |kind| Types.key(source, kind) }
+        end
       end
 
-      def normalize_sources(sources)
+      def write_sources(sources, generation: nil, tokens: @tokens)
+        if @legacy_directory && sensitive_sources?(sources)
+          raise SecretPersistenceError, "legacy disk-backed volume #{id} must be remounted before publishing credentials"
+        end
+
+        issued = {}
+        versions = {}
+        normalized = normalize_sources(sources, tokens, issued, versions)
+        ensure_tmpfs! unless @legacy_directory
+        result = @projector.project(sources: normalized, pod: Types.key(spec, "pod", {}), secret: secret?, generation: generation,
+                                    mode: default_file_mode, modes: file_modes)
+        @sources = sources
+        @tokens = issued
+        @certificate_versions = versions
+        result
+      end
+
+      def with_item_modes(files, source)
+        modes = Types.key(source, "modes")
+        return files unless modes
+
+        files.to_h do |path, value|
+          mode = modes.fetch(path) { default_file_mode }
+          [path, mode.nil? ? value : AtomicWriter::FileContent.new(value, mode, nil, nil)]
+        end
+      end
+
+      def normalize_sources(sources, tokens, issued, versions)
         sources.map do |source|
           value = source.respond_to?(:to_h) ? source.to_h : source
           next value unless value.is_a?(Hash)
 
           if value.key?("configMap") || value.key?(:configMap)
             inner = Types.key(value, "configMap", {})
-            Types.key(inner, "data", {}).to_h.merge(decode_binary(Types.key(inner, "binaryData", {}).to_h))
+            files = Types.key(inner, "data", {}).to_h.merge(decode_binary(Types.key(inner, "binaryData", {}).to_h))
+            with_item_modes(files, inner)
           elsif value.key?("secret") || value.key?(:secret)
             inner = Types.key(value, "secret", {})
-            decode_secret(Types.key(inner, "data", {}).to_h).merge(Types.key(inner, "stringData", {}).to_h)
+            files = decode_secret(Types.key(inner, "data", {}).to_h).merge(Types.key(inner, "stringData", {}).to_h)
+            with_item_modes(files, inner)
           elsif value.key?("downwardAPI") || value.key?(:downwardAPI)
-            inner = Types.key(value, "downwardAPI", {})
-            pod = Types.key(spec, "pod", {})
-            Array(Types.key(inner, "items", [])).each_with_object({}) do |item, result|
-              item = item.to_h
-              field = Types.key(Types.key(item, "fieldRef", {}), "fieldPath")
-              result[Types.key(item, "path")] = field.to_s.split(".").reduce(pod) do |current, key|
-                current.respond_to?(:[]) ? (current[key] || current[key.to_sym]) : nil
-              end.to_s
-            end
+            downward_api_files(Types.key(value, "downwardAPI", {}))
           elsif value.key?("serviceAccountToken") || value.key?(:serviceAccountToken)
             inner = Types.key(value, "serviceAccountToken", {})
-            rotator = Types.key(spec, "tokenRotator")
-            raise SecretPersistenceError, "projected service account token requires a token rotator" unless rotator
+            raise SecretPersistenceError, "projected service account token requires a token rotator" unless @token_rotator
 
-            token = if rotator.respond_to?(:issue)
-                      # An omitted audience means "the API server's default"
-                      # (kubelet sends no audiences and lets the TokenRequest
-                      # handler fill in --api-audiences); a literal placeholder
-                      # here mints a token no API server would accept.
-                      rotator.issue(audience: Types.key(inner, "audience", nil), pod_uid: Types.key(spec, "podUid", "pod"),
-                                    ttl: Types.key(inner, "expirationSeconds"))
-                    else
-                      raise UnsupportedError, "token rotator must implement issue"
-                    end
-            @token = token
-            @token_path = Types.key(inner, "path", "token").to_s
-            {@token_path => token.respond_to?(:value) ? token.value : Types.key(token, "value")}
+            audience = Types.key(inner, "audience")
+            ttl = Types.key(inner, "expirationSeconds") || ServiceAccountTokenProvider::DEFAULT_TTL_SECONDS
+            key = [audience, ttl]
+            issued[key] ||= tokens[key] || @token_rotator.issue(audience: audience, pod_uid: Types.key(spec, "podUid", "pod"), ttl: ttl)
+            current = issued.fetch(key)
+            content = current.respond_to?(:value) ? current.value : Types.key(current, "value")
+            {Types.key(inner, "path", "token").to_s => projected_credential(content)}
+          elsif value.key?("clusterTrustBundle") || value.key?(:clusterTrustBundle)
+            Types.key(value, "clusterTrustBundle", {}).transform_values { |content| projected_credential(content) }
           elsif value.key?("podCertificate") || value.key?(:podCertificate)
-            pod_certificate_files(Types.key(value, "podCertificate", {}))
+            pod_certificate_files(Types.key(value, "podCertificate", {}), versions)
           else
             value
           end
@@ -1514,7 +1486,7 @@ module Rubernetes
       # A podCertificate source: the credential bundle the kubelet's
       # PodCertificateManager holds for this projection (not ready: the
       # volume setup fails and is retried, as upstream's).
-      def pod_certificate_files(inner)
+      def pod_certificate_files(inner, versions)
         provider = @pod_certificates
         raise SecretPersistenceError, "projected podCertificate requires the kubelet's PodCertificateManager" unless provider
 
@@ -1527,7 +1499,7 @@ module Rubernetes
         rescue StandardError => error
           raise PodCertificateNotReadyError, "podCertificate #{volume_name}[#{index}]: #{error.message}"
         end
-        @certificate_versions[index] = provider.respond_to?(:version) ? provider.version(pod, volume_name, index) : 1
+        versions[index] = provider.respond_to?(:version) ? provider.version(pod, volume_name, index) : 1
         files = {}
         bundle_path = Types.key(inner, "credentialBundlePath", nil).to_s
         files[bundle_path] = "#{key_pem}#{chain_pem}" unless bundle_path.empty?
@@ -1535,7 +1507,7 @@ module Rubernetes
         files[key_path] = key_pem unless key_path.empty?
         chain_path = Types.key(inner, "certificateChainPath", nil).to_s
         files[chain_path] = chain_pem unless chain_path.empty?
-        files
+        files.transform_values { |content| projected_credential(content) }
       end
 
       def pod_certificate_sources
@@ -1566,20 +1538,10 @@ module Rubernetes
 
       # Rewrite the projection with the current credential bundles.
       def refresh_pod_certificates(generation: nil)
-        normalized = normalize_sources(Array(Types.key(spec, "sources", [])))
-        @projected_files = merge_projected_files(normalized)
-        @projector.writer.write(@projected_files, generation: generation, secret: secret?, mode: default_file_mode, modes: file_modes)
+        write_sources(@sources, generation: generation)
       end
 
       public :pod_certificate_refresh_due?, :refresh_pod_certificates, :pod_certificate_sources
-
-      def merge_projected_files(sources)
-        sources.each_with_object({}) do |source, files|
-          raise ValidationError, "projected source must return a map" unless source.respond_to?(:to_h)
-
-          source.to_h.each { |path, value| files[path.to_s] = value }
-        end
-      end
 
       def decode_binary(values)
         values.each_with_object({}) do |(path, encoded), result|
@@ -1644,13 +1606,7 @@ module Rubernetes
       end
     end
 
-    class LocalBackend < HostPathBackend
-      TYPE = "local"
-
-      def persistent?
-        true
-      end
-    end
+    require_relative "local_backend"
 
     class LoopDMBackend < Backend
       TYPE = "loopDM"
@@ -1783,10 +1739,13 @@ module Rubernetes
       end
     end
 
+    require_relative "static_storage_backends"
+
     BUILTIN_BACKENDS = {
       "emptyDir" => EmptyDirBackend, "hostPath" => HostPathBackend, "configMap" => ConfigMapBackend,
       "secret" => SecretBackend, "downwardAPI" => DownwardAPIBackend, "projected" => ProjectedBackend,
       "image" => ImageBackend, "local" => LocalBackend, "loopDM" => LoopDMBackend,
+      "nfs" => NFSBackend, "iscsi" => ISCSIBackend, "fc" => FibreChannelBackend,
       "loop-DM" => LoopDMBackend, "loop-dm" => LoopDMBackend,
       "loopDevice" => LoopDMBackend, "deviceMapper" => LoopDMBackend
     }.freeze
