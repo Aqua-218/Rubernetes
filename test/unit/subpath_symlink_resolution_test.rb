@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
 require_relative "../test_helper"
 require "rubernetes/volume"
 require "rubernetes/platform/linux/openat2"
@@ -11,12 +13,8 @@ require "rubernetes/platform/linux/openat2"
 # all: "[sig-storage] Subpath Atomic writer volumes should support subpaths
 # with projected pod" never started its Pod.
 #
-# The property a subPath actually has to hold is that it stays INSIDE the
-# volume.  RESOLVE_IN_ROOT is the kernel's way of saying exactly that: the
-# directory descriptor becomes "/", so an absolute symlink target, a "..", and
-# a symlink chain are all clamped to the volume -- the same containment kubelet
-# gets by evaluating the symlink and then requiring the result to be within the
-# volume (subpath_linux.go doBindSubPath).
+# Resolve the target relative to the opened volume (subpath_linux.go
+# doBindSubPath) and require a strict descriptor walk of the resolved path.
 class SubPathSymlinkResolutionTest < Minitest::Test
   Openat2 = Rubernetes::Platform::Linux::Openat2
 
@@ -52,15 +50,25 @@ class SubPathSymlinkResolutionTest < Minitest::Test
     end
   end
 
-  # An ELOOP from the strict walk is what triggers the second attempt.
-  def test_an_eloop_is_recognised_however_it_is_wrapped
-    security = Rubernetes::Volume::PathSecurity.allocate
-    direct = Errno::ELOOP.new("openat2")
-    wrapped = RuntimeError.new("descriptor-relative subPath resolution failed: " \
-                               "Too many levels of symbolic links - openat2")
+  def test_resolution_is_relative_to_the_open_volume
+    Dir.mktmpdir("subpath-symlinks") do |root|
+      volume = File.join(root, "volume")
+      FileUtils.mkdir_p(File.join(volume, "..generation"))
+      File.write(File.join(volume, "..generation", "key"), "projected")
+      File.symlink("..generation", File.join(volume, "..data"))
+      File.symlink("..data/key", File.join(volume, "key"))
+      File.symlink("../", File.join(volume, "outside"))
+      security = Rubernetes::Volume::PathSecurity.new(root: root, adapter: Openat2.new(root: root))
+      parent = security.open(volume)
+      begin
+        key = security.validate_sub_path!(parent, "key")
 
-    assert(security.send(:symlink_resolution_error?, direct))
-    assert(security.send(:symlink_resolution_error?, wrapped))
-    refute(security.send(:symlink_resolution_error?, RuntimeError.new("permission denied")))
+        assert_equal "projected", File.read("/proc/self/fd/#{key.fd}")
+        assert_raises(Rubernetes::Volume::PathSecurityError) { security.validate_sub_path!(parent, "outside") }
+      ensure
+        key&.close
+        parent.close
+      end
+    end
   end
 end
