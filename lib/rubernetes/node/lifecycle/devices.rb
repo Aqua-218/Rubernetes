@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+
 module Rubernetes
   module Node
     class Lifecycle
@@ -42,8 +44,7 @@ module Rubernetes
           spec["env"] = env
           mounts = Array(spec["mounts"]).dup
           allocation["mounts"].each_with_index do |mount, index|
-            mounts << {"name" => "device-plugin-mount-#{index}", "source" => mount["host_path"].to_s, "destination" => mount["container_path"].to_s,
-                       "readonly" => mount["read_only"] == true, "propagation" => "None"}
+            mounts << device_plugin_mount(mount, index)
           end
           allocation["devices"].each_with_index do |device, index|
             host = device["host_path"].to_s
@@ -58,12 +59,28 @@ module Rubernetes
           end
           spec["mounts"] = mounts
           ids = allocation["cdi_devices"].map { |device| device["name"].to_s }.reject(&:empty?)
-          spec = CDI.apply(spec, CDI.resolve(ids, spec_dirs: @cdi_spec_dirs)) unless ids.empty?
+          spec = CDI.apply(spec, CDI.resolve(ids, spec_dirs: @cdi_spec_dirs), pod_directory: pod_directory(record)) unless ids.empty?
           spec
         rescue CDI::Error => error
           record[:reason] = "CreateContainerError"
           raise LifecycleError,
                 "container #{Helpers.key(definition, "name", "").inspect}: device plugin CDI injection failed: #{error.message}"
+        end
+
+        def device_plugin_mount(mount, index)
+          source = mount["host_path"].to_s
+          destination = mount["container_path"].to_s
+          unless [source, destination].all? { |path| path.start_with?("/") && !path.include?("\0") && !path.split("/").include?("..") }
+            raise LifecycleError, "device plugin mount requires absolute host and container paths"
+          end
+
+          # The native backend needs a real bind source. As in containerd,
+          # a missing source from a device plugin's Allocate mount is a directory.
+          FileUtils.mkdir_p(source, mode: 0o755) if @pod_root && !File.exist?(source)
+          {"name" => "device-plugin-mount-#{index}", "source" => source, "destination" => destination,
+           "readonly" => mount["read_only"] == true, "propagation" => "None"}
+        rescue SystemCallError => error
+          raise LifecycleError, "device plugin mount #{source}: #{error.message}"
         end
 
         def dynamic_resources?(pod)
@@ -99,7 +116,7 @@ module Rubernetes
           ids = @dra_manager.container_cdi_devices(Helpers.string_keys(record[:pod]), Helpers.string_keys(definition))
           return spec if ids.empty?
 
-          CDI.apply(spec, CDI.resolve(ids, spec_dirs: @cdi_spec_dirs))
+          CDI.apply(spec, CDI.resolve(ids, spec_dirs: @cdi_spec_dirs), pod_directory: pod_directory(record))
         rescue CDI::Error, DRAManager::Error => error
           record[:reason] = "CreateContainerError"
           raise LifecycleError, "container #{Helpers.key(definition, "name", "").inspect}: CDI device injection failed: #{error.message}"
