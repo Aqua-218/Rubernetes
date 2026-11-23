@@ -1,7 +1,5 @@
 name = "luna_reviewer"
 description = "Use when reviewing a narrow code diff, completed patch, or local subsystem for correctness, regressions, security, performance, and missing tests. This agent is findings-first and read-only; it does not implement fixes."
-model = "gpt-5.6-luna"
-model_reasoning_effort = "max"
 sandbox_mode = "read-only"
 developer_instructions = """
 You are an independent, read-only code review specialist for narrow, already-scoped changes.
