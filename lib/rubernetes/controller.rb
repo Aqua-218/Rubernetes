@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "support/autoload"
+
 require_relative "controller/errors"
 require_relative "controller/support"
 require_relative "controller/types"
@@ -10,72 +12,67 @@ require_relative "controller/effect_journal"
 require_relative "controller/lease"
 require_relative "controller/runtime"
 require_relative "controller/dsl"
-require_relative "controller/builtins"
-require_relative "controller/secondary_support"
-require_relative "controller/serviceaccount_token_controller"
-require_relative "controller/endpointslice_controller"
-require_relative "controller/endpointslice_mirroring_controller"
-require_relative "controller/replicationcontroller_controller"
-require_relative "controller/pod_garbage_collector_controller"
-require_relative "controller/resourcequota_controller"
-require_relative "controller/namespace_controller"
-require_relative "controller/serviceaccount_controller"
-require_relative "controller/horizontal_pod_autoscaler_controller"
-require_relative "controller/security_lifecycle"
-require_relative "controller/infrastructure_storage"
-require_relative "controller/protection_publication"
-require_relative "controller/advanced_misc"
 
 module Rubernetes
   module Controller
-    BASE_BUILTIN_IMPLEMENTATIONS = {
-      "deployment-controller" => DeploymentController,
-      "replicaset-controller" => ReplicaSetController,
-      "statefulset-controller" => StatefulSetController,
-      "daemonset-controller" => DaemonSetController,
-      "job-controller" => JobController,
-      "cronjob-controller" => CronJobController,
-      "node-lifecycle-controller" => NodeController,
-      "endpoints-controller" => EndpointController,
-      "garbage-collector-controller" => GarbageCollectorController,
-      "serviceaccount-token-controller" => ServiceAccountTokenController,
-      "endpointslice-controller" => EndpointSliceController,
-      "endpointslice-mirroring-controller" => EndpointSliceMirroringController,
-      "replicationcontroller-controller" => ReplicationControllerController,
-      "pod-garbage-collector-controller" => PodGarbageCollectorController,
-      "resourcequota-controller" => ResourceQuotaController,
-      "namespace-controller" => NamespaceController,
-      "serviceaccount-controller" => ServiceAccountController,
-      "horizontal-pod-autoscaler-controller" => HorizontalPodAutoscalerController
-    }.freeze
+    files = {
+      "advanced_misc" => %i[AdvancedMiscControllerFactory AdvancedMiscRegistration AdvancedMiscSupport
+                            LegacyServiceAccountTokenCleanerController ResourceClaimController SELinuxWarningController ServiceCIDRController
+                            StorageVersionMigratorController ValidatingAdmissionPolicyStatusController],
+      "apply_failures" => %i[ApplyFailures],
+      "builtin_implementations" => %i[BASE_BUILTIN_IMPLEMENTATIONS BUILTIN_FACTORY_IMPLEMENTATIONS BUILTIN_FACTORY_MODULES
+                                      BUILTIN_IMPLEMENTATIONS BUILTIN_INCOMPLETE_REASONS UNIMPLEMENTED_BUILTIN_CONTROLLERS],
+      "builtins" => %i[Builtins CronJobController DaemonSetController DeploymentController EndpointController EndpointsController
+                       GarbageCollectorController JobController NodeController ReplicaSetController StatefulSetController],
+      "endpoint_slice_hints" => %i[EndpointSliceHints],
+      "endpointslice_controller" => %i[EndpointSliceController],
+      "endpointslice_mirroring_controller" => %i[EndpointSliceMirroringController],
+      "horizontal_pod_autoscaler_controller" => %i[HorizontalPodAutoscalerController MetricsClient RESTMapper ReplicaCalculator ScaleClient
+                                                   ScaleSnapshot],
+      "horizontal_pod_autoscaler_status" => %i[HorizontalPodAutoscalerStatus],
+      "hpa_scale_discovery" => %i[HPAScaleDiscovery],
+      "hpa_sync" => %i[HPASync],
+      "infrastructure_storage" => %i[InfrastructureCapability InfrastructureStorageFactory PinnedInfrastructureControllerFactory],
+      "infrastructure_storage/attach_detach_volumes" => %i[AttachDetachVolumes],
+      "infrastructure_storage/cloud_provider_controllers" => %i[CloudNodeLifecycleController NodeRouteController ServiceLBController
+                                                                ServiceLbController ServiceLoadBalancerController],
+      "infrastructure_storage/cluster_role_aggregation_controller" => %i[ClusterRoleAggregationController],
+      "infrastructure_storage/factory" => %i[InfrastructureStorageControllerFactory],
+      "infrastructure_storage/persistent_volume_attach_detach_controller" => %i[PersistentVolumeAttachDetachController],
+      "infrastructure_storage/persistent_volume_binder_controller" => %i[PersistentVolumeBinderController],
+      "infrastructure_storage/persistent_volume_expander_controller" => %i[PersistentVolumeExpanderController],
+      "infrastructure_storage/routed_load_balancer" => %i[RoutedLoadBalancer],
+      "infrastructure_storage/support" => %i[InfrastructureStorageSupport],
+      "infrastructure_storage/taint_eviction_controller" => %i[DeviceTaintEvictionController TaintEvictionController],
+      "namespace_controller" => %i[NamespaceController],
+      "persistent_volume_claim_protection_controller" => %i[PersistentVolumeClaimProtectionController],
+      "pod_deletion_ranking" => %i[PodDeletionRanking],
+      "pod_garbage_collector_controller" => %i[PodGarbageCollectorController],
+      "protection_publication" => %i[EphemeralVolumeController KubeAPIServerServingClusterTrustBundlePublisherController
+                                     PersistentVolumeProtectionController PinnedProtectionPublicationControllerFactory PodGroupProtectionController
+                                     ProtectionPublicationControllerFactory ProtectionPublicationRegistration ProtectionPublicationSupport
+                                     RootCACertificatePublisherController StorageVersionGarbageCollectorController TTLAfterFinishedController
+                                     VolumeAttributesClassProtectionController],
+      "replica_failure_status" => %i[ReplicaFailureStatus],
+      "replicationcontroller_controller" => %i[ReplicationControllerController],
+      "resource_claim_workloads" => %i[ResourceClaimWorkloads],
+      "resource_pool_status_request_controller" => %i[ResourcePoolStatusRequestController],
+      "resourcequota_controller" => %i[ResourceQuotaController],
+      "secondary_support" => %i[SecondarySupport],
+      "security_lifecycle" => %i[BootstrapSignerController CertificateSigningRequestApprovingController
+                                 CertificateSigningRequestCleanerController CertificateSigningRequestSigningController DisruptionController NodeIPAMController
+                                 PinnedSecurityLifecycleControllerFactory PodCertificateRequestCleanerController SecurityLifecycleControllerFactory
+                                 SecurityLifecycleRegistration SecurityLifecycleSupport TTLController TTLControllerAlias TokenCleanerController TtlController],
+      "serviceaccount_controller" => %i[ServiceAccountController],
+      "serviceaccount_token_controller" => %i[ServiceAccountTokenController]
+    }
+    Autoload.register(self, File.join(__dir__, "controller"), files)
 
-    BUILTIN_FACTORY_MODULES = [
-      SecurityLifecycleRegistration,
-      InfrastructureStorageControllerFactory,
-      ProtectionPublicationControllerFactory,
-      AdvancedMiscControllerFactory
-    ].freeze
-
-    # Factory modules keep their implementation maps private to each batch;
-    # flatten them once at the integration seam so the corpus and registry
-    # share one 52-name inventory.  A duplicate name is a wiring error, not a
-    # reason to silently prefer one implementation.
-    BUILTIN_FACTORY_IMPLEMENTATIONS = BUILTIN_FACTORY_MODULES.each_with_object({}) do |factory, implementations|
-      factory::IMPLEMENTATIONS.each do |name, implementation|
-        raise ValidationError, "duplicate built-in implementation #{name.inspect}" if implementations.key?(name)
-
-        implementations[name] = implementation
-      end
-    end.freeze
-
-    BUILTIN_IMPLEMENTATIONS = BASE_BUILTIN_IMPLEMENTATIONS.merge(BUILTIN_FACTORY_IMPLEMENTATIONS).freeze
-
-    # Completeness is derived from the concrete implementation contract and
-    # the pinned corpus metadata.  A controller may not be promoted by a
-    # placeholder reason or by suppressing a startup validation error.
-    BUILTIN_INCOMPLETE_REASONS = {}.freeze
-
-    UNIMPLEMENTED_BUILTIN_CONTROLLERS = (BuiltinControllerCorpus.names - BUILTIN_IMPLEMENTATIONS.keys).freeze
+    BUILTIN_PLAN_OPTIONS = lambda do |options, store|
+      options = {} unless options.is_a?(Hash)
+      options.merge(store: options[:store] || store)
+    end
+    private_constant :BUILTIN_PLAN_OPTIONS
 
     class << self
       def default_registry
@@ -84,12 +81,16 @@ module Rubernetes
 
       alias controller_registry default_registry
 
-      def build_default_registry(schema_registry: nil)
+      def build_default_registry(schema_registry: nil, feature_gates: {})
         registry = ControllerRegistry.new(schema_registry: schema_registry,
                                           corpus: BuiltinControllerCorpus,
                                           require_corpus: true)
         factory_definitions = BUILTIN_FACTORY_MODULES.flat_map do |factory|
-          factory.definitions(registry: registry)
+          if factory == AdvancedMiscControllerFactory
+            factory.definitions(registry: registry, feature_gates: feature_gates)
+          else
+            factory.definitions(registry: registry)
+          end
         end.to_h { |definition| [definition.name, definition] }
         BuiltinControllerCorpus.entries.each do |entry|
           implementation = BUILTIN_IMPLEMENTATIONS[entry.name]
@@ -103,34 +104,11 @@ module Rubernetes
 
           descriptor = entry.descriptor
           owns, watches = builtin_wiring(entry.name, descriptor)
-          instance_mutex = Mutex.new
-          controller_instance = nil
-          definition = nil
-          implementation_block = lambda do |resource, context = nil|
-            context = {} unless context.is_a?(Hash)
-            controller = context[:controller] || context["controller"]
-            options = context[:options] || context["options"] || {}
-            options = options.dup if options.is_a?(Hash)
-            options = {} unless options.is_a?(Hash)
-            options[:store] ||= context[:store] || context["store"]
-            controller ||= instance_mutex.synchronize do
-              controller_instance ||= implementation.new(store: options[:store] || options["store"], definition: definition)
-            end
-            controller.plan(resource, **options)
+          add_job_scheduling_wiring(descriptor, owns, watches) if entry.name == "job-controller" && feature_gates[Builtins::JobScheduling::GATE] == true
+          definition = entry.build_controller(implementation, kind: descriptor, owns: owns, watches: watches,
+                                                              options_for: BUILTIN_PLAN_OPTIONS) do |declaration, _store, options|
+            implementation.new(store: options[:store] || options["store"], definition: declaration)
           end
-          definition = ControllerDefinition.new(
-            name: entry.name,
-            kind: descriptor,
-            owns: owns,
-            watches: watches,
-            reconcile_block: implementation_block,
-            feature_gates: entry.feature_gates,
-            startup_conditions: entry.startup_conditions,
-            sync_targets: entry.sync_targets,
-            status_fields: entry.status_fields,
-            events: entry.events,
-            implementation: implementation
-          )
           registry.register(definition, incomplete_reasons: BUILTIN_INCOMPLETE_REASONS.fetch(entry.name, []))
         end
         registry
@@ -155,44 +133,25 @@ module Rubernetes
       private
 
       def builtin_wiring(name, owner)
-        pod = ResourceDescriptor.parse("Pod")
-        replica_set = ResourceDescriptor.parse("ReplicaSet")
-        job = ResourceDescriptor.parse("Job")
-        node = ResourceDescriptor.parse("Node")
-        service = ResourceDescriptor.parse("Service")
-        endpoints = ResourceDescriptor.parse("Endpoints")
-        endpoint_slice = ResourceDescriptor.parse("EndpointSlice")
-        secret = ResourceDescriptor.parse("Secret")
-        service_account = ResourceDescriptor.parse("ServiceAccount")
-        namespace = ResourceDescriptor.parse("Namespace")
-        resource_quota = ResourceDescriptor.parse("ResourceQuota")
-        config_map = ResourceDescriptor.parse("ConfigMap")
-        hpa = ResourceDescriptor.parse("HorizontalPodAutoscaler")
-        stateful_revision = ResourceDescriptor.parse("ControllerRevision")
-        stateful_claim = ResourceDescriptor.parse("PersistentVolumeClaim")
-        owns = case name
-               when "deployment-controller" then [OwnershipEdge.new(owner: owner, dependent: replica_set)]
-               when "replicaset-controller", "daemonset-controller", "job-controller" then [OwnershipEdge.new(owner: owner, dependent: pod)]
-               when "cronjob-controller" then [OwnershipEdge.new(owner: owner, dependent: job)]
-               when "statefulset-controller" then [OwnershipEdge.new(owner: owner, dependent: pod),
-                                                   OwnershipEdge.new(owner: owner, dependent: stateful_revision)]
-               when "serviceaccount-token-controller" then [OwnershipEdge.new(owner: owner, dependent: secret)]
-               when "replicationcontroller-controller" then [OwnershipEdge.new(owner: owner, dependent: pod)]
-               else []
-               end
+        dependents = case name
+                     when "deployment-controller" then %w[ReplicaSet]
+                     when "replicaset-controller", "replicationcontroller-controller", "daemonset-controller", "job-controller" then %w[Pod]
+                     when "cronjob-controller" then %w[Job]
+                     when "statefulset-controller" then %w[Pod ControllerRevision]
+                     when "serviceaccount-token-controller" then %w[Secret]
+                     else []
+                     end
+        owns = dependents.map { |kind| OwnershipEdge.new(owner: owner, dependent: ResourceDescriptor.parse(kind)) }
         watches = case name
-                  when "deployment-controller" then [watch_for(owner, :all), watch_for(replica_set, :owner_reference, owner: owner),
-                                                     watch_for(pod, :owner_reference, owner: owner)]
-                  when "replicaset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner)]
-                  when "statefulset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
-                                                      watch_for(stateful_revision, :owner_reference, owner: owner),
-                                                      watch_for(stateful_claim, :label)]
-                  when "daemonset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
-                                                    watch_for(node, :all)]
-                  when "job-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner)]
-                  when "cronjob-controller" then [watch_for(owner, :all), watch_for(job, :owner_reference, owner: owner)]
+                  when "deployment-controller" then [watch_for(owner, :all), watch_for("ReplicaSet", :owner_reference, owner: owner),
+                                                     watch_for("Pod", :owner_reference, owner: owner)]
+                  when "replicaset-controller", "job-controller" then [watch_for(owner, :all), watch_for("Pod", :owner_reference, owner: owner)]
+                  when "statefulset-controller" then statefulset_watches(owner)
+                  when "daemonset-controller" then [watch_for(owner, :all), watch_for("Pod", :owner_reference, owner: owner),
+                                                    watch_for("Node", :all)]
+                  when "cronjob-controller" then [watch_for(owner, :all), watch_for("Job", :owner_reference, owner: owner)]
                   when "endpoints-controller"
-                    [watch_for(service, :all, route: :self), watch_for(pod, :label, selector_source: service)]
+                    [watch_for("Service", :all, route: :self), watch_for("Pod", :label, selector_source: ResourceDescriptor.parse("Service"))]
                   # An EndpointSlice names its Service (or, for a mirror, its
                   # Endpoints) in kubernetes.io/service-name, and each of the two
                   # controllers cares only about the slices it manages
@@ -207,18 +166,20 @@ module Rubernetes
                   # failed the 12 s budget of the EndpointSlice mirroring spec
                   # running alongside.
                   when "endpointslice-controller"
-                    [watch_for(service, :all, route: :self), watch_for(pod, :label, selector_source: service),
-                     watch_for(endpoint_slice, :all, route: :self, queue_key: SLICE_OWNER_KEY,
-                                                     predicate: slice_managed_by("endpointslice-controller.k8s.io"))]
+                    [watch_for("Service", :all, route: :self), watch_for("Pod", :label, selector_source: ResourceDescriptor.parse("Service")),
+                     # Node informer data is read during the Service's periodic sync.
+                     watch_for("Node", :all, predicate: ->(_node) { false }),
+                     watch_for("EndpointSlice", :all, route: :self, queue_key: SLICE_OWNER_KEY,
+                                                      predicate: slice_managed_by("endpointslice-controller.k8s.io"))]
                   when "endpointslice-mirroring-controller"
-                    [watch_for(endpoints, :all, route: :self),
-                     watch_for(endpoint_slice, :all, route: :self, queue_key: SLICE_OWNER_KEY,
-                                                     predicate: slice_managed_by("endpointslicemirroring-controller.k8s.io"))]
-                  when "replicationcontroller-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
-                                                                watch_for(pod, :label)]
-                  when "serviceaccount-token-controller" then [watch_for(service_account, :all),
-                                                               watch_for(secret, :owner_reference, owner: owner)]
-                  when "pod-garbage-collector-controller" then [watch_for(pod, :all), watch_for(node, :all)]
+                    [watch_for("Endpoints", :all, route: :self),
+                     watch_for("EndpointSlice", :all, route: :self, queue_key: SLICE_OWNER_KEY,
+                                                      predicate: slice_managed_by("endpointslicemirroring-controller.k8s.io"))]
+                  when "replicationcontroller-controller" then [watch_for(owner, :all), watch_for("Pod", :owner_reference, owner: owner),
+                                                                watch_for("Pod", :label)]
+                  when "serviceaccount-token-controller" then [watch_for("ServiceAccount", :all),
+                                                               watch_for("Secret", :owner_reference, owner: owner)]
+                  when "pod-garbage-collector-controller" then [watch_for("Pod", :all), watch_for("Node", :all)]
                   when "resourcequota-controller"
                     # Replenishment (pkg/controller/resourcequota): every kind a
                     # quota can count is watched so that a deletion recomputes
@@ -227,23 +188,13 @@ module Rubernetes
                     # conformance spec that deletes a ReplicaSet and waits five
                     # minutes for count/replicasets.apps to reach zero passed
                     # or failed on where the resync timer happened to be.
-                    [watch_for(resource_quota, :all), watch_for(pod, :all, route: :namespace),
-                     watch_for(service, :all, route: :namespace), watch_for(config_map, :all, route: :namespace),
-                     watch_for(secret, :all, route: :namespace), watch_for(stateful_claim, :all, route: :namespace),
-                     watch_for(replica_set, :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("ReplicationController"), :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("Deployment"), :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("StatefulSet"), :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("DaemonSet"), :all, route: :namespace),
-                     watch_for(job, :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("CronJob"), :all, route: :namespace),
-                     watch_for(ResourceDescriptor.parse("ResourceClaim"), :all, route: :namespace)]
-                  when "namespace-controller" then [watch_for(namespace, :all), watch_for(pod, :all), watch_for(service, :all),
-                                                    watch_for(endpoints, :all), watch_for(endpoint_slice, :all),
-                                                    watch_for(config_map, :all), watch_for(secret, :all),
-                                                    watch_for(service_account, :all), watch_for(resource_quota, :all)]
-                  when "serviceaccount-controller" then [watch_for(namespace, :all, route: :self), watch_for(service_account, :all)]
-                  when "horizontal-pod-autoscaler-controller" then [watch_for(hpa, :all)]
+                    replenishment = %w[Pod Service ConfigMap Secret PersistentVolumeClaim ReplicaSet ReplicationController
+                                       Deployment StatefulSet DaemonSet Job CronJob ResourceClaim]
+                    [watch_for(owner, :all)] + replenishment.map { |kind| watch_for(kind, :all, route: :namespace) }
+                  when "namespace-controller"
+                    %w[Namespace Pod Service Endpoints EndpointSlice ConfigMap Secret ServiceAccount ResourceQuota].map { |kind| watch_for(kind, :all) }
+                  when "serviceaccount-controller" then service_account_watches
+                  when "horizontal-pod-autoscaler-controller" then [watch_for("HorizontalPodAutoscaler", :all)]
                   # A Pod event concerns only the node it is bound to (upstream
                   # nodelifecycle/tainteviction handle it per Pod); fanning it
                   # out reconciled every node for every Pod event.
@@ -251,19 +202,32 @@ module Rubernetes
                     # The node Leases are watched as upstream's leaseInformer
                     # does: the heartbeat is read from the cache, where every
                     # reconcile used to LIST kube-node-lease from the API.
-                    [watch_for(node, :all), watch_for(pod, :all, route: :self, queue_key: InfrastructureStorageControllerFactory::POD_NODE_KEY),
+                    [watch_for("Node", :all), watch_for("Pod", :all, route: :self, queue_key: InfrastructureStorageControllerFactory::POD_NODE_KEY),
                      watch_for(Builtins::NodeController::LEASE, :all, route: :self, queue_key: NODE_LEASE_KEY)]
                   when "taint-eviction-controller"
-                    [watch_for(node, :all), watch_for(pod, :all, route: :self, queue_key: InfrastructureStorageControllerFactory::POD_NODE_KEY)]
+                    [watch_for("Node", :all), watch_for("Pod", :all, route: :self, queue_key: InfrastructureStorageControllerFactory::POD_NODE_KEY)]
                   when "garbage-collector-controller"
                     # An owner deletion produces no Pod event; the collector must
                     # hear about the owner kinds it reaps dependents of.
-                    [watch_for(pod, :all)] + %w[ReplicationController ReplicaSet Deployment Job CronJob StatefulSet DaemonSet].map do |kind|
-                      watch_for(ResourceDescriptor.parse(kind), :all)
+                    [watch_for("Pod", :all)] + %w[ReplicationController ReplicaSet Deployment Job CronJob StatefulSet DaemonSet].map do |kind|
+                      watch_for(kind, :all)
                     end
                   else []
                   end
         [owns, watches]
+      end
+
+      def statefulset_watches(owner)
+        [watch_for(owner, :all), watch_for("Pod", :owner_reference, owner: owner),
+         watch_for("Pod", :label, predicate: ->(object) { Support.controller_owner_reference(object).nil? }),
+         watch_for("ControllerRevision", :owner_reference, owner: owner), watch_for("PersistentVolumeClaim", :label)]
+      end
+
+      def add_job_scheduling_wiring(owner, owns, watches)
+        [Builtins::JobScheduling::WORKLOAD, Builtins::JobScheduling::POD_GROUP].each do |dependent|
+          owns << OwnershipEdge.new(owner: owner, dependent: dependent)
+          watches << watch_for(dependent, :owner_reference, owner: owner)
+        end
       end
 
       SLICE_SERVICE_LABEL = "kubernetes.io/service-name"
@@ -287,7 +251,14 @@ module Rubernetes
         ->(object) { Support.labels(object)[SLICE_MANAGED_BY_LABEL].to_s == manager }
       end
 
+      def service_account_watches
+        [watch_for("Namespace", :all, route: :self),
+         watch_for("ServiceAccount", :all, route: :self, queue_key: ->(account) { Support.namespace(account) },
+                                           predicate: ->(account) { Support.name(account) == ServiceAccountController::DEFAULT_NAME })]
+      end
+
       def watch_for(resource, via, owner: nil, route: :fan_out, selector_source: nil, queue_key: nil, predicate: nil)
+        resource = ResourceDescriptor.parse(resource)
         queue_key ||= if via.to_sym == :owner_reference && owner
                         lambda do |object|
                           reference = Support.owner_references(object).find do |ref|
