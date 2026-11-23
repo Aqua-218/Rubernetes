@@ -111,6 +111,20 @@ class OrphanDependentsResilienceTest < Minitest::Test
     assert_empty store.updated
   end
 
+  def test_cluster_scoped_dependent_is_updated_at_the_cluster_storage_key
+    item = pod("cluster-child")
+    item.fetch("metadata").delete("namespace")
+    store = FakeStore.new([item])
+    written_namespace = nil
+    store.define_singleton_method(:update) { |resource:, namespace:, name:, object:, resource_version: nil| written_namespace = namespace }
+    descriptor = Rubernetes::Controller::ResourceDescriptor.parse("Widget", group: "example.com", version: "v1",
+                                                                            resource: "widgets", scope: :cluster)
+
+    server_for(store).send(:orphan_one_dependent, descriptor, item, OWNER_UID)
+
+    assert_equal :cluster, written_namespace
+  end
+
   def test_a_dependent_this_owner_does_not_own_is_left_alone
     item = pod("p0", owner_uid: "someone-else")
     store = FakeStore.new([item])
