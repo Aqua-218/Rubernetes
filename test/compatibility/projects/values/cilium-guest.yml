@@ -1,0 +1,20 @@
+# One Rubernetes worker in a dedicated QEMU guest. Cilium owns workload CNI
+# and IPAM while the kube-proxy component provides Kubernetes Services.
+kubeProxyReplacement: false
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList: ["10.244.0.0/16"]
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+bpf:
+  autoMount:
+    enabled: false
+operator:
+  replicas: 1
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
