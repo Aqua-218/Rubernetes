@@ -4,6 +4,10 @@ require "securerandom"
 require "time"
 
 require_relative "../dra"
+require_relative "../dra/workload_claims"
+require_relative "dynamic_resources/node_allocatable"
+require_relative "dynamic_resources/filter"
+require_relative "dynamic_resources/workload_claims"
 
 module Rubernetes
   module Scheduler
@@ -31,8 +35,7 @@ module Rubernetes
     # Claims, slices and classes come from the scheduler's informers
     # (context.volume_data "resourceClaims" / "resourceSlices" /
     # "deviceClasses"), with the claims this plugin wrote overlaid until the
-    # informer has caught up (the assume cache).  Pod groups and node
-    # allocatable resources are alpha (off) upstream and not handled.
+    # informer has caught up (the assume cache).
     class DynamicResources
       NAME = "DynamicResources"
       FINALIZER = "resource.kubernetes.io/delete-protection"
@@ -85,13 +88,14 @@ module Rubernetes
       # +num_user+: claims[0...num_user] are the Pod's own; a claim after them
       # is its extended-resource claim (in memory until PreBind creates it).
       State = Struct.new(:skip, :rejection, :claims, :informations, :allocator, :node_allocations, :unavailable, :mutex,
-                         :num_user, :extended_scalars, :extended_resolver, keyword_init: true)
+                         :num_user, :extended_scalars, :extended_resolver, :bindings, :shared_pending, keyword_init: true)
       # The node's allocations for the claims to allocate, and the node's
       # version of the extended-resource claim (its requests) with the
       # container request mappings.
-      NodeAllocation = Struct.new(:results, :extended_claim, :mappings, keyword_init: true)
+      NodeAllocation = Struct.new(:results, :extended_claim, :mappings, :node_allocatable_status, :status_written, keyword_init: true)
       SPECIAL_CLAIM_NAME = "<extended-resources>"
       ExtendedResources = Rubernetes::DRA::ExtendedResources
+      WorkloadClaims = Rubernetes::DRA::WorkloadClaims
       Information = Struct.new(:available_on_nodes, :allocation)
       Allocator = Rubernetes::DRA::Allocator
 
@@ -99,15 +103,19 @@ module Rubernetes
       # #update_claim_status(claim) -> the stored claim (raises on conflict
       # with #conflict? true), #patch_claim_status(namespace, name, patch).
       def initialize(api: nil, features: Allocator::Features.defaults, cel: nil, clock: -> { Time.now.utc },
-                     binding_timeout: BINDING_TIMEOUT, enabled: true, extended_resources: true)
+                     binding_timeout: BINDING_TIMEOUT, enabled: true, extended_resources: true, node_allocatable: false,
+                     workload_claims: false)
         @api = api
         @features = features
-        @cel = cel || Rubernetes::DRA::CEL.new(consumable_capacity: features.consumable_capacity)
+        @cel = cel || Rubernetes::DRA::CEL.new(consumable_capacity: features.consumable_capacity,
+                                               list_type_attributes: features.list_type_attributes)
         @clock = clock
         @binding_timeout = Float(binding_timeout)
         @enabled = enabled
         # DRAExtendedResource (beta, on).
         @features_extended = extended_resources
+        @node_allocatable = node_allocatable
+        @workload_claims = workload_claims
         @pending = {}
         @assumed = {}
         @mutex = Mutex.new
@@ -135,7 +143,28 @@ module Rubernetes
         return true if state.skip
         return state.rejection if state.rejection
 
-        filter(pod, node, state)
+        filter(pod, node, state, context)
+      end
+
+      def pod_with_node_allocatable_status(pod, node, context)
+        return pod unless @enabled && @node_allocatable
+
+        statuses = cycle_state(pod, context).node_allocations&.dig(node.name)&.node_allocatable_status
+        statuses && !statuses.empty? ? NodeAllocatable.with_status(pod, statuses) : pod
+      end
+
+      def discard_assumption(pod, node, context)
+        state = cycle_state(pod, context)
+        return if state.informations.nil?
+
+        @mutex.synchronize do
+          state.informations.each_with_index do |info, index|
+            next if info.allocation.nil?
+
+            claim = extended_index?(state, index) ? state.node_allocations[node.name]&.extended_claim : state.claims[index]
+            @pending.delete(claim_uid(claim)) if claim
+          end
+        end
       end
 
       # Score + NormalizeScore (DefaultNormalizeScore) over the feasible
@@ -184,12 +213,14 @@ module Rubernetes
           finalizers = Array(claim.dig("metadata", "finalizers"))
           (claim["metadata"] ||= {})["finalizers"] = finalizers + [FINALIZER] unless finalizers.include?(FINALIZER)
           (claim["status"] ||= {})["allocation"] = allocation
+          binding = state.bindings&.[](ref(claim))
+          claim["status"]["reservedFor"] = Array(claim["status"]["reservedFor"]) + [binding] if binding && WorkloadClaims.group_reference?(binding)
           @mutex.synchronize { @pending[claim_uid(claim)] = claim }
         end
         true
       end
 
-      def unreserve(pod, _node, context = nil)
+      def unreserve(pod, node, context = nil)
         return true unless @enabled
 
         state = cycle_state(pod, context)
@@ -197,11 +228,13 @@ module Rubernetes
 
         state.claims.each do |claim|
           uid = claim_uid(claim)
+          next if state.shared_pending&.include?(uid)
+
           @mutex.synchronize do
             @pending.delete(uid)
             @assumed.delete(uid)
           end
-          next unless allocated?(claim) && reserved_for_pod?(pod, claim)
+          next unless allocated?(claim) && WorkloadClaims.reserved_for_pod?(pod.to_h, claim)
 
           patch = {"metadata" => {"uid" => uid}, "status" => {"reservedFor" => [{"$patch" => "delete", "uid" => pod.uid}]}}
           begin
@@ -220,6 +253,7 @@ module Rubernetes
             nil
           end
         end
+        @api&.patch_pod_status(pod.namespace, pod.name, {NodeAllocatable::STATUS_FIELD => nil}) if state.node_allocations&.dig(node.name)&.status_written
         true
       end
 
@@ -238,9 +272,16 @@ module Rubernetes
         return true if state.skip || state.claims.nil? || state.claims.empty?
 
         state.claims.each_index do |index|
+          claim = state.claims[index]
+          verify_shared_claim!(pod, claim) if state.shared_pending&.include?(claim_uid(claim))
           next if reserved_for_pod?(pod, state.claims[index])
 
           state.claims[index] = bind_claim(state, index, pod, node.name)
+        end
+        node_allocation = state.node_allocations[node.name]
+        if node_allocation&.node_allocatable_status && !node_allocation.node_allocatable_status.empty?
+          @api&.patch_pod_status(pod.namespace, pod.name, {NodeAllocatable::STATUS_FIELD => node_allocation.node_allocatable_status})
+          node_allocation.status_written = true
         end
         return true unless @features.device_binding_and_status && binding_conditions?(state)
 
@@ -283,6 +324,7 @@ module Rubernetes
           return nil
         end
         @api&.delete_claim(extended.dig("metadata", "namespace"), extended.dig("metadata", "name")) if extended && !special?(extended)
+        unreserve_idle_group_claim(pod, context)
         nil
       end
 
@@ -377,20 +419,24 @@ module Rubernetes
       end
 
       def prefilter(pod, context)
-        claims = begin
-          pod_claims(pod, context)
-        rescue ClaimError => error
-          return State.new(rejection: Filters::Helpers.reject(error.message, code: "UnschedulableAndUnresolvable"))
-        end
+        claims = pod_claims(pod, context)
         num_user = claims.length
         extended, scalars = prefilter_extended(pod, context)
         claims += [extended] if extended
         return State.new(skip: true) if claims.empty?
 
+        bindings = claim_bindings(pod, context)
+        shared_pending = Set.new
         informations = Array.new(claims.length) { Information.new(nil, nil) }
         to_allocate = 0
         classes = data(context, "deviceClasses").to_h { |klass| [klass.dig("metadata", "name").to_s, klass] }
         claims.each_with_index do |claim, index|
+          pending = pending_allocation(claim_uid(claim))
+          binding = bindings[ref(claim)]
+          if !allocated?(claim) && pending && share_pending_claim?(binding, pending)
+            shared_pending << claim_uid(claim)
+            claim = claims[index] = pending
+          end
           if allocated?(claim)
             # CanBeReserved is always true (no limit on consumers).
             informations[index].available_on_nodes = claim.dig("status", "allocation", "nodeSelector")
@@ -398,9 +444,7 @@ module Rubernetes
           end
 
           to_allocate += 1
-          if pending_allocation(claim_uid(claim))
-            return unschedulable(state_claims: claims, message: "resource claim #{ref(claim)} is in the process of being allocated")
-          end
+          return unschedulable(state_claims: claims, message: "resource claim #{ref(claim)} is in the process of being allocated") if pending
           next if index >= num_user
 
           Array(claim.dig("spec", "devices", "requests")).each do |request|
@@ -425,7 +469,8 @@ module Rubernetes
         end
 
         state = State.new(claims: claims, informations: informations, node_allocations: {}, unavailable: Set.new, mutex: Mutex.new,
-                          num_user: num_user, extended_scalars: scalars || {}, extended_resolver: extended ? resolver(context) : nil)
+                          num_user: num_user, extended_scalars: scalars || {}, extended_resolver: extended ? resolver(context) : nil,
+                          bindings: bindings, shared_pending: shared_pending)
         if to_allocate.positive?
           state.allocator = {
             slices: data(context, "resourceSlices"), classes: classes.values,
@@ -433,6 +478,8 @@ module Rubernetes
           }
         end
         state
+      rescue ClaimError => error
+        unschedulable(state_claims: claims, message: error.message)
       end
 
       def unschedulable(state_claims:, message:)
@@ -447,120 +494,9 @@ module Rubernetes
         Filters::Helpers.reject("request #{request_name}: device class #{name} does not exist", code: "UnschedulableAndUnresolvable")
       end
 
-      # foreachPodResourceClaim.
-      def pod_claims(pod, context)
-        spec = pod.spec
-        return [] if Array(spec["resourceClaims"]).empty?
-
-        claims = claims_by_key(context)
-        Array(spec["resourceClaims"]).filter_map do |entry|
-          name, must_check_owner = claim_name(pod, entry)
-          next nil if name.nil?
-
-          claim = claims["#{pod.namespace}/#{name}"]
-          raise ClaimError, "resourceclaim.resource.k8s.io \"#{name}\" not found" unless claim
-          raise ClaimError, "resourceclaim \"#{name}\" is being deleted" if claim.dig("metadata", "deletionTimestamp")
-
-          if must_check_owner
-            owner = Array(claim.dig("metadata", "ownerReferences")).find { |reference| reference["controller"] == true }
-            unless owner && owner["uid"].to_s == pod.uid
-              raise ClaimError,
-                    "ResourceClaim #{pod.namespace}/#{name} was not created for Pod #{pod.namespace}/#{pod.name} (Pod is not owner)"
-            end
-          end
-          claim
-        end
-      end
-
-      # resourceclaim.Name.
-      def claim_name(pod, entry)
-        if entry["resourceClaimName"]
-          [entry["resourceClaimName"], false]
-        elsif entry["resourceClaimTemplateName"]
-          status = Array(pod.status["resourceClaimStatuses"]).find { |candidate| candidate["name"] == entry["name"] }
-          raise ClaimError, "pod \"#{pod.namespace}/#{pod.name}\": ResourceClaim not created yet" unless status
-
-          # A nil name: the claim was not needed and is not created.
-          [status["resourceClaimName"], true]
-        else
-          raise ClaimError,
-                "pod \"#{pod.namespace}/#{pod.name}\", spec.resourceClaim #{entry["name"].to_s.dump}: none of the supported fields are set"
-        end
-      end
-
-      # ---------------------------------------------------------- Filter
-
-      def filter(pod, node, state)
-        node_extended, mappings, rejection = filter_extended(state, pod, node)
-        return rejection if rejection
-        return true if node_extended.nil? && state.num_user.zero?
-
-        unavailable = []
-        state.claims.each_with_index do |claim, index|
-          selector = state.informations[index].available_on_nodes
-          if selector && !Allocator::NodeSelector.match?(selector, node.to_h)
-            unavailable << index
-            next
-          end
-          next unless allocated?(claim)
-          next unless @features.device_binding_and_status
-
-          begin
-            ready = claim_ready_for_binding?(claim)
-            unavailable << index if !ready && claim_timeout?(claim)
-          rescue ClaimError
-            unavailable << index
-          end
-        end
-
-        allocations = nil
-        if state.allocator
-          claims_to_allocate = []
-          pending = []
-          state.claims.each_with_index do |claim, index|
-            next if allocated?(claim)
-
-            if extended_index?(state, index)
-              # Allocated from the node's version (its requests); a node that
-              # advertises the resource itself needs no claim for it.
-              next if node_extended.nil?
-
-              claim = node_extended
-            end
-            if state.informations[index].allocation
-              pending << state.informations[index].allocation
-              next
-            end
-            claims_to_allocate << claim
-          end
-          begin
-            result = Allocator.allocate(node: node.to_h, claims: claims_to_allocate, slices: state.allocator[:slices],
-                                        classes: state.allocator[:classes], allocated_state: state.allocator[:allocated_state],
-                                        features: @features, cel: @cel)
-          rescue Allocator::FailedOnNode => error
-            return Filters::Helpers.reject(error.message, code: "UnschedulableAndUnresolvable")
-          rescue Allocator::Error => error
-            raise PluginError.new(error.message, plugin: NAME, phase: :filter)
-          end
-          if result.nil? || result.length != claims_to_allocate.length
-            return Filters::Helpers.reject("cannot allocate all claims", code: "UnschedulableAndUnresolvable")
-          end
-
-          allocations = result + pending
-        end
-
-        state.mutex.synchronize do
-          unless unavailable.empty?
-            state.unavailable.merge(unavailable)
-            return Filters::Helpers.reject("resourceclaim not available on the node", code: "UnschedulableAndUnresolvable")
-          end
-          state.node_allocations[node.name] = NodeAllocation.new(results: allocations, extended_claim: node_extended, mappings: mappings) if state.allocator
-        end
-        true
-      end
-
       # computeScore.
       def compute_score(state, allocations)
+        allocations ||= []
         score = 0
         unallocated = 0
         state.claims.each do |claim|
@@ -608,7 +544,8 @@ module Rubernetes
             state.claims[index] = claim
           end
         end
-        stored = bind_claim_status(claim, allocation, pod)
+        binding = state.bindings&.[](ref(claim)) || {"resource" => "pods", "name" => pod.name, "uid" => pod.uid}
+        stored = bind_claim_status(claim, allocation, binding)
         patch_pod_extended_status(pod, stored, state.node_allocations[node_name]&.mappings || []) if extended
         stored
       end
@@ -640,8 +577,7 @@ module Rubernetes
                               plugin: NAME, phase: :pre_bind)
       end
 
-      def bind_claim_status(claim, allocation, pod)
-        binding = {"resource" => "pods", "name" => pod.name, "uid" => pod.uid}
+      def bind_claim_status(claim, allocation, binding)
         current = Support.deep_copy(claim)
         stored = nil
         5.times do |attempt|
@@ -673,7 +609,8 @@ module Rubernetes
             current = Support.deep_copy(current)
           end
           status = (current["status"] ||= {})
-          status["reservedFor"] = Array(status["reservedFor"]) + [binding]
+          reserved = Array(status["reservedFor"])
+          status["reservedFor"] = reserved + [binding] unless reserved.include?(binding)
           if @features.device_binding_and_status
             if status["allocation"].nil?
               raise PluginError.new("claim #{ref(current)} got deallocated elsewhere in the meantime", plugin: NAME, phase: :pre_bind)
@@ -822,7 +759,7 @@ module Rubernetes
       def allocated?(claim) = !claim.dig("status", "allocation").nil?
 
       def reserved_for_pod?(pod, claim)
-        Array(claim.dig("status", "reservedFor")).any? { |reference| reference["uid"].to_s == pod.uid }
+        WorkloadClaims.reserved_for_pod?(pod.to_h, claim, workload_claims: @workload_claims)
       end
 
       def claim_uid(claim) = claim.dig("metadata", "uid").to_s
