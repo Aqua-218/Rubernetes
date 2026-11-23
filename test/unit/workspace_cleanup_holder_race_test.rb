@@ -51,4 +51,34 @@ class WorkspaceCleanupHolderRaceTest < Minitest::Test
 
     assert subject.send(:namespace_holder_vanished?, Handle.new(pid: nil))
   end
+
+  def test_an_unreaped_holder_has_a_proc_inode_but_no_mount_namespace
+    subject = adapter_with(destroyed: false)
+    pid = fork { exit! }
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 3
+    loop do
+      stat = File.read("/proc/#{pid}/stat")
+      break if stat[(stat.rindex(")") + 1)..].split.first == "Z"
+
+      flunk "namespace holder did not become a zombie" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      sleep 0.01
+    end
+
+    mountinfo = "/proc/#{pid}/mountinfo"
+    workspace = Struct.new(:root).new("/unused-mountpoint")
+
+    assert_path_exists mountinfo
+    assert_raises(Errno::EINVAL, Errno::ENOENT) { File.read(mountinfo) }
+    assert subject.send(:cleanup_mounted_workspace, workspace, {}, Handle.new(pid: pid))
+  ensure
+    Process.wait(pid) if pid
+  end
+
+  def test_an_unreadable_namespace_is_not_evidence_of_exit
+    subject = adapter_with(destroyed: false)
+
+    File.stub(:readlink, ->(*) { raise Errno::EACCES }) do
+      refute subject.send(:namespace_holder_vanished?, Handle.new(pid: Process.pid))
+    end
+  end
 end
