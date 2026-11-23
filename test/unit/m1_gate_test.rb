@@ -551,12 +551,24 @@ class M1GateTest < Minitest::Test
       Dir.mkdir(File.join(directory, "nested", "a11-generated.u1BHO1"))
       File.write(File.join(directory, "nested", "a11-generated.u1BHO1", "source.rb"), "tracked\n")
 
+      ignored = %w[apps/dashboard/config/dashboard.local.env apps/dashboard/config/master.key
+                   apps/dashboard/data/index.sqlite apps/dashboard/public/assets/application.js]
+      included = %w[apps/dashboard/config/credentials/production.yml.enc apps/dashboard/db/schema.rb
+                    apps/dashboard/data_dictionary.rb lib/apps/dashboard/config/master.key]
+      (ignored + included).each do |relative|
+        path = File.join(directory, relative)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "fixture\n")
+      end
+
       entries = M1ProbeSupport.source_identity(directory).fetch("entries").map { |entry| entry.fetch("path") }
 
       refute_includes(entries, "a11-generated.u1BHO1/generated.rb")
       assert_includes(entries, "a11-generated.bad/source.rb")
       assert_includes(entries, "a11-generated.u1BHO1x")
       assert_includes(entries, "nested/a11-generated.u1BHO1/source.rb")
+      assert_empty(entries & ignored)
+      assert_equal(included, included & entries)
     end
   end
 
@@ -1051,10 +1063,7 @@ class M1GateTest < Minitest::Test
   def current_source_entries
     paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
       relative = path.delete_prefix("#{ROOT}/")
-      if relative.empty? ||
-         relative.match?(%r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/})
-        next false
-      end
+      next false if M0SourceInventory.excluded?(relative)
 
       # Another test's scratch (excluded above) can vanish between glob and lstat.
       begin
