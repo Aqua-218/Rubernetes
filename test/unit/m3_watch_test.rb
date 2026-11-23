@@ -95,6 +95,28 @@ class M3WatchTest < Minitest::Test
     assert_equal(["pod"], indexer.by_index("namespace", "prod").map { |value| value.dig("metadata", "name") })
   end
 
+  def test_index_memberships_survive_mutable_callback_values_and_relist
+    indexer = Watch::Indexer.new
+    indexer.add(object("a"))
+    indexer.add(object("b"))
+    tag = +"old"
+    indexer.add_index("tag") { [tag, tag] }
+    tag.replace("new")
+    indexer.update(object("a"))
+
+    assert_equal(["b"], indexer.by_index("tag", "old").map { |value| value.dig("metadata", "name") })
+    assert_equal [indexer.get("a")], indexer.by_index("tag", "new")
+    indexer.delete("b")
+
+    assert_empty indexer.by_index("tag", "old")
+    indexer.replace_all([object("c")])
+
+    assert_equal [indexer.get("c")], indexer.by_index("tag", "new")
+    indexer.clear
+
+    assert_empty indexer.by_index("tag", "new")
+  end
+
   def test_indexer_replace_all_is_atomic_on_duplicate_keys
     indexer = Watch::Indexer.new
     indexer.add(object("existing"))
