@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "base64"
+require "socket"
 require "stringio"
 require "tmpdir"
 
@@ -51,6 +52,27 @@ class OCIRegistryTest < Minitest::Test
     other = Rubernetes::Image::RegistryClient.new("registry.k8s.io/pause:3.10", transport: transport)
 
     assert_equal "https://registry.k8s.io", other.instance_variable_get(:@endpoint).to_s
+  end
+
+  def test_inferred_loopback_registry_accepts_http_basic_challenge
+    manifest = JSON.generate("schemaVersion" => 2, "mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST,
+                             "config" => {"mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_CONFIG,
+                                          "digest" => digest_for("{}"), "size" => 2},
+                             "layers" => [])
+    with_plaintext_registry(manifest) do |port, requests|
+      registry = "127.0.0.1:#{port}"
+      client = Rubernetes::Image::RegistryClient.new("#{registry}/test:stable", username: "user", password: "secret")
+
+      assert_instance_of Rubernetes::Image::Manifest, client.manifest
+      received = Array.new(3) { requests.pop(true) }
+
+      assert_equal [:tls, {authorization: nil}, {authorization: "Basic dXNlcjpzZWNyZXQ="}], received
+
+      explicit = Rubernetes::Image::RegistryClient.new("#{registry}/test:stable", endpoint: "https://#{registry}")
+      assert_raises(Rubernetes::Image::RegistryError) { explicit.manifest }
+      assert_equal :tls, requests.pop(true)
+      assert_empty requests
+    end
   end
 
   def test_manifest_and_blob_requests_are_injectable_and_digest_checked
@@ -227,6 +249,14 @@ class OCIRegistryTest < Minitest::Test
     assert_equal payload.bytesize, client.fetch_blob(nil, digest, io: destination)
     assert_equal payload, destination.string
     assert_equal 1, transport.requests.length
+    file = client.download_blob(nil, digest, expected_size: payload.bytesize)
+
+    assert_equal payload, file.read
+    assert_equal 2, transport.requests.length
+    assert_raises(Rubernetes::Image::RegistryError) { client.fetch_blob(nil, digest, expected_size: 1, io: destination) }
+    assert_equal payload, destination.string
+  ensure
+    file&.close!
   end
 
   def test_pull_with_content_store_streams_layers_without_retaining_blob_strings
@@ -248,23 +278,79 @@ class OCIRegistryTest < Minitest::Test
         "size" => layer_bytes.bytesize
       }]
     )
+    manifest_response = {status: 200, headers: {}, body: manifest}
+    config_head = {status: 200, headers: {"docker-content-digest" => config_digest, "content-length" => config_bytes.bytesize}, body: ""}
+    layer_head = {status: 200, headers: {"docker-content-digest" => layer_digest, "content-length" => layer_bytes.bytesize}, body: ""}
     transport = StreamingFakeTransport.new([
-                                             {status: 200, headers: {}, body: manifest},
+                                             manifest_response,
                                              {status: 200, headers: {"docker-content-digest" => config_digest}, body: config_bytes},
-                                             {status: 200, headers: {"docker-content-digest" => layer_digest}, body: layer_bytes}
+                                             {status: 401, headers: {"www-authenticate" => 'Basic realm="test"'}, body: "auth body"},
+                                             {status: 307, headers: {"location" => "/download"}, body: "redirect body"},
+                                             {status: 200, headers: {"docker-content-digest" => layer_digest}, body: layer_bytes},
+                                             manifest_response, config_head, layer_head,
+                                             manifest_response, config_head,
+                                             {status: 403, headers: {}, body: ""},
+                                             {status: 403, headers: {}, body: ""},
+                                             manifest_response,
+                                             {status: 200, headers: config_head.fetch(:headers), body: config_bytes},
+                                             {status: 403, headers: {}, body: ""}
                                            ])
 
     Dir.mktmpdir("rubernetes-registry-store-") do |directory|
       store = Rubernetes::Image::ContentStore.new(directory)
-      image = Rubernetes::Image::RegistryClient.new(
+      client = Rubernetes::Image::RegistryClient.new(
         "registry.example/team/app:stable",
-        transport: transport
-      ).pull(store: store)
+        transport: transport, username: "user", password: "secret"
+      )
+      image = client.pull(store: store)
 
       assert_equal config_bytes, image.config
       assert_nil image.layers.fetch(0).fetch(:bytes)
       assert_equal layer_bytes, store.fetch(layer_digest)
-      assert_equal(2, transport.requests.count { |request| request.fetch(:method) == "GET" && request.fetch(:uri).include?("/blobs/") })
+      assert_equal(5, transport.requests.size)
+
+      warm = Rubernetes::Image::Puller.new(registry_client: client, store: store).pull("registry.example/team/app:stable")
+      warm_methods = transport.requests.drop(5).map { |request| request.fetch(:method) }
+
+      assert_equal image.layers.first.fetch(:path), warm.layers.first.fetch(:path)
+      assert_equal %w[GET HEAD HEAD], warm_methods
+
+      assert_raises(Rubernetes::Image::RegistryError) { client.pull(store: store) }
+      denied_methods = transport.requests.drop(8).map { |request| request.fetch(:method) }
+
+      assert_equal %w[GET HEAD HEAD GET], denied_methods
+      assert_equal layer_bytes, store.fetch(layer_digest)
+      assert_equal [config_digest.split(":").last, layer_digest.split(":").last].sort, Dir.children(File.join(directory, "sha256")).sort
+
+      assert_raises(Rubernetes::Image::RegistryError) { client.pull("registry.example/other:stable", store: store) }
+      other_requests = transport.requests.drop(12)
+      other_methods = other_requests.map { |request| request.fetch(:method) }
+
+      assert_equal %w[GET GET GET], other_methods
+      assert(other_requests.all? { |request| request.fetch(:uri).include?("/v2/other/") })
+    end
+  end
+
+  def test_cache_uses_verified_get_when_head_does_not_confirm_the_descriptor
+    image = Rubernetes::Image
+    reference = "registry.example/team/app:stable"
+    contents = "verified layer"
+    digest = digest_for(contents)
+    descriptor = image::Descriptor.from_h({"mediaType" => image::MediaTypes::OCI_IMAGE_LAYER, "size" => contents.bytesize, "digest" => digest})
+    body = {status: 200, headers: {"docker-content-digest" => digest}, body: contents}
+    transport = StreamingFakeTransport.new([body, {status: 200, headers: {"docker-content-digest" => digest}, body: ""}, body])
+    client = image::RegistryClient.new(reference, transport: transport)
+
+    Dir.mktmpdir do |directory|
+      store = image::ContentStore.new(directory)
+      cached = client.store_blob(reference, descriptor, store: store)
+      path = client.store_blob(reference, descriptor, store: store)
+      methods = transport.requests.map { |request| request.fetch(:method) }
+
+      assert_equal cached, path
+      assert_equal %w[GET HEAD GET], methods
+      assert_equal contents, store.fetch(digest)
+      assert_equal [File.basename(cached)], Dir.children(File.dirname(cached))
     end
   end
 
@@ -285,6 +371,43 @@ class OCIRegistryTest < Minitest::Test
   end
 
   private
+
+  def with_plaintext_registry(manifest)
+    server = TCPServer.new("127.0.0.1", 0)
+    requests = Queue.new
+    worker = Thread.new do
+      loop do
+        client = server.accept
+        begin
+          answer_plaintext_registry(client, manifest, requests)
+        ensure
+          client.close
+        end
+      end
+    rescue IOError, Errno::EBADF
+      nil
+    end
+    yield server.addr[1], requests
+  ensure
+    server&.close
+    worker&.join(2)
+  end
+
+  def answer_plaintext_registry(client, manifest, requests)
+    if client.read(5).start_with?("\x16\x03".b)
+      requests << :tls
+      client.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+      return
+    end
+    headers = client.gets("\r\n\r\n")
+    authorization = headers[/^Authorization: ([^\r\n]+)/i, 1]
+    requests << {authorization: authorization}
+    if authorization
+      client.write("HTTP/1.1 200 OK\r\nContent-Length: #{manifest.bytesize}\r\nConnection: close\r\n\r\n#{manifest}")
+    else
+      client.write("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"test\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    end
+  end
 
   def digest_for(bytes)
     "sha256:#{Digest::SHA256.hexdigest(bytes)}"
