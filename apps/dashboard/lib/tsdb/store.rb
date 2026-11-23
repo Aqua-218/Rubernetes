@@ -6,6 +6,7 @@ require "digest"
 require "fileutils"
 require "monitor"
 require_relative "../prom/gorilla"
+require_relative "histogram_chunk"
 
 module Tsdb
   # A Prometheus-shaped time-series store: a label index in SQLite, samples
@@ -67,8 +68,9 @@ module Tsdb
       end
 
       def append(timestamp, value)
-        close_encoder if @encoder && @encoder.count >= MAX_CHUNK_SAMPLES
-        @encoder ||= Prom::Gorilla::Encoder.new
+        encoder_type = value.is_a?(Prom::NativeHistogram) ? HistogramChunk : Prom::Gorilla::Encoder
+        close_encoder if @encoder && (@encoder.count >= MAX_CHUNK_SAMPLES || !@encoder.is_a?(encoder_type))
+        @encoder ||= encoder_type.new
         @encoder.append(timestamp, value)
         @last_time = timestamp
         @last_value = value
@@ -82,8 +84,8 @@ module Tsdb
       end
 
       def samples
-        list = @chunks.flat_map { |chunk| Prom::Gorilla.decode(chunk.bytes) }
-        list.concat(Prom::Gorilla.decode(@encoder.bytes)) if @encoder
+        list = @chunks.flat_map { |chunk| HistogramChunk.decode(chunk.bytes) }
+        list.concat(HistogramChunk.decode(@encoder.bytes)) if @encoder
         list
       end
 
@@ -277,7 +279,7 @@ module Tsdb
                            "WHERE c.series_id = ? AND c.max_t >= ? AND c.min_t <= ? ORDER BY c.min_t", [series_id, min_t, max_t])
         rows.each do |path, offset, length|
           bytes = File.binread(File.join(@dir, "blocks", path), length, offset)
-          list.concat(Prom::Gorilla.decode(bytes))
+          list.concat(HistogramChunk.decode(bytes))
         end
         head = @head[series_id]
         list.concat(head.samples) if head
@@ -427,7 +429,8 @@ module Tsdb
 
     # ------------------------------------------------------------------ WAL
     #
-    # Records: "S" + id(Q>) + t(q>) + v(G).  Series creation needs no record:
+    # Records: "S" + id(Q>) + t(q>) + float64, or "H" with a histogram
+    # payload.  Series creation needs no record:
     # labels are already durable in the index when a sample is written.
 
     def open_wal
@@ -438,7 +441,15 @@ module Tsdb
     end
 
     def wal_write_sample(id, timestamp, value)
-      @wal.write(["S", id, timestamp, value].pack("aQ>q>G"))
+      @wal.write(wal_record(id, timestamp, value))
+    end
+
+    def wal_record(id, timestamp, value)
+      if value.is_a?(Prom::NativeHistogram)
+        ["H", id, timestamp].pack("aQ>q>") << HistogramChunk.encode(value)
+      else
+        ["S", id, timestamp, value].pack("aQ>q>G")
+      end
     end
 
     def replay_wal
@@ -446,14 +457,21 @@ module Tsdb
       return unless File.file?(path)
 
       labels_by_id = {}
+      valid_end = 0
       File.open(path, "rb") do |io|
         until io.eof?
-          record = io.read(25)
-          break if record.nil? || record.bytesize < 25
+          header = io.read(17)
+          break unless header&.bytesize == 17
 
-          tag, id, timestamp, value = record.unpack("aQ>q>G")
-          next unless tag == "S"
+          tag, id, timestamp = header.unpack("aQ>q>")
+          value = case tag
+                  when "S" then io.read(8)&.unpack1("G")
+                  when "H" then HistogramChunk.read(io)
+                  else raise IOError, "unknown TSDB WAL record #{tag.inspect}"
+                  end
+          break if value.nil?
 
+          valid_end = io.pos
           labels = labels_by_id[id] ||= begin
             json = @db.get_first_value("SELECT labels FROM series WHERE id = ?", [id])
             json && JSON.parse(json)
@@ -467,6 +485,7 @@ module Tsdb
           series.append(timestamp, value)
         end
       end
+      File.truncate(path, valid_end) if !@readonly && valid_end < File.size(path)
     end
 
     # ---------------------------------------------------------------- blocks
@@ -478,7 +497,7 @@ module Tsdb
         chunks = []
         remaining = []
         series.chunks.each do |chunk|
-          if chunk.max_time < boundary
+          if all || chunk.max_time < boundary
             chunks << [chunk.bytes, chunk.min_time, chunk.max_time, chunk.count]
           else
             remaining << chunk
@@ -529,7 +548,7 @@ module Tsdb
       tmp = "#{@wal_path}.tmp"
       File.open(tmp, "wb") do |io|
         @head.each_value do |series|
-          series.samples.each { |t, v| io.write(["S", series.id, t, v].pack("aQ>q>G")) }
+          series.samples.each { |t, v| io.write(wal_record(series.id, t, v)) }
         end
         io.fsync
       end
