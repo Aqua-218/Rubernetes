@@ -32,8 +32,17 @@ class M0GateTest < Minitest::Test
     refute(M0SourceInventory.excluded?("a11-generated.short/sentinel"))
     assert(M0SourceInventory.excluded?("apps/dashboard/log/development.log"))
     assert(M0SourceInventory.excluded?("apps/dashboard/tmp/cache/x"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/config/master.key"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/config/credentials/production.key"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/data-test/wal/head.wal"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/public/assets/application.js"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/db/development.sqlite3-wal"))
     refute(M0SourceInventory.excluded?("apps/dashboard/app/models/user.rb"))
+    refute(M0SourceInventory.excluded?("apps/dashboard/config/credentials/production.yml.enc"))
+    refute(M0SourceInventory.excluded?("apps/dashboard/db/schema.rb"))
+    refute(M0SourceInventory.excluded?("apps/dashboard/data_dictionary.rb"))
     refute(M0SourceInventory.excluded?("lib/apps/dashboard/log/x"))
+    refute(M0SourceInventory.excluded?("lib/apps/dashboard/config/master.key"))
   end
 
   def self.authoritative_minitest_inventory
