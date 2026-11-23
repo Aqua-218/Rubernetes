@@ -262,6 +262,45 @@ class APFFairQueuingTest < Minitest::Test
                                                                                   "resources" => ["*"], "namespaces" => [namespace]}]}]}}
   end
 
+  def test_reconfiguration_preserves_queued_work_and_releases_retired_level_seats
+    definition = level("busy", shares: 1, lendable: 0, borrowing: 0)
+    definition["metadata"]["uid"] = "level-before"
+    flow = schema("busy-fs", "busy", "busy")
+    flow["metadata"]["uid"] = "schema-before"
+    controller = FC::Controller.new(flow_schemas: [flow], priority_level_configurations: [definition],
+                                    read_seats: 1, mutating_seats: 0, clock: @clock, borrowing_adjustment_seconds: nil)
+    input = attributes(verb: "get", namespace: "busy", user: "holder")
+    holder = controller.enter(input)
+    queue = holder.queue_set
+    waiting = queue.start_request(work: work, hash_value: 0, distinguisher: "waiter", flow_schema: "busy-fs")
+
+    assert_equal :pending, waiting.decision
+    definition = level("busy", shares: 2, lendable: 0, borrowing: 0)
+    definition["metadata"]["uid"] = "level-after"
+    definition["spec"]["limited"]["limitResponse"] = {"type" => "Reject"}
+    controller.replace_configuration(flow_schemas: [flow], priority_level_configurations: [definition])
+
+    assert_same queue, controller.priority_levels.fetch("busy").queue_set
+    assert_equal :pending, waiting.decision
+    refusal = assert_raises(FC::RejectedError) { controller.enter(input) }
+
+    assert_equal "level-before", holder.response_headers.fetch(FC::Configuration::PRIORITY_LEVEL_HEADER)
+    assert_equal "level-after", refusal.response_headers.fetch(FC::Configuration::PRIORITY_LEVEL_HEADER)
+    controller.replace_configuration(flow_schemas: [flow], priority_level_configurations: [])
+
+    assert_nil controller.classify(input)
+    controller.replace_configuration(flow_schemas: [flow], priority_level_configurations: [definition])
+
+    assert_same queue, controller.priority_levels.fetch("busy").queue_set
+    controller.replace_configuration(flow_schemas: [flow], priority_level_configurations: [])
+    controller.release(holder)
+
+    assert_equal :execute, waiting.decision
+    queue.finish(waiting)
+
+    assert_predicate queue, :idle?
+  end
+
   def test_seats_are_lent_to_the_level_that_needs_them
     controller = FC::Controller.new(flow_schemas: [schema("busy-fs", "busy", "busy"), schema("idle-fs", "idle", "idle")],
                                     priority_level_configurations: [level("busy", shares: 1, lendable: 50), level("idle", shares: 1, lendable: 50)],
