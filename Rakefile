@@ -296,8 +296,14 @@ namespace :m7 do
 end
 
 namespace :rbs do
-  desc "Validate the hand-authored RBS baseline"
+  desc "Regenerate the manifest DSL resource declarations in the gem's signature directory"
+  task :generate do
+    ruby "tools/schema/manifest_signatures.rb"
+  end
+
+  desc "Check manifest declarations against the registry and validate the complete RBS environment"
   task :validate do
+    ruby "tools/schema/manifest_signatures.rb", "--check"
     sh "bundle", "exec", "rbs", "-I", "sig", "-I", "generated/rbs", "validate"
   end
 end
