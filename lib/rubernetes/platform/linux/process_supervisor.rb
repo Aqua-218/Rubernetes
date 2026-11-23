@@ -20,6 +20,9 @@ module Rubernetes
         include Recovery
 
         class Error < StandardError; end
+        # The process to adopt no longer exists: it exited after the caller
+        # last saw it.  Not a broken identity -- there is nothing left to adopt.
+        class ProcessGone < Error; end
         class InvalidSpec < Error; end
         class Timeout < Error; end
         class Unsupported < Error; end
