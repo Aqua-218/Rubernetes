@@ -8,6 +8,7 @@ require_relative "daemon_service"
 require_relative "api_server_service"
 require_relative "agent_service"
 require_relative "control_plane_services"
+require_relative "network_policy_sync"
 require_relative "shutdown"
 require_relative "structured_logger"
 require_relative "../client"
@@ -34,11 +35,29 @@ module Rubernetes
     class LifecycleNetworkAdapter
       attr_reader :interface
 
-      def initialize(interface, policy_engine: nil)
+      def initialize(interface, policy_engine: nil, policy_sync: nil)
         @interface = interface
-        @policy_engine = policy_engine
+        @policy_engine = policy_sync || policy_engine
+        @policy_sync = policy_sync
         @policy_pods = {}
         @policy_mutex = Mutex.new
+      end
+
+      def start_policy(lifecycle, runtime: nil)
+        return unless @policy_sync
+
+        @policy_mutex.synchronize do
+          @policy_pods = recover_policy_pods(lifecycle.records, runtime)
+          @policy_sync.start(pods: @policy_pods.values)
+        end
+      end
+
+      def stop_policy
+        @policy_sync&.stop
+      end
+
+      def policy_ready?
+        !@policy_sync || @policy_sync.ready?
       end
 
       def add(sandbox, config = nil, **)
@@ -83,8 +102,8 @@ module Rubernetes
         @policy_mutex.synchronize do
           previous = @policy_pods.dup
           @policy_pods.delete(sandbox_id)
-          @policy_engine.sync_pods(@policy_pods.values)
           begin
+            @policy_engine.sync_pods(@policy_pods.values)
             @interface.delete(sandbox, config, stopped: true, **options)
           rescue StandardError => network_error
             @policy_pods = previous
@@ -120,6 +139,36 @@ module Rubernetes
 
       private
 
+      def recover_policy_pods(records, runtime)
+        records.values.filter_map do |record|
+          sandbox = record[:sandbox_id]
+          stored = record[:network]
+          next unless sandbox && stored && stored["state"] == "committed" && !Array(stored["ips"] || stored["ip"]).empty?
+          next if record.fetch(:cleanup_completed, {}).key?("network:#{sandbox}")
+
+          pod = record.fetch(:pod)
+          operation = @interface.operation(stored.fetch("operation_id"))
+          result = operation.fetch("result")
+          unless operation["state"] == "committed" && result && result["sandbox_id"] == sandbox &&
+                 verified_attachment?(runtime, sandbox, pod)
+            raise Network::OwnershipError, "cannot confirm recovered policy attachment for sandbox #{sandbox}"
+          end
+
+          [sandbox, policy_pod(pod, result)]
+        end.to_h
+      end
+
+      def verified_attachment?(runtime, sandbox, pod)
+        # The operation's old namespace FD was local to a former worker.
+        # Resolve the recovered holder and verify its live kernel resources.
+        context = runtime.network_sandbox_context(sandbox)
+        namespace = context.fetch("netns")
+        pidfd = Platform::Linux::Pidfd.new.open(pid: namespace.fetch("pid"), resource_id: "policy-attachment:#{sandbox}")
+        @interface.check(context.merge("netns" => namespace.merge("pidfd" => pidfd)), pod)
+      ensure
+        IO.for_fd(pidfd).close if pidfd
+      end
+
       def sandbox_id_for(value)
         hash = value.respond_to?(:to_h) ? value.to_h : value
         candidate = if hash.is_a?(Hash)
@@ -134,20 +183,15 @@ module Rubernetes
         hash = pod.respond_to?(:to_h) ? pod.to_h : (pod || {})
         metadata = hash["metadata"] || hash[:metadata] || {}
         spec = hash["spec"] || hash[:spec] || {}
-        ports = Array(spec["containers"] || spec[:containers]).flat_map do |container|
-          Array(container["ports"] || container[:ports]).filter_map do |port|
-            name = port["name"] || port[:name]
-            number = port["containerPort"] || port[:containerPort] || port["port"] || port[:port]
-            name && number ? {"name" => name, "port" => number} : nil
-          end
-        end
         result = network_result.respond_to?(:to_h) ? network_result.to_h : {}
         {
           "namespace" => metadata["namespace"] || metadata[:namespace] || "default",
           "name" => metadata["name"] || metadata[:name] || metadata["uid"] || metadata[:uid],
+          "uid" => metadata["uid"] || metadata[:uid],
           "labels" => metadata["labels"] || metadata[:labels] || {},
           "ips" => Array(result["ips"] || result[:ips] || result["ip"] || result[:ip]).compact,
-          "ports" => ports,
+          "ports" => NetworkPolicySync.ports(spec),
+          "local" => true,
           "interface" => result["interface"] || result[:interface]
         }
       end
@@ -173,9 +217,10 @@ module Rubernetes
       include VolumeBuilder   # volume manager and CSI plugin
       include NetworkBuilder  # Pod network and NetworkPolicy engine
 
-      def initialize(process_name:, config_path: nil, log_io: $stderr, clock: -> { Time.now.utc }, runtime_adapters: {})
+      def initialize(process_name:, config_path: nil, kubelet_config_path: nil, log_io: $stderr, clock: -> { Time.now.utc }, runtime_adapters: {})
         @process_name = process_name
         @config_path = config_path
+        @kubelet_config_path = kubelet_config_path
         @log_io = log_io
         @clock = clock
         @runtime_adapters = runtime_adapters.to_h.dup.freeze
@@ -183,7 +228,7 @@ module Rubernetes
 
       def build
         container = Container.new
-        container.register(:config) { Config.load(process_name: @process_name, path: @config_path) }
+        container.register(:config) { Config.load(process_name: @process_name, path: @config_path, kubelet_config_path: @kubelet_config_path) }
         container.register(:logger) { |dependencies| build_logger(dependencies.resolve(:config)) }
         container.register(:shutdown) { Shutdown.new }
         register_agent(container) if @process_name == "rubernetes-agent"
