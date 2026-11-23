@@ -2,14 +2,23 @@
 
 require_relative "../test_helper"
 require "rubernetes/runtime"
+require "fileutils"
 require "tmpdir"
 
 class RuntimeCommonTest < Minitest::Test
+  def setup
+    @directory = Dir.mktmpdir("runtime-unit")
+  end
+
+  def teardown
+    FileUtils.remove_entry(@directory)
+  end
+
   def test_validation_rejects_without_touching_the_backend
     calls = []
     adapter = Object.new
     adapter.define_singleton_method(:allocate_workspace) { |*| calls << :workspace }
-    runtime = Rubernetes::Runtime::Runtime.new(data_dir: Dir.mktmpdir("runtime-unit"), adapter: adapter)
+    runtime = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
 
     assert_raises(Rubernetes::Runtime::ValidationError) do
       runtime.run_sandbox({"image_digest" => "sha256:not-a-digest"}, request_id: "invalid")
@@ -19,7 +28,7 @@ class RuntimeCommonTest < Minitest::Test
 
   def test_workload_gate_is_closed_until_explicit_start
     adapter = GateAdapter.new
-    runtime = Rubernetes::Runtime::Runtime.new(data_dir: Dir.mktmpdir("runtime-unit"), adapter: adapter)
+    runtime = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
     sandbox = runtime.run_sandbox({}, request_id: "sandbox")
     container = runtime.create_container(sandbox, {}, request_id: "container")
 
@@ -32,19 +41,25 @@ class RuntimeCommonTest < Minitest::Test
 
   def test_request_id_replay_does_not_repeat_effects
     adapter = GateAdapter.new
-    directory = Dir.mktmpdir("runtime-unit")
-    first = Rubernetes::Runtime::Runtime.new(data_dir: directory, adapter: adapter)
+    first = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
     sandbox = first.run_sandbox({}, request_id: "same-request")
-    second = Rubernetes::Runtime::Runtime.new(data_dir: directory, adapter: adapter)
+    second = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
 
     assert_equal sandbox, second.run_sandbox({}, request_id: "same-request")
     assert_equal 1, adapter.calls.fetch(:workspace)
     assert_equal 1, adapter.calls.fetch(:isolation)
   end
 
+  def test_canonical_normalization_preserves_each_journals_key_precedence
+    mixed = [{a: false, "a" => 1}, {"a" => nil, a: 2}]
+    canonical = Rubernetes::Runtime::Canonical
+
+    assert_equal [{"a" => false}, {"a" => nil}], canonical.normalize(mixed)
+    assert_equal [{"a" => 1}, {"a" => nil}], canonical.normalize(mixed, prefer_string_keys: true)
+  end
+
   def test_wal_and_snapshot_are_durable_and_checksum_checked
-    directory = Dir.mktmpdir("runtime-unit")
-    wal_path = File.join(directory, "runtime.wal")
+    wal_path = File.join(@directory, "runtime.wal")
     wal = Rubernetes::Runtime::DurableWAL.new(wal_path)
     wal.append(operation_id: "op", event: "state_transition", payload: {"to" => "Validated"})
     reopened = Rubernetes::Runtime::DurableWAL.new(wal_path)
@@ -54,7 +69,7 @@ class RuntimeCommonTest < Minitest::Test
 
     assert_equal [1, 2], reopened.records.map(&:sequence)
 
-    snapshots = Rubernetes::Runtime::AtomicSnapshotStore.new(File.join(directory, "snapshots"))
+    snapshots = Rubernetes::Runtime::AtomicSnapshotStore.new(File.join(@directory, "snapshots"))
     snapshots.write(snapshot_id: "base", state: "WorkloadStopped", identity: "base-id", payload: {"digest" => "sha256:x"})
 
     assert_equal "base-id", snapshots.read("base").fetch("identity")
@@ -62,7 +77,7 @@ class RuntimeCommonTest < Minitest::Test
 
   def test_rollback_preserves_primary_and_all_cleanup_errors
     adapter = GateAdapter.new(failing_cleanup: true)
-    runtime = Rubernetes::Runtime::Runtime.new(data_dir: Dir.mktmpdir("runtime-unit"), adapter: adapter)
+    runtime = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
     error = assert_raises(Rubernetes::Runtime::OperationFailure) do
       runtime.run_sandbox({"fail_effect" => true}, request_id: "rollback")
     end
@@ -77,7 +92,7 @@ class RuntimeCommonTest < Minitest::Test
 
   def test_state_unknown_allows_observe_but_forbids_start
     adapter = GateAdapter.new(ambiguous_start: true)
-    runtime = Rubernetes::Runtime::Runtime.new(data_dir: Dir.mktmpdir("runtime-unit"), adapter: adapter)
+    runtime = Rubernetes::Runtime::Runtime.new(data_dir: @directory, adapter: adapter)
     sandbox = runtime.run_sandbox({}, request_id: "unknown-sandbox")
     container = runtime.create_container(sandbox, {}, request_id: "unknown-container")
 
