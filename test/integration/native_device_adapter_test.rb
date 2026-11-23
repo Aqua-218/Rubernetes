@@ -18,34 +18,39 @@ class NativeDeviceAdapterIntegrationTest < Minitest::Test
     Dir.mktmpdir("rubernetes-native-device") do |directory|
       backing_path = File.join(directory, "backing.img")
       File.open(backing_path, File::RDWR | File::CREAT | File::EXCL, 0o600) { |file| file.truncate(SIZE_BYTES) }
-      adapter = Adapter.new
+      volume_id = File.basename(directory)
+      adapter = Adapter.new(mapper_directory: directory)
       loop_identity = nil
       dm_identity = nil
       begin
-        loop_identity = adapter.create_loop(path: backing_path, volume_id: "integration", size_bytes: SIZE_BYTES)
+        loop_identity = adapter.create_loop(path: backing_path, volume_id: volume_id, size_bytes: SIZE_BYTES)
 
         assert_match(%r{\A/dev/loop\d+\z}, loop_identity.fetch("id"))
         assert_equal SIZE_BYTES, loop_identity.fetch("sizeBytes")
         assert_equal loop_identity.fetch("id"),
-                     adapter.create_loop(path: backing_path, volume_id: "integration", size_bytes: SIZE_BYTES).fetch("id")
+                     adapter.create_loop(path: backing_path, volume_id: volume_id, size_bytes: SIZE_BYTES).fetch("id")
 
         # dm-linear is built into dm_mod on distribution kernels (no separate
         # /sys/module/dm_linear); the create below reports a missing target
         # through the errno rescue rather than a pre-check.
 
-        dm_identity = adapter.create_dm(device: loop_identity.fetch("id"), volume_id: "integration", size_bytes: SIZE_BYTES)
+        dm_identity = adapter.create_dm(device: loop_identity.fetch("id"), volume_id: volume_id, size_bytes: SIZE_BYTES)
 
-        assert_match(%r{\A/dev/mapper/}, dm_identity.fetch("id"))
+        assert_equal directory, File.dirname(dm_identity.fetch("id"))
         assert_equal SIZE_BYTES, dm_identity.fetch("sizeBytes")
         assert_equal dm_identity.fetch("id"),
-                     adapter.create_dm(device: loop_identity.fetch("id"), volume_id: "integration", size_bytes: SIZE_BYTES).fetch("id")
+                     adapter.create_dm(device: loop_identity.fetch("id"), volume_id: volume_id, size_bytes: SIZE_BYTES).fetch("id")
       rescue Rubernetes::Platform::Linux::Error => error
         skip "kernel/device-mapper denied native lifecycle (errno #{error.errno}: #{error.message})" if
           [Errno::EACCES::Errno, Errno::EINVAL::Errno, Errno::ENODEV::Errno, Errno::ENOSYS::Errno,
            Errno::ENOTTY::Errno, Errno::EOPNOTSUPP::Errno, Errno::EPERM::Errno].include?(error.errno)
         raise
       ensure
-        adapter.destroy_device(id: dm_identity.fetch("id")) if dm_identity
+        if dm_identity
+          adapter.destroy_device(id: dm_identity.fetch("id"))
+
+          refute_path_exists dm_identity.fetch("id")
+        end
         adapter.destroy_device(id: loop_identity.fetch("id")) if loop_identity
         adapter.destroy_device(id: loop_identity.fetch("id")) if loop_identity
       end
