@@ -3,7 +3,10 @@
 require "time"
 
 require_relative "../resource_helpers"
+require_relative "../volume/types"
 require_relative "../schema/quantity"
+
+require_relative "../taint_toleration"
 
 module Rubernetes
   module Node
@@ -70,6 +73,7 @@ module Rubernetes
       IMAGEFS_INODES_FREE = "imagefs.inodesFree"
       CONTAINERFS_AVAILABLE = "containerfs.available"
       CONTAINERFS_INODES_FREE = "containerfs.inodesFree"
+      RUNTIME_DISK_SIGNALS = [IMAGEFS_AVAILABLE, IMAGEFS_INODES_FREE, CONTAINERFS_AVAILABLE, CONTAINERFS_INODES_FREE].freeze
       PID_AVAILABLE = "pid.available"
 
       SIGNAL_TO_NODE_CONDITION = {
@@ -228,7 +232,7 @@ module Rubernetes
       # container GC) tried before any Pod is evicted.
       def initialize(summary_provider:, active_pods:, kill_pod:, thresholds: nil, pressure_transition_period: DEFAULT_PRESSURE_TRANSITION_PERIOD,
                      max_pod_grace_period_seconds: 0, local_storage_capacity_isolation: true, dedicated_image_fs: nil,
-                     split_container_fs: false, node_reclaim: {}, recorder: nil, node_ref: nil, pod_cleaned_up: nil,
+                     split_container_fs: false, node_reclaim: {}, recorder: nil, node_ref: nil, pod_cleaned_up: nil, disk_summary: nil,
                      clock: -> { Time.now.utc }, monotonic: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      sleeper: ->(seconds) { sleep(seconds) }, error_handler: nil, on_conditions_changed: nil)
         @summary_provider = summary_provider
@@ -242,7 +246,8 @@ module Rubernetes
         @local_storage_capacity_isolation = local_storage_capacity_isolation
         @dedicated_image_fs = dedicated_image_fs
         @split_container_fs = split_container_fs
-        @node_reclaim = (node_reclaim || {}).to_h { |signal, funcs| [signal.to_s, Array(funcs)] }
+        @node_reclaim = node_reclaim.is_a?(Method) ? node_reclaim : (node_reclaim || {}).to_h { |signal, funcs| [signal.to_s, Array(funcs)] }
+        @disk_summary = disk_summary
         @recorder = recorder
         @node_ref = node_ref
         @pod_cleaned_up = pod_cleaned_up
@@ -298,11 +303,10 @@ module Rubernetes
         configured = @configured_thresholds
         return [] if configured.empty? && !@local_storage_capacity_isolation
 
-        prepare_thresholds
+        observations, stats, layout = eviction_observations
+        prepare_thresholds(layout)
         thresholds = @mutex.synchronize { @thresholds }
         active = Array(@active_pods.call)
-        summary = @summary_provider.summary
-        observations, stats = make_signal_observations(summary)
 
         met = thresholds_met(thresholds, observations, enforce_min_reclaim: false)
         previously_met = @mutex.synchronize { @thresholds_met }
@@ -342,7 +346,7 @@ module Rubernetes
 
         resource = SIGNAL_TO_RESOURCE.fetch(threshold.signal)
         record_node_event("Warning", "EvictionThresholdMet", "Attempting to reclaim #{resource}")
-        return [] if reclaim_node_level_resources(threshold.signal)
+        return [] if reclaim_node_level_resources(threshold.signal, layout)
         return [] if active.empty?
 
         ranked = rank(threshold.signal, active, stats)
@@ -489,12 +493,22 @@ module Rubernetes
 
       private
 
-      def prepare_thresholds
-        @mutex.synchronize do
-          return if @thresholds
+      def eviction_observations
+        summary, layout = @disk_summary ? @disk_summary.call : [@summary_provider.summary, nil]
+        observations, stats = make_signal_observations(summary)
+        observations.delete_if { |signal, _| RUNTIME_DISK_SIGNALS.include?(signal) } if @disk_summary && !layout
+        [observations, stats, layout]
+      end
 
-          image_fs = @dedicated_image_fs.respond_to?(:call) ? @dedicated_image_fs.call : @dedicated_image_fs
-          @dedicated_image_fs = image_fs ? true : false
+      def prepare_thresholds(layout)
+        @mutex.synchronize do
+          return if @thresholds && (!layout || layout == [@dedicated_image_fs, @split_container_fs])
+
+          if @disk_summary
+            @dedicated_image_fs, @split_container_fs = layout || [true, false]
+          else
+            @dedicated_image_fs = !!(@dedicated_image_fs.respond_to?(:call) ? @dedicated_image_fs.call : @dedicated_image_fs)
+          end
           @thresholds = self.class.update_container_fs_thresholds(@configured_thresholds, image_fs: @dedicated_image_fs,
                                                                                           split_container_fs: @split_container_fs)
         end
@@ -550,8 +564,8 @@ module Rubernetes
         memory + with_resource + without
       end
 
-      def reclaim_node_level_resources(signal)
-        funcs = @node_reclaim.fetch(signal, [])
+      def reclaim_node_level_resources(signal, layout)
+        funcs = (@node_reclaim.is_a?(Method) ? @node_reclaim.call(layout) : @node_reclaim).fetch(signal, [])
         return false if funcs.empty?
 
         funcs.each do |func|
@@ -754,25 +768,22 @@ module Rubernetes
         {"ephemeral-storage" => disk, "inodes" => inodes}
       end
 
-      # localVolumeNames: hostPath and local ephemeral volumes (emptyDir not
-      # on memory, gitRepo, configMap, downwardAPI, secret).
+      # pkg/kubelet/eviction.localVolumeNames
       def local_volume_names(pod)
         Array(pod.dig("spec", "volumes")).filter_map do |volume|
-          local = volume["hostPath"] ||
-                  (volume["emptyDir"].is_a?(Hash) && volume["emptyDir"]["medium"].to_s != "Memory") ||
-                  volume["gitRepo"] || volume["configMap"] || volume["downwardAPI"] || volume["secret"]
+          local = volume["hostPath"] || Volume::Types.local_ephemeral_volume?(volume)
           volume["name"].to_s if local
         end
       end
 
-      # v1resource.GetResourceRequestQuantity (integer value).
+      # v1resource.GetResourceRequestQuantity uses the exact value for ranking.
       def request_quantity(pod, resource)
         helpers = ResourceHelpers
         requests = helpers.pod_requests(pod, exclude_overhead: true, skip_container_level: helpers.pod_level_resources_set?(pod))
         value = requests[resource] ? requests[resource].value : Rational(0)
         overhead = helpers.resource_list(helpers.spec(pod)["overhead"])[resource]
         value += overhead.value if overhead && !value.zero?
-        value.ceil
+        value
       end
 
       # ------------------------------------------------------ evicting
@@ -871,19 +882,8 @@ module Rubernetes
       end
 
       def tolerates_memory_pressure?(pod)
-        Array(pod.dig("spec", "tolerations")).any? do |toleration|
-          effect = toleration["effect"].to_s
-          next false unless effect.empty? || effect == "NoSchedule"
-
-          key = toleration["key"].to_s
-          operator = toleration["operator"].to_s
-          operator = "Equal" if operator.empty?
-          if key.empty?
-            operator == "Exists"
-          else
-            key == "node.kubernetes.io/memory-pressure" && (operator == "Exists" || toleration["value"].to_s.empty?)
-          end
-        end
+        taint = {"key" => "node.kubernetes.io/memory-pressure", "effect" => "NoSchedule"}
+        Array(pod.dig("spec", "tolerations")).any? { |entry| TaintToleration.matches?(entry, taint) }
       end
 
       def wait_for_pods_cleanup(pods)
