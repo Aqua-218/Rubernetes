@@ -160,14 +160,24 @@ class M3ProtectionPublicationControllerTest < Minitest::Test
     job = job_object(ttl: 10, finished_at: now - 20)
     controller = Controller::TTLAfterFinishedController.new
 
-    assert_equal :delete, controller.plan(job, now: now).operations.first.action
-    changed = job.merge("spec" => {"ttlSecondsAfterFinished" => 100})
+    deletion = controller.plan(job, now: now).operations.first
 
-    assert_empty controller.plan(job, fresh: changed, now: now).operations
+    assert_equal :delete, deletion.action
+    assert_equal({"propagationPolicy" => "Foreground", "preconditions" => {"uid" => "job-uid"}}, deletion.patch)
+    changed = job.merge("spec" => {"ttlSecondsAfterFinished" => 100})
+    store = Object.new
+    store.define_singleton_method(:find_live) { |_descriptor, name:, namespace:| changed }
+    deferred = controller.plan(job, store: store, now: now)
+
+    assert_empty deferred.operations
+    assert_equal 80, deferred.requeue_after
     active = job.merge("status" => {})
 
     assert_empty controller.plan(active, now: now).operations
-    assert_empty controller.plan(job, now: now - 25).operations
+    early = controller.plan(job, now: now - 25)
+
+    assert_empty early.operations
+    assert_equal 15, early.requeue_after
   end
 
   def test_root_ca_publisher_creates_repairs_and_replays_configmaps
