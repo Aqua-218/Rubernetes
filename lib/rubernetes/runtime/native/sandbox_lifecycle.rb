@@ -20,23 +20,21 @@ module Rubernetes
           input = normalize_hash(sandbox_config)
           input.merge!(normalize_hash(options))
           request = String(request_id || input["request_id"] || input[:request_id] || id || "request-#{SecureRandom.hex(12)}")
-          replayed = replayed_sandbox_id(request)
-          return replayed if replayed
-
           input = resolve_images(input)
           # QoS is derived from the Pod spec exactly once (v1.36.2
           # ComputePodQOS) and pinned into the config so replays and the
           # container cgroup path agree on the class.
           input["qos"] = normalize_qos(input)
           validate_sandbox_input!(input)
-          durable = durable_sandbox_id(request, input)
+          intent = sandbox_config_digest(input)
+          durable = durable_sandbox_id(request, input, intent)
           return durable if durable
 
           sandbox_id = String(id || input["id"] || input[:id] || generated_sandbox_id(input))
           identity = "sandbox:#{sandbox_id}:#{Digest::SHA256.hexdigest(sandbox_id)[0, 16]}"
-          sandbox = register_sandbox(sandbox_id, identity, input, request)
+          sandbox = register_sandbox(sandbox_id, identity, input.except("image_bytes"), request)
           operation = @ledger.begin_operation(operation_id: sandbox_id, owner: identity,
-                                              config_digest: digest(input), request_id: request)
+                                              config_digest: intent, request_id: request)
 
           advance(sandbox, operation, :validated)
           image_digest = pin_image(input)
@@ -94,7 +92,10 @@ module Rubernetes
             # The sandbox is no longer known because an earlier removal finished
             # (the ledger records it Removed): removing it again is a no-op,
             # not a failure to retry for ever.
-            return true if sandbox_removed?(value)
+            if (removed = @ledger.operation(String(reference_id(value))))&.state == "Removed"
+              remove_sandbox_logs(removed.id, removed.owner)
+              return true
+            end
 
             raise error
           end
@@ -104,10 +105,10 @@ module Rubernetes
           operation = @ledger.operation(sandbox.id) || raise(Error, "sandbox operation is missing")
           run_owed_poststop_hooks(sandbox)
           cleanup_sandbox_resources(sandbox, operation) unless sandbox.resources_cleaned?
+          remove_sandbox_logs(sandbox.id, sandbox.identity, container_ids: sandbox.container_ids_ever)
           sandbox.transition(:removed)
           @ledger.transition(operation_id: sandbox.id, to: "Removed") unless operation.state == "Removed"
           @mutex.synchronize { @sandboxes.delete(sandbox.id) }
-          remove_sandbox_logs(sandbox)
           record(:sandbox_removed, sandbox_id: sandbox.id)
           true
         end
@@ -119,24 +120,6 @@ module Rubernetes
         rescue TypeError
           # A value that cannot name a sandbox names no removed one either.
           false
-        end
-
-        # kubelet removes /var/log/pods/<ns>_<name>_<uid> with the Pod; the
-        # supervisor's per-container log directories (one per container id,
-        # so a restarted container's predecessor keeps its own until here)
-        # were kept for ever: 346 directories per worker after one round.
-        # Every container of this sandbox is stopped and removed by now.
-        def remove_sandbox_logs(sandbox)
-          return unless config.log_root
-
-          # Exact names, no glob: a glob over a log root holding hundreds of
-          # directories was 4% of teardown CPU on its own.
-          sandbox.container_ids_ever.each do |container_id|
-            directory = File.join(config.log_root, "process-#{sandbox.id}-#{container_id}")
-            FileUtils.rm_rf(directory) if File.directory?(directory)
-          end
-        rescue StandardError => error
-          record(:sandbox_log_cleanup_error, sandbox_id: sandbox.id, error: "#{error.class}: #{error.message}")
         end
 
         def sandbox(value)
@@ -154,31 +137,22 @@ module Rubernetes
 
         private
 
-        # The sandbox a retried request already produced in this process, or
-        # nil for a request seen for the first time.
-        def replayed_sandbox_id(request)
-          existing_id = @mutex.synchronize { @requests[request] }
-          return nil unless existing_id
-
-          existing = @mutex.synchronize { @sandboxes[existing_id] }
-          return nil unless existing
-          if %i[cleanup_pending state_unknown rolling_back stopping].include?(existing.state)
-            raise RecoveryRequired, "request #{request} is waiting for durable recovery (#{existing.state})"
-          end
-
-          existing_id
-        end
-
         # The sandbox the ledger recorded for this request before a restart,
         # or nil when the request has no durable operation.  A recorded
         # operation that cannot be answered from the ledger alone is never
         # re-executed: it goes to recovery.
-        def durable_sandbox_id(request, input)
-          durable = @ledger.operation_for_request(request)
+        def durable_sandbox_id(request, input, intent)
+          existing_id, existing = @mutex.synchronize { [@requests[request], @sandboxes[@requests[request]]] }
+          durable = existing_id ? @ledger.operation(existing_id) : @ledger.operation_for_request(request)
+          if existing && (!durable || %i[cleanup_pending state_unknown rolling_back stopping].include?(existing.state))
+            raise RecoveryRequired, "request #{request} is waiting for durable recovery (#{existing.state})"
+          end
           return nil unless durable
 
           durable_config_digest = ledger_value(durable, :config_digest)
-          raise OwnershipConflict, "request #{request} was replayed with different intent" unless durable_config_digest == digest(input)
+          unless durable_config_digest == intent || legacy_image_intent?(durable_config_digest, input)
+            raise OwnershipConflict, "request #{request} was replayed with different intent"
+          end
 
           durable_result = ledger_value(durable, :result)
           durable_id = (durable_result["sandbox_id"] || durable_result[:sandbox_id] if durable_result.is_a?(Hash))
@@ -200,6 +174,7 @@ module Rubernetes
           sandbox = Sandbox.new(id: sandbox_id, identity: identity, config: immutable(input), clock: @clock)
           @mutex.synchronize do
             raise Error, "sandbox #{sandbox_id} already exists" if @sandboxes.key?(sandbox_id)
+            raise RecoveryRequired, "request #{request} is already being prepared" if @sandboxes.key?(@requests[request])
 
             @sandboxes[sandbox_id] = sandbox
             @requests[request] = sandbox_id
@@ -257,7 +232,8 @@ module Rubernetes
           cgroup = @cgroup.create(qos: normalize_qos(input), pod_id: sandbox.id, container_id: "sandbox",
                                   identity: "cgroup:#{sandbox.id}",
                                   limits: (limits.nil? || limits.empty? ? nil : limits),
-                                  pod_limits: (initial_pod_limits.empty? ? nil : initial_pod_limits))
+                                  pod_limits: (initial_pod_limits.empty? ? nil : initial_pod_limits),
+                                  **sandbox_cgroup_path_options(sandbox))
           claim(operation, kind: "cgroup", id: sandbox.id, identity: cgroup.identity,
                            metadata: cgroup.to_h.merge("pod_limits" => pod_limits, "qos" => normalize_qos(input)))
           sandbox.set_resources(cgroup: cgroup)
@@ -289,10 +265,8 @@ module Rubernetes
           end
         end
 
-        # The pod cgroup directory is named after the sandbox, and kubelet names
-        # it after the Pod UID (cgroupfs "pod<uid>", systemd "kubepods-pod<uid>
-        # .slice"); tooling -- the in-place resize conformance suite among it --
-        # finds a Pod's cgroup by searching for its UID.
+        # Keep the originating Pod UID in the opaque sandbox ID. Its random
+        # generation distinguishes retries and replacement sandboxes of a Pod.
         def generated_sandbox_id(input)
           metadata = input["metadata"] || input[:metadata]
           uid = metadata.is_a?(Hash) ? (metadata["uid"] || metadata[:uid]).to_s : ""
@@ -306,6 +280,10 @@ module Rubernetes
         def namespace_spec_for(input, identity)
           spec = input["namespace"] || input[:namespace] || input
           return spec unless @namespace.user_namespace_required?(spec)
+
+          if @namespace.normalize_spec(spec)["host_network"] == true
+            raise Namespace::Unsupported, "the native runtime does not support user namespaces with host networking"
+          end
 
           mapping = userns_allocator.allocate(identity)
           normalized = normalize_hash(spec)
@@ -321,13 +299,13 @@ module Rubernetes
         end
 
         def userns_allocator
-          @userns_allocator ||= if config.pure_profile?
-                                  Platform::Linux::UserNamespace::Allocator.new(path: File.join(Dir.tmpdir,
-                                                                                                "rubernetes-pure-userns-#{Process.pid}.json"))
-                                else
-                                  Platform::Linux::UserNamespace::Allocator.new(path: config.userns_allocation_path)
-                                end
+          @mutex.synchronize do
+            path = config.pure_profile? ? File.join(Dir.tmpdir, "rubernetes-pure-userns-#{Process.pid}.json") : config.userns_allocation_path
+            @userns_allocator ||= Platform::Linux::UserNamespace::Allocator.new(path: path)
+          end
         end
+
+        public :userns_allocator
 
         def release_user_namespace_range(sandbox)
           return true unless sandbox.namespace.plan.user_mapping
