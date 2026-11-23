@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "filesystem_stats"
+
 module Rubernetes
   module Runtime
     module CRI
@@ -11,9 +13,11 @@ module Rubernetes
       class ImageGCSource
         Image = Struct.new(:id, :tags, :size_bytes, keyword_init: true)
 
-        def initialize(client:, in_use: -> { Set.new })
+        def initialize(client:, in_use: -> { Set.new }, runtime_class_in_image_api: false)
           @client = client
+          @filesystem_stats = FilesystemStats.new(client)
           @in_use = in_use
+          @runtime_class_in_image_api = runtime_class_in_image_api
         end
 
         attr_reader :client
@@ -21,8 +25,11 @@ module Rubernetes
         # [[key, image, last_handed_out]]: key "<reference>|<id>", the
         # reference a used tag when there is one.
         def cached_images
+          images = Array(@client.image("ListImages", {})["images"])
+          return images_with_runtime_handlers(images) if @runtime_class_in_image_api
+
           used = @in_use.call
-          Array(@client.image("ListImages", {})["images"]).filter_map do |image|
+          images.filter_map do |image|
             next if image["pinned"] == true
 
             tags = Array(image["repo_tags"]) + Array(image["repo_digests"])
@@ -34,8 +41,10 @@ module Rubernetes
         end
 
         def evict_cached_image(key, unused_since: nil)
-          id = key.to_s.split("|", 2).last
-          @client.image("RemoveImage", {"image" => {"image" => id}})
+          first, second = key.to_s.split("|", 2)
+          image = {"image" => @runtime_class_in_image_api ? first : (second || first)}
+          image["runtime_handler"] = second if @runtime_class_in_image_api && second
+          @client.image("RemoveImage", {"image" => image})
           true
         rescue Client::Error => error
           return true if error.code == Client::NOT_FOUND
@@ -43,19 +52,28 @@ module Rubernetes
           raise
         end
 
-        # The image filesystem the way StatsProvider#image_fs_stats reports
-        # it: capacity and availability of the runtime's image mount.
         def fs_stats
-          filesystem = Array(@client.image("ImageFsInfo", {})["image_filesystems"]).first || {}
-          mountpoint = filesystem.dig("fs_id", "mountpoint").to_s
-          used = Integer(filesystem.dig("used_bytes", "value") || 0)
-          return {"usedBytes" => used} if mountpoint.empty?
+          @filesystem_stats.sample(include_container: false)["imageFs"]&.stats || {}
+        end
 
-          require "rubernetes/platform/linux/statfs"
-          stat = Rubernetes::Platform::Linux::Statfs.statfs(mountpoint)
-          {"capacityBytes" => stat.capacity_bytes, "availableBytes" => stat.available_bytes, "usedBytes" => used}
-        rescue StandardError
-          {"usedBytes" => used}.compact
+        private
+
+        def images_with_runtime_handlers(images)
+          used = Array(@client.runtime("ListContainers", {})["containers"]).to_set do |container|
+            image_tuple(container["image_id"], container.dig("image", "runtime_handler"))
+          end
+          images.filter_map do |image|
+            id = image["id"].to_s
+            next if image["pinned"] == true || id.empty?
+
+            key = image_tuple(id, image.dig("spec", "runtime_handler"))
+            tags = Array(image["repo_tags"]) + Array(image["repo_digests"])
+            [key, Image.new(id: id, tags: tags, size_bytes: Integer(image["size"] || 0)), nil, used.include?(key)]
+          end
+        end
+
+        def image_tuple(id, handler)
+          handler.to_s.empty? ? id.to_s : "#{id}|#{handler}"
         end
       end
     end
