@@ -87,14 +87,13 @@ module Rubernetes
             return reuse_entry(claim, metadata, observed_start_time: observed_start)
           end
 
-          digest = metadata["workload_executable_digest"] || metadata["executable_digest"]
-          # The ledger records "sha256:<hex>"; the observation is the bare hex.
-          # Comparing them as-is reported every live workload as pid reuse, so an
-          # agent restarted with running Pods refused to start (RecoveryRequired).
-          if digest && (observed = executable_digest(pid)) && observed != digest.to_s.delete_prefix("sha256:")
-            return reuse_entry(claim, metadata, observed_start_time: observed_start, observed_digest: observed)
-          end
-
+          # The pid with this start time is the claimed process: a reused pid
+          # never carries the old start time within one boot.  Its executable
+          # is not evidence either way.  The digest recorded at start is of
+          # the file the workload was started from, and a workload that execs
+          # (a shell entrypoint ending in `exec tini ...`, as every GitLab
+          # image does) runs another one from then on.  Treating that as pid
+          # reuse made an agent restart discard every such running Pod.
           entry(claim, metadata.merge(
             "live" => true,
             "observed_start_time" => observed_start,
@@ -170,7 +169,8 @@ module Rubernetes
           return observe_path(claim, metadata) if root.to_s.empty?
 
           path = observe_path(claim, metadata.merge(metadata["root_identity"] || {}).merge("path" => root))
-          return path unless path && path["identity"] == claim["identity"] && metadata["mounted"] == true
+          return path unless path && path["identity"] == claim["identity"]
+          return unmounted_workspace(path, holder) unless metadata["mounted"] == true
 
           expected = metadata["mount_identity"]
           return observe_unverifiable(claim, metadata) unless expected.is_a?(Hash) && holder
@@ -185,6 +185,17 @@ module Rubernetes
           return observe_unverifiable(claim, metadata) unless readback
 
           compare_workspace_mount(claim, metadata, expected, readback)
+        end
+
+        # An unmounted workspace is a directory tree the kernel holds no
+        # reference to.  It is in use only while its sandbox's namespaces
+        # are; once those are gone it is what a dead operation left on disk.
+        # Calling it live because the directory exists wedged recovery: an
+        # agent restarted after its sandboxes died refused to start.
+        def unmounted_workspace(path, holder)
+          return path if holder && observe_namespace(holder, holder.fetch("metadata", {}))
+
+          path.merge("metadata" => path.fetch("metadata").merge("live" => false))
         end
 
         def compare_workspace_mount(claim, metadata, expected, readback)
