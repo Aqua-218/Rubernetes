@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require_relative "../test_helper"
 require "rubernetes/controller"
 
@@ -57,6 +58,24 @@ class PVHostPathProvisionerTest < Minitest::Test
     assert_equal ["kubernetes.io/pv-controller"], volume.dig("metadata", "finalizers"), "a Delete volume is protected until its directory is gone"
     assert_equal ["Normal ProvisioningSucceeded"], reasons(result)
     assert_equal "Successfully provisioned volume pvc-claim-uid using kubernetes.io/host-path", result.events.first.fetch("message")
+  end
+
+  def test_a_configured_directory_is_used_for_provisioning_and_failed_create_cleanup
+    Dir.mktmpdir do |directory|
+      root = File.join(directory, "persistent-volumes")
+      controller = Controller::PersistentVolumeBinderController.new
+      result = controller.plan(claim, persistent_volumes: [], storage_classes: [storage_class], pods: [],
+                                      enable_hostpath_provisioner: true, hostpath_provisioner_root: root)
+      create = result.operations.find { |operation| operation.action == :create }
+      host_path = create.object.dig("spec", "hostPath", "path")
+
+      assert_equal(root, File.dirname(host_path))
+      assert_path_exists(host_path)
+
+      create.notify(false, RuntimeError.new("PV creation rejected"))
+
+      refute_path_exists(host_path)
+    end
   end
 
   def test_the_claim_is_marked_with_its_provisioner
@@ -130,6 +149,24 @@ class PVHostPathProvisionerTest < Minitest::Test
 
     assert_equal ["pvc-claim-uid"], keys
     assert_nil specs.find { |spec| spec.resource.kind == "PersistentVolumeClaim" && spec.route == :self }.queue_key.call(claim)
+  end
+
+  def test_a_released_deleting_volume_does_not_reinstate_its_removed_deletion_finalizer
+    volume = Controller::Support.deep_copy(created_volume(plan(claim)))
+    volume["status"] = {"phase" => "Released"}
+    volume["metadata"]["deletionTimestamp"] = "2026-01-01T00:00:00Z"
+    volume["metadata"]["finalizers"] << "kubernetes.io/pv-protection"
+
+    removal, *remaining = @controller.plan(volume, persistent_volumes: [volume], claims: [], storage_classes: [], pods: []).operations
+
+    assert_empty remaining
+    assert_equal :update, removal.action
+    assert_equal ["kubernetes.io/pv-protection"], removal.object.dig("metadata", "finalizers")
+    assert_equal @made, @removed
+
+    result = @controller.plan(removal.object, persistent_volumes: [removal.object], claims: [], storage_classes: [], pods: [])
+
+    assert_empty result.operations
   end
 
   # The API refused the volume, or another pass had created it already.
