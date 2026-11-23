@@ -85,6 +85,21 @@ class CorpusImporterTest < Minitest::Test
     assert_empty(report.fetch("unresolved_imports"))
   end
 
+  def test_exported_protobuf_is_readable_by_installed_service_users
+    Dir.mktmpdir("rubernetes-corpus-mode-") do |directory|
+      importer = KubernetesCorpusImporter::Importer.new(root: ROOT, output_root: directory)
+      source = protobuf_source("k8s.io/api/example/v1/generated.proto", "message Example {}\n")
+      path = File.join(directory, source.relative_path)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.binwrite(path, source.canonical_bytes)
+      File.chmod(0o600, path)
+      importer.send(:write_sources, [source], {})
+
+      assert_equal(0o644, File.stat(path).mode & 0o777)
+      assert_equal(source.canonical_bytes, File.binread(path))
+    end
+  end
+
   def test_discovery_consistency_rejects_scope_contradiction
     discovery = {
       records: [
