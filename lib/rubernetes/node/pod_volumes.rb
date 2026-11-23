@@ -9,20 +9,26 @@ require "securerandom"
 require_relative "status"
 require_relative "field_ref"
 require_relative "../volume/kubernetes_csi"
+require_relative "../volume/csi_migration"
 require_relative "kubelet_metrics"
+require_relative "pod_volumes/nested_mountpoints"
+require_relative "pod_volumes/storage_sources"
+require_relative "pod_volumes/trust_bundles"
+require_relative "pod_volumes/kubelet_publish_paths"
+require_relative "volume_groups"
 
 module Rubernetes
   module Node
     # Turns `pod.spec.volumes` into mounted host paths the runtime can bind
     # into containers, the way kubelet's volume manager does:
     #
-    #   1. the Kubernetes volume source is resolved against the API (ConfigMap
+    #   1. each referenced volume source is resolved against the API (ConfigMap
     #      and Secret contents, the PersistentVolume behind a claim, downward
     #      API values from the live Pod) and translated to a Volume::Manager
     #      spec whose file map is already computed (`items`, key selection,
     #      `defaultMode`, per-item `mode` are applied here);
-    #   2. the manager provisions, attaches, stages and publishes the volume
-    #      under the per-Pod directory `<root>/pods/<uid>/volumes/<name>`;
+    #   2. the manager provisions, attaches, stages and publishes the volume;
+    #      native CSI Filesystem and inline NFS targets use the kubelet's per-plugin layout;
     #   3. `subPath` mounts get their own publish under
     #      `<root>/pods/<uid>/volume-subpaths/<container>/<volume>/<index>`
     #      so the descriptor-validated sub-path is what the container sees.
@@ -30,25 +36,29 @@ module Rubernetes
     # The result maps each volume name to its host path plus the metadata a
     # container mount needs.  Release walks the same steps backwards.
     class PodVolumes
-      class Error < StandardError; end
-      # Raised when a referenced object (ConfigMap, Secret, claim) is absent
-      # and the source is not optional; kubelet reports this as
-      # CreateContainerConfigError / FailedMount and retries.
+      class Error < StandardError
+        attr_accessor :volume_name
+      end
+
+      # A required ConfigMap, Secret, or claim that is absent. The kubelet
+      # reports the dependency as FailedMount and retries.
       class MissingDependency < Error; end
       class Unsupported < Error; end
 
-      SUPPORTED_SOURCES = %w[
-        emptyDir hostPath configMap secret downwardAPI projected persistentVolumeClaim
-        ephemeral image csi local
-      ].freeze
+      include KubeletPublishPaths
+
+      SUPPORTED_SOURCES = (%w[
+        emptyDir hostPath configMap secret downwardAPI projected persistentVolumeClaim ephemeral image csi local nfs iscsi fc
+      ] + Volume::CSIMigration::DRIVERS.keys).freeze
       DEFAULT_MODE = 0o644
 
-      # +unique_name+: the attachable volume's name in node.status.volumesInUse
-      # (a PersistentVolume's CSI volume: kubernetes.io/csi/<driver>^<handle>).
-      Mount = Struct.new(:name, :id, :path, :readonly, :source, :backend, :sub_paths, :direct, :unique_name, keyword_init: true) do
+      # +unique_name+: the attachable volume's plugin-qualified name in
+      # node.status.volumesInUse.
+      Mount = Struct.new(:name, :id, :path, :readonly, :source, :backend, :sub_paths, :direct, :unique_name, :volume_mode, keyword_init: true) do
         def to_h
           {"name" => name, "id" => id, "path" => path, "readonly" => readonly, "source" => source,
-           "backend" => backend, "subPaths" => sub_paths, "direct" => direct == true, "uniqueName" => unique_name}.compact
+           "backend" => backend, "subPaths" => sub_paths, "direct" => direct == true, "uniqueName" => unique_name,
+           "volumeMode" => volume_mode}.compact
         end
       end
 
@@ -58,16 +68,18 @@ module Rubernetes
         @volume.respond_to?(:reconstruction_stats) ? @volume.reconstruction_stats : nil
       end
 
-      def initialize(volume:, reader: nil, node_name: nil, root: nil, clock: -> { Time.now.utc },
-                     node_allocatable: nil)
+      def initialize(volume:, reader: nil, node_name: nil, root: nil, kubelet_pod_root: nil, clock: -> { Time.now.utc },
+                     node_allocatable: nil, cluster_trust_bundle_projection: false)
         raise ArgumentError, "volume manager is required" unless volume
 
         @volume = volume
         @reader = reader
         @node_name = node_name.to_s
         @root = File.expand_path(String(root || (volume.respond_to?(:root) ? File.join(volume.root, "pods") : "/var/lib/rubernetes/pods")))
+        @kubelet_pod_root = File.expand_path(kubelet_pod_root) if kubelet_pod_root
         @clock = clock
         @node_allocatable = node_allocatable
+        @cluster_trust_bundle_projection = cluster_trust_bundle_projection
         # kubelet setupDataDirs: the root directory is made a shared mount at
         # start-up, before any Pod (and before recovery touches the paths of
         # a previous run, which are already beneath the mount).
@@ -139,9 +151,9 @@ module Rubernetes
         File.join(@root, pod_uid(pod))
       end
 
-      # Prepare every volume of the Pod.  Returns {"ids" => [...], "mounts" =>
+      # Prepare every referenced volume. Returns {"ids" => [...], "mounts" =>
       # {name => Mount#to_h}} which the lifecycle records durably.
-      def prepare(pod, token: nil, pod_ip: nil, host_ip: nil, images: {})
+      def prepare(pod, token: nil, pod_ip: nil, host_ip: nil, images: {}, existing_mounts: {})
         object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
         uid = pod_uid(object)
         ensure_propagating_root!
@@ -151,16 +163,17 @@ module Rubernetes
         # that rollback already deleted.
         token ||= "prepare-#{uid}"
         token = "#{token}-#{SecureRandom.hex(4)}"
-        volumes = Array(Helpers.key(Helpers.key(object, "spec", {}), "volumes", []))
+        volumes = used_volume_definitions(object).reject { |volume| existing_mounts.key?(Helpers.key(volume, "name", "").to_s) }
         names = volumes.map { |volume| Helpers.key(volume, "name", "").to_s }
         duplicate = names.find { |name| names.count(name) > 1 }
         raise Error, "volume name #{duplicate.inspect} is used more than once" if duplicate
 
         mounts = {}
+        publish_targets = existing_mounts.values.to_h { |entry| [Helpers.key(entry, "path"), true] }
         stage_paths = {}
         ids = []
         operation_started = nil
-        current_plugin = nil
+        current_plugin = name = target = nil
         selinux_contexts = nil
         selinux_volumes = {}
         begin
@@ -169,12 +182,11 @@ module Rubernetes
             name = Helpers.key(entry, "name", "").to_s
             raise Error, "volume without a name" if name.empty?
 
-            spec, readonly = translate(entry, object, pod_ip: pod_ip, host_ip: host_ip, images: images)
-            # A Pod volume belongs to this Pod and this attempt: the manager
-            # derives the volume id (and the durable operation fingerprint)
-            # from the spec, so two Pods declaring the same emptyDir, or a
-            # retried attempt, must not collapse onto one volume record.
-            spec = spec.merge("podUid" => uid, "attempt" => token)
+            spec, readonly, projection = translate(entry, object, pod_ip: pod_ip, host_ip: host_ip, images: images)
+            validate_persistent_volume_mode!(object, name, spec)
+            credentials = iscsi_credentials(spec)
+            # Scope a volume's identity to this Pod and mount attempt.
+            spec = volume_provision_spec(spec, object, name, projection: projection, uid: uid, token: token)
             operation_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             current_plugin = plugin_name(entry, spec)
             selinux_label = admit_selinux(object, uid, name, spec, selinux_contexts ||= Volume::SELinux.container_contexts(object))
@@ -182,39 +194,44 @@ module Rubernetes
             selinux_volumes[name] = @selinux_tracker.unique_name(uid, name, spec) if @selinux_tracker
             id = create(spec, token: "#{token}-#{name}")
             ids << id
-            target = File.join(pod_directory(object), "volumes", name)
+            target = kubelet_publish_target(id, uid, name, spec, publish_targets) || File.join(pod_directory(object), "volumes", name)
+            publish_targets[target] = true
             stage_path = File.join(pod_directory(object), "stages", name)
             # Recorded before the mount is attempted: a rollback has to release
             # a stage that a failed mount left behind.
-            stage_paths[name] = stage_path
-            fs_group = fs_group_for(object, spec)
-            backend = Helpers.key(spec, "backend", nil).to_s
-            direct = direct_volume?(backend, object, name)
-            if direct
-              target = @volume.direct_path(id, pod: object, fs_group: fs_group)
-            else
-              mount(id, object, stage_path: stage_path, target: target, readonly: readonly, fs_group: fs_group,
-                                backend: backend, token: "#{token}-#{name}")
-            end
-            mounts[name] = Mount.new(name: name, id: id, path: target, readonly: readonly,
-                                     source: source_kind(entry), backend: backend,
-                                     sub_paths: {}, direct: direct, unique_name: attachable_name(spec)).to_h
+            stage_paths[id] = stage_path
+            mounts[name] = publish_prepared_volume(id, name, object, entry, spec, stage_path: stage_path, target: target,
+                                                                                  readonly: readonly, token: "#{token}-#{name}", credentials: credentials)
             mounts[name]["selinuxVolume"] = selinux_volumes[name] if selinux_volumes[name]
+            content_signatures[id] = projection_signature(projection) if projection
             observe_operation(current_plugin, "volume_mount", "success", operation_started)
           end
         rescue StandardError => error
-          error = MissingDependency.new(error.message) if error.is_a?(Volume::PodCertificateNotReadyError)
+          transient = [Volume::PodCertificateNotReadyError, Volume::MultiAttachError, Volume::LocalSourceNotFoundError]
+          error = MissingDependency.new(error.message) if transient.any? { |type| error.is_a?(type) }
+          error = Unsupported.new(error.message) if error.is_a?(Volume::LocalBlockDeviceError) || error.is_a?(Volume::CSIMigration::Invalid)
+          error.volume_name ||= name if error.is_a?(Error)
           observe_operation(current_plugin, "volume_mount", "fail-unknown", operation_started) if operation_started
           selinux_volumes.each_value { |unique| @selinux_tracker&.forget(pod_uid: uid, volume_name: nil, unique_name: unique) }
           begin
             release(object, {"ids" => ids, "mounts" => mounts, "stage_paths" => stage_paths},
-                    token: "#{token}-rollback", keep_certificates: true)
+                    token: "#{token}-rollback", keep_certificates: true, keep_pod_directory: !existing_mounts.empty?)
+            remove_empty_csi_target(uid, target)
+            remove_empty_nfs_target(uid, target)
           rescue StandardError => cleanup_error
-            raise error.class, "#{error.message} (rollback: #{cleanup_error.message})", error.backtrace
+            raise error.exception("#{error.message} (rollback: #{cleanup_error.message})")
           end
           raise error
         end
         {"ids" => ids, "mounts" => mounts}
+      end
+
+      def prepare_newly_used(pod, handle, **context)
+        current = handle.fetch("mounts")
+        additional = prepare(pod, existing_mounts: current, **context)
+        return handle if additional.fetch("ids").empty?
+
+        {"ids" => handle.fetch("ids") + additional.fetch("ids"), "mounts" => current.merge(additional.fetch("mounts"))}
       end
 
       # Publish a `subPath` of an already prepared volume for one container
@@ -226,7 +243,7 @@ module Rubernetes
         raise Error, "volume #{volume_name.inspect} was not prepared for this Pod" if mount.nil?
 
         validate_sub_path!(sub_path)
-        # prepare publishes (never uses directly) any volume a subPath names.
+        raise Error, "subPath is unsupported for block volume #{volume_name.inspect}" if mount["volumeMode"] == "Block"
         raise Error, "volume #{volume_name.inspect} was prepared without a publish; its subPath cannot be bound" if Helpers.key(mount,
                                                                                                                                 "direct", false) == true
 
@@ -242,44 +259,15 @@ module Rubernetes
                                                  token: token, node: node_argument, sub_path: sub_path)
         (mount["subPaths"] ||= {})["#{container_name}:#{index}"] = {"target" => target, "subPath" => sub_path}
         target
+      rescue Volume::PathSecurityError => error
+        raise Error, "failed to prepare subPath #{sub_path.inspect} for volume #{volume_name.inspect}: #{error.message}"
       end
 
       # Re-project the sources that depend on the Pod's runtime state (downward
       # API status.podIP/hostIP) once the network is attached; kubelet does
       # the same through its periodic volume resync.
       def refresh(pod, handle, pod_ips: [], host_ip: nil)
-        object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
-        volumes = Array(Helpers.key(Helpers.key(object, "spec", {}), "volumes", []))
-        mounts = Helpers.key(handle || {}, "mounts", {})
-        backends = @volume.respond_to?(:backends) ? @volume.backends : {}
-        volumes.each do |volume|
-          entry = Helpers.string_keys(volume)
-          name = Helpers.key(entry, "name", "").to_s
-          mount = Helpers.key(mounts, name, nil)
-          next if mount.nil?
-
-          backend = backends[Helpers.key(mount, "id")]
-          next if backend.nil?
-
-          kind = source_kind(entry)
-          pod_ip = pod_ips.first
-          case kind
-          when "downwardAPI"
-            next unless status_dependent?(Helpers.key(entry, kind, {}))
-
-            files, _modes = downward_api_files(Helpers.key(entry, kind, {}), object, pod_ip: pod_ip, host_ip: host_ip)
-            backend.update(files: files) if backend.respond_to?(:update)
-          when "projected"
-            source = Helpers.key(entry, kind, {})
-            next unless Array(Helpers.key(source, "sources", [])).any? do |projection|
-              status_dependent?(Helpers.key(Helpers.string_keys(projection), "downwardAPI", {}))
-            end
-
-            namespace = Helpers.key(Helpers.key(object, "metadata", {}), "namespace", "default").to_s
-            sources, _modes = projected_sources(source, object, namespace, pod_ip: pod_ip, host_ip: host_ip)
-            backend.update(sources: sources) if backend.respond_to?(:update)
-          end
-        end
+        refresh_contents(pod, handle, pod_ips: pod_ips, host_ip: host_ip, status_only: true)
         true
       end
 
@@ -288,7 +276,7 @@ module Rubernetes
       # source and rewrite the projection only when its content changed.  A
       # projected serviceAccountToken is rotated separately (rotate_tokens), so
       # a content check never mints a token.  Returns the refreshed volume names.
-      def refresh_contents(pod, handle, pod_ips: [], host_ip: nil)
+      def refresh_contents(pod, handle, pod_ips: [], host_ip: nil, status_only: false)
         object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
         namespace = Helpers.key(Helpers.key(object, "metadata", {}), "namespace", "default").to_s
         mounts = Helpers.key(handle || {}, "mounts", {})
@@ -307,25 +295,28 @@ module Rubernetes
 
           kind = source_kind(entry)
           source = Helpers.key(entry, kind, {})
+          next if status_only && !status_projection?(kind, source)
+
           payload = case kind
                     when "configMap" then {files: config_map_files(source, namespace, "configMap volume").first}
                     when "secret" then {files: secret_files(source, namespace, "secret volume").first}
                     when "downwardAPI" then {files: downward_api_files(source, object, pod_ip: pod_ip, host_ip: host_ip).first}
-                    when "projected" then {sources: projected_sources(source, object, namespace, pod_ip: pod_ip, host_ip: host_ip).first}
+                    when "projected" then {sources: projected_sources(source, object, namespace, pod_ip: pod_ip, host_ip: host_ip, volume_name: name)}
                     end
           next if payload.nil?
 
-          signature = Digest::SHA256.hexdigest(Marshal.dump(payload))
-          previous = content_signatures[id]
-          content_signatures[id] = signature
-          # The first pass after a start records what was projected; only a
-          # later change is written.
-          next if previous.nil? || previous == signature
+          signature = projection_signature(payload)
+          missing_generation = backend.respond_to?(:published_generation?) && !backend.published_generation?
+          next if content_signatures[id] == signature && !missing_generation
 
           backend.update(**payload)
-          reapply_ownership(object, entry, mount, id)
+          next unless reapply_ownership(object, entry, mount, id)
+
+          content_signatures[id] = signature
           refreshed << name
         rescue MissingDependency, Error => error
+          raise if status_only
+
           refresh_errors[name] = error.message
         end
         refreshed
@@ -408,23 +399,22 @@ module Rubernetes
 
           id = Helpers.key(mount, "id")
           backend = backends[id]
-          if backend.respond_to?(:pod_certificate_refresh_due?) && backend.pod_certificate_refresh_due?
-            backend.refresh_pod_certificates
-            reapply_ownership(object, entry, mount, id)
-            rotated << name
-          end
-          next unless backend.respond_to?(:token_rotation_due?)
-
-          if backend.token_rotation_due?(now)
-            @volume.rotate_token(id, now: now, token: "rotate-#{pod_uid(object)}-#{name}-#{now.to_f.to_i}")
-            reapply_ownership(object, entry, mount, id)
-            rotated << name
-          elsif backend.respond_to?(:token) && backend.token.nil? &&
-                backend.respond_to?(:service_account_token_source?) && backend.service_account_token_source?
-            sources, = projected_sources(Helpers.key(entry, "projected", {}), object, namespace, pod_ip: pod_ips.first, host_ip: host_ip)
+          certificate_due = backend.respond_to?(:pod_certificate_refresh_due?) && backend.pod_certificate_refresh_due?
+          token_missing = backend.respond_to?(:token) && backend.token.nil? &&
+                          backend.respond_to?(:service_account_token_source?) && backend.service_account_token_source?
+          if certificate_due || token_missing
+            sources = projected_sources(Helpers.key(entry, "projected", {}), object, namespace, pod_ip: pod_ips.first, host_ip: host_ip, volume_name: name)
             backend.update(sources: sources)
+            content_signatures[id] = projection_signature(sources: sources)
+          end
+
+          token_due = backend.respond_to?(:token_rotation_due?) && backend.token_rotation_due?(now)
+          if token_due
+            result = @volume.rotate_token(id, now: now, token: "rotate-#{pod_uid(object)}-#{name}-#{now.to_f.to_i}")
+            token_due = false if result.is_a?(Hash) && result["rotated"] == false
+          end
+          if certificate_due || token_missing || token_due
             reapply_ownership(object, entry, mount, id)
-            content_signatures.delete(id)
             rotated << name
           end
         end
@@ -432,27 +422,46 @@ module Rubernetes
       end
 
       def reapply_ownership(pod, entry, mount, id)
-        return unless @volume.respond_to?(:reapply_fs_group)
+        return true unless @volume.respond_to?(:reapply_fs_group)
 
         fs_group = fs_group_for(pod, {"backend" => source_kind(entry)})
-        return if fs_group.nil?
+        return true if fs_group.nil?
 
         stage_path = if Helpers.key(mount, "direct", false) == true
                        Helpers.key(mount, "path")
                      else
                        File.join(pod_directory(pod), "stages", Helpers.key(mount, "name"))
                      end
-        @volume.reapply_fs_group(id, pod: pod, stage_path: stage_path, fs_group: fs_group)
+        @volume.reapply_fs_group(id, pod: pod, stage_path: stage_path, fs_group: fs_group, readonly: true)
+        true
       rescue StandardError => error
+        content_signatures.delete(id)
         refresh_errors[Helpers.key(entry, "name", "").to_s] = "fsGroup: #{error.message}"
+        false
       end
 
       def content_signatures
         @content_signatures ||= {}
       end
 
+      def projection_signature(payload)
+        # File maps have no ordering. Hash raw bytes first so ConfigMap binaryData
+        # and Secret values never pass through a text encoder. Projection source
+        # arrays retain their order, which determines which overlapping file wins.
+        files = payload[:files]
+        payload = {files: files.transform_values { |bytes| Digest::SHA256.hexdigest(bytes) }} if files
+        Volume::Types.digest(payload)
+      end
+
       def refresh_errors
         @refresh_errors ||= {}
+      end
+
+      def status_projection?(kind, source)
+        return status_dependent?(source) if kind == "downwardAPI"
+        return false unless kind == "projected"
+
+        Array(Helpers.key(source, "sources", [])).any? { |projection| status_dependent?(Helpers.key(projection, "downwardAPI", {})) }
       end
 
       def status_dependent?(source)
@@ -466,7 +475,7 @@ module Rubernetes
       # failure is collected so the caller records all of them.
       # +keep_certificates+: a rollback of a failed setup keeps the Pod's
       # PodCertificateRequests in flight (the retry needs their answers).
-      def release(pod, handle, token: nil, keep_certificates: false)
+      def release(pod, handle, token: nil, keep_certificates: false, keep_pod_directory: false)
         object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
         uid = pod_uid(object)
         token ||= "release-#{uid}"
@@ -475,6 +484,7 @@ module Rubernetes
         mounts.values.reverse_each do |mount|
           id = Helpers.key(mount, "id")
           unmount_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          content_signatures.delete(id)
           errors_before = errors.length
           # The operation token is an identifier, not a path: a token carrying
           # the bind target's absolute path is rejected outright ("operation
@@ -493,7 +503,7 @@ module Rubernetes
           end
           unless Helpers.key(mount, "direct", false) == true
             guard(errors, "unpublish #{id}") do
-              @volume.node_unpublish(id, object, Helpers.key(mount, "path"), token: "#{token}-unpublish-#{id}")
+              unpublish_volume(id, object, uid, Helpers.key(mount, "path"), token)
             end
             guard(errors, "unstage #{id}") do
               @volume.unstage(id, File.join(pod_directory(object), "stages", Helpers.key(mount, "name")), token: "#{token}-unstage-#{id}",
@@ -502,6 +512,7 @@ module Rubernetes
             guard(errors, "detach #{id}") { @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}") } unless @node_name.empty?
           end
           guard(errors, "delete #{id}") { @volume.delete_volume(id, token: "#{token}-delete-#{id}") }
+          guard(errors, "remove NFS publication #{id}") { remove_empty_nfs_target(uid, Helpers.key(mount, "path")) } if errors.length == errors_before
           if (unique = Helpers.key(mount, "selinuxVolume", nil))
             @selinux_tracker&.forget(pod_uid: uid, volume_name: Helpers.key(mount, "name"), unique_name: unique)
           end
@@ -516,7 +527,8 @@ module Rubernetes
           # ConflictError and the rollback reports that instead of the failure
           # that caused it.  Release what it holds first, ignoring the steps
           # that were never reached.
-          Helpers.key(handle || {}, "stage_paths", {}).each do |_name, stage_path|
+          stage_path = Helpers.key(handle || {}, "stage_paths", {})[id]
+          if stage_path
             guard(errors, "unstage #{id}", ignore: true) do
               @volume.unstage(id, stage_path, token: "#{token}-unstage-#{id}", node: node_argument)
             end
@@ -531,7 +543,7 @@ module Rubernetes
         @pod_certificates&.forget_pod(uid) unless keep_certificates
         guard(errors, "remove pod directory") do
           directory = pod_directory(object)
-          FileUtils.rm_rf(directory) if File.directory?(directory) && !mounted_beneath?(directory)
+          FileUtils.rm_rf(directory) if !keep_pod_directory && File.directory?(directory) && !mounted_beneath?(directory)
         end
         raise Error, errors.join("; ") unless errors.empty?
 
@@ -552,21 +564,44 @@ module Rubernetes
       # staging it read-only makes the fsGroup ownership pass fail with EROFS.
       CONTENT_PROJECTED_BACKENDS = %w[secret configMap downwardAPI projected].freeze
 
-      def mount(id, pod, stage_path:, target:, readonly:, fs_group:, token:, backend: nil)
+      def publish_prepared_volume(id, name, object, entry, spec, stage_path:, target:, readonly:, token:, credentials:)
+        fs_group = fs_group_for(object, spec)
+        backend = Helpers.key(spec, "backend", nil).to_s
+        block = spec["volumeMode"] == "Block"
+        fs_group = nil if block || (readonly && %w[iscsi fc].include?(backend))
+        direct = direct_volume?(backend, object, name)
+        if direct
+          target = @volume.direct_path(id, pod: object, fs_group: fs_group)
+        else
+          published = mount(id, object, stage_path: stage_path, target: target, readonly: readonly, fs_group: fs_group,
+                                        backend: backend, token: token, credentials: credentials)
+        end
+        Mount.new(name: name, id: id, path: target, readonly: readonly,
+                  source: source_kind(entry), backend: backend,
+                  sub_paths: {}, direct: direct, unique_name: attachable_name(spec),
+                  volume_mode: ("Block" if block)).to_h.tap do |handle|
+          conflict = Helpers.key(published, "localFsGroupConflict", nil)
+          handle["localFsGroupConflict"] = conflict if conflict
+          handle["volumeGid"] = spec["volumeGid"] if !block && spec.key?("volumeGid")
+        end
+      end
+
+      def mount(id, pod, stage_path:, target:, readonly:, fs_group:, token:, backend: nil, credentials: nil)
         FileUtils.mkdir_p(File.dirname(stage_path))
-        FileUtils.mkdir_p(File.dirname(target))
         # Every attempt mints a fresh volume id but the stage and publish
         # paths are fixed per Pod and volume name, so a mount left by an
         # attempt that died belongs to nothing and would make this one fail
         # with "already mounted".  kubelet keeps one idempotent volume set per
         # Pod; here the abandoned mounts are cleared first.
         reclaim_abandoned_mount(stage_path)
-        reclaim_abandoned_mount(target)
+        prepare_publish_target!(target)
+        FileUtils.mkdir_p(File.dirname(target))
         @volume.publish(id, @node_name, token: "#{token}-attach") unless @node_name.empty?
         stage_readonly = readonly && !CONTENT_PROJECTED_BACKENDS.include?(backend.to_s)
         # fsGroup travels with the stage for a CSI driver that applies it
         # itself (VOLUME_MOUNT_GROUP).
-        stage_options = fs_group.nil? ? {} : {context: {"fsGroup" => fs_group}}
+        context = {"fsGroup" => fs_group, "iscsiCredentials" => credentials}.compact
+        stage_options = context.empty? ? {} : {context: context}
         @volume.stage(id, stage_path, token: "#{token}-stage", node: node_argument, readonly: stage_readonly, **stage_options)
         @volume.node_publish(id, pod, target, readonly: readonly, token: "#{token}-publish", node: node_argument,
                                               fs_group: fs_group)
@@ -708,32 +743,31 @@ module Rubernetes
           medium = Helpers.key(source, "medium", "")
           size_limit = Helpers.key(source, "sizeLimit", nil)
           size_limit = empty_dir_memory_size(pod, size_limit) if medium.to_s.casecmp?("Memory")
-          [{"name" => name, "backend" => "emptyDir", "medium" => medium, "sizeLimit" => size_limit}.compact, false]
+          quota_monitor = true if medium.to_s.empty? && Helpers.key(pod["spec"], "hostUsers") == false
+          [{"name" => name, "backend" => "emptyDir", "medium" => medium, "sizeLimit" => size_limit, "quotaMonitor" => quota_monitor}.compact, false]
         when "hostPath"
           [{"name" => name, "backend" => "hostPath", "path" => Helpers.key(source, "path"),
             "type" => Helpers.key(source, "type", "")}, false]
         when "configMap"
           files, modes = config_map_files(source, namespace, "configMap volume #{name.inspect}")
           [{"name" => name, "backend" => "configMap", "modes" => modes,
-            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}.merge(split_binary_files(files)), true]
+            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}.merge(split_binary_files(files)), true, {files: files}]
         when "secret"
           files, modes = secret_files(source, namespace, "secret volume #{name.inspect}")
           [{"name" => name, "backend" => "secret", "modes" => modes,
-            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}.merge(split_binary_files(files)), true]
+            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}.merge(split_binary_files(files)), true, {files: files}]
         when "downwardAPI"
           files, modes = downward_api_files(source, pod, pod_ip: pod_ip, host_ip: host_ip)
-          [{"name" => name, "backend" => "downwardAPI", "files" => files, "modes" => modes, "pod" => pod,
-            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}, true]
+          [{"name" => name, "backend" => "downwardAPI", "files" => files, "modes" => modes,
+            "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}, true, {files: files}]
         when "projected"
-          sources, modes = projected_sources(source, pod, namespace, pod_ip: pod_ip, host_ip: host_ip)
-          spec = {"name" => name, "backend" => "projected", "sources" => sources, "modes" => modes, "pod" => pod,
+          sources = projected_sources(source, pod, namespace, pod_ip: pod_ip, host_ip: host_ip, volume_name: name)
+          spec = {"name" => name, "backend" => "projected", "sources" => sources,
                   "podUid" => pod_uid(pod), "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}
-          if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("podCertificate") }
-            sources.each do |projection|
-              projection["podCertificate"]["volumeName"] ||= name if projection.is_a?(Hash) && projection["podCertificate"]
-            end
-            spec["podCertificateProvider"] = @pod_certificates
-          end
+          # Resolved file sources already contain their payload. Only credentials
+          # need the Pod for provider identity or credential file ownership.
+          spec["pod"] = pod if sources.any? { |item| item.key?("serviceAccountToken") || item.key?("podCertificate") || item.key?("clusterTrustBundle") }
+          spec["podCertificateProvider"] = @pod_certificates if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("podCertificate") }
           if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("serviceAccountToken") }
             rotator = @volume.respond_to?(:token_rotator_for) ? @volume.token_rotator_for(pod) : nil
             if rotator.nil?
@@ -743,7 +777,7 @@ module Rubernetes
 
             spec["tokenRotator"] = rotator
           end
-          [spec, true]
+          [spec, true, {sources: sources}]
         when "image"
           # kubelet mounts the pulled image's filesystem read-only: the volume
           # is the unpacked rootfs the node pinned for this reference.
@@ -755,28 +789,18 @@ module Rubernetes
           spec["rootfs"] = resolved["rootfs"] unless resolved["rootfs"].to_s.empty?
           [spec, true]
         when "csi"
-          # makeVolumeHandle: an inline (ephemeral) CSI volume is named
-          # csi-<sha256(podUID + volume name)>, and is never attached.
-          pod_uid = Helpers.key(Helpers.key(pod, "metadata", {}), "uid", "").to_s
-          spec = csi_spec(source, namespace).merge(
-            "volumeHandle" => Volume::KubernetesCSIAdapter.inline_volume_handle(pod_uid, name), "ephemeral" => true
-          )
-          [{"name" => name, "csi" => spec}, Helpers.key(source, "readOnly", false) == true]
+          ephemeral_csi_volume(name, source, pod, namespace)
+        when *Volume::CSIMigration::DRIVERS.keys
+          migrated_inline_volume(entry, namespace)
         when "local"
           [{"name" => name, "backend" => "local", "path" => Helpers.key(source, "path")}, false]
+        when "nfs", "iscsi", "fc"
+          static_storage_volume({"name" => name}, kind, source, namespace, readonly: false)
         when "persistentVolumeClaim"
           claim_volume(name, Helpers.key(source, "claimName").to_s, namespace, readonly: Helpers.key(source, "readOnly", false) == true)
         when "ephemeral"
           pod_name = Helpers.key(Helpers.key(pod, "metadata", {}), "name", "").to_s
           claim_volume(name, "#{pod_name}-#{name}", namespace, readonly: false)
-        end
-      end
-
-      def claim_name_for(entry, pod)
-        if (claim = Helpers.key(entry, "persistentVolumeClaim", nil))
-          Helpers.key(claim, "claimName").to_s
-        elsif Helpers.key(entry, "ephemeral", nil)
-          "#{Helpers.key(Helpers.key(pod, "metadata", {}), "name", "")}-#{Helpers.key(entry, "name")}"
         end
       end
 
@@ -789,7 +813,7 @@ module Rubernetes
         return nil if pv_name.empty?
 
         pv = read("persistentvolumes", pv_name, namespace: nil)
-        return nil if pv.nil? || Helpers.key(Helpers.key(pv, "spec", {}), "csi", nil).nil?
+        return nil unless pv && Volume::CSIMigration.persistent_spec(pv)["csi"]
 
         pv_quantity = pv.dig("spec", "capacity", "storage")
         return nil if pv_quantity.nil?
@@ -854,26 +878,32 @@ module Rubernetes
         pv = read("persistentvolumes", pv_name, namespace: nil)
         raise MissingDependency, "persistentvolume \"#{pv_name}\" bound to claim \"#{claim_name}\" not found" if pv.nil?
 
-        pv_spec = Helpers.key(pv, "spec", {})
+        pv_spec = Volume::CSIMigration.persistent_spec(pv)
         access_modes = Array(Helpers.key(pv_spec, "accessModes", []))
         base = {"name" => name, "accessModes" => access_modes, "capacity" => pv_spec.dig("capacity", "storage"),
                 "volumeMode" => Helpers.key(pv_spec, "volumeMode", "Filesystem"),
-                "persistentVolume" => pv_name, "claim" => "#{namespace}/#{claim_name}"}.compact
+                "persistentVolume" => pv_name, "claim" => "#{namespace}/#{claim_name}",
+                "volumeGid" => VolumeGroups.for_claim(pv, claim)}.compact
+        mount_options = Array(Helpers.key(pv_spec, "mountOptions", []))
+        if (kind = STATIC_STORAGE_SOURCES.keys.find { |key| pv_spec[key].is_a?(Hash) })
+          base["mountOptions"] = mount_options unless mount_options.empty?
+          return static_storage_volume(base, kind, pv_spec.fetch(kind), namespace,
+                                       readonly: readonly || access_modes.include?("ReadOnlyMany"))
+        end
+
         spec = if (host = Helpers.key(pv_spec, "hostPath", nil))
                  base.merge("backend" => "hostPath", "path" => Helpers.key(host, "path"), "type" => Helpers.key(host, "type", ""))
                elsif (local = Helpers.key(pv_spec, "local", nil))
                  base.merge("backend" => "local", "path" => Helpers.key(local, "path"))
                elsif (csi = Helpers.key(pv_spec, "csi", nil))
                  # The PV's mountOptions reach NodeStage/NodePublish as mount flags.
-                 mount_options = Array(Helpers.key(pv_spec, "mountOptions", []))
-                 base.merge("csi" => csi_spec(csi, namespace,
-                                              pv: true)).merge(mount_options.empty? ? {} : {"mountOptions" => mount_options})
+                 base.merge("csi" => csi_spec(csi, namespace, pv: true)).merge(mount_options.empty? ? {} : {"mountOptions" => mount_options})
                else
                  sources = pv_spec.keys - %w[accessModes capacity volumeMode storageClassName persistentVolumeReclaimPolicy
                                              claimRef nodeAffinity mountOptions]
                  raise Unsupported, "persistentvolume \"#{pv_name}\" uses unsupported source #{sources.first.inspect}"
                end
-        readonly ||= access_modes == ["ReadOnlyMany"]
+        readonly ||= spec.dig("csi", "readOnly") || access_modes == ["ReadOnlyMany"]
         [spec, readonly]
       end
 
@@ -886,12 +916,18 @@ module Rubernetes
       def attachable_volume_names(pod)
         object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
         namespace = Helpers.key(Helpers.key(object, "metadata", {}), "namespace", "default").to_s
-        Array(Helpers.key(Helpers.key(object, "spec", {}), "volumes", [])).filter_map do |volume|
+        used_volume_definitions(object).filter_map do |volume|
           entry = Helpers.string_keys(volume)
           claim_name = claim_name_for(entry, object)
-          next nil if claim_name.nil? || claim_name.empty?
+          spec = if claim_name && !claim_name.empty?
+                   claim_volume(Helpers.key(entry, "name", "").to_s, claim_name, namespace, readonly: false).first
+                 elsif Volume::CSIMigration::DRIVERS.each_key.any? { |key| entry.key?(key) }
+                   migrated_inline_volume(entry, namespace).first
+                 elsif (kind = %w[iscsi fc].find { |key| entry[key].is_a?(Hash) })
+                   static_storage_volume({}, kind, entry.fetch(kind), namespace, readonly: false).first
+                 end
+          next unless spec
 
-          spec, _readonly = claim_volume(Helpers.key(entry, "name", "").to_s, claim_name, namespace, readonly: false)
           attachable_name(spec)
         rescue Error, StandardError
           nil
@@ -902,8 +938,9 @@ module Rubernetes
       # The volume plugin of a Pod volume (its PV's for a claim).
       def plugin_name(entry, spec)
         kind = source_kind(entry)
+        return "kubernetes.io/csi" if spec["csi"]
+
         if %w[persistentVolumeClaim ephemeral].include?(kind)
-          return "kubernetes.io/csi" if Helpers.key(spec, "csi", nil)
 
           KubeletMetrics::VOLUME_PLUGIN_NAMES[Helpers.key(spec, "backend", "").to_s]
         else
@@ -930,37 +967,6 @@ module Rubernetes
         nil
       end
 
-      # GetUniqueVolumeNameFromSpec for the attachable volumes kubelet
-      # reports in use: a CSI PersistentVolume (inline ephemeral CSI volumes
-      # are not attached).
-      def attachable_name(spec)
-        csi = Helpers.key(spec, "csi", nil)
-        return nil unless csi.is_a?(Hash) && Helpers.key(spec, "persistentVolume", nil)
-
-        "kubernetes.io/csi/#{Helpers.key(csi, "driver")}^#{Helpers.key(csi, "volumeHandle")}"
-      end
-
-      def csi_spec(source, namespace, pv: false)
-        spec = {
-          "driver" => Helpers.key(source, "driver"),
-          "volumeHandle" => Helpers.key(source, "volumeHandle"),
-          "fsType" => Helpers.key(source, "fsType", nil),
-          "readOnly" => Helpers.key(source, "readOnly", false),
-          "volumeAttributes" => Helpers.key(source, "volumeAttributes", {})
-        }
-        %w[nodePublishSecretRef nodeStageSecretRef controllerPublishSecretRef controllerExpandSecretRef].each do |key|
-          reference = Helpers.key(source, key, nil)
-          next if reference.nil?
-
-          secret_namespace = Helpers.key(reference, "namespace", namespace)
-          secret = read("secrets", Helpers.key(reference, "name"), namespace: secret_namespace)
-          raise MissingDependency, "secret \"#{Helpers.key(reference, "name")}\" for CSI #{key} not found" if secret.nil?
-
-          (spec["secrets"] ||= {})[key.sub("SecretRef", "")] = decode_secret_data(secret)
-        end
-        spec.compact
-      end
-
       # ConfigMap / Secret / downward API file maps -------------------------
 
       # The volume spec travels through the manager's JSON ledger, which can
@@ -973,8 +979,9 @@ module Rubernetes
         binary = {}
         files.each do |path, content|
           value = String(content)
-          if value.dup.force_encoding(Encoding::UTF_8).valid_encoding?
-            text[path] = value
+          utf8 = value.dup.force_encoding(Encoding::UTF_8)
+          if utf8.valid_encoding?
+            text[path] = utf8
           else
             binary[path] = Base64.strict_encode64(value)
           end
@@ -1024,7 +1031,7 @@ module Rubernetes
       # not carry is an error unless the source is optional (kubelet:
       # "references non-existent config key").
       def select_items(data, items, optional:, label:)
-        if items.nil?
+        if Array(items).empty?
           data.each_key { |key| validate_relative_path!(key, label) }
           return [data, {}]
         end
@@ -1062,22 +1069,28 @@ module Rubernetes
         [files, modes]
       end
 
-      def projected_sources(source, pod, namespace, pod_ip:, host_ip:)
-        modes = {}
-        sources = Array(Helpers.key(source, "sources", [])).map do |projection|
+      def projected_files(kind, files, modes = {})
+        encoded = split_binary_files(files)
+        payload = if kind == "secret"
+                    {"stringData" => encoded.fetch("files"), "data" => encoded.fetch("binaryFiles", {})}
+                  else
+                    {"data" => encoded.fetch("files"), "binaryData" => encoded.fetch("binaryFiles", {})}
+                  end
+        payload["modes"] = modes
+        {kind => payload}
+      end
+
+      def projected_sources(source, pod, namespace, pod_ip:, host_ip:, volume_name:)
+        Array(Helpers.key(source, "sources", [])).map.with_index do |projection, index|
           entry = Helpers.string_keys(projection)
+          next {} if entry.empty? # A disabled projection feature may leave an empty source.
+
           if (config_map = Helpers.key(entry, "configMap", nil))
-            files, item_modes = config_map_files(config_map, namespace, "projected configMap")
-            modes.merge!(item_modes)
-            files
+            projected_files("configMap", *config_map_files(config_map, namespace, "projected configMap"))
           elsif (secret = Helpers.key(entry, "secret", nil))
-            files, item_modes = secret_files(secret, namespace, "projected secret")
-            modes.merge!(item_modes)
-            files
+            projected_files("secret", *secret_files(secret, namespace, "projected secret"))
           elsif (downward = Helpers.key(entry, "downwardAPI", nil))
-            files, item_modes = downward_api_files(downward, pod, pod_ip: pod_ip, host_ip: host_ip)
-            modes.merge!(item_modes)
-            files
+            projected_files("configMap", *downward_api_files(downward, pod, pod_ip: pod_ip, host_ip: host_ip))
           elsif (token = Helpers.key(entry, "serviceAccountToken", nil))
             # The token itself is minted by the manager's rotator; only the
             # projection parameters travel.
@@ -1085,7 +1098,7 @@ module Rubernetes
                                        "expirationSeconds" => Helpers.key(token, "expirationSeconds", nil),
                                        "path" => Helpers.key(token, "path", "token")}.compact}
           elsif (bundle = Helpers.key(entry, "clusterTrustBundle", nil))
-            cluster_trust_bundle_files(bundle)
+            {"clusterTrustBundle" => cluster_trust_bundle_files(bundle)}
           elsif (certificate = Helpers.key(entry, "podCertificate", nil))
             if @pod_certificates.nil?
               raise Unsupported,
@@ -1102,45 +1115,18 @@ module Rubernetes
                                   "keyPath" => Helpers.key(certificate, "keyPath", nil), "certificateChainPath" => Helpers.key(certificate,
                                                                                                                                "certificateChainPath", nil),
                                   "userAnnotations" => Helpers.key(certificate, "userAnnotations", nil),
-                                  "volumeName" => Helpers.key(source, "name",
-                                                              nil), "sourceIndex" => Array(Helpers.key(source, "sources", [])).index(projection)}.compact}
+                                  "volumeName" => volume_name, "sourceIndex" => index}.compact}
           else
             raise Unsupported, "projected source #{entry.keys.inspect} is not supported"
           end
         end
-        [sources, modes]
-      end
-
-      def cluster_trust_bundle_files(bundle)
-        path = Helpers.key(bundle, "path").to_s
-        validate_relative_path!(path, "projected clusterTrustBundle")
-        optional = Helpers.key(bundle, "optional", false) == true
-        bundles = if (name = Helpers.key(bundle, "name", nil))
-                    object = read("clustertrustbundles", name, namespace: nil)
-                    object.nil? ? [] : [object]
-                  else
-                    selector = Helpers.key(Helpers.key(bundle, "labelSelector", {}), "matchLabels", {}).to_h
-                    signer = Helpers.key(bundle, "signerName", nil)
-                    list("clustertrustbundles", namespace: nil).select do |object|
-                      labels = object.dig("metadata", "labels") || {}
-                      (signer.nil? || object.dig("spec", "signerName") == signer) &&
-                        selector.all? { |key, value| labels[key] == value }
-                    end
-                  end
-        if bundles.empty? && !optional && Helpers.key(bundle, "name", nil)
-          raise MissingDependency, "clustertrustbundle \"#{Helpers.key(bundle, "name")}\" not found"
-        end
-
-        {path => bundles.map { |object| object.dig("spec", "trustBundle").to_s }.join("\n")}
       end
 
       def fs_group_for(pod, spec)
         context = Helpers.key(Helpers.key(pod, "spec", {}), "securityContext", {}) || {}
         value = Helpers.key(context, "fsGroup", nil)
         return nil if value.nil?
-        # kubelet applies fsGroup to volumes that support ownership management;
-        # hostPath and local volumes are excluded (SupportsOwnershipManagement).
-        return nil if %w[hostPath local].include?(Helpers.key(spec, "backend", "").to_s)
+        return nil if %w[hostPath nfs].include?(Helpers.key(spec, "backend", "").to_s)
 
         Integer(value)
       end
