@@ -18,24 +18,32 @@ class ConsensusBatchFlushStepDownTest < Minitest::Test
     ids = %w[a b c]
     servers = ids.to_h do |id|
       bundle = C::Identity.issue_node(ca, ca_key, cluster_id: "bf", node_id: id)
-      [id, C::Server.new(id: id, cluster_id: "bf", data_directory: File.join(root, id), bundle: bundle, initial_voters: ids)]
+      [id, C::Server.new(id: id, cluster_id: "bf", data_directory: File.join(root, id), bundle: bundle,
+                         initial_voters: ids, timing: C::Node::Timing.production)]
     end
     servers.each_value(&:start)
     servers.each_value { |server| servers.each { |peer_id, peer| server.add_peer(peer_id, peer.address) unless peer.equal?(server) } }
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
-    sleep 0.02 until servers.values.any?(&:leader?) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-    sleep 0.2
     servers
+  end
+
+  def with_leader(servers)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 15
+    loop do
+      servers.each_value do |server|
+        server.synchronize { return yield(server, server.node) if server.leader? && server.quorum_available? }
+      end
+      flunk "cluster did not elect a leader with quorum" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 0.02
+    end
   end
 
   def test_the_proposer_waits_for_its_appended_entry_after_a_step_down
     Dir.mktmpdir("batch-flush") do |root|
       servers = start_cluster(root)
-      leader = servers.values.find(&:leader?)
-      node = leader.node
       command = {"type" => "create", "key" => "registry/things/ns/raced", "object" => {"metadata" => {"name" => "raced"}},
                  "request_uid" => nil, "leader_time" => Time.now.to_f}
-      position = leader.synchronize do
+      position = with_leader(servers) do |leader, node|
         node.propose(command, request_id: "r1")
         node.flush
         leader.send(:flush_outbox)
@@ -58,25 +66,25 @@ class ConsensusBatchFlushStepDownTest < Minitest::Test
         assert_operator server.node.last_applied, :>=, appended[:index], "#{server.id} applied the entry"
         assert_equal 1, C::RaftStore.new(server).list("registry/things/").items.length
       end
-      servers.each_value(&:stop)
+    ensure
+      servers&.each_value(&:stop)
     end
   end
 
   def test_an_entry_that_never_left_the_batch_is_proposed_again
     Dir.mktmpdir("batch-flush") do |root|
       servers = start_cluster(root)
-      leader = servers.values.find(&:leader?)
-      node = leader.node
       command = {"type" => "create", "key" => "registry/things/ns/unflushed", "object" => {"metadata" => {"name" => "unflushed"}},
                  "request_uid" => nil, "leader_time" => Time.now.to_f}
-      awaited = leader.synchronize do
+      awaited = with_leader(servers) do |leader, node|
         node.propose(command, request_id: "r2")
         node.__send__(:become_follower, node.current_term + 1, leader: nil, now: Process.clock_gettime(Process::CLOCK_MONOTONIC))
         leader.send(:await_batch_flush, "r2", 1.0)
       end
 
       assert_nil awaited, "nothing was appended, so the proposal is retried"
-      servers.each_value(&:stop)
+    ensure
+      servers&.each_value(&:stop)
     end
   end
 end
