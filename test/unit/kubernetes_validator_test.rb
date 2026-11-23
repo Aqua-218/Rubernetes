@@ -1,9 +1,46 @@
 # frozen_string_literal: true
 
+require "base64"
 require_relative "../test_helper"
 require File.expand_path("../../generated/ruby/kubernetes_types", __dir__)
 
 class KubernetesValidatorTest < Minitest::Test
+  def test_recursive_read_only_requires_read_only_and_private_propagation
+    validator = Rubernetes::Generated.definition_for("io.k8s.api.core.v1.Pod").validator
+    mount = {"name" => "data", "mountPath" => "/mnt", "recursiveReadOnly" => "Enabled", "mountPropagation" => "HostToContainer"}
+    object = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "pod", "namespace" => "default"},
+              "spec" => {"volumes" => [{"name" => "data", "emptyDir" => {}}],
+                         "containers" => [{"name" => "app", "image" => "busybox", "volumeMounts" => [mount]}]}}
+    issues = validator.errors(object, operation: :create)
+    path = "spec.containers[0].volumeMounts.recursiveReadOnly"
+    causes = issues.select { |issue| issue.kubernetes_field == path }.map { |issue| issue.to_cause(object) }
+
+    assert_equal [
+      {"field" => path, "reason" => "FieldValueForbidden", "message" => "Forbidden: may only be specified when readOnly is true"},
+      {"field" => path, "reason" => "FieldValueForbidden", "message" => "Forbidden: may only be specified when mountPropagation is None or not specified"}
+    ], causes
+
+    mount["readOnly"] = true
+    mount["mountPropagation"] = "None"
+
+    refute_includes validator.errors(object, operation: :create).map(&:kubernetes_field), path
+  end
+
+  def test_secret_size_limit_counts_decoded_bytes_and_omits_values_in_errors
+    validator = Rubernetes::Generated.definition_for("io.k8s.api.core.v1.Secret").validator
+    payload = Base64.strict_encode64("x" * (1024 * 1024))
+    secret = {"apiVersion" => "v1", "kind" => "Secret", "metadata" => {"name" => "boundary", "namespace" => "dev"},
+              "data" => {"key" => payload}}
+
+    assert_empty(validator.errors(secret, operation: :create))
+    assert_empty(validator.errors(secret.merge("stringData" => {"key" => "shorter"}), operation: :create))
+
+    secret["data"]["extra"] = "eA=="
+    causes = validator.errors(secret, operation: :create).map { |issue| issue.to_cause(secret) }
+
+    assert_equal([{"field" => "data", "reason" => "FieldValueTooLong", "message" => "Too long: may not be more than 1048576 bytes"}], causes)
+  end
+
   def test_operation_sensitive_object_metadata_uses_kubernetes_field_paths
     definition = Rubernetes::Generated.definition_for("io.k8s.api.apps.v1.Deployment")
     object = {"apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {}, "spec" => {}}
