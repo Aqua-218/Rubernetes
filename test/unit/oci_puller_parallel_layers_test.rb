@@ -16,10 +16,11 @@ class OCIPullerParallelLayersTest < Minitest::Test
   class SlowRegistry
     attr_reader :peak
 
-    def initialize(blobs:, manifest:, delay:, failing: nil)
+    def initialize(blobs:, manifest:, expected_in_flight: 1, failing: nil)
       @blobs = blobs
       @manifest = manifest
-      @delay = delay
+      @expected_in_flight = expected_in_flight
+      @arrivals = ConditionVariable.new
       @failing = failing
       @active = 0
       @peak = 0
@@ -30,16 +31,25 @@ class OCIPullerParallelLayersTest < Minitest::Test
 
     def fetch_blob(_reference, digest, expected_size:, media_type:, io: nil)
       bytes = @blobs.fetch(digest.to_s)
-      @mutex.synchronize do
-        @active += 1
-        @peak = [@peak, @active].max
+      if media_type == Image::MediaTypes::OCI_IMAGE_LAYER
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+        @mutex.synchronize do
+          @active += 1
+          @peak = [@peak, @active].max
+          @arrivals.broadcast
+          while @peak < @expected_in_flight
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            raise "layer downloads did not overlap" unless remaining.positive?
+
+            @arrivals.wait(@mutex, remaining)
+          end
+        end
       end
-      sleep @delay if media_type == Image::MediaTypes::OCI_IMAGE_LAYER
       raise Image::RegistryError, "blob #{digest} unavailable" if digest.to_s == @failing
 
       io ? io.write(bytes) : bytes
     ensure
-      @mutex.synchronize { @active -= 1 }
+      @mutex.synchronize { @active -= 1 } if media_type == Image::MediaTypes::OCI_IMAGE_LAYER
     end
   end
 
@@ -60,21 +70,18 @@ class OCIPullerParallelLayersTest < Minitest::Test
   def test_layers_download_concurrently_and_keep_manifest_order
     manifest, blobs, layers = fixture(4)
     Dir.mktmpdir do |directory|
-      registry = SlowRegistry.new(blobs: blobs, manifest: manifest, delay: 0.2)
+      registry = SlowRegistry.new(blobs: blobs, manifest: manifest, expected_in_flight: layers.length)
       puller = Image::Puller.new(registry_client: registry, store: Image::ContentStore.new(directory))
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       image = puller.pull("registry.example/app:1", unpack: false)
-      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
-      assert_operator registry.peak, :>, 1, "more than one layer was in flight"
-      assert_operator elapsed, :<, 0.6
+      assert_equal layers.length, registry.peak, "all four downloads overlapped"
       assert_equal(layers.map { |layer| digest_for(layer) }, image.layers.map { |layer| layer.fetch(:descriptor).digest.to_s })
     end
   end
 
   def test_a_failed_layer_fails_the_pull
     manifest, blobs, layers = fixture(3)
-    registry = SlowRegistry.new(blobs: blobs, manifest: manifest, delay: 0.05, failing: digest_for(layers[1]))
+    registry = SlowRegistry.new(blobs: blobs, manifest: manifest, failing: digest_for(layers[1]))
     Dir.mktmpdir do |directory|
       puller = Image::Puller.new(registry_client: registry, store: Image::ContentStore.new(directory))
 
