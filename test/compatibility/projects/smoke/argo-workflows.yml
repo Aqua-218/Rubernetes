@@ -1,0 +1,13 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: hello-world-
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: hello-world
+  templates:
+    - name: hello-world
+      container:
+        image: registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+        command: [echo]
+        args: ["hello world"]
