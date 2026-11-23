@@ -37,6 +37,7 @@ module Rubernetes
         "Rubernetes::Storage::NotFound" => NotFound,
         "Rubernetes::Storage::AlreadyExists" => AlreadyExists,
         "Rubernetes::Storage::Conflict" => Conflict,
+        "Rubernetes::Storage::CorruptObject" => Rubernetes::Storage::CorruptObject,
         "Rubernetes::Storage::RequestUIDConflict" => Rubernetes::Storage::RequestUIDConflict,
         "Rubernetes::Storage::Gone" => Gone,
         "Rubernetes::Storage::InvalidResourceVersion" => Rubernetes::Storage::InvalidResourceVersion
@@ -49,13 +50,15 @@ module Rubernetes
       attr_reader :server
 
       def initialize(server, timeout: Server::DEFAULT_TIMEOUT, clock: -> { Time.now.utc }, sleeper: ->(seconds) { Kernel.sleep(seconds) },
-                     random: Random.new, journal: nil)
+                     random: Random.new, journal: nil, cbor_storage: false, corrupt_deletion: false)
         @server = server
         @timeout = timeout
         @clock = clock
         @sleeper = sleeper
         @random = random
         @journal = journal
+        @cbor_storage = cbor_storage
+        @corrupt_deletion = corrupt_deletion
       end
 
       # The API server's registry: passed on to the local replica (which may
@@ -113,6 +116,15 @@ module Rubernetes
         local_store.revision_under(prefix)
       end
 
+      def storage_layout_revision(group)
+        barrier
+        local_store.storage_layout_revision(group)
+      end
+
+      def prefix_has_records?(prefix)
+        local_store.prefix_has_records?(prefix)
+      end
+
       def resource_version_string
         revision.to_s
       end
@@ -127,18 +139,36 @@ module Rubernetes
 
       def get(key, out: nil, resource_version: nil, **options)
         read_barrier(key) unless historical?(resource_version, options)
-        local_store.get(key, out: out, resource_version: resource_version, **options)
+        replica = local_store
+        checked_out = (->(object) { replica.send(:copy_to_out, out, readable_record!(object)) } if out)
+        readable_record!(replica.get(key, out: checked_out, resource_version: resource_version, **options))
       end
 
       def list(prefix = "", resource_version: nil, resource_version_match: nil, **options)
-        read_barrier(prefix) unless historical?(resource_version,
-                                                options) ||
-                                    (resource_version_match.to_s == "NotOlderThan" && !resource_version.nil? && resource_version.to_s != "0")
-        local_store.list(prefix, resource_version: resource_version, resource_version_match: resource_version_match, **options)
+        continuation = options[:continue] || options[:continue_token] || options[:token]
+        read_barrier(prefix) if continuation || !historical?(resource_version, options)
+        if continuation || options[:limit]
+          # The replicated mutation clock does not move in a quiet cluster.
+          # Continue tokens use local wall time, regardless of write traffic.
+          options[:token_time] = @clock.call.to_f
+        end
+        result = local_store.list(prefix, resource_version: resource_version, resource_version_match: resource_version_match, **options)
+        failures = result.items.filter_map do |object|
+          next unless object.is_a?(Rubernetes::Storage::CBORRecord::Unreadable)
+
+          error = corrupt_record_error(object)
+          raise error unless @corrupt_deletion
+
+          error
+        end
+        return result if failures.empty?
+
+        resource = failures.first.key.split("/")[-3]
+        raise Rubernetes::Storage::ReadErrors.new(resource, failures.first(100))
       end
 
       def watch(prefix = "", *positional, **)
-        local_store.watch(prefix, *positional, **)
+        Rubernetes::Storage::CBORRecord::Watch.new(local_store.watch(prefix, *positional, **), corrupt_deletion: @corrupt_deletion)
       end
 
       def await_watch_delivery(revision, timeout:)
@@ -146,7 +176,7 @@ module Rubernetes
         store.respond_to?(:await_watch_delivery) ? store.await_watch_delivery(revision, timeout: timeout) : true
       end
 
-      def create(key, object, request_uid: nil, request_id: nil, **options)
+      def create(key, object, request_uid: nil, request_id: nil, related_versions: nil, **options)
         request_uid ||= request_id || options.delete(:uid)
         body = options.delete(:body)
         object_keyword = options.delete(:object)
@@ -157,54 +187,29 @@ module Rubernetes
         raise ArgumentError, "create requires an API object Hash" unless object.is_a?(Hash)
 
         normalized_key = normalize_key(key)
-        command = {"type" => "create", "key" => normalized_key, "object" => object, "request_uid" => request_uid && String(request_uid),
+        stored = cbor_storage_for?(resource_keyword) ? Rubernetes::Storage::CBORRecord.encode(object) : object
+        command = {"type" => "create", "key" => normalized_key, "object" => stored, "request_uid" => request_uid && String(request_uid),
                    "leader_time" => @clock.call.to_f}
+        command["related_versions"] = related_versions if related_versions
         submit(command, effect: "create", key: normalized_key)
       end
 
       def guaranteed_update(key, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil,
-                            max_retries: DEFAULT_UPDATE_RETRIES, **options, &block)
+                            max_retries: DEFAULT_UPDATE_RETRIES, cbor: nil, related_versions: nil, **options, &block)
         request_uid ||= request_id || options.delete(:uid)
         allow_nil_result = options.delete(:allow_nil_result) { false }
         raise ArgumentError, "unknown guaranteed_update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "guaranteed_update requires a block" unless block
 
-        expected = if prec.nil?
-                     precondition.nil? ? resource_version : precondition
-                   else
-                     prec
-                   end
-        normalized_key = normalize_key(key)
-        request_uid &&= String(request_uid)
-        attempt = 0
-        loop do
-          barrier
-          current = local_store.get(normalized_key)
-          check_precondition!(normalized_key, current, expected)
-          current_version = current.dig("metadata", "resourceVersion")
+        expected = write_precondition(prec, precondition, resource_version)
+        submit_update(normalize_key(key), expected, request_uid, cbor, related_versions, max_retries) do |current|
           candidate = yield(Rubernetes::Storage::MemoryStoreSupport.deep_dup(current))
-          candidate = current if candidate.nil? && allow_nil_result
-          raise ArgumentError, "guaranteed_update block must return an API object Hash" unless candidate.is_a?(Hash)
-
-          # `expected_resource_version` is re-observed on every attempt, so it
-          # identifies the attempt, not the client's request. `client_precondition`
-          # carries what the caller actually asked for (nil when it asked for
-          # none) so a replayed request UID still matches its first attempt.
-          command = {"type" => "update", "key" => normalized_key, "object" => candidate, "expected_resource_version" => current_version,
-                     "client_precondition" => expected,
-                     "request_uid" => request_uid, "leader_time" => @clock.call.to_f}
-          begin
-            return submit(command, effect: "update", key: normalized_key)
-          rescue Conflict => error
-            raise error if attempt >= max_retries || (!expected.nil? && precondition_conflict?(error, expected))
-
-            sleep_for_retry(attempt)
-            attempt += 1
-          end
+          candidate.nil? && allow_nil_result ? current : candidate
         end
       end
 
-      def update(key, object = nil, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil, **options)
+      def update(key, object = nil, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil,
+                 related_versions: nil, **options)
         request_uid ||= request_id || options.delete(:uid)
         body = options.delete(:body)
         object_keyword = options.delete(:object)
@@ -214,30 +219,56 @@ module Rubernetes
         raise ArgumentError, "unknown update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "update requires an API object Hash" unless object.is_a?(Hash)
 
-        expected = if prec.nil?
-                     precondition.nil? ? resource_version : precondition
-                   else
-                     prec
-                   end
-        guaranteed_update(key, prec: expected, request_uid: request_uid) { |_current| object }
+        expected = write_precondition(prec, precondition, resource_version)
+        submit_update(normalize_key(key), expected, request_uid, cbor_storage_for?(resource_keyword), related_versions, DEFAULT_UPDATE_RETRIES) { object }
       end
       alias replace update
 
-      def delete(key, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil, **options)
+      private def cbor_storage_for?(resource)
+        @cbor_storage && resource.respond_to?(:custom?) && resource.custom?
+      end
+
+      def delete(key, prec: nil, precondition: nil, resource_version: nil, request_uid: nil, request_id: nil, related_versions: nil, **options)
         request_uid ||= request_id || options.delete(:uid)
         discard(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown delete options: #{options.keys.join(", ")}" unless options.empty?
 
-        expected = if prec.nil?
-                     precondition.nil? ? resource_version : precondition
-                   else
-                     prec
-                   end
+        expected = write_precondition(prec, precondition, resource_version)
         normalized_key = normalize_key(key)
         expected_version = expected.is_a?(Hash) ? (expected[:resourceVersion] || expected["resourceVersion"]) : expected
         command = {"type" => "delete", "key" => normalized_key, "expected_resource_version" => expected_version.nil? ? nil : String(expected_version),
                    "request_uid" => request_uid && String(request_uid), "leader_time" => @clock.call.to_f}
+        command["related_versions"] = related_versions if related_versions
         submit(command, effect: "delete", key: normalized_key)
+      end
+
+      def delete_corrupt(key)
+        raise Rubernetes::Storage::ObjectNotCorrupt unless @corrupt_deletion
+
+        normalized_key = normalize_key(key)
+        read_barrier(normalized_key)
+        current = local_store.get(normalized_key)
+        raise Rubernetes::Storage::ObjectNotCorrupt unless current.is_a?(Rubernetes::Storage::CBORRecord::Unreadable)
+
+        revision = current.dig("metadata", "resourceVersion")
+        raise Rubernetes::Storage::ObjectNotCorrupt if revision.to_s.empty?
+
+        command = {"type" => "delete", "key" => normalized_key, "expected_resource_version" => revision,
+                   "delete_corrupt" => true, "leader_time" => @clock.call.to_f}
+        submit(command, effect: "delete", key: normalized_key)
+        nil
+      rescue NotFound
+        raise Rubernetes::Storage::ObjectNotCorrupt unless command
+      end
+
+      private def readable_record!(object)
+        raise corrupt_record_error(object) if object.is_a?(Rubernetes::Storage::CBORRecord::Unreadable)
+
+        object
+      end
+
+      private def corrupt_record_error(object)
+        Rubernetes::Storage::CorruptObject.new(object.key, resource_version: object.dig("metadata", "resourceVersion"))
       end
 
       def compact!(revision: nil, **_options)
@@ -354,8 +385,8 @@ module Rubernetes
           record_phase("barrier", elapsed)
           # A linearizable read that waited this long is the whole story of a
           # slow GET; nothing else on the request path logs it.
-          if elapsed >= SLOW_BARRIER_SECONDS && @server.respond_to?(:logger) && @server.logger
-            @server.logger.warn("consensus.barrier_slow", seconds: elapsed.round(3), attempts: attempts + 1, leader: @server.leader?)
+          if elapsed >= SLOW_BARRIER_SECONDS
+            raft_logger&.warn("consensus.barrier_slow", seconds: elapsed.round(3), attempts: attempts + 1, leader: @server.leader?)
           end
           true
         rescue Rubernetes::Consensus::Timeout
@@ -372,6 +403,43 @@ module Rubernetes
       end
 
       private
+
+      def write_precondition(prec, precondition, resource_version)
+        prec = precondition if prec.nil?
+        prec.nil? ? resource_version : prec
+      end
+
+      def submit_update(key, expected, request_uid, cbor, related_versions, max_retries)
+        request_uid &&= String(request_uid)
+        attempt = 0
+        loop do
+          barrier
+          current = readable_record!(local_store.get(key))
+          check_precondition!(key, current, expected)
+          current_version = current.dig("metadata", "resourceVersion")
+          candidate = yield(current)
+          raise ArgumentError, "guaranteed_update block must return an API object Hash" unless candidate.is_a?(Hash)
+
+          # `expected_resource_version` is re-observed on every attempt, so it
+          # identifies the attempt, not the client's request. `client_precondition`
+          # carries what the caller actually asked for (nil when it asked for
+          # none) so a replayed request UID still matches its first attempt.
+          cbor_record = cbor.nil? ? @cbor_storage && current.is_a?(Rubernetes::Storage::CBORRecord::Object) : cbor
+          stored = cbor_record ? Rubernetes::Storage::CBORRecord.encode(candidate) : candidate
+          command = {"type" => "update", "key" => key, "object" => stored, "expected_resource_version" => current_version,
+                     "client_precondition" => expected,
+                     "request_uid" => request_uid, "leader_time" => @clock.call.to_f}
+          command["related_versions"] = related_versions if related_versions
+          begin
+            return submit(command, effect: "update", key: key)
+          rescue Conflict => error
+            raise error if attempt >= max_retries || (!expected.nil? && precondition_conflict?(error, expected))
+
+            sleep_for_retry(attempt)
+            attempt += 1
+          end
+        end
+      end
 
       def historical?(resource_version, options)
         value = options.key?(:at_revision) ? options[:at_revision] : resource_version
@@ -430,7 +498,7 @@ module Rubernetes
       # everything needed to find the entry ("consensus.ack_without_object");
       # the caller still gets the result the state machine produced.
       def verify_acknowledgement(request_id, effect, key, result, position)
-        logger = @server.respond_to?(:logger) ? @server.logger : nil
+        logger = raft_logger
         ok = result["ok"] == true
         revision = ok && result["object"].is_a?(Hash) ? result["object"].dig("metadata", "resourceVersion") : nil
         if TRACE && logger
@@ -456,6 +524,10 @@ module Rubernetes
         end
       end
 
+      def raft_logger
+        @server.logger if @server.respond_to?(:logger)
+      end
+
       def map_error(document)
         klass = ERROR_CLASSES.fetch(document["class"], Error)
         case klass.name
@@ -463,6 +535,8 @@ module Rubernetes
           klass.new(document["key"], document["message"])
         when "Rubernetes::Storage::Conflict"
           klass.new(document["key"], document["message"], resource_version: document["resource_version"])
+        when "Rubernetes::Storage::CorruptObject"
+          klass.new(document["key"], resource_version: document["resource_version"])
         when "Rubernetes::Storage::RequestUIDConflict"
           # Keep the server's UID and message: reconstructing with a
           # blank UID hides which request actually collided.
