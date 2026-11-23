@@ -15,12 +15,14 @@ require "rubernetes/bootstrap"
 class FieldManagerUpdateTest < Minitest::Test
   API = Rubernetes::API
   MF = Rubernetes::API::ManagedFields
+  ADMISSION = Rubernetes::Security::Admission
+  PODS = "/api/v1/namespaces/team/pods"
 
   def setup
     @now = Time.utc(2026, 1, 1)
-    registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
-    @server = API::Server.new(registry: registry,
-                              store: API::MemoryStore.new(clock: -> { @now }), clock: -> { @now })
+    @registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
+    @store = API::MemoryStore.new(clock: -> { @now })
+    @server = API::Server.new(registry: @registry, store: @store, clock: -> { @now })
     call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
   end
 
@@ -51,6 +53,63 @@ class FieldManagerUpdateTest < Minitest::Test
                     "data" => {"x" => "1", "y" => "2"}}, manager: "creator")
 
     assert_equal 201, status
+  end
+
+  def use_toleration_admission
+    factory = ADMISSION::Registry.factories.fetch("DefaultTolerationSeconds")
+    admission = ADMISSION::Chain.new(plugins: [factory.call(nil, {"default_seconds" => 450})])
+    security = Rubernetes::Security::Pipeline.new(admission: admission)
+    @server = API::Server.new(registry: @registry, store: @store, clock: -> { @now }, security: security)
+  end
+
+  def create_pod(name, spec = {})
+    call("POST", PODS, {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name},
+                        "spec" => {"containers" => [{"name" => "app", "image" => "fixture"}]}.merge(spec)}, manager: "creator")
+  end
+
+  def test_pod_create_owns_associative_list_items_with_the_go_zero_object_as_baseline
+    init = {"name" => "init", "image" => "fixture"}
+    status, = create_pod("lists", "initContainers" => [init])
+    _, stored = call("GET", "#{PODS}/lists")
+    fields = owned(stored).fetch("creator")
+
+    assert_equal 201, status
+    refute_includes fields, %w[spec containers]
+    assert_includes fields, ["spec", "containers", 'k:{"name":"app"}']
+    assert_includes fields, ["spec", "containers", 'k:{"name":"app"}', "image"]
+    assert_includes fields, %w[spec initContainers]
+    assert_includes fields, ["spec", "initContainers", 'k:{"name":"init"}']
+    refute stored.fetch("spec").key?("tolerations")
+
+    stored.fetch("spec").fetch("containers").first["image"] = "fixture:v2"
+    status, updated = call("PUT", "#{PODS}/lists", stored, manager: "editor")
+
+    assert_equal 200, status
+    assert_equal [["spec", "containers", 'k:{"name":"app"}', "image"]], owned(updated).fetch("editor")
+  end
+
+  def test_pod_creator_owns_explicit_tolerations_but_skips_admission_defaults
+    use_toleration_admission
+    active = {"key" => "node.kubernetes.io/not-ready", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 60}
+    wildcard = {"operator" => "Exists"}
+    requests = {"omitted" => {}, "empty" => {"tolerations" => []}, "specified" => {"tolerations" => [active]}, "wildcard" => {"tolerations" => [wildcard]}}
+    requests.each do |name, spec|
+      status, = create_pod(name, spec)
+      _, stored = call("GET", "#{PODS}/#{name}")
+      entries = stored.dig("spec", "tolerations")
+      supplied = spec["tolerations"].to_a
+      fields = owned(stored).fetch("creator")
+
+      assert_equal 201, status
+      assert_equal !supplied.empty?, fields.include?(%w[spec tolerations]), name
+      assert_equal supplied, entries.take(supplied.length), name
+      if name == "wildcard"
+        assert_equal supplied, entries
+      else
+        assert_equal(%w[node.kubernetes.io/not-ready node.kubernetes.io/unreachable], entries.map { |entry| entry.fetch("key") })
+        assert_equal 450, entries.last.fetch("tolerationSeconds")
+      end
+    end
   end
 
   def test_an_update_owns_only_what_it_changed_and_takes_it_from_others
