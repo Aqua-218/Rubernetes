@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "../schema/kubernetes_validator/ip_fields"
 require_relative "runtime"
 require_relative "support"
 require_relative "types"
 require_relative "secondary_support"
+require_relative "endpoint_slice_objects"
+require_relative "endpoint_slice_metrics"
 
 module Rubernetes
   module Controller
@@ -14,14 +17,12 @@ module Rubernetes
     class EndpointSliceMirroringController < BaseController
       ENDPOINTS = ResourceDescriptor.parse("Endpoints")
       SERVICE = ResourceDescriptor.parse("Service")
-      ENDPOINT_SLICE = ResourceDescriptor.parse("EndpointSlice")
-      SERVICE_LABEL = "kubernetes.io/service-name"
-      MANAGED_BY_LABEL = "endpointslice.kubernetes.io/managed-by"
       MANAGED_BY = "endpointslicemirroring-controller.k8s.io"
       SKIP_MIRROR_LABEL = "endpointslice.kubernetes.io/skip-mirror"
       ENDPOINT_LIMIT = 1_000
 
       include SecondarySupport
+      include EndpointSliceObjects
 
       def plan(endpoints, store: nil, endpoint_slices: nil, **_options)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -39,7 +40,7 @@ module Rubernetes
         endpoint_slices ||= list_for(adapter, ENDPOINT_SLICE, namespace: namespace)
         managed = managed_slices_for(endpoints, endpoint_slices)
         desired_groups = skip_mirror?(endpoints) || selector_service?(endpoints, adapter) ? {} : endpoint_groups(endpoints)
-        operations = reconcile_slices(endpoints, managed, desired_groups)
+        operations = reconcile_slices(endpoints, managed, desired_groups, reserved_names: endpoint_slices.to_set { |slice| Support.name(slice) })
         operations = record_sync(endpoints, managed, desired_groups, operations)
         status = {"endpoints" => desired_groups.values.sum(&:length)}
         events = if operations.empty?
@@ -84,12 +85,11 @@ module Rubernetes
             ControllerMetrics.increment("endpoint_slice_mirroring_controller_changes", {"operation" => "delete"}) if succeeded
           end
         end
-        ReconcileResult.new(operations: operations, controller: name_for_result, key: key.to_s)
+        ReconcileResult.new(operations: operations, controller: name, key: key.to_s)
       end
 
       # endpointslicemirroring/metrics Cache (process-wide).
-      ENDPOINTS_CACHE = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
-      ENDPOINTS_CACHE_MUTEX = Mutex.new
+      ENDPOINTS_CACHE = EndpointSliceMetrics.new("endpoint_slice_mirroring_controller")
 
       # reconcile: addresses skipped, endpoints added / updated / removed,
       # each slice written, and the cache's gauges.
@@ -102,48 +102,23 @@ module Rubernetes
           ControllerMetrics.observe("endpoint_slice_mirroring_controller_addresses_skipped_per_sync",
                                     [total - wanted.length, 0].max)
         end
-        before = existing.flat_map do |slice|
-          Array(Support.value(slice, "endpoints", []))
-        end.to_h { |endpoint| [Array(endpoint["addresses"]).first, endpoint] }
-        after = wanted.to_h { |endpoint| [Array(endpoint["addresses"]).first, endpoint] }
+        before = endpoint_memberships(existing.map { |slice| [slice_group(slice), Array(Support.value(slice, "endpoints", []))] })
+        after = endpoint_memberships(desired_groups)
         ControllerMetrics.observe("endpoint_slice_mirroring_controller_endpoints_added_per_sync", (after.keys - before.keys).length)
         ControllerMetrics.observe("endpoint_slice_mirroring_controller_endpoints_updated_per_sync",
                                   after.count { |address, endpoint| before.key?(address) && before[address] != endpoint })
         ControllerMetrics.observe("endpoint_slice_mirroring_controller_endpoints_removed_per_sync", (before.keys - after.keys).length)
         slices = existing.length + operations.count(&:create?) - operations.count(&:delete?)
-        desired = desired_groups.values.sum { |group| group.empty? ? 0 : (group.length + ENDPOINT_LIMIT - 1) / ENDPOINT_LIMIT }
-        ENDPOINTS_CACHE_MUTEX.synchronize do
-          ENDPOINTS_CACHE["#{Support.namespace(endpoints)}/#{Support.name(endpoints)}"] =
-            {slices: slices, desired: desired, endpoints: wanted.length}
-          publish_cache
-        end
-        operations.map do |operation|
-          change = if operation.create? then "create"
-                   elsif operation.delete? then "delete"
-                   else "update"
-                   end
-          operation.observed do |succeeded, _|
-            ControllerMetrics.increment("endpoint_slice_mirroring_controller_changes", {"operation" => change}) if succeeded
-          end
-        end
+        ENDPOINTS_CACHE.update("#{Support.namespace(endpoints)}/#{Support.name(endpoints)}",
+                               {slices: slices, desired: desired_groups.length, endpoints: wanted.length})
+        ENDPOINTS_CACHE.observe_changes(operations)
       end
 
       def forget_endpoints(key)
-        ENDPOINTS_CACHE_MUTEX.synchronize { publish_cache if ENDPOINTS_CACHE.delete(key) }
-      end
-
-      def publish_cache
-        values = ENDPOINTS_CACHE.values
-        ControllerMetrics.set("endpoint_slice_mirroring_controller_num_endpoint_slices", values.sum { |entry| entry[:slices] })
-        ControllerMetrics.set("endpoint_slice_mirroring_controller_desired_endpoint_slices", values.sum { |entry| entry[:desired] })
-        ControllerMetrics.set("endpoint_slice_mirroring_controller_endpoints_desired", values.sum { |entry| entry[:endpoints] })
+        ENDPOINTS_CACHE.update(key, nil)
       end
 
       private
-
-      def name_for_result
-        respond_to?(:name) ? name : "endpointslice-mirroring-controller"
-      end
 
       def resolve_endpoints(resource, adapter)
         return resource if Support.kind(resource) == "Endpoints"
@@ -175,127 +150,136 @@ module Rubernetes
       end
 
       def endpoint_groups(endpoints)
+        indexed = {}
+        by_port = Hash.new { |hash, port| hash[port] = {} }
+        Array(Support.value(endpoints, "subsets", [])).each do |subset|
+          addresses = subset_addresses(subset, indexed)
+          next if addresses.empty?
+
+          ports = normalized_ports(Support.value(subset, "ports"))
+          ports = [nil] if ports.empty?
+          ports.each { |port| by_port[port].merge!(addresses) { |_, before, after| before && after } }
+        end
+
+        # Repack equally served ports together. An address may offer a
+        # different set of ports or have different readiness on each port.
         groups = Hash.new { |hash, key| hash[key] = [] }
-        subsets = Array(Support.value(endpoints, "subsets", []))
-        subsets.each do |subset|
-          ports = Array(Support.value(subset, "ports", []))
-          Array(Support.value(subset, "addresses", [])).each do |address|
-            add_endpoint(groups, address, ready: true)
-          end
-          Array(Support.value(subset, "notReadyAddresses", [])).each do |address|
-            add_endpoint(groups, address, ready: false)
-          end
-          # Retain ports as an attribute attached to the group.  Endpoints
-          # allows a different port set per subset; the reconciler combines
-          # them deterministically before writing each slice.
-          groups.each_value { |endpoints_for_type| endpoints_for_type.each { |endpoint| endpoint["_ports"] ||= Support.deep_copy(ports) } }
-        end
-        groups.each_value do |endpoints_for_type|
-          endpoints_for_type.each { |endpoint| endpoint.delete("_ports") }
-          endpoints_for_type.sort_by! do |endpoint|
-            [endpoint.fetch("addresses").first, Support.value(endpoint["targetRef"], "name", "")]
+        by_port.group_by { |_, addresses| addresses }.each do |addresses, mappings|
+          ports = normalized_ports(mappings.filter_map(&:first))
+          addresses.sort_by { |key, ready| [ready ? 0 : 1, key] }.first(ENDPOINT_LIMIT).each do |key, ready|
+            address_type, endpoint = indexed.fetch(key)
+            groups[[address_type, ports]] << endpoint.merge("conditions" => {"ready" => ready, "serving" => ready, "terminating" => false})
           end
         end
-        groups
+        groups.transform_values do |values|
+          values.to_h { |endpoint| [endpoint_identity(endpoint), endpoint] }.sort_by(&:first).map(&:last)
+        end
       end
 
-      def add_endpoint(groups, address, ready:)
-        ip = Support.value(address, "ip", nil)
-        hostname = Support.value(address, "hostname", nil)
-        value = ip || hostname
-        return if value.to_s.empty?
-
-        address_type = if ip.to_s.include?(":")
-                         "IPv6"
-                       elsif ip
-                         "IPv4"
-                       else
-                         "FQDN"
-                       end
-        endpoint = {"addresses" => [value.to_s],
-                    "conditions" => {"ready" => ready, "serving" => ready, "terminating" => false}}
-        target_ref = Support.value(address, "targetRef", nil)
-        endpoint["targetRef"] = Support.deep_copy(target_ref) if target_ref.is_a?(Hash)
-        endpoint["hostname"] = hostname.to_s if hostname
-        groups[address_type] << endpoint
+      def subset_addresses(subset, indexed)
+        {"addresses" => true, "notReadyAddresses" => false}.each_with_object({}) do |(field, ready), addresses|
+          Array(Support.value(subset, field)).each do |address|
+            ip = Support.value(address, "ip").to_s
+            uid = Support.value(Support.value(address, "targetRef"), "uid").to_s
+            key = [ip, uid]
+            endpoint = indexed[key] ||= mirrored_address(address, ip)
+            addresses[key] = ready if endpoint
+          end
+        end
       end
 
-      def managed_slices_for(endpoints, endpoint_slices)
-        Array(endpoint_slices).select do |slice|
-          labels = Support.labels(slice)
-          labels[SERVICE_LABEL].to_s == Support.name(endpoints) &&
-            labels[MANAGED_BY_LABEL].to_s == MANAGED_BY
-        end.sort_by { |slice| [Support.value(slice, "addressType", "IPv4").to_s, Support.name(slice)] }
+      def mirrored_address(address, ip)
+        parsed = Schema::KubernetesValidator.sloppy_ip(ip)&.first
+        return unless parsed
+
+        parsed = parsed.native if parsed.ipv4_mapped?
+        endpoint = {"addresses" => [parsed.to_s], "nodeName" => Support.value(address, "nodeName"),
+                    "targetRef" => Support.value(address, "targetRef")}.compact
+        hostname = Support.value(address, "hostname").to_s
+        endpoint["hostname"] = hostname unless hostname.empty?
+        [parsed.ipv4? ? "IPv4" : "IPv6", endpoint]
       end
 
-      def reconcile_slices(endpoints, existing, desired_groups)
+      def endpoint_identity(endpoint)
+        target = Support.value(endpoint, "targetRef")
+        [Array(Support.value(endpoint, "addresses")).sort, Support.value(endpoint, "hostname").to_s,
+         Support.value(target, "namespace").to_s, Support.value(target, "name").to_s]
+      end
+
+      def endpoint_memberships(groups)
+        groups.flat_map do |group, endpoints|
+          endpoints.map { |endpoint| [[group, endpoint_identity(endpoint)], endpoint] }
+        end.to_h
+      end
+
+      def reconcile_slices(endpoints, existing, desired_groups, reserved_names:)
         operations = []
-        existing_by_type = existing.group_by { |slice| Support.value(slice, "addressType", "IPv4").to_s }
-        desired_groups.each do |address_type, endpoints_for_type|
-          chunks = endpoints_for_type.each_slice(ENDPOINT_LIMIT).to_a
-          slices = existing_by_type.delete(address_type) || []
-          chunks.each_with_index do |chunk, index|
-            candidate = endpoint_slice(endpoints, address_type, chunk, index)
-            current = slices[index]
-            if current
-              candidate = preserve_metadata(current, candidate)
-              update = operation_update(current, candidate, descriptor: ENDPOINT_SLICE,
-                                                            reason: "legacy Endpoints mirror")
-              operations << update if update
-            else
-              operations << operation_create(candidate, owner: endpoints, descriptor: ENDPOINT_SLICE,
-                                                        reason: "legacy Endpoints mirror")
-            end
-          end
-          slices.drop(chunks.length).each do |slice|
-            operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                                  reason: "stale mirrored EndpointSlice")
+        existing_by_group = existing.group_by { |slice| slice_group(slice) }
+        missing = {}
+        desired_groups.sort_by { |group, _| Support.digest(group) }.each do |group, endpoint_values|
+          current = existing_by_group.fetch(group, []).shift
+          if current
+            operations << update_slice(endpoints, group, endpoint_values, current)
+          else
+            missing[group] = endpoint_values
           end
         end
-        existing_by_type.values.flatten.each do |slice|
-          operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                                reason: "empty mirrored EndpointSlice")
+
+        stale = existing_by_group.values.flatten.group_by { |slice| Support.value(slice, "addressType", "IPv4").to_s }
+        missing.each do |group, endpoint_values|
+          # EndpointSlice addressType is immutable. Reuse a stale slice only
+          # in the same family, after reserving every exact port-map match.
+          current = stale.fetch(group.first, []).shift
+          if current
+            operations << update_slice(endpoints, group, endpoint_values, current)
+          else
+            name = reserve_slice_name(endpoints, group, reserved_names)
+            candidate = endpoint_slice(endpoints, group, endpoint_values, name)
+            operations << operation_create(candidate, owner: endpoints, descriptor: ENDPOINT_SLICE, reason: "legacy Endpoints mirror")
+          end
         end
-        operations
+        stale.values.flatten.each do |slice|
+          operations << operation_delete(slice, descriptor: ENDPOINT_SLICE, reason: "stale mirrored EndpointSlice")
+        end
+        operations.compact
       end
 
-      def endpoint_slice(endpoints, address_type, endpoint_values, index)
-        digest = canonical_hash({"endpoints" => Support.uid(endpoints), "type" => address_type})[0, 10]
-        candidate = {
-          "apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice",
-          "metadata" => {"name" => "#{Support.name(endpoints)}-mirror-#{digest}-#{index}",
-                         "namespace" => Support.namespace(endpoints),
-                         "labels" => {SERVICE_LABEL => Support.name(endpoints), MANAGED_BY_LABEL => MANAGED_BY}},
-          "addressType" => address_type, "ports" => mirrored_ports(endpoints),
-          "endpoints" => Support.deep_copy(endpoint_values)
-        }
-        ensure_owner_reference(candidate, endpoints)
+      def slice_group(slice)
+        [Support.value(slice, "addressType", "IPv4").to_s, normalized_ports(Support.value(slice, "ports"))]
       end
 
-      def mirrored_ports(endpoints)
-        ports = Array(Support.value(endpoints, "subsets", [])).flat_map do |subset|
-          Array(Support.value(subset, "ports", []))
-        end.uniq { |port| Support.canonical(port) }
-        ports.filter_map do |port|
-          result = {}
-          name = Support.value(port, "name", nil)
-          result["name"] = name.to_s unless name.to_s.empty?
-          result["protocol"] = Support.value(port, "protocol", "TCP").to_s
-          result["port"] = Integer(Support.value(port, "port", 0))
-          app_protocol = Support.value(port, "appProtocol", nil)
-          result["appProtocol"] = app_protocol.to_s unless app_protocol.to_s.empty?
+      def update_slice(endpoints, group, endpoint_values, current)
+        candidate = endpoint_slice(endpoints, group, endpoint_values, Support.name(current))
+        operation_update(current, preserve_slice_metadata(current, candidate), descriptor: ENDPOINT_SLICE, reason: "legacy Endpoints mirror")
+      end
+
+      def reserve_slice_name(endpoints, group, reserved_names)
+        digest = canonical_hash([Support.uid(endpoints), group])[0, 10]
+        # EndpointSlice names are DNS subdomains, with a maximum of 253 bytes.
+        stem = Support.name(endpoints).byteslice(0, 223).sub(/[^a-z0-9]+\z/, "")
+        0.step do |index|
+          name = "#{stem}-mirror-#{digest}-#{index}"
+          return name if reserved_names.add?(name)
+        end
+      end
+
+      def endpoint_slice(endpoints, group, endpoint_values, name)
+        address_type, ports = group
+        build_slice(endpoints, name, Support.labels(endpoints), address_type, ports, endpoint_values)
+      end
+
+      def normalized_ports(ports)
+        normalized = Array(ports).filter_map do |port|
+          number = Integer(Support.value(port, "port"), exception: false)
+          next unless number && number.positive?
+
+          protocol = Support.value(port, "protocol").to_s
+          app_protocol = Support.value(port, "appProtocol").to_s
+          result = {"name" => Support.value(port, "name").to_s, "port" => number, "protocol" => protocol.empty? ? "TCP" : protocol}
+          result["appProtocol"] = app_protocol unless app_protocol.empty?
           result
-        rescue ArgumentError
-          nil
         end
-      end
-
-      def preserve_metadata(current, candidate)
-        merged = Support.deep_copy(candidate)
-        merged["metadata"] = Support.deep_copy(Support.metadata(current)).merge(Support.deep_copy(candidate.fetch("metadata")))
-        merged["addressType"] = Support.value(current, "addressType", candidate["addressType"])
-        merged["metadata"]["ownerReferences"] = Support.deep_copy(candidate.dig("metadata", "ownerReferences"))
-        merged
+        normalized.uniq.sort_by { |port| [port["name"], port["protocol"], port["port"], port["appProtocol"].to_s] }
       end
     end
   end
