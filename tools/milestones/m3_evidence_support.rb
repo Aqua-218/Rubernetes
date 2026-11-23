@@ -3,6 +3,7 @@
 
 # Shared content-addressed evidence capture helpers for M3 and M4.
 
+require_relative "report_output"
 require "digest"
 require "etc"
 require "fileutils"
@@ -11,10 +12,10 @@ require "open3"
 require "rbconfig"
 require "shellwords"
 require "time"
+require_relative "m0_source_inventory"
 
 module M34EvidenceSupport
   ROOT = File.expand_path("../..", __dir__).freeze
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
   # External observers are allowed to hand the evidence runner a path to a
   # capture, but the path is only a transport pointer.  The pointer must
   # never become part of a milestone claim: the bytes are copied into the
@@ -31,11 +32,7 @@ module M34EvidenceSupport
   module_function
 
   def source_identity(gate_module)
-    paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-      next false unless File.file?(path)
-
-      !path.delete_prefix("#{ROOT}/").match?(SOURCE_EXCLUSIONS)
-    end.sort
+    paths = M0SourceInventory.source_files(ROOT)
     entries = paths.map do |path|
       {
         "path" => path.delete_prefix("#{ROOT}/"),
@@ -605,10 +602,8 @@ module M34EvidenceSupport
       "#{env_prefix}_INPUT_SHA256" => input.fetch("sha256"),
       "#{env_prefix}_INPUT_FILE_COUNT" => input.fetch("file_count").to_s
     }
-    stdout, stderr, status = Open3.capture3(environment, *command, chdir: ROOT)
-    File.binwrite(destination_path, stdout)
-    command_record(name, command, started_at, now, status.exitstatus || 1,
-                   stdout: stdout, stderr: stderr)
+    output, stderr, status = MilestoneReportOutput.capture(destination_path, environment, command, chdir: ROOT)
+    command_record(name, command, started_at, now, status.exitstatus || 1, stderr: stderr).merge(output)
   rescue SystemCallError => error
     command_record(name, command, started_at, now, 127,
                    error: "adapter command could not be executed: #{error.message}")
