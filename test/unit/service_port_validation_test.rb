@@ -3,11 +3,7 @@
 require_relative "../test_helper"
 require "rubernetes/schema"
 
-# validateServicePort (pkg/apis/core/validation/validation.go:6890-6910): with
-# more than one port each needs a unique NAME, every port number must be in
-# range and every port needs a protocol.  Only the empty-name case was checked,
-# so a Service could be stored with two ports sharing a name -- which no
-# EndpointSlice can then address.
+# Core ServicePort validation accepts fields that receive API defaults later.
 class ServicePortValidationTest < Minitest::Test
   Validator = Rubernetes::Schema::KubernetesValidator
 
@@ -46,11 +42,14 @@ class ServicePortValidationTest < Minitest::Test
     refute_empty errors([{"port" => 70_000, "protocol" => "TCP"}])
   end
 
-  def test_an_empty_protocol_is_rejected
-    refute_empty errors([{"port" => 80, "protocol" => ""}])
+  def test_an_empty_protocol_and_target_port_can_be_defaulted
+    assert_empty errors([{"port" => 80, "protocol" => "", "targetPort" => 0}])
   end
 
-  def test_an_empty_name_is_still_rejected
-    refute_empty errors([{"name" => "", "port" => 80, "protocol" => "TCP"}])
+  def test_a_single_explicitly_empty_name_can_be_omitted
+    assert_empty errors([{"name" => "", "port" => 80, "protocol" => "TCP"}])
+    issues = errors([{"name" => "one", "port" => 80}, {"name" => "", "port" => 81}])
+
+    assert_equal([["spec.ports[1].name", :required]], issues.map { |issue| [issue.kubernetes_field, issue.code] })
   end
 end
