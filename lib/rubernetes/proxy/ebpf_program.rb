@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "ebpf_program/backend_hash"
+
 # Verifier-safe instruction generation for the Linux TC Service datapath.
 #
 # The program deliberately uses only helpers available to SCHED_CLS programs:
@@ -236,8 +238,7 @@ module Rubernetes
         end
       end
 
-      # The ABI is intentionally compact so the program can run with the map
-      # sizes already used by the kernel adapter and by older readback tests.
+      # Wire layout shared by the program, kernel adapter and readback tests.
       # All multi-byte scalar fields are host-endian; IP bytes stay in network
       # order because that is also how they occur in an skb.
       module WireFormat
@@ -248,7 +249,7 @@ module Rubernetes
         CONNTRACK_KEY_SIZE = 40
         CONNTRACK_VALUE_SIZE = 48
         AFFINITY_KEY_SIZE = 24
-        AFFINITY_VALUE_SIZE = 16
+        AFFINITY_VALUE_SIZE = 32
         SOURCE_RANGE_KEY_SIZE = 28
         SOURCE_RANGE_VALUE_SIZE = 4
         SNAT_KEY_SIZE = CONNTRACK_KEY_SIZE
@@ -300,6 +301,13 @@ module Rubernetes
         BACKEND_PORT_OFFSET = 16
         BACKEND_PROTOCOL_OFFSET = 18
         BACKEND_FAMILY_OFFSET = 19
+
+        # Affinity holds an exact backend identity alongside the slot, which
+        # can be reused by a different endpoint on an EndpointSlice update.
+        AFFINITY_EXPIRY_OFFSET = 0
+        AFFINITY_BACKEND_OFFSET = 8
+        AFFINITY_SLOT_OFFSET = 28
+        AFFINITY_BACKEND_SIZE = 20
 
         # Conntrack value offsets.
         CONNTRACK_BACKEND_ADDRESS_OFFSET = 0
@@ -434,6 +442,8 @@ module Rubernetes
       end
 
       class ServiceDatapath
+        include BackendHash
+
         include WireFormat
 
         HELPER_MAP_LOOKUP = 1
@@ -478,12 +488,12 @@ module Rubernetes
         STACK_BACKEND_KEY = -312
         STACK_AFFINITY_KEY = -336
         STACK_PORTS = -340
-        STACK_AFFINITY_VALUE = -360
         STACK_CONNTRACK_VALUE = -408
         # Keep the rewrite scratch area disjoint from STACK_META (-448..-417).
         # The previous -432 base overlapped metadata (including backend count),
         # so the subsequent DNAT/SNAT assembly could corrupt selection state.
         STACK_REWRITE = -480
+        STACK_AFFINITY_VALUE = STACK_REWRITE
         STACK_META = -448
         STACK_SCRATCH = -460
         # Absolute packet offset immediately after the IPv4/IPv6 payload.
@@ -522,8 +532,9 @@ module Rubernetes
           health_check_node_port: true
         }.freeze
 
-        def initialize(map_fds:)
+        def initialize(map_fds:, kernel_reassembly: false)
           @map_fds = map_fds.transform_keys(&:to_s).freeze
+          @kernel_reassembly = kernel_reassembly
           @rewrite_sequence = 0
           @connection_sequence = 0
         end
@@ -630,16 +641,15 @@ module Rubernetes
           a.store_mem(Assembler::BPF_W, 10, STACK_PACKET_END, source: 4)
           a.load_mem(Assembler::BPF_W, 5, 10, STACK_META + 8)
           a.jump(Assembler::BPF_JGT, destination: 4, source: 5, label: :drop)
-          check_transport_bounds(a, 9, :drop)
-          check_transport_packet_bounds(a, 9, :drop)
-          # Any fragment can hide the transport header or require reassembly.
-          # TC has no reassembly primitive, so fail closed before service lookup.
+          # Non-first fragments do not necessarily carry any transport fields.
           a.load_mem(Assembler::BPF_W, 4, 10, STACK_META + 4)
           load_packet_field(a, 4, 6, STACK_SCRATCH, 2, :drop)
           a.load_mem(Assembler::BPF_H, 2, 10, STACK_SCRATCH)
           a.endian(2, 16)
           a.alu_imm(Assembler::BPF_AND, 2, 0x3fff)
-          a.jump(Assembler::BPF_JNE, destination: 2, immediate: 0, label: :drop)
+          a.jump(Assembler::BPF_JNE, destination: 2, immediate: 0, label: fragment_target)
+          check_transport_bounds(a, 9, :drop)
+          check_transport_packet_bounds(a, 9, :drop)
           a.load_mem(Assembler::BPF_W, 4, 10, STACK_META + 4)
           load_packet_field(a, 4, 9, STACK_SCRATCH, 1, :drop)
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_SCRATCH)
@@ -713,9 +723,8 @@ module Rubernetes
             [IPPROTO_HOPOPT, IPPROTO_ROUTING, IPPROTO_DEST, IPPROTO_MH, IPPROTO_HIP, IPPROTO_SHIM6].each do |protocol|
               a.jump(Assembler::BPF_JEQ, destination: 2, immediate: protocol, label: extension_label)
             end
-            # Fragment and ESP headers cannot be safely interpreted at TC.
-            # Rejecting them avoids routing a non-first fragment as a new flow.
-            a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_FRAGMENT, label: :drop)
+            # Leave reassembly to the tracked kernel NAT path when enabled.
+            a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_FRAGMENT, label: fragment_target)
             a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_ESP, label: :drop)
             # Any other upper-layer protocol (ICMPv6 neighbour discovery, echo,
             # MLD, ...) is not Service traffic: let the stack handle it.
@@ -755,6 +764,7 @@ module Rubernetes
 
         def common_lookup(a)
           a.label(:packet_fields_ready)
+          pass_datagrams_to_kernel(a) if @kernel_reassembly
           zero_stack(a, STACK_SERVICE_KEY, 40)
           zero_stack(a, STACK_CONNTRACK_KEY, 40)
           zero_stack(a, STACK_REVERSE_KEY, 40)
@@ -818,6 +828,17 @@ module Rubernetes
           return_action(a, TC_ACT_OK)
         end
 
+        def fragment_target
+          @kernel_reassembly ? :pass : :drop
+        end
+
+        # Fragments and complete UDP datagrams share one conntrack table.
+        # An established UDP socket can switch between short and long sends.
+        def pass_datagrams_to_kernel(a)
+          a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 13)
+          a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_UDP, label: :pass)
+        end
+
         def enforce_load_balancer_source_ranges(a)
           # The LPM key prefixes the source address with the Service token. A
           # full-width lookup therefore selects the longest configured CIDR
@@ -835,6 +856,23 @@ module Rubernetes
         end
 
         def select_backend(a)
+          lookup_client_affinity(a)
+          a.label(:hash_backend)
+          hash_backend_slot(a)
+          lookup_backend_slot(a)
+          a.jump(Assembler::BPF_JEQ, destination: 0, immediate: 0, label: :drop)
+
+          a.label(:selected_backend)
+          a.mov_reg(9, 0)
+          refresh_client_affinity(a)
+          prepare_snat(a)
+          build_connection_state(a)
+          rewrite_forward_snat(a, :drop)
+          rewrite_from_backend(a, :destination, :drop)
+          return_action(a, TC_ACT_OK)
+        end
+
+        def lookup_client_affinity(a)
           a.load_mem(Assembler::BPF_B, 2, 6, SERVICE_AFFINITY_OFFSET)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: 0, label: :hash_backend)
           copy_map_to_stack(a, 6, SERVICE_TOKEN, STACK_AFFINITY_KEY, 8)
@@ -845,29 +883,28 @@ module Rubernetes
           # callee-saved R9 while asking for the current time.
           a.mov_reg(9, 0)
           a.call(HELPER_KTIME_GET_NS)
-          a.alu_imm(Assembler::BPF_DIV, 0, 1_000_000_000)
-          a.mov_reg(4, 9)
-          a.load_mem(Assembler::BPF_W, 2, 4, 12)
+          a.load_mem(Assembler::BPF_DW, 2, 9, AFFINITY_EXPIRY_OFFSET)
           a.jump(Assembler::BPF_JGE, destination: 0, source: 2, label: :hash_backend)
-          copy_map_to_stack(a, 4, 0, STACK_BACKEND_KEY, 8)
-          a.load_mem(Assembler::BPF_W, 2, 4, 8)
-          a.store_mem(Assembler::BPF_W, 10, STACK_BACKEND_KEY + 8, source: 2)
-          zero_stack_range(a, STACK_BACKEND_KEY + 12, 4)
-          map_lookup(a, "backends", STACK_BACKEND_KEY, 4)
+          copy_map_to_stack(a, 9, AFFINITY_BACKEND_OFFSET, STACK_AFFINITY_VALUE + AFFINITY_BACKEND_OFFSET, AFFINITY_BACKEND_SIZE)
+          a.load_mem(Assembler::BPF_W, 2, 9, AFFINITY_SLOT_OFFSET)
+          a.mov_reg(3, 2)
+          a.alu_imm(Assembler::BPF_AND, 3, IPV6_SLOT_BIT - 1)
+          a.load_mem(Assembler::BPF_W, 4, 10, STACK_META + 20)
+          a.jump(Assembler::BPF_JGE, destination: 3, source: 4, label: :hash_backend)
+          lookup_backend_slot(a)
           a.jump(Assembler::BPF_JEQ, destination: 0, immediate: 0, label: :hash_backend)
-          a.mov_reg(9, 0)
-          a.ja(:new_backend_from_affinity)
-
-          a.label(:hash_backend)
-          hash_packet(a)
-          a.load_mem(Assembler::BPF_W, 3, 10, STACK_META + 20)
-          a.alu_reg(Assembler::BPF_MOD, 2, 3)
+          a.load_mem(Assembler::BPF_B, 2, 0, BACKEND_FAMILY_OFFSET)
           a.load_mem(Assembler::BPF_B, 3, 10, STACK_META + 12)
-          a.jump(Assembler::BPF_JEQ, destination: 3, immediate: 6, label: :hash_ipv6_slot)
-          a.ja(:hash_slot_ready)
-          a.label(:hash_ipv6_slot)
-          a.alu_imm(Assembler::BPF_OR, 2, IPV6_SLOT_BIT)
-          a.label(:hash_slot_ready)
+          a.jump(Assembler::BPF_JNE, destination: 2, source: 3, label: :hash_backend)
+          cached_backend = STACK_AFFINITY_VALUE + AFFINITY_BACKEND_OFFSET
+          compare_map_value_to_stack(a, 0, BACKEND_ADDRESS_OFFSET, cached_backend, :hash_backend)
+          a.load_mem(Assembler::BPF_W, 2, 0, BACKEND_PORT_OFFSET)
+          a.load_mem(Assembler::BPF_W, 3, 10, cached_backend + BACKEND_PORT_OFFSET)
+          a.jump(Assembler::BPF_JNE, destination: 2, source: 3, label: :hash_backend)
+          a.ja(:selected_backend)
+        end
+
+        def lookup_backend_slot(a)
           # copy_map_to_stack uses R2 as its scratch register. Preserve the
           # selected slot before copying the Service token, otherwise the
           # token's low word is written as the backend slot.
@@ -876,34 +913,21 @@ module Rubernetes
           a.store_mem(Assembler::BPF_W, 10, STACK_BACKEND_KEY + 8, source: 4)
           zero_stack_range(a, STACK_BACKEND_KEY + 12, 4)
           map_lookup(a, "backends", STACK_BACKEND_KEY, 4)
-          a.jump(Assembler::BPF_JEQ, destination: 0, immediate: 0, label: :drop)
-          a.mov_reg(9, 0)
+        end
 
-          a.label(:new_backend_from_hash)
+        def refresh_client_affinity(a)
           a.load_mem(Assembler::BPF_B, 2, 6, SERVICE_AFFINITY_OFFSET)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: 0, label: :new_connection)
-          zero_stack(a, STACK_AFFINITY_VALUE, 16)
-          copy_stack(a, STACK_BACKEND_KEY, STACK_AFFINITY_VALUE, 12)
+          copy_map_to_stack(a, 9, BACKEND_ADDRESS_OFFSET, STACK_AFFINITY_VALUE + AFFINITY_BACKEND_OFFSET, AFFINITY_BACKEND_SIZE)
+          copy_stack(a, STACK_BACKEND_KEY + 8, STACK_AFFINITY_VALUE + AFFINITY_SLOT_OFFSET, 4)
           a.call(HELPER_KTIME_GET_NS)
-          a.alu_imm(Assembler::BPF_DIV, 0, 1_000_000_000)
           a.load_mem(Assembler::BPF_W, 2, 6, SERVICE_AFFINITY_TIMEOUT_OFFSET)
+          a.alu_imm(Assembler::BPF_MUL, 2, 1_000_000_000)
           a.alu_reg(Assembler::BPF_ADD, 0, 2)
-          a.store_mem(Assembler::BPF_W, 10, STACK_AFFINITY_VALUE + 12, source: 0)
+          a.store_mem(Assembler::BPF_DW, 10, STACK_AFFINITY_VALUE + AFFINITY_EXPIRY_OFFSET, source: 0)
           map_update(a, "client_ip_affinity", STACK_AFFINITY_KEY, STACK_AFFINITY_VALUE, :drop)
 
           a.label(:new_connection)
-          prepare_snat(a)
-          build_connection_state(a)
-          rewrite_forward_snat(a, :drop)
-          rewrite_from_backend(a, :destination, :drop)
-          return_action(a, TC_ACT_OK)
-
-          a.label(:new_backend_from_affinity)
-          prepare_snat(a)
-          build_connection_state(a)
-          rewrite_forward_snat(a, :drop)
-          rewrite_from_backend(a, :destination, :drop)
-          return_action(a, TC_ACT_OK)
         end
 
         def handle_existing_connection(a)
@@ -1357,98 +1381,6 @@ module Rubernetes
           a.store_mem(Assembler::BPF_W, 6, 16, immediate: 1)
           a.mov_imm(0, 1)
           a.emit(Assembler::BPF_JMP | Assembler::BPF_EXIT)
-        end
-
-        # Backend selection contract: Jenkins one-at-a-time over the source
-        # address bytes, seed zero, then modulo the sorted backend list. The
-        # nftables hash expression and the Ruby model implement this exact
-        # byte contract; destination/port changes do not silently select a
-        # different backend implementation.
-        def hash_packet(a)
-          ipv6_label = :hash_packet_ipv6
-          done_label = :hash_packet_done
-          a.load_mem(Assembler::BPF_B, 3, 10, STACK_META + 12)
-          a.jump(Assembler::BPF_JEQ, destination: 3, immediate: 6, label: ipv6_label)
-          jenkins_hash_bytes(a, STACK_SRC_IP + 12, 4, done_label)
-          a.ja(done_label)
-          a.label(ipv6_label)
-          jenkins_hash_bytes(a, STACK_SRC_IP, 16, done_label)
-          a.label(done_label)
-        end
-
-        JHASH_INITVAL = 0xdeadbeef
-        MASK32 = 0xffff_ffff
-
-        # Linux jhash() (lookup3) over `length` bytes at a stack offset; the
-        # result (c) is left in r2.  This is the function nftables applies
-        # for NFT_HASH_JENKINS, so both datapaths pick the same backend for a
-        # flow.  Registers: r2 = a, r3 = b, r4 = c, r5/r0 = scratch.
-        def jenkins_hash_bytes(a, base, length, _done_label)
-          raise ArgumentError, "jhash length must be 4 or 16" unless [4, 16].include?(length)
-
-          initial = (JHASH_INITVAL + length) & MASK32
-          a.mov32_imm(2, initial)
-          a.mov32_imm(3, initial)
-          a.mov32_imm(4, initial)
-          offset = 0
-          if length > 12
-            jhash_add_word(a, 2, base + offset)
-            jhash_add_word(a, 3, base + offset + 4)
-            jhash_add_word(a, 4, base + offset + 8)
-            jhash_mix(a)
-            offset += 12
-          end
-          jhash_add_word(a, 2, base + offset)
-          jhash_final(a)
-          a.mov_reg(2, 4)
-        end
-
-        def jhash_add_word(a, register, stack_offset)
-          a.load_mem(Assembler::BPF_W, 5, 10, stack_offset)
-          a.alu32_reg(Assembler::BPF_ADD, register, 5)
-        end
-
-        # r5 = rol32(source, bits) using r0 as scratch.
-        def jhash_rol32(a, source, bits)
-          a.mov_reg(5, source)
-          a.alu32_imm(Assembler::BPF_LSH, 5, bits)
-          a.mov_reg(0, source)
-          a.alu32_imm(Assembler::BPF_RSH, 0, 32 - bits)
-          a.alu32_reg(Assembler::BPF_OR, 5, 0)
-        end
-
-        # x -= y; x ^= rol32(y, bits); y += z
-        def jhash_mix_step(a, x, y, z, bits)
-          a.alu32_reg(Assembler::BPF_SUB, x, y)
-          jhash_rol32(a, y, bits)
-          a.alu32_reg(Assembler::BPF_XOR, x, 5)
-          a.alu32_reg(Assembler::BPF_ADD, y, z)
-        end
-
-        def jhash_mix(a)
-          jhash_mix_step(a, 2, 4, 3, 4)
-          jhash_mix_step(a, 3, 2, 4, 6)
-          jhash_mix_step(a, 4, 3, 2, 8)
-          jhash_mix_step(a, 2, 4, 3, 16)
-          jhash_mix_step(a, 3, 2, 4, 19)
-          jhash_mix_step(a, 4, 3, 2, 4)
-        end
-
-        # x ^= y; x -= rol32(y, bits)
-        def jhash_final_step(a, x, y, bits)
-          a.alu32_reg(Assembler::BPF_XOR, x, y)
-          jhash_rol32(a, y, bits)
-          a.alu32_reg(Assembler::BPF_SUB, x, 5)
-        end
-
-        def jhash_final(a)
-          jhash_final_step(a, 4, 3, 14)
-          jhash_final_step(a, 2, 4, 11)
-          jhash_final_step(a, 3, 2, 25)
-          jhash_final_step(a, 4, 3, 16)
-          jhash_final_step(a, 2, 4, 4)
-          jhash_final_step(a, 3, 2, 14)
-          jhash_final_step(a, 4, 3, 24)
         end
 
         def set_key_header(a, key_offset)
