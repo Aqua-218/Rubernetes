@@ -13,6 +13,7 @@ module Rubernetes
     # counter only in nftables mode.
     class Metrics
       FAMILIES = %w[IPv4 IPv6].freeze
+      HEALTH_TIMEOUT_SECONDS = 60.0
       IPTABLES_FAMILIES = %w[kubeproxy_sync_proxy_rules_iptables_last kubeproxy_sync_proxy_rules_iptables_total
                              kubeproxy_sync_proxy_rules_iptables_restore_failures_total
                              kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total].freeze
@@ -30,17 +31,18 @@ module Rubernetes
       # ->() { {counter_name => [packets, bytes]} }: the iptables backend's nfacct reader.
       attr_accessor :nfacct_counters
 
-      def initialize(registry: nil, clock: -> { Time.now.to_f }, mode: :nftables)
+      def initialize(registry: nil, clock: -> { Time.now.to_f }, mode: :nftables, health_timeout: HEALTH_TIMEOUT_SECONDS)
         @registry = registry || Observability::Metrics.new(apiserver: false, component: "kube-proxy")
         @clock = clock
         @mode = mode.to_s.downcase.to_sym
+        @health_timeout = Float(health_timeout)
         @nfacct_counters = nil
         register_mode_families
         @mutex = Mutex.new
         @service_changes_pending = 0
         @endpoint_changes_pending = 0
         @trigger_times = []
-        @last_queued = {}
+        @oldest_pending = {}
         @last_synced = {}
         @no_local_endpoints = Hash.new(0)
         @registry.add_collector { |registry| collect(registry) }
@@ -65,8 +67,8 @@ module Rubernetes
 
       # A sync was requested (syncRunner.Run): the last queued timestamp.
       def sync_queued(families = FAMILIES)
-        now = @clock.call
-        @mutex.synchronize { families.each { |family| @last_queued[family] = now } }
+        now = @clock.call.to_f
+        @mutex.synchronize { families.each { |family| @oldest_pending[family] ||= now } }
         families.each { |family| set("kubeproxy_sync_proxy_rules_last_queued_timestamp_seconds", now, {"ip_family" => family}) }
       end
 
@@ -75,11 +77,14 @@ module Rubernetes
       # +full+: a full resync (the first sync, or a backend catch-up) rather
       # than a partial (diff) one.
       def synced(seconds, families: FAMILIES, full: false)
-        now = @clock.call
+        now = @clock.call.to_f
         pending_triggers = @mutex.synchronize do
           @service_changes_pending = 0
           @endpoint_changes_pending = 0
-          families.each { |family| @last_synced[family] = now }
+          families.each do |family|
+            @last_synced[family] = now
+            @oldest_pending.delete(family)
+          end
           @trigger_times.shift(@trigger_times.length)
         end
         families.each do |family|
@@ -123,24 +128,30 @@ module Rubernetes
         increment("kubeproxy_proxy_livez_total", {"code" => code.to_s})
       end
 
-      # proxier_health.go: healthy when the last sync is not older than the
-      # last queued sync plus the timeout (2 x the max sync period, 60s).
-      HEALTH_TIMEOUT_SECONDS = 60.0
-
+      # proxy_health.go starts checking a family's oldest pending update
+      # after its first completed sync.
       def healthy?(now = @clock.call)
-        @mutex.synchronize do
-          FAMILIES.all? do |family|
-            queued = @last_queued[family]
-            synced = @last_synced[family]
-            next true if queued.nil?
-            next false if synced.nil? && now - queued > HEALTH_TIMEOUT_SECONDS
+        current_time = now.to_f
+        @mutex.synchronize { @last_synced.each_key.all? { |family| family_healthy?(family, current_time) } }
+      end
 
-            synced.nil? || synced >= queued || now - queued <= HEALTH_TIMEOUT_SECONDS
+      def health(now = @clock.call)
+        current_time = now.to_f
+        @mutex.synchronize do
+          status = @last_synced.to_h do |family, last_updated|
+            [family, {last_updated: last_updated, healthy: family_healthy?(family, current_time)}]
           end
+          {current_time: current_time, last_updated: @last_synced.values.max, status: status,
+           healthy: status.values.all? { |family| family.fetch(:healthy) }}
         end
       end
 
       def last_synced(family) = @mutex.synchronize { @last_synced[family] }
+
+      private def family_healthy?(family, now)
+        oldest = @oldest_pending[family]
+        oldest.nil? || now - oldest < @health_timeout
+      end
 
       # -- iptables proxier (pkg/proxy/iptables) --
 
