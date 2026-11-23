@@ -13,16 +13,18 @@ module Rubernetes
         # handled.
         def observe_exits(record_or_uid, pod = nil, now: nil)
           record = record_or_uid.is_a?(Hash) && record_or_uid.key?(:uid) ? record_or_uid : record(record_or_uid)
-          return 0 unless record && record[:state] == "Running"
+          return 0 unless record && (record[:state] == "Running" || (record[:state] == "WorkloadStopped" && record[:next_init_index]))
 
           object = pod ? normalize_pod(pod) : record[:pod]
+          return finish_pending_sidecars(object, record) if record[:sidecar_shutdown_pending]
+
           handled = 0
           record[:containers].dup.each do |entry|
-            next unless entry[:started]
-            next unless runtime_supports?(:container_status)
+            next unless observe_container?(record, entry)
 
+            container_id = entry[:id]
             status = begin
-              invoke(@runtime, :container_status, entry[:id])
+              invoke(@runtime, :container_status, container_id)
             rescue StandardError => error
               # The runtime no longer knows a container this record started:
               # startup recovery released its sandbox after the agent crashed,
@@ -32,7 +34,7 @@ module Rubernetes
               # container missing from the runtime as dead: it is reported
               # Terminated/ContainerStatusUnknown (137) and, when the sandbox
               # itself is gone, the Pod is killed and synced from scratch.
-              next unless lost_container_error?(error)
+              next unless lost_container_error?(error) && entry[:id] == container_id
               return lose_sandbox!(object, record, error) if sandbox_lost?(record)
 
               {"state" => "exited", "exit_code" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON,
@@ -45,6 +47,7 @@ module Rubernetes
             # exited one needs its whole status converted.
             state = Helpers.key(status, "state", "").to_s
             next unless %w[stopped terminated exited].include?(state)
+            return lose_sandbox!(object, record) if runtime_sandbox_stopped?(record)
 
             status = Helpers.string_keys(status)
 
@@ -54,7 +57,7 @@ module Rubernetes
 
             reason = status["oom_killed"] == true ? "OOMKilled" : Helpers.key(status, "reason", nil)
             begin
-              handle_container_exit(object, container_name: entry[:name], exit_code: Integer(exit_code), reason: reason, now: now,
+              handle_container_exit(object, container_name: entry[:name], container_id: container_id, exit_code: Integer(exit_code), reason: reason, now: now,
                                             message: Helpers.key(status, "message", nil))
             rescue StandardError => error
               # A restart that fails (runtime refused the create, backoff
@@ -69,8 +72,17 @@ module Rubernetes
           handled
         end
 
+        def observe_container?(record, entry)
+          return false unless entry[:started] && !record[:sidecars_stopping] && runtime_supports?(:container_status)
+          return false if entry[:exit_recorded_for] == entry[:id]
+
+          record[:state] != "WorkloadStopped" || entry[:category] != "init"
+        end
+        private :observe_container?
+
         CONTAINER_STATUS_UNKNOWN_REASON = "ContainerStatusUnknown"
         CONTAINER_STATUS_UNKNOWN_MESSAGE = "The container could not be located when the pod was terminated"
+        SANDBOX_LOST_REASON = "SandboxLost"
 
         def lost_container_error?(error)
           Helpers.failure_message(error).match?(/unknown container|no such container|container .* not found/i)
@@ -81,6 +93,7 @@ module Rubernetes
         end
 
         def sandbox_lost?(record)
+          return true if runtime_sandbox_stopped?(record)
           return false unless record[:sandbox_id] && runtime_supports?(:sandbox)
 
           invoke(@runtime, :sandbox, record[:sandbox_id])
@@ -89,13 +102,28 @@ module Rubernetes
           Helpers.failure_message(error).include?("unknown sandbox")
         end
 
+        def runtime_sandbox_stopped?(record)
+          sandbox = record[:sandbox_id]
+          return false unless sandbox && runtime_supports?(:sandbox_state)
+
+          best_effort { @runtime.sandbox_state(sandbox) } == :stopped
+        end
+
         # kubelet SyncPod on a sandbox the runtime lost ("pod sandbox changed"):
         # every container that ran is reported Terminated with
         # ContainerStatusUnknown/137, the Pod is killed, and the restart policy
         # decides what follows -- Always/OnFailure start it again on the next
         # sync (no tombstone), Never ends it Failed.
-        def lose_sandbox!(object, record, error)
-          event(record, "sandbox.lost", sandbox_id: record[:sandbox_id], message: Helpers.failure_message(error))
+        def lose_sandbox!(object, record, error = nil)
+          first = @mutex.synchronize do
+            next false if record[:sandbox_loss_seen] || !@records[record[:uid]].equal?(record)
+
+            record[:sandbox_loss_seen] = true
+          end
+          return 0 unless first
+
+          event(record, "sandbox.lost", sandbox_id: record[:sandbox_id],
+                                        message: error ? Helpers.failure_message(error) : "Pod sandbox is no longer ready")
           finished_at = Helpers.now(@clock).iso8601(6)
           policy = Helpers.key(Helpers.key(object || {}, "spec", {}), "restartPolicy", "Always").to_s
           # The Pod comes back in a new sandbox with the same containers
@@ -104,11 +132,11 @@ module Rubernetes
           # outlive this record.
           record[:restarting_after_sandbox_loss] = policy != "Never"
           record[:containers].each do |entry|
+            restart_count = entry[:status].fetch("restartCount", 0).to_i
+            @restarts.advance_restart_count(restart_identity(record, entry), to: restart_count + 1) if policy != "Never" && entry[:category] != "ephemeral"
             next unless entry[:started]
 
             @probes.unregister(entry[:id])
-            restart_count = entry[:status].is_a?(Hash) ? entry[:status]["restartCount"].to_i : 0
-            @restarts.advance_restart_count(restart_identity(record, entry), to: restart_count + 1) if policy != "Never"
             terminated = {"exitCode" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON, "message" => CONTAINER_STATUS_UNKNOWN_MESSAGE,
                           "finishedAt" => finished_at, "containerID" => entry[:id]}
             terminated["startedAt"] = entry[:started_at] if entry[:started_at]
@@ -116,12 +144,16 @@ module Rubernetes
             entry[:status] = {"state" => "terminated", "exitCode" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON,
                               "terminated" => terminated, "ready" => false, "started" => false, "restartCount" => restart_count}
           end
-          # kubelet getPhase: every container stopped under Always (or a failed
-          # one under OnFailure) is still a Running Pod -- it is being
-          # restarted; only Never ends Failed.
-          terminate(object || record[:uid], reason: "SandboxLost", terminal_phase: policy == "Never" ? "Failed" : "Running",
+          phase = policy == "Never" ? "Failed" : sandbox_replacement_phase(record)
+          terminate(object || record[:uid], reason: SANDBOX_LOST_REASON, terminal_phase: phase,
                                             message: CONTAINER_STATUS_UNKNOWN_MESSAGE)
           record[:containers].length
+        end
+
+        # Regular init must run again in the replacement sandbox. Already
+        # initialized Pods without regular init stay Running during restarts.
+        def sandbox_replacement_phase(record)
+          record[:containers].any? { |entry| entry[:category] == "init" } ? "Pending" : "Running"
         end
 
         # The exit code and terminating signal a runtime status carries.  The
@@ -147,7 +179,7 @@ module Rubernetes
         # Apply restartPolicy to a runtime-reported process exit.  Runtime
         # adapters can call this without knowing how Pod status or backoff is
         # represented internally.
-        def handle_container_exit(pod_or_uid, container_name:, exit_code: 0, reason: nil, now: nil, message: nil)
+        def handle_container_exit(pod_or_uid, container_name:, container_id: nil, exit_code: 0, reason: nil, now: nil, message: nil)
           object, uid, record = resolve_record(pod_or_uid)
           raise LifecycleError, "Pod #{uid} is not known" unless record
 
@@ -160,26 +192,26 @@ module Rubernetes
           # container; only the first observation records it.  Both did, the
           # restart counted twice, and "Container Runtime blackbox test ...
           # terminate-cmd-rpof" saw restartCount 2 where one restart happened.
-          return @restarts.attempt(restart_key, container_id: entry[:id]) unless claim_exit!(entry)
+          return @restarts.attempt(restart_key, container_id: entry[:id]) unless claim_exit!(entry, container_id: container_id)
 
           # kubelet reports Completed for a zero exit and Error otherwise.
           reason = Integer(exit_code).zero? ? "Completed" : "Error" if reason.to_s.empty?
           # The restart count this run had; the next start (or a
           # RestartAllContainers reset) is what moves it on.
           entry[:restart_count_before_exit] = entry[:status].is_a?(Hash) ? entry[:status]["restartCount"].to_i : 0
-          attempt = @restarts.record_exit(restart_key, exit_code: exit_code, reason: reason, policy: policy, at: now)
+          restart_all = restart_all_rule?(entry, exit_code)
+          rules = Helpers.key(entry[:spec], "restartPolicyRules", nil) unless restart_all
+          attempt = @restarts.record_exit(restart_key, exit_code: exit_code, reason: reason, policy: policy, at: now, rules: rules)
           record_terminated(record, entry, exit_code: exit_code, reason: reason, message: message)
           remove_endpoints(object, uid) if entry[:category] == "app" && record[:containers].select do |candidate|
             candidate[:category] == "app"
           end.none? { |candidate| candidate[:started] }
-          if restart_all_rule?(entry, exit_code)
+          if restart_all
             restart_all_containers(object, record, [entry])
             persist_state!
             return attempt
           end
-          should_restart = @restarts.should_restart?(policy: policy, exit_code: exit_code, reason: reason,
-                                                     rules: Helpers.key(entry[:spec], "restartPolicyRules", nil))
-          if should_restart
+          if attempt.restart_pending?
             restart_container(object, record, entry, reason: reason || "Failure", now: now, attempt: attempt)
           else
             finish_pod_without_running_apps(object, record)
@@ -193,14 +225,19 @@ module Rubernetes
 
         # True exactly once per container run: the caller that wins records the
         # exit, every other observer of the same run is told it was recorded.
-        def claim_exit!(entry)
+        def claim_exit!(entry, container_id: nil)
           @exit_mutex ||= Mutex.new
           @exit_mutex.synchronize do
+            return false if container_id && container_id != entry[:id]
             return false if exited_already?(entry) || entry[:exit_recorded_for].to_s == entry[:id].to_s
 
             entry[:exit_recorded_for] = entry[:id]
             true
           end
+        end
+
+        def release_exit_claim!(entry)
+          @exit_mutex.synchronize { entry.delete(:exit_recorded_for) }
         end
 
         def exited_already?(entry)
@@ -266,13 +303,41 @@ module Rubernetes
         # does it reach Succeeded/Failed.
         def finish_pod_without_running_apps(object, record)
           app_entries = record[:containers].select { |candidate| candidate[:category] == "app" }
-          if app_entries.none? { |candidate| candidate[:started] }
-            record[:phase] = terminal_phase(record)
-            # Sidecars (restartable init containers) are stopped once the
-            # last app container is gone, as kubelet does.
-            stop_sidecars(record)
-          end
+          return if app_entries.none? { |candidate| candidate[:started] || candidate[:restart_pending] } && !finish_sidecars(record)
+
           update_status(object, record)
+        end
+
+        def finish_pending_sidecars(object, record)
+          finish_pod_without_running_apps(object, record)
+          persist_state!
+          0
+        end
+
+        def finish_sidecars(record)
+          claimed = @mutex.synchronize do
+            next false if record[:sidecars_stopping] || @terminating.key?(record[:uid].to_s)
+
+            record[:sidecars_stopping] = true
+            record[:sidecar_shutdown_pending] = true
+          end
+          return false unless claimed
+
+          begin
+            stop_sidecars(record)
+            record[:phase] = terminal_phase(record)
+            record.delete(:sidecar_shutdown_pending)
+            true
+          rescue LifecycleError => error
+            event(record, "pod.stop_failed", message: Helpers.failure_message(error))
+            schedule_wakeup(record[:uid], 1)
+            false
+          ensure
+            @mutex.synchronize do
+              record.delete(:sidecars_stopping)
+              @terminating_done.broadcast
+            end
+          end
         end
 
         def read_termination_message(entry, exit_code:, reason:)
