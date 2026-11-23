@@ -14,6 +14,7 @@ module Rubernetes
     class ServiceAccountController < BaseController
       NAMESPACE = ResourceDescriptor.parse("Namespace")
       SERVICE_ACCOUNT = ResourceDescriptor.parse("ServiceAccount")
+      DEFAULT_NAME = "default"
 
       include SecondarySupport
 
@@ -23,14 +24,17 @@ module Rubernetes
         return empty_result(resource) unless namespace
         return empty_result(namespace) if terminating?(namespace)
 
-        service_accounts ||= list_for(adapter, SERVICE_ACCOUNT, namespace: Support.name(namespace))
-        service_accounts ||= []
-        default = Array(service_accounts).find { |account| Support.name(account) == "default" }
+        name = Support.name(namespace)
+        default = if service_accounts.nil?
+                    find_for(adapter, SERVICE_ACCOUNT, DEFAULT_NAME, namespace: name)
+                  else
+                    Array(service_accounts).find { |account| Support.name(account) == DEFAULT_NAME }
+                  end
         operations = []
         if default.nil?
           candidate = {
             "apiVersion" => "v1", "kind" => "ServiceAccount",
-            "metadata" => {"name" => "default", "namespace" => Support.name(namespace)}
+            "metadata" => {"name" => DEFAULT_NAME, "namespace" => name}
           }
           operations << operation_create(candidate, descriptor: SERVICE_ACCOUNT,
                                                     reason: "default service account creation")
@@ -53,18 +57,17 @@ module Rubernetes
       def plan_orphans(key, store: nil)
         namespace, _, name = key.to_s.partition("/")
         return nil if namespace.empty?
-        return nil unless name.empty? || name == "default"
+        return nil unless name.empty? || name == DEFAULT_NAME
 
         adapter = adapter_for(store)
         return nil if adapter.nil?
 
         # Only a namespace that still exists gets its ServiceAccount back; the
         # same key names a namespace that was just torn down.
-        known = list_for(adapter, NAMESPACE, namespace: :all).find { |value| Support.name(value) == namespace }
+        known = find_for(adapter, NAMESPACE, namespace)
         return nil if known.nil? || terminating?(known)
 
-        plan({"apiVersion" => "v1", "kind" => "ServiceAccount",
-              "metadata" => {"name" => "default", "namespace" => namespace}}, store: store)
+        plan(known, store: store)
       end
 
       private
@@ -75,15 +78,13 @@ module Rubernetes
         namespace_name = Support.namespace(resource)
         return nil if namespace_name.to_s.empty?
 
-        known = namespaces || (adapter ? list_for(adapter, NAMESPACE, namespace: :all) : nil)
-        found = Array(known).find { |namespace| Support.name(namespace) == namespace_name }
-        return found if found
+        return Array(namespaces).find { |namespace| Support.name(namespace) == namespace_name } unless namespaces.nil?
         # A namespace the cache does not hold is gone.  Synthesising one anyway
         # plans a ServiceAccount the API answers 404 for, and the key is then
         # retried for ever -- which is what starved the reconcile loop of the
         # namespaces that DO exist and left them without a default
         # ServiceAccount for minutes.
-        return nil unless known.nil?
+        return find_for(adapter, NAMESPACE, namespace_name) if adapter
 
         {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => namespace_name}}
       end
