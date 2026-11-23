@@ -21,14 +21,18 @@ require "stringio"
 require "timeout"
 
 require_relative "../cbor"
+require_relative "../container_files"
 require_relative "../framing"
 require_relative "../errors"
+require_relative "workload_resources"
 
 module Rubernetes
   module Runtime
     class MicroVM < Runtime
       module Guest
         class Supervisor
+          include WorkloadResources
+
           VERSION = "1"
           CONTROL_PORT = 5000
           STREAM_PORT = 5001
@@ -66,6 +70,7 @@ module Rubernetes
             @sandboxes = {}
             @streams = {}
             @mounted = []
+            @block_volumes = {}
             @isolation_profile = nil
           end
 
@@ -212,6 +217,7 @@ module Rubernetes
               end
               timed.call("workspace") { mount_workspace(params["workspace"]) if params["workspace"] }
               timed.call("images") { mount_images(Array(params["images"])) }
+              timed.call("block_volumes") { @block_volumes = resolve_block_volumes(require_hash(params, "block_volumes")) } if params.key?("block_volumes")
               timed.call("files") { write_files(Array(params["files"])) }
               @last_identity_timings = timings
               @state.identity = identity
@@ -300,6 +306,7 @@ module Rubernetes
             @mutex.synchronize do
               id = @sandboxes.fetch(params["sandbox_id"]) { return {"sandbox_id" => params["sandbox_id"], "state" => "absent"} }
               native.stop_sandbox(id, timeout: (params["timeout"] || 5).to_f)
+              sync_filesystems unless @block_volumes.empty?
               {"sandbox_id" => id, "state" => "stopped"}
             end
           end
@@ -309,16 +316,6 @@ module Rubernetes
               id = @sandboxes.delete(params["sandbox_id"]) { return {"sandbox_id" => params["sandbox_id"], "state" => "absent"} }
               native.remove_sandbox(id)
               {"sandbox_id" => id, "state" => "removed"}
-            end
-          end
-
-          def container_create(params)
-            @mutex.synchronize do
-              require_phase!(%w[identified networked])
-              sandbox_id = @sandboxes.fetch(params["sandbox_id"]) { raise ProtocolError, "unknown sandbox #{params["sandbox_id"]}" }
-              spec = translate_container_spec(require_hash(params, "spec"))
-              container = native.create_container(sandbox_id, spec, id: params["id"], request_id: params["request_id"])
-              {"id" => container.id, "state" => container.state.to_s}
             end
           end
 
@@ -371,17 +368,6 @@ module Rubernetes
               {"id" => container.respond_to?(:id) ? container.id : params["id"],
                "state" => container.respond_to?(:state) ? container.state.to_s : "stopped"}
             end
-          end
-
-          def container_remove(params)
-            @mutex.synchronize do
-              native.remove_container(params["id"], request_id: params["request_id"])
-              {"id" => params["id"], "state" => "removed"}
-            end
-          end
-
-          def container_status(params)
-            @mutex.synchronize { plain(native.container_status(params["id"])) }
           end
 
           def container_stats(params)
@@ -589,6 +575,7 @@ module Rubernetes
             end
             @sandboxes.clear
             @streams.clear
+            FileUtils.rm_rf(ContainerFiles::ROOT)
             Dir.glob(File.join("/run/rubernetes/files", "**", "*")).select { |path| File.file?(path) }.each { |path| File.delete(path) }
             @mounted.reverse_each do |target|
               mount_adapter.unmount(target: target, flags: 2) # MNT_DETACH
@@ -596,6 +583,7 @@ module Rubernetes
               log("umount #{target}: #{error.message}")
             end
             @mounted.clear
+            @block_volumes.clear
             FileUtils.rm_f("/run/machine-id")
             set_hostname("rubernetes-base")
             @state.identity = nil
@@ -680,10 +668,6 @@ module Rubernetes
               end
             end
             translated
-          end
-
-          def translate_container_spec(spec)
-            JSON.parse(JSON.generate(spec))
           end
 
           def native
@@ -784,7 +768,7 @@ module Rubernetes
           end
 
           def guest_capabilities
-            {"landlock" => detect_isolation_profile == "l3", "cgroup_controllers" => begin
+            {"landlock" => detect_isolation_profile == "l3", "block_volumes" => true, "container_files" => true, "cgroup_controllers" => begin
               File.read("/sys/fs/cgroup/cgroup.controllers").split
             rescue StandardError
               []
