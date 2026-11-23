@@ -15,38 +15,35 @@ module M8ConformanceProbe
   module_function
 
   def run
+    S.emit(evaluate)
+  end
+
+  def evaluate(manifests: S.run_manifests, configuration: S.profiles)
     started_at = S.now
-    manifests = S.run_manifests
-    cases = []
-    expected = S.profiles.fetch("conformance").fetch("expected_tests")
+    expected = configuration.fetch("conformance").fetch("expected_tests")
+    profiles = S.consecutive_clean_runs("K1", manifests: manifests, configuration: configuration)
+    runs = profiles.sum { |profile| profile.fetch("runs") }
 
-    k1 = manifests.flat_map { |manifest| S.lane_results(manifest, "K1").map { |lane| [manifest, lane] } }
-    cases << {
+    cases = [{
       "id" => "k1_runs_recorded",
-      "passed" => !k1.empty?,
-      "runs" => k1.length,
-      "detail" => k1.empty? ? "no K1 lane result exists under #{S::RUN_ROOT.sub("#{S::ROOT}/", "")}" : nil
-    }
-    k1.each do |manifest, lane|
-      summary = lane["summary"] || {}
-      cases << {
-        "id" => "k1_totals-#{manifest["runId"]}",
-        "passed" => summary["selected"] == expected && summary["passed"] == expected &&
-                    summary["failed"].to_i.zero? && summary["skipped"].to_i.zero? && summary["flaked"].to_i.zero?,
-        "profile" => manifest["profile"], "summary" => summary
-      }
-      codenames = lane["codenames"] || {}
-      cases << {
-        "id" => "k1_codename_join-#{manifest["runId"]}",
-        "passed" => codenames["definition_available"] == true &&
-                    Array(codenames["unmatched_codenames"]).empty? &&
-                    Array(codenames["duplicate_codenames"]).empty?,
-        "codenames" => codenames.slice("definition_count", "executed_count")
-      }
-    end
-
-    S.consecutive_clean_runs("K1").each do |profile|
-      cases << profile.merge("id" => "k1_consecutive_clean-#{profile.fetch("profile")}")
+      "passed" => runs.positive?,
+      "runs" => runs,
+      "detail" => runs.zero? ? "no release-profile K1 lane result exists under #{S::RUN_ROOT.sub("#{S::ROOT}/", "")}" : nil
+    }]
+    profiles.each do |profile|
+      name = profile.fetch("profile")
+      profile.fetch("latest_runs").each do |attempt|
+        run_id = attempt["run_id"]
+        key = if run_id.is_a?(String) && !run_id.strip.empty?
+                "#{name}-#{run_id}"
+              else
+                "#{name}-unidentified-#{Digest::SHA256.hexdigest(attempt.fetch("manifest"))}"
+              end
+        status = attempt.slice("passed", "status", "detail", "manifest").merge("profile" => name, "run_id" => run_id)
+        cases << status.merge("id" => "k1_totals-#{key}", "summary" => attempt["summary"])
+        cases << status.merge("id" => "k1_codename_join-#{key}", "codenames" => attempt["codenames"])
+      end
+      cases << profile.except("earlier_runs", "latest_runs").merge("id" => "k1_consecutive_clean-#{name}")
     end
 
     k2 = manifests.flat_map { |manifest| S.lane_results(manifest, "K2") }
@@ -57,10 +54,11 @@ module M8ConformanceProbe
       "detail" => k2.empty? ? "no Sonobuoy certified-conformance archive is recorded" : nil
     }
 
-    S.emit(S.report(kind: "m8_conformance", measurement_level: "integration_tested",
-                    started_at: started_at, cases: cases,
-                    extra: {"expected_tests" => expected, "run_root" => S::RUN_ROOT.sub("#{S::ROOT}/", "")}))
-    cases.all? { |entry| entry.fetch("passed") } ? 0 : 1
+    history = profiles.to_h { |profile| [profile.fetch("profile"), profile.fetch("earlier_runs")] }
+    S.report(kind: "m8_conformance", measurement_level: "integration_tested",
+             started_at: started_at, cases: cases,
+             extra: {"expected_tests" => expected, "run_root" => S::RUN_ROOT.sub("#{S::ROOT}/", ""),
+                     "k1_earlier_runs" => history})
   end
 end
 
