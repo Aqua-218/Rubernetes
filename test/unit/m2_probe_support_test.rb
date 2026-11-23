@@ -66,6 +66,21 @@ class M2ProbeSupportTest < Minitest::Test
     refute_includes decoded, "0\r\n\r\n"
   end
 
+  def test_process_identity_exit_is_observable_before_the_parent_reaps_it
+    skip "Linux pidfds required" unless RUBY_PLATFORM.include?("linux")
+
+    begin
+      pid = fork { exit!(0) }
+      start_time = M2ProbeSupport.process_start_time(pid)
+
+      assert M2ProbeSupport.wait_for_process_identity_exit(pid, start_time)
+      assert_equal start_time, M2ProbeSupport.process_start_time(pid)
+      assert_raises(RuntimeError) { M2ProbeSupport.wait_for_process_identity_exit(Process.pid, M2ProbeSupport.process_start_time(Process.pid), timeout: 0) }
+    ensure
+      Process.wait(pid) if pid
+    end
+  end
+
   def test_stream_probe_returns_decoded_empty_body_when_only_terminating_chunk_arrives
     listener = TCPServer.new("127.0.0.1", 0)
     port = listener.addr.fetch(1)
