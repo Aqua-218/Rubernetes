@@ -44,6 +44,14 @@ module Dashboard
       Float(ENV.fetch("DASHBOARD_SCRAPE_TIMEOUT", "10"))
     end
 
+    def convert_classic_histograms_to_nhcb?
+      ENV.fetch("DASHBOARD_CONVERT_CLASSIC_HISTOGRAMS_TO_NHCB", "0") == "1"
+    end
+
+    def keep_classic_histograms?
+      ENV.fetch("DASHBOARD_ALWAYS_SCRAPE_CLASSIC_HISTOGRAMS", "1") != "0"
+    end
+
     def evaluation_interval_seconds
       Float(ENV.fetch("DASHBOARD_EVALUATION_INTERVAL", scrape_interval_seconds.to_s))
     end
