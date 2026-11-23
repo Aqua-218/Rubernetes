@@ -12,10 +12,12 @@ module Rubernetes
           paths = process.fetch("runtime_paths", process.fetch("runtime", {})) || {}
           {"enabled" => process.fetch("cgroups_per_qos", true) != false,
            "root" => process.fetch("cgroup_root", paths.fetch("cgroup_root", Runtime::Native::Configuration::DEFAULT_CGROUP_ROOT)),
-           "hierarchy" => Rubernetes::Platform::Linux::CgroupV2::HIERARCHY_PREFIX,
+           "hierarchy" => Platform::Linux::KubeletCgroupLayout::HIERARCHY,
            "enforce_node_allocatable" => process.fetch("enforce_node_allocatable", ["pods"]),
            "system_reserved_cgroup" => process["system_reserved_cgroup"],
-           "kube_reserved_cgroup" => process["kube_reserved_cgroup"]}.compact
+           "kube_reserved_cgroup" => process["kube_reserved_cgroup"],
+           "memory_reservation_policy" => process.fetch("memory_reservation_policy", "None"),
+           "qos_reserved" => process["qos_reserved"]}.compact
         end
 
         def native_agent_profile?(process)
@@ -37,12 +39,14 @@ module Rubernetes
             "enabled" => options.fetch("enabled", true) != false,
             "port" => Integer(options.fetch("port", DEFAULT_DNS_PORT)),
             "bind_addresses" => Array(options["bind_addresses"]),
+            "cluster_dns" => Array(options["cluster_dns"]),
             "upstreams" => Array(options["upstreams"]),
             "cluster_domain" => options["cluster_domain"],
             "resolv_conf" => options["resolv_conf"] || process["resolv_conf"] || "/etc/resolv.conf",
             "positive_ttl" => options.fetch("positive_ttl", 5),
             "negative_ttl" => options.fetch("negative_ttl", 5),
             "hosts" => options["hosts"],
+            "nat64_prefix" => options["nat64_prefix"],
             # The resolver's own identity (the cluster DNS add-on's, CoreDNS
             # running as its service account): it watches every Service,
             # EndpointSlice and Pod, which a node identity may not.
