@@ -14,13 +14,6 @@ module Rubernetes
         parsed
       end
 
-      def adapter_for_storage(store)
-        candidate = store || self.store
-        return nil unless candidate
-
-        candidate.is_a?(StoreAdapter) ? candidate : StoreAdapter.new(candidate)
-      end
-
       def list_storage_objects(adapter, descriptor, namespace: :all)
         return [] unless adapter
 
@@ -94,23 +87,7 @@ module Rubernetes
       end
 
       def quantity_base(value)
-        return value.to_f if value.is_a?(Numeric)
-
-        text = value.to_s.strip
-        return 0.0 if text.empty?
-        return text.to_f if text.match?(/\A-?(?:\d+(?:\.\d+)?|\.\d+)\z/)
-
-        suffixes = {
-          "Ki" => 1024.0, "Mi" => 1024.0**2, "Gi" => 1024.0**3,
-          "Ti" => 1024.0**4, "Pi" => 1024.0**5, "Ei" => 1024.0**6,
-          "n" => 1e-9, "u" => 1e-6, "m" => 1e-3,
-          "k" => 1e3, "M" => 1e6, "G" => 1e9, "T" => 1e12,
-          "P" => 1e15, "E" => 1e18
-        }
-        suffix, multiplier = suffixes.find { |candidate, _| text.end_with?(candidate) }
-        return text.to_f unless suffix
-
-        text.delete_suffix(suffix).to_f * multiplier
+        Support.quantity_to_base(value)
       end
 
       def descriptor_from(value, api_version:, resource:, scope:)
@@ -148,11 +125,6 @@ module Rubernetes
         return false if Support.value(Support.metadata(pod), "deletionTimestamp", nil)
 
         !%w[Succeeded Failed].include?(Support.value(Support.status(pod), "phase", "").to_s)
-      end
-
-      def volume_attachment_descriptor
-        descriptor_from("VolumeAttachment", api_version: "storage.k8s.io/v1",
-                                            resource: "volumeattachments", scope: :cluster)
       end
 
       def name_key(object)
