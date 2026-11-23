@@ -11,8 +11,10 @@ require_relative "system_logs"
 require_relative "../transport/http_server"
 require_relative "../transport/websocket"
 require_relative "resource_metrics"
+require_relative "stats_provider"
 require_relative "../transport/spdy"
 require_relative "streaming_session"
+require_relative "pod_logs_endpoint"
 require_relative "stream_proxy"
 
 module Rubernetes
@@ -33,6 +35,8 @@ module Rubernetes
     # A non-upgrading POST to /exec still answers with the command's output
     # as one body (the earlier result-retrieval contract).
     class StreamingServer
+      include PodLogsEndpoint
+
       LOG_PATH = %r{\A/containerLogs/(?<namespace>[^/]+)/(?<pod>[^/]+)/(?<container>[^/?]+)\z}
       # {podNamespace}/{podID}[/{uid}]/{containerName}, as kubelet routes them.
       EXEC_PATH = %r{\A/exec/(?<namespace>[^/]+)/(?<pod>[^/]+)(?:/(?<uid>[^/]+))?/(?<container>[^/?]+)\z}
@@ -40,6 +44,7 @@ module Rubernetes
       RUN_PATH = %r{\A/run/(?<namespace>[^/]+)/(?<pod>[^/]+)(?:/(?<uid>[^/]+))?/(?<container>[^/?]+)\z}
       PORT_FORWARD_PATH = %r{\A/portForward/(?<namespace>[^/]+)/(?<pod>[^/]+)(?:/(?<uid>[^/?]+))?\z}
       CHECKPOINT_PATH = %r{\A/checkpoint/(?<namespace>[^/]+)/(?<pod>[^/]+)/(?<container>[^/?]+)\z}
+      READ_ONLY_PATHS = %w[/healthz /stats/summary /metrics /metrics/cadvisor /metrics/probes /metrics/resource].freeze
 
       attr_reader :server
 
@@ -47,7 +52,7 @@ module Rubernetes
                      exec_service: nil, attach_service: nil, port_forward_service: nil,
                      lifecycle: nil, stream_creation_timeout: Streaming::STREAM_CREATION_TIMEOUT, stats_provider: nil,
                      system_logs: nil, flags: {}, checkpoint_dir: nil, auth: nil, tls: nil, configz: nil,
-                     log_level_setter: nil, kubelet_metrics: nil)
+                     log_level_setter: nil, kubelet_metrics: nil, split_log_streams: false, read_only: false)
         @stats_provider = stats_provider
         # /logs/ (SystemLogs); nil when enableSystemLogHandler is off.
         @system_logs = system_logs
@@ -56,6 +61,7 @@ module Rubernetes
         @checkpoint_dir = checkpoint_dir
         @started_at = Observability::ZPages.process_start_time
         @log_service = log_service
+        @split_log_streams = split_log_streams
         @lifecycle = lifecycle
         @exec_service = exec_service
         @attach_service = attach_service
@@ -71,6 +77,7 @@ module Rubernetes
         # KubeletAuth: every request authenticated and authorized first, as
         # kubelet's InstallAuthFilter does for the whole container.
         @auth = auth
+        @read_only = read_only
         @server = Transport::HTTPServer.new(method(:call), host: host, port: port, logger: logger, tls: tls)
       end
 
@@ -121,6 +128,9 @@ module Rubernetes
       end
 
       def serve(request)
+        if @read_only && (!READ_ONLY_PATHS.include?(request.path) || !%w[GET HEAD].include?(request.method))
+          return [404, {"content-type" => "text/plain"}, ["404 page not found\n"]]
+        end
         if @auth && (denied = @auth.filter(request))
           return denied
         end
@@ -254,57 +264,6 @@ module Rubernetes
                                   Observability::ZPages.flagz(component: "kubelet", flags: @flags || {}, accept: accept)
                                 end
         [status, headers, [body]]
-      end
-
-      # kubelet/apiserver behaviour for a container that exists but has not
-      # started: a 400 whose message names the state.  Clients (hydrophone
-      # included) branch on this instead of on a generic 5xx.
-      NOT_STARTED = /unknown container|not running|no such container/i
-
-      # kubelet waits for a container that is still being created when the
-      # request is a follow; only a non-follow request is answered with the
-      # "waiting to start" 400.  Clients stream a pod's logs the moment it is
-      # scheduled and rely on that wait.
-      FOLLOW_START_TIMEOUT = Float(ENV.fetch("RUBERNETES_LOG_FOLLOW_TIMEOUT", "300"))
-      FOLLOW_POLL_INTERVAL = 0.5
-      SHORT_START_TIMEOUT = Float(ENV.fetch("RUBERNETES_LOG_START_TIMEOUT", "30"))
-
-      # Both PodLogOptions forms name a moment, never a byte offset.
-      def log_since(request)
-        seconds = request.query_value("sinceSeconds").to_s
-        return (Time.now.utc - Integer(seconds)).iso8601(9) unless seconds.empty?
-
-        time = request.query_value("sinceTime").to_s
-        time.empty? ? nil : Time.iso8601(time).utc.iso8601(9)
-      end
-
-      def container_logs(match, request)
-        follow = query_bool(request, "follow")
-        container = await_container(CGI.unescape(match[:namespace]),
-                                    CGI.unescape(match[:pod]),
-                                    CGI.unescape(match[:container]),
-                                    follow: follow)
-        result = @log_service.logs(
-          container,
-          follow: follow,
-          since: log_since(request),
-          tail: request.query_value("tailLines"),
-          stream: request.query_value("stream"),
-          timestamps: query_bool(request, "timestamps"),
-          limit_bytes: request.query_value("limitBytes"),
-          request_id: request.query_value("requestID"),
-          identity: "node-streaming"
-        )
-        {status: 200, headers: {"content-type" => "text/plain; charset=utf-8"}, body: body_for(result), stream: true}
-      rescue StandardError => error
-        raise unless NOT_STARTED.match?(error.message)
-
-        pod = CGI.unescape(match[:pod])
-        namespace = CGI.unescape(match[:namespace])
-        container = CGI.unescape(match[:container])
-        [400, {"content-type" => "text/plain"},
-         ["container #{container.inspect} in pod #{pod.inspect} is waiting to start: ContainerCreating " \
-          "(namespace #{namespace})\n"]]
       end
 
       # ------------------------------------------------------------ exec/attach
@@ -611,7 +570,11 @@ module Rubernetes
         summary = @stats_provider.summary
         if request.query_value("only_cpu_and_memory").to_s == "true"
           keep = ->(entry, fields) { entry.slice(*fields) }
-          summary = {"node" => keep.call(summary["node"], %w[nodeName startTime cpu memory]),
+          node = keep.call(summary["node"], %w[nodeName startTime cpu memory])
+          if summary.dig("node", "systemContainers")
+            node["systemContainers"] = summary.dig("node", "systemContainers").map { |container| keep.call(container, %w[name startTime cpu memory]) }
+          end
+          summary = {"node" => node,
                      "pods" => Array(summary["pods"]).map do |pod|
                        keep.call(pod, %w[podRef startTime cpu memory]).merge(
                          "containers" => Array(pod["containers"]).map { |container| keep.call(container, %w[name startTime cpu memory]) }
@@ -635,7 +598,10 @@ module Rubernetes
       # accounting when the stats provider has runtime access, else from
       # the Summary.
       def cadvisor_metrics
-        body = if @stats_provider.respond_to?(:raw_pod_usages)
+        cri = @stats_provider.cri_metrics if @stats_provider.is_a?(StatsProvider)
+        body = if cri
+                 CadvisorMetrics.render_machine(machine_info) + cri
+               elsif @stats_provider.respond_to?(:raw_pod_usages)
                  CadvisorMetrics.render(@stats_provider.raw_pod_usages, machine: machine_info)
                else
                  summary = begin
@@ -734,15 +700,12 @@ module Rubernetes
             VOLUME_STATS_METRICS.each do |name, (field, _help)|
               registry.set(name, volume[field].to_i, labels) unless volume[field].nil?
             end
-            # kubelet_volume_stats_health_status_abnormal: the CSI driver's
-            # volume condition (0 for a volume with stats and no condition).
-            condition = volume["volumeCondition"]
-            abnormal = condition.is_a?(Hash) && (condition["abnormal"] || condition[:abnormal]) ? 1 : 0
-            unless registry.registered?("kubelet_volume_stats_health_status_abnormal")
-              registry.register("kubelet_volume_stats_health_status_abnormal",
-                                type: :gauge)
-            end
-            registry.set("kubelet_volume_stats_health_status_abnormal", abnormal, labels)
+            condition = volume["volumeHealthStats"]
+            next unless condition.is_a?(Hash)
+
+            metric = "kubelet_volume_stats_health_status_abnormal"
+            registry.register(metric, type: :gauge) unless registry.registered?(metric)
+            registry.set(metric, condition["abnormal"] ? 1 : 0, labels)
           end
           container_log_metrics(registry, pod)
         end
@@ -871,7 +834,7 @@ module Rubernetes
         # rolling-update spec kept retrying.
         matching.min_by do |candidate|
           state = (candidate[:state] || candidate["state"]).to_s
-          %w[Removed Stopped Stopping Failed Succeeded].include?(state) ? 1 : 0
+          %w[Removed Stopped Stopping RollingBack CleanupPending Failed Succeeded].include?(state) ? 1 : 0
         end
       rescue StandardError
         nil
