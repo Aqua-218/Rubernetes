@@ -2,6 +2,8 @@
 
 require_relative "../claim_quota_usage"
 require_relative "../pod_quota_usage"
+require_relative "../pvc_quota_usage"
+require_relative "../service_quota_usage"
 
 require_relative "runtime"
 require_relative "support"
@@ -17,6 +19,7 @@ module Rubernetes
     class ResourceQuotaController < BaseController
       RESOURCE_QUOTA = ResourceDescriptor.parse("ResourceQuota")
       POD = ResourceDescriptor.parse("Pod")
+      CUSTOM_USAGE_SYNC_SECONDS = 15.0
 
       KIND_TO_RESOURCE = {
         "Pod" => "pods", "Service" => "services", "ConfigMap" => "configmaps",
@@ -29,6 +32,8 @@ module Rubernetes
         "StatefulSet" => "statefulsets", "DaemonSet" => "daemonsets",
         "Job" => "jobs", "CronJob" => "cronjobs", "ResourceClaim" => "resourceclaims"
       }.freeze
+
+      RESOURCE_TO_KIND = KIND_TO_RESOURCE.invert.freeze
 
       include SecondarySupport
 
@@ -43,25 +48,15 @@ module Rubernetes
       # services.nodeports: 1 ("capture the life of a service").  Object
       # events and the periodic resync keep status.used converging.
       #
-      # And resource_quota_monitor.go registers only UpdateFunc and DeleteFunc
-      # for the counted kinds: an ADD was already charged by admission, and
-      # recomputing on it from an informer cache that has not caught up
-      # overwrote the charge with the old total -- the same LoadBalancer
-      # slipped past services.nodeports: 1 again in round 61.  Adds of the
-      # quota itself, updates, deletes and the periodic resync still recompute.
-      # Upstream's quota controller replenishes on deletions and on a Pod
-      # reaching a terminal phase (replenishment_controller.go); creations
-      # are admission's business, and a recompute triggered by a creation
-      # can run in the window between admission charging the quota and the
-      # object being stored, list one object too few and erase the charge
-      # ("ResourceQuota ... capture the life of a service" then admitted a
-      # LoadBalancer past the limit).  Quota events count only when the spec
-      # changed.
+      # resource_quota_monitor.go enqueues deletes and updates that may
+      # replenish quota. Admission charges adds and increases before the
+      # object reaches the store, so those events can skip a recompute.
       def skip_event?(object, old_object, type = nil)
         kind = Support.kind(object)
         if kind != "ResourceQuota"
           return false if %i[delete sync].include?(type)
           return false if kind == "Pod" && became_terminal?(object, old_object)
+          return false if kind == "Service" && service_releases_quota?(object, old_object)
 
           return true
         end
@@ -83,32 +78,68 @@ module Rubernetes
         namespace = Support.namespace(resource_quota)
         hard = Support.value(Support.spec(resource_quota), "hard", {})
         hard = {} unless hard.is_a?(Hash)
-        objects ||= counted_objects(adapter, namespace, hard)
+        custom_limits = objects ? [] : custom_count_limits(hard.keys)
+        custom = custom_counts(adapter, namespace, custom_limits)
+        objects ||= counted_objects(adapter, namespace, hard.except(*custom.keys))
         # A quota only counts the objects its scopes select
         # (pkg/quota/v1/evaluator/core/pods.go + scope matching): a quota
         # scoped to Terminating must ignore a Pod with no
         # activeDeadlineSeconds, and so on.  spec.scopes and spec.scopeSelector
         # were accepted by the API server and read by nobody, so every quota
         # counted every Pod.
-        objects = objects_in_scope(resource_quota, objects)
-        pod_totals = pod_quota_totals(objects)
-        used = hard.each_with_object({}) do |(resource_name, limit), result|
+        groups = objects_in_scope(resource_quota, objects).group_by { |object| Support.kind(object) }
+        pods = groups.fetch("Pod", [])
+        pod_totals = nil
+        used = hard.to_h do |resource_name, limit|
           name = resource_name.to_s
-          result[name] = if pod_quota_resource?(name)
-                           # Quantity.Add over the Pods' PodUsageFunc, canonical.
-                           pod_totals.fetch(name) { Rubernetes::Schema::Quantity.parse("0") }.to_s
-                         else
-                           format_quota_quantity(usage_for(name, objects), limit, name)
-                         end
+          amount = if custom.key?(name)
+                     custom.fetch(name).to_s
+                   elsif name == "count/pods"
+                     pods.length.to_s
+                   elsif pod_quota_resource?(name)
+                     pod_totals ||= pod_quota_totals(pods)
+                     pod_totals.fetch(name, 0).to_s
+                   else
+                     format_quota_quantity(usage_for(name, groups), limit, name)
+                   end
+          [name, amount]
         end
-        status = Support.deep_copy(Support.status(resource_quota))
-        status["hard"] = Support.deep_copy(hard)
-        status["used"] = used
-        events = []
-        result_for(resource_quota, [], status: status, events: events)
+        status = Support.status(resource_quota).merge("hard" => hard, "used" => used)
+        result_for(resource_quota, [], status: status, requeue_after: (CUSTOM_USAGE_SYNC_SECONDS unless custom_limits.empty?))
       end
 
       private
+
+      def service_releases_quota?(service, old_service)
+        return false unless old_service
+
+        current = ServiceQuotaUsage.usage(Support.spec(service))
+        ServiceQuotaUsage.usage(Support.spec(old_service)).any? { |name, amount| amount > current.fetch(name) }
+      end
+
+      def custom_count_limits(limits)
+        limits.map(&:to_s).filter_map do |name|
+          next unless name.start_with?("count/")
+
+          resource, group = name.delete_prefix("count/").split(".", 2)
+          builtin = resource_kind(resource)
+          name if group && (builtin.nil? || ResourceDescriptor.parse(builtin).group != group)
+        end
+      end
+
+      # The controller's static informers do not watch instance events for
+      # each CRD. Refresh just the quotas for custom collections periodically
+      # so deletions release their count.
+      def custom_counts(adapter, namespace, selected)
+        return {} if selected.empty? || !adapter.is_a?(StoreAdapter)
+
+        adapter.custom_resource_descriptors.each_with_object({}) do |descriptor, counts|
+          name = "count/#{descriptor.resource}.#{descriptor.group}"
+          next unless descriptor.namespaced? && selected.include?(name)
+
+          counts[name] = Array(adapter.custom_resource_items(descriptor, namespace: namespace)).length
+        end
+      end
 
       # The objects a quota counts, read FRESH from the API when the adapter
       # can: status.used is written with the resourceVersion the quota was
@@ -142,15 +173,22 @@ module Rubernetes
       end
 
       def resource_kind(resource)
-        KIND_TO_RESOURCE.find { |_kind, value| value == resource }&.first
+        RESOURCE_TO_KIND[resource]
       end
 
-      # Scopes apply to Pods only; other kinds are unaffected by them.
+      # The VolumeAttributesClass scope matches claims. The remaining scopes
+      # here apply to Pods.
       def objects_in_scope(resource_quota, objects)
         spec = Support.spec(resource_quota)
         scopes = Array(Support.value(spec, "scopes", [])).map(&:to_s)
         selector_terms = Array(Support.value(Support.value(spec, "scopeSelector", {}) || {}, "matchExpressions", []))
         return objects if scopes.empty? && selector_terms.empty?
+
+        if PVCQuotaUsage.scopes_include_class?(scopes, selector_terms)
+          return Array(objects).select do |object|
+            Support.kind(object) == "PersistentVolumeClaim" && PVCQuotaUsage.matches?(object, scopes, selector_terms)
+          end
+        end
 
         Array(objects).select do |object|
           next true unless Support.kind(object) == "Pod"
@@ -231,40 +269,25 @@ module Rubernetes
       POD_COMPUTE_RESOURCES = %w[cpu memory ephemeral-storage].freeze
       STORAGE_CLASS_SUFFIX = ".storageclass.storage.k8s.io/"
 
-      def usage_for(resource_name, objects)
-        name = resource_name.to_s
+      def usage_for(name, groups)
         case name
-        when *POD_COMPUTE_RESOURCES
-          pod_usage(objects, "requests", name)
         when "requests.storage"
-          Array(objects).select { |object| Support.kind(object) == "PersistentVolumeClaim" }
-            .sum { |claim| claim_storage_request(claim) }
-        when /\A(requests|limits)\.(.+)\z/
-          pod_usage(objects, Regexp.last_match(1), Regexp.last_match(2))
+          groups.fetch("PersistentVolumeClaim", []).sum { |claim| PVCQuotaUsage.storage_request(claim) || 0 }
         when /\A(.+)#{Regexp.escape(STORAGE_CLASS_SUFFIX)}(persistentvolumeclaims|requests\.storage)\z/o
-          # <class>.storageclass.storage.k8s.io/...: the claims of that class.
-          storage_class = Regexp.last_match(1)
-          claims = Array(objects).select do |object|
-            Support.kind(object) == "PersistentVolumeClaim" &&
-              Support.value(Support.spec(object), "storageClassName", nil).to_s == storage_class
+          storage_class, metric = Regexp.last_match.captures
+          groups.fetch("PersistentVolumeClaim", []).sum do |claim|
+            next 0 unless Support.value(Support.spec(claim), "storageClassName").to_s == storage_class
+
+            metric == "persistentvolumeclaims" ? 1 : (PVCQuotaUsage.storage_request(claim) || 0)
           end
-          Regexp.last_match(2) == "persistentvolumeclaims" ? claims.length : claims.sum { |claim| claim_storage_request(claim) }
-        when "services.nodeports"
-          # services.go Usage: "node port quota charging is based on service
-          # ports" -- every port of a NodePort Service, and of a LoadBalancer
-          # that allocates them, whether or not a nodePort has been assigned
-          # yet.  Counting assigned ones charged a brand-new Service zero.
-          Array(objects).select { |object| Support.kind(object) == "Service" }
-            .sum { |service| service_node_port_usage(Support.spec(service)) }
-        when "services.loadbalancers"
-          Array(objects).count do |object|
-            Support.kind(object) == "Service" && Support.value(Support.spec(object), "type", "") == "LoadBalancer"
-          end
+        when "services.nodeports", "services.loadbalancers"
+          groups.fetch("Service", []).sum { |service| ServiceQuotaUsage.usage(Support.spec(service)).fetch(name) }
         when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/o
-          Array(objects).select { |object| Support.kind(object) == "ResourceClaim" }
-            .sum { |claim| Rubernetes::ClaimQuotaUsage.usage(claim)[name] }
+          groups.fetch("ResourceClaim", []).sum { |claim| Rubernetes::ClaimQuotaUsage.usage(claim)[name] }
         else
-          countable_resource(name, objects)
+          resource = name.delete_prefix("count/").partition(".").first
+          kind = resource.include?("/") ? resource.split("/").last : resource_kind(resource)
+          groups.fetch(kind, []).length
         end
       end
 
@@ -276,67 +299,12 @@ module Rubernetes
         name.match?(/\A(requests|limits)\./) || name.start_with?(Rubernetes::ResourceHelpers::HUGE_PAGES_PREFIX)
       end
 
-      def pod_quota_totals(objects)
+      def pod_quota_totals(pods)
         now = @clock ? @clock.call : Time.now.utc
         now = Time.at(now) if now.is_a?(Numeric)
-        Array(objects).select { |object| Support.kind(object) == "Pod" }.each_with_object({}) do |pod, totals|
-          Rubernetes::PodQuotaUsage.quantities(Support.deep_copy(pod), now: now).each do |name, quantity|
-            totals[name] =
-              totals.key?(name) ? Rubernetes::Schema::Quantity.new(totals[name].value + quantity.value, totals[name].format) : quantity
-          end
+        pods.each_with_object({}) do |pod, totals|
+          ResourceHelpers.add!(totals, PodQuotaUsage.quantities(pod, now: now))
         end
-      end
-
-      def pod_usage(objects, metric, resource)
-        Array(objects).select { |object| Support.kind(object) == "Pod" && !terminal_pod?(object) }
-          .sum { |pod| pod_resource_usage(pod, metric, resource) }
-      end
-
-      def claim_storage_request(claim)
-        quantity_to_base(Support.value(Support.value(Support.spec(claim), "resources", {}), "requests", {}).fetch("storage", 0))
-      end
-
-      def countable_resource(resource_name, objects)
-        normalized = resource_name.delete_prefix("count/")
-        normalized = normalized.split(".").first
-        kind = if normalized.include?("/")
-                 normalized.split("/").last
-               else
-                 KIND_TO_RESOURCE.find { |_candidate, resource| resource == normalized }&.first
-               end
-        return 0 unless kind
-
-        Array(objects).count { |object| Support.kind(object) == kind }
-      end
-
-      def pod_resource_usage(pod, metric, resource)
-        containers = Array(Support.value(Support.spec(pod), "containers", []))
-        init_containers = Array(Support.value(Support.spec(pod), "initContainers", []))
-        container_total = containers.sum { |container| quantity_for_container(container, metric, resource) }
-        init_max = init_containers.map { |container| quantity_for_container(container, metric, resource) }.max.to_f
-        [container_total, init_max].max
-      end
-
-      def quantity_for_container(container, metric, resource)
-        resources = Support.value(container, "resources", {})
-        quantities = Support.value(resources, metric, {})
-        quantity_to_base(Support.value(quantities, resource, 0))
-      end
-
-      # services.go Usage: a NodePort Service charges one per service port, and
-      # so does a LoadBalancer unless allocateLoadBalancerNodePorts is false.
-      def service_node_port_usage(service_spec)
-        ports = Array(Support.value(service_spec, "ports", [])).length
-        case Support.value(service_spec, "type", "").to_s
-        when "NodePort" then ports
-        when "LoadBalancer"
-          Support.value(service_spec, "allocateLoadBalancerNodePorts", nil) == false ? 0 : ports
-        else 0
-        end
-      end
-
-      def terminal_pod?(pod)
-        %w[Succeeded Failed].include?(Support.value(Support.status(pod), "phase", "").to_s)
       end
 
       # Quantity.String(): the canonical form, which is also what the API
