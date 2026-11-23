@@ -247,6 +247,30 @@ class NodeOpsEvictionTest < Minitest::Test
                  "Container c was using 2Gi, request is 0, has larger consumption of ephemeral-storage. ", @killed.first[2]
   end
 
+  def test_disk_requests_are_compared_without_rounding_to_whole_bytes
+    @pods = [pod("within", priority: 0), pod("over", priority: 10)]
+    @pods[0].dig("spec", "containers", 0, "resources")["requests"] = {"ephemeral-storage" => "1"}
+    @pods[1].dig("spec", "containers", 0, "resources")["requests"] = {"ephemeral-storage" => "500m"}
+    stats = [pod_stats("within", rootfs: 1), pod_stats("over", rootfs: 1)].to_h { |entry| [entry.dig("podRef", "uid"), entry] }
+
+    assert_equal [@pods[1], @pods[0]], manager.rank("nodefs.available", @pods, stats)
+  end
+
+  def test_runtime_layout_changes_node_filesystem_inode_ranking
+    rootfs = pod("rootfs")
+    volume = pod("volume", volumes: [{"name" => "scratch", "emptyDir" => {}}])
+    stats = [pod_stats("rootfs", rootfs: 2), pod_stats("volume", volumes: [{"name" => "scratch", "inodesUsed" => 8}])]
+      .to_h { |entry| [entry.dig("podRef", "uid"), entry] }
+
+    shared_runtime = manager(dedicated_image_fs: true, split_container_fs: false)
+    split_runtime = manager(dedicated_image_fs: true, split_container_fs: true)
+
+    assert_equal [volume, rootfs], shared_runtime.rank("nodefs.inodesFree", [rootfs, volume], stats)
+    assert_equal [rootfs, volume], shared_runtime.rank("containerfs.inodesFree", [volume, rootfs], stats)
+    assert_equal [rootfs, volume], split_runtime.rank("nodefs.inodesFree", [volume, rootfs], stats)
+    assert_equal [rootfs, volume], split_runtime.rank("containerfs.inodesFree", [volume, rootfs], stats)
+  end
+
   def test_pid_pressure_ranks_by_priority_then_process_count
     @summary.node = {"rlimit" => {"maxpid" => 1000, "curproc" => 990}}
     thresholds = EM.parse_threshold_config(hard: {"pid.available" => "20"}, allocatable_config: [])
