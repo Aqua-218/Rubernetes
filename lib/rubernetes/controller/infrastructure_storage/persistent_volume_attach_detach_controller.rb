@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "attach_detach_volumes"
+
 module Rubernetes
   module Controller
     # pkg/controller/volume/attachdetach (v1.36.2) for CSI volumes: the
@@ -19,41 +21,60 @@ module Rubernetes
       PVC = ResourceDescriptor.parse("PersistentVolumeClaim")
       POD = ResourceDescriptor.parse("Pod")
       NODE = ResourceDescriptor.parse("Node")
-      CSI_DRIVER = ResourceDescriptor.parse({"apiVersion" => "storage.k8s.io/v1", "kind" => "CSIDriver"},
-                                            resource: "csidrivers", scope: :cluster)
-      VOLUME_ATTACHMENT = ResourceDescriptor.parse({"apiVersion" => "storage.k8s.io/v1", "kind" => "VolumeAttachment"},
-                                                   resource: "volumeattachments", scope: :cluster)
+      CSI_DRIVER = ResourceDescriptor.parse("CSIDriver")
+      VOLUME_ATTACHMENT = ResourceDescriptor.parse("VolumeAttachment")
       MANAGED_ANNOTATION = "volumes.kubernetes.io/controller-managed-attach-detach"
-      CSI_PLUGIN = "kubernetes.io/csi"
       MAX_WAIT_FOR_UNMOUNT = 6 * 60
       RECHECK_SECONDS = 1.0
+      ATTACH_WRITE_GRACE_SECONDS = 10
 
       def initialize(*, clock: -> { Time.now.utc }, **)
         super(*, **)
         @clock = clock
         @detach_requested = {}
+        @attach_writes = {}
         @reported = {}
         @mutex = Mutex.new
       end
 
-      def plan(volume, store: nil, pods: nil, claims: nil, volume_attachments: nil, attachments: nil, nodes: nil, csi_drivers: nil,
+      def plan(resource, store: nil, pods: nil, claims: nil, volume_attachments: nil, attachments: nil, nodes: nil, csi_drivers: nil,
                volumes: nil, **_options)
-        adapter = adapter_for_storage(store)
+        adapter = adapter_for(store)
         pods ||= list_storage_objects(adapter, POD, namespace: :all)
         claims ||= list_storage_objects(adapter, PVC, namespace: :all)
         volume_attachments ||= attachments || list_storage_objects(adapter, VOLUME_ATTACHMENT, namespace: :all)
         nodes ||= list_storage_objects(adapter, NODE, namespace: :all)
         csi_drivers ||= list_storage_objects(adapter, CSI_DRIVER, namespace: :all)
+        volumes ||= list_storage_objects(adapter, PV, namespace: :all)
+        target_node = reconciliation_node(resource)
+        volumes = Array(volumes) + [resource] if target_node.nil?
+        sources = AttachDetachVolumes.new(volumes, claims)
+        selected = sources.persistent(resource) if target_node.nil?
+        desired, definitions = desired_pods_by_volume(pods, nodes, sources, csi_drivers)
+        actual = volume_attachments.group_by { |attachment| sources.attachment_volume(attachment)&.identity }
         context = {operations: [], events: [], requeue: nil, detaching: []}
-        csi = Support.value(Support.spec(volume), "csi", nil)
-        if csi.is_a?(Hash) && attach_required?(csi, csi_drivers)
-          desired = desired_pods_by_node(volume, pods, claims, nodes)
-          existing = Array(volume_attachments).select { |attachment| attachment_for_volume?(attachment, volume) }
-          detach_unneeded(volume, csi, existing, desired, nodes, context)
-          attach_desired(volume, csi, existing, desired, context)
+        if target_node
+          identities = desired.keys.select { |identity| desired[identity].key?(target_node) }
+          identities |= actual.keys.compact.select { |identity| actual[identity].any? { |attachment| attachment_node(attachment) == target_node } }
+          identities.each do |identity|
+            existing = actual.fetch(identity, [])
+            volume = definitions.dig(identity, target_node) || sources.attachment_volume(existing.first)
+            plan_volume(volume, existing, desired.fetch(identity, {}), nodes, context, target_node: target_node)
+          end
+        elsif selected&.identity && attach_required?(selected.csi, csi_drivers)
+          plan_volume(selected, actual.fetch(selected.identity, []), desired.fetch(selected.identity, {}), nodes, context)
         end
-        report_attached_volumes(volume, adapter, volumes, volume_attachments, nodes, csi_drivers, context)
-        result_for(volume, context)
+        reported_nodes = target_node ? nodes.select { |node| Support.name(node) == target_node } : nodes
+        report_attached_volumes(sources, volume_attachments, reported_nodes, csi_drivers, context)
+        result_for(resource, context)
+      end
+
+      def orphan_cleanup? = true
+
+      def plan_orphans(key, store: nil)
+        return if key.to_s.include?("/")
+
+        plan({"kind" => "Node", "metadata" => {"name" => key.to_s}}, store: store)
       end
 
       # The A/D controller's plugins that can serve a volume (fc, iscsi and
@@ -74,8 +95,7 @@ module Rubernetes
       # running Pods need) and actual (attached VolumeAttachments) state of
       # the world by plugin (attachdetach_controller_total_volumes).
       def self.state_counts(pods:, claims:, volumes:, nodes:, attachments:, drivers:)
-        pv_by_name = Array(volumes).to_h { |pv| [Support.name(pv), pv] }
-        claim_by_key = Array(claims).to_h { |claim| [[Support.namespace(claim).to_s, Support.name(claim).to_s], claim] }
+        sources = AttachDetachVolumes.new(volumes, claims)
         planner = allocate
         managed = planner.send(:managed_nodes, nodes).to_h { |node| [Support.name(node), true] }
         in_use = Hash.new(0)
@@ -85,53 +105,57 @@ module Rubernetes
           next if node_name.empty?
 
           Array(Support.value(Support.spec(pod), "volumes", [])).each do |entry|
-            source = volume_source(pod, entry, claim_by_key, pv_by_name)
-            plugin = attachable_plugin(source)
+            volume = sources.pod_volume(pod, entry)
+            plugin = attachable_plugin(volume&.spec)
             next unless plugin
 
             in_use[[node_name, plugin]] += 1
             next unless managed[node_name] && !planner.send(:terminated?, pod)
-            next if source["csi"].is_a?(Hash) && !planner.send(:attach_required?, source["csi"], drivers)
+            next if volume.csi.is_a?(Hash) && (!volume.source || !planner.send(:attach_required?, volume.csi, drivers))
 
-            desired[[node_name, source]] = plugin
+            desired[[node_name, volume.identity || volume.spec]] = plugin
           end
         end
         totals = Hash.new(0)
         desired.each_value { |plugin| totals[[plugin, "desired_state_of_world"]] += 1 }
+        actual = {}
         Array(attachments).each do |attachment|
           next unless Support.value(Support.status(attachment), "attached", false) == true
 
-          pv = pv_by_name[Support.value(Support.value(Support.spec(attachment), "source", {}) || {}, "persistentVolumeName", nil).to_s]
-          plugin = attachable_plugin(pv && Support.spec(pv))
-          totals[[plugin, "actual_state_of_world"]] += 1 if plugin
+          volume = sources.attachment_volume(attachment)
+          plugin = attachable_plugin(volume&.spec)
+          next unless plugin
+
+          actual[[planner.send(:attachment_node, attachment), volume.identity || volume.spec]] = plugin
         end
+        actual.each_value { |plugin| totals[[plugin, "actual_state_of_world"]] += 1 }
         {in_use: in_use, totals: totals}
-      end
-
-      # CreateVolumeSpec: a claim (or a generic ephemeral volume's claim)
-      # resolves to its bound PersistentVolume's spec, anything else is the
-      # Pod's own volume source.
-      def self.volume_source(pod, entry, claim_by_key, pv_by_name)
-        claim_name = Support.value(Support.value(entry, "persistentVolumeClaim", {}) || {}, "claimName", nil)
-        claim_name ||= "#{Support.name(pod)}-#{Support.value(entry, "name", "")}" if Support.value(entry, "ephemeral", nil).is_a?(Hash)
-        return entry unless claim_name
-
-        claim = claim_by_key[[Support.namespace(pod).to_s, claim_name.to_s]]
-        pv = claim && pv_by_name[Support.value(Support.spec(claim), "volumeName", "").to_s]
-        pv && Support.spec(pv)
       end
 
       private
 
+      def reconciliation_node(resource)
+        case Support.kind(resource)
+        when "Node" then Support.name(resource)
+        when "VolumeAttachment" then attachment_node(resource)
+        end
+      end
+
+      def plan_volume(volume, existing, desired, nodes, context, target_node: nil)
+        detaching = target_node ? existing.select { |attachment| attachment_node(attachment) == target_node } : existing
+        detach_unneeded(volume, detaching, desired, nodes, context)
+        attach_desired(volume, existing, desired, context, target_node: target_node)
+      end
+
       # Detach: attachments no scheduled Pod needs any more, once the node
       # reports the volume unmounted or maxWaitForUnmountDuration has passed.
-      def detach_unneeded(volume, csi, existing, desired, nodes, context)
-        unique_name = "#{CSI_PLUGIN}/#{csi["driver"]}^#{csi["volumeHandle"]}"
+      def detach_unneeded(volume, existing, desired, nodes, context)
+        unique_name = volume.unique_name
         existing.each do |attachment|
           node_name = attachment_node(attachment)
           next if desired.key?(node_name) || deleting?(attachment)
 
-          key = [Support.name(volume), node_name]
+          key = [volume.identity, node_name]
           if volume_in_use?(nodes, node_name, unique_name)
             first = @mutex.synchronize { @detach_requested[key] ||= @clock.call }
             if @clock.call - first < MAX_WAIT_FOR_UNMOUNT
@@ -157,26 +181,55 @@ module Rubernetes
 
       # Attach: desired nodes without an attachment get a VolumeAttachment,
       # unless the volume is attached elsewhere and cannot be multi-attached.
-      def attach_desired(volume, csi, existing, desired, context)
-        attached_nodes = existing.reject { |attachment| deleting?(attachment) }.map { |attachment| attachment_node(attachment) }
+      def attach_desired(volume, existing, desired, context, target_node:)
+        attached_nodes = existing.map { |attachment| attachment_node(attachment) }
+        multi_attach = multi_attach_allowed?(volume)
+        first_node = desired.keys.min
         desired.sort.each do |node_name, node_pods|
-          @mutex.synchronize { @detach_requested.delete([Support.name(volume), node_name]) }
-          attachment = existing.find { |candidate| attachment_node(candidate) == node_name && !deleting?(candidate) }
+          next if target_node && target_node != node_name
+
+          @mutex.synchronize { @detach_requested.delete([volume.identity, node_name]) }
+          attachment = existing.find { |candidate| attachment_node(candidate) == node_name }
           if attachment
-            report_attach_result(volume, attachment, node_pods, context)
+            report_attach_result(volume, attachment, node_pods, context) unless deleting?(attachment)
             next
           end
 
           others = attached_nodes - [node_name]
-          if !others.empty? && !multi_attach_allowed?(volume)
+          if !others.empty? && !multi_attach
             report_multi_attach_error(volume, node_pods, desired.slice(*others).values.flatten, context)
             next
           end
+          # Until a first attachment exists, separately queued nodes must
+          # agree on which node may win an exclusive volume.
+          next if !multi_attach && node_name != first_node
 
-          context[:operations] << operation_create(volume_attachment(volume, csi["driver"].to_s, csi["volumeHandle"].to_s, node_name),
-                                                   descriptor: VOLUME_ATTACHMENT, reason: "AttachVolume.Attach")
-          attached_nodes << node_name
+          operation = operation_create(volume_attachment(volume, node_name), descriptor: VOLUME_ATTACHMENT, reason: "AttachVolume.Attach")
+          operation = track_exclusive_write(volume, operation) if target_node && !multi_attach
           context[:requeue] = RECHECK_SECONDS
+          next unless operation
+
+          context[:operations] << operation
+          attached_nodes << node_name
+        end
+      end
+
+      # Two nodes can plan from different snapshots while the first create is
+      # still reaching the store. Reserve an exclusive write until it fails or
+      # the shared informer has had time to observe it.
+      def track_exclusive_write(volume, operation)
+        identity = volume.identity
+        written = @clock.call
+        reserved = @mutex.synchronize do
+          @attach_writes.delete_if { |_key, time| written - time >= ATTACH_WRITE_GRACE_SECONDS }
+          next false if @attach_writes.key?(identity)
+
+          @attach_writes[identity] = written
+        end
+        return unless reserved
+
+        operation.observed do |succeeded, _error|
+          @mutex.synchronize { @attach_writes.delete(identity) if !succeeded && @attach_writes[identity].equal?(written) }
         end
       end
 
@@ -187,20 +240,16 @@ module Rubernetes
       # cannot begin a new mount of it.  The list is the whole node's, from
       # every VolumeAttachment, so any volume's sync repairs it; only a node
       # whose list changes is patched.
-      def report_attached_volumes(volume, adapter, volumes, attachments, nodes, drivers, context)
-        volumes ||= list_storage_objects(adapter, PV, namespace: :all)
-        by_name = Array(volumes).to_h { |pv| [Support.name(pv), pv] }
-        by_name[Support.name(volume)] = volume
+      def report_attached_volumes(sources, attachments, nodes, drivers, context)
         desired = Hash.new { |hash, key| hash[key] = [] }
         Array(attachments).each do |attachment|
           next if deleting?(attachment) || context[:detaching].include?(Support.name(attachment))
           next unless Support.value(Support.status(attachment), "attached", false) == true
 
-          pv = by_name[Support.value(Support.value(Support.spec(attachment), "source", {}) || {}, "persistentVolumeName", nil).to_s]
-          csi = pv && Support.value(Support.spec(pv), "csi", nil)
-          next unless csi.is_a?(Hash) && attach_required?(csi, drivers)
+          volume = sources.attachment_volume(attachment)
+          next unless volume&.identity && attach_required?(volume.csi, drivers)
 
-          desired[attachment_node(attachment)] << {"name" => "#{CSI_PLUGIN}/#{csi["driver"]}^#{csi["volumeHandle"]}", "devicePath" => ""}
+          desired[attachment_node(attachment)] << {"name" => volume.unique_name, "devicePath" => ""}
         end
         managed_nodes(nodes).each do |node|
           wanted = desired.fetch(Support.name(node), []).uniq { |entry| entry["name"] }.sort_by { |entry| entry["name"] }
@@ -228,23 +277,25 @@ module Rubernetes
         Support.value(Support.spec(driver), "attachRequired", true) != false
       end
 
-      # desiredStateOfWorldPopulator: node => Pods using the volume.
-      def desired_pods_by_node(volume, pods, claims, nodes)
-        managed = managed_nodes(nodes).map { |node| Support.name(node) }
-        claim_keys = Array(claims).select { |claim| Support.value(Support.spec(claim), "volumeName", "").to_s == Support.name(volume) }
-          .map { |claim| [Support.namespace(claim).to_s, Support.name(claim).to_s] }
-        result = Hash.new { |hash, key| hash[key] = [] }
+      def desired_pods_by_volume(pods, nodes, sources, drivers)
+        managed = managed_nodes(nodes).to_set { |node| Support.name(node) }
+        definitions = {}
+        desired = {}
         Array(pods).each do |pod|
           node_name = Support.value(Support.spec(pod), "nodeName", "").to_s
-          next if node_name.empty? || !managed.include?(node_name) || terminated?(pod)
+          next if !managed.include?(node_name) || terminated?(pod)
 
-          uses = Array(Support.value(Support.spec(pod), "volumes", [])).any? do |entry|
-            claim_name = Support.value(Support.value(entry, "persistentVolumeClaim", {}) || {}, "claimName", nil)
-            claim_name && claim_keys.include?([Support.namespace(pod).to_s, claim_name.to_s])
+          Array(Support.spec(pod)["volumes"]).each do |entry|
+            volume = sources.pod_volume(pod, entry)
+            next unless volume&.source && volume.identity && attach_required?(volume.csi, drivers)
+
+            identity = volume.identity
+            (definitions[identity] ||= {})[node_name] ||= volume
+            consumers = ((desired[identity] ||= {})[node_name] ||= [])
+            consumers << pod unless consumers.last.equal?(pod)
           end
-          result[node_name] << pod if uses
         end
-        result.to_h
+        [desired, definitions]
       end
 
       # Nodes whose kubelet leaves attach/detach to this controller.
@@ -267,7 +318,7 @@ module Rubernetes
 
       # util.IsMultiAttachAllowed: an RWX/ROX volume, or one with no modes.
       def multi_attach_allowed?(volume)
-        modes = Array(Support.value(Support.spec(volume), "accessModes", [])).map(&:to_s)
+        modes = Array(volume.spec["accessModes"]).map(&:to_s)
         modes.empty? || modes.intersect?(%w[ReadWriteMany ReadOnlyMany])
       end
 
@@ -276,19 +327,15 @@ module Rubernetes
         node && Array(Support.value(Support.status(node), "volumesInUse", [])).map(&:to_s).include?(unique_name)
       end
 
-      def attachment_for_volume?(attachment, volume)
-        source = Support.value(Support.spec(attachment), "source", {}) || {}
-        Support.value(source, "persistentVolumeName", nil).to_s == Support.name(volume)
-      end
-
       def attachment_node(attachment) = Support.value(Support.spec(attachment), "nodeName", "").to_s
       def deleting?(attachment) = !Support.value(Support.metadata(attachment), "deletionTimestamp", nil).nil?
 
       # getAttachmentName.
-      def volume_attachment(volume, driver, handle, node_name)
+      def volume_attachment(volume, node_name)
+        driver, handle = volume.identity
         {"apiVersion" => "storage.k8s.io/v1", "kind" => "VolumeAttachment",
          "metadata" => {"name" => "csi-#{Digest::SHA256.hexdigest("#{handle}#{driver}#{node_name}")}"},
-         "spec" => {"attacher" => driver, "nodeName" => node_name, "source" => {"persistentVolumeName" => Support.name(volume)}}}
+         "spec" => {"attacher" => driver, "nodeName" => node_name, "source" => volume.source}}
       end
 
       # operation_generator: SuccessfulAttachVolume / FailedAttachVolume on
@@ -296,9 +343,9 @@ module Rubernetes
       def report_attach_result(volume, attachment, pods, context)
         status = Support.status(attachment)
         outcome = if Support.value(status, "attached", false) == true
-                    ["Normal", "SuccessfulAttachVolume", "AttachVolume.Attach succeeded for volume #{Support.name(volume).dump} "]
+                    ["Normal", "SuccessfulAttachVolume", "AttachVolume.Attach succeeded for volume #{volume.name.dump} "]
                   elsif (error = Support.value(Support.value(status, "attachError", {}) || {}, "message", nil))
-                    ["Warning", "FailedAttachVolume", "AttachVolume.Attach failed for volume #{Support.name(volume).dump} : #{error}"]
+                    ["Warning", "FailedAttachVolume", "AttachVolume.Attach failed for volume #{volume.name.dump} : #{error}"]
                   end
         unless outcome
           context[:requeue] = RECHECK_SECONDS
@@ -319,7 +366,7 @@ module Rubernetes
       end
 
       def report_multi_attach_error(volume, pods, blocking, context)
-        prefix = "Multi-Attach error for volume #{Support.name(volume).dump}"
+        prefix = "Multi-Attach error for volume #{volume.name.dump}"
         if blocking.empty?
           pods.each do |pod|
             context[:events] << pod_event(pod, "Warning", "FailedAttachVolume",
