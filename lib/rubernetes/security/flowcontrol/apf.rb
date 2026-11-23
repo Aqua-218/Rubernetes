@@ -4,6 +4,7 @@ require "digest"
 require "monitor"
 
 require_relative "../identity"
+require_relative "configuration"
 
 module Rubernetes
   module Security
@@ -12,6 +13,7 @@ module Rubernetes
         # reason: apiserver_flowcontrol_rejected_requests_total's label
         # (queue-full, time-out, concurrency-limit).
         attr_reader :retry_after, :reason
+        attr_accessor :response_headers
 
         def initialize(message, retry_after: 1, reason: "queue-full")
           @retry_after = retry_after
@@ -877,9 +879,12 @@ module Rubernetes
       # moves between its lower and upper bounds every ten seconds as the
       # levels lend and borrow seats according to their measured demand.
       class Controller
+        include Configuration
+
         DEFAULT_QUEUES = 64
         DEFAULT_HAND_SIZE = 8
         DEFAULT_QUEUE_LENGTH_LIMIT = 50
+        DEFAULT_NOMINAL_SHARES = 30
         DEFAULT_REQUEST_WAIT_LIMIT = 60.0
         DEFAULT_READ_SEATS = 400
         DEFAULT_MUTATING_SEATS = 200
@@ -894,11 +899,13 @@ module Rubernetes
         EPSILON = 0.0000001
 
         Ticket = Struct.new(:priority_level, :flow_schema, :queue_index, :seats, :queued_seconds, :exempt, :dispatched_at, :mutating, :watch,
-                            :request, :forget_watch, :work, keyword_init: true)
+                            :request, :forget_watch, :work, :queue_set, :response_headers, keyword_init: true)
 
         # One PriorityLevelConfiguration: its seat bounds, queue set, seat
         # demand statistics and the metrics callbacks the queue set makes.
         class PriorityLevel
+          include PriorityLevelConfiguration
+
           attr_reader :name, :queues, :hand_size, :queue_length_limit, :wait_limit, :exempt, :reject, :queue_set,
                       :nominal_seats, :min_seats, :max_seats, :current_seats, :seat_demand_integrator, :seat_demand_stats,
                       :nominal_shares, :lendable_percent, :borrowing_limit_percent, :estimator_max_seats
@@ -909,20 +916,7 @@ module Rubernetes
             @controller = controller
             @name = name
             @clock = clock
-            @exempt = spec["type"] == "Exempt"
-            limited = spec["limited"] || spec["exempt"] || {}
-            @nominal_shares = @exempt ? (limited["nominalConcurrencyShares"] || 0).to_i : (limited["nominalConcurrencyShares"] || 30).to_i
-            @lendable_percent = limited["lendablePercent"]
-            @borrowing_limit_percent = @exempt ? nil : limited["borrowingLimitPercent"]
-            queuing = limited.dig("limitResponse", "queuing")
-            @reject = !@exempt && limited.dig("limitResponse", "type") == "Reject"
-            @queues = if @exempt
-                        -1
-                      else
-                        (queuing ? (queuing["queues"] || DEFAULT_QUEUES).to_i : 0)
-                      end
-            @hand_size = queuing ? (queuing["handSize"] || DEFAULT_HAND_SIZE).to_i : 1
-            @queue_length_limit = queuing ? (queuing["queueLengthLimit"] || DEFAULT_QUEUE_LENGTH_LIMIT).to_i : 0
+            load_spec(spec)
             @wait_limit = DEFAULT_REQUEST_WAIT_LIMIT
             @nominal_seats = @min_seats = @max_seats = @current_seats = 0
             @estimator_max_seats = 0
@@ -1048,24 +1042,15 @@ module Rubernetes
                        read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS, object_stats: nil, after: nil,
                        borrowing_adjustment_seconds: BORROWING_ADJUSTMENT_SECONDS)
           @clock = clock
-          @mutex = Mutex.new
+          @mutex = Monitor.new
           @ratios = {}
           @read_write = nil
           @metrics = nil
           @fair_frac = 0.0
           @targets = {}
-          @flow_schemas = Array(flow_schemas).sort_by do |schema|
-            [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s]
-          end
           @server_seats = read_seats + mutating_seats
           @borrowing_adjustment_seconds = borrowing_adjustment_seconds
-          @priority_levels = Array(priority_level_configurations).each_with_object({}) do |plc, levels|
-            name = plc.dig("metadata", "name").to_s
-            levels[name] = PriorityLevel.new(controller: self, name: name, spec: plc["spec"] || {}, clock: clock, after: after)
-          end
-          @share_sum = @priority_levels.values.reject(&:exempt).sum(&:nominal_shares).to_f
-          @priority_levels.each_value { |level| level.configure_bounds!(@server_seats, @share_sum) }
-          @nominal_sum = @priority_levels.values.sum(&:nominal_seats)
+          initialize_configuration(flow_schemas, priority_level_configurations, after)
           @watch_tracker = WatchTracker.new
           @object_counts = ObjectCountTracker.new(source: object_stats, clock: clock)
           @work_estimator = WorkEstimator.new(object_counts: @object_counts, watch_tracker: @watch_tracker,
@@ -1075,7 +1060,6 @@ module Rubernetes
                                                         {"flow_schema" => schema.to_s, "priority_level" => level_name.to_s})
                                               })
           @borrowing_thread = nil
-          adjust_borrowing!
         end
 
         def long_running?(attributes)
@@ -1136,8 +1120,11 @@ module Rubernetes
             }
           end
           @read_write = %w[waiting executing].product(%w[readOnly mutating]).to_h do |phase, kind|
-            [[phase, kind], registry.ratio_gauge("apiserver_flowcontrol_read_vs_write_current_requests", {"phase" => phase, "request_kind" => kind},
-                                                 denominator: [phase == "waiting" ? max_waiting : max_executing, 1].max, clock: @clock)]
+            denominator = [phase == "waiting" ? max_waiting : max_executing, 1].max
+            gauge = registry.ratio_gauge("apiserver_flowcontrol_read_vs_write_current_requests", {"phase" => phase, "request_kind" => kind},
+                                         denominator: denominator, clock: @clock)
+            gauge.set_denominator(denominator)
+            [[phase, kind], gauge]
           end
         end
 
@@ -1148,14 +1135,12 @@ module Rubernetes
         # work estimator reads.
         def enter(attributes, request: nil)
           start_borrowing_adjustments
-          schema = classify(attributes)
+          schema, level, level_uid = reserve_flow(attributes)
           raise RejectedError.new("no FlowSchema matches the request", retry_after: 1) if schema.nil?
 
-          level_name = schema.dig("spec", "priorityLevelConfiguration", "name")
-          level = @priority_levels[level_name]
-          raise RejectedError.new("priority level #{level_name} is not configured", retry_after: 1) if level.nil?
-
+          level_name = level.name
           schema_name = schema.dig("metadata", "name").to_s
+          headers = Configuration.response_headers(schema.dig("metadata", "uid"), level_uid)
           labels = {"flow_schema" => schema_name, "priority_level" => level_name.to_s}
           query = query_of(request)
           if long_running?(attributes)
@@ -1164,7 +1149,7 @@ module Rubernetes
             forget = @watch_tracker.register(attributes, field_selector: query["fieldSelector"] || attributes.field_selector)
             record_dispatch(labels, 0.0)
             return Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: nil, seats: 0, queued_seconds: 0.0, exempt: true,
-                              forget_watch: forget, watch: attributes.verb.to_s == "watch")
+                              forget_watch: forget, watch: attributes.verb.to_s == "watch", response_headers: headers)
           end
           work = @work_estimator.estimate(attributes, query, schema_name, level_name)
           observe("apiserver_flowcontrol_work_estimated_seats", work.max_seats, labels)
@@ -1185,7 +1170,8 @@ module Rubernetes
                                                                                                                 reason: "time-out")
               end
             end
-          rescue RejectedError
+          rescue RejectedError => error
+            error.response_headers = headers
             observe("apiserver_flowcontrol_request_wait_duration_seconds", 0.0, labels.merge("execute" => "false"))
             raise
           end
@@ -1194,7 +1180,10 @@ module Rubernetes
           note_read_write("executing", mutating, 1)
           Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: queue_request.queue&.index, seats: work.max_seats,
                      queued_seconds: waited, exempt: level.exempt, dispatched_at: Process.clock_gettime(Process::CLOCK_MONOTONIC),
-                     mutating: mutating, watch: attributes.verb.to_s == "watch", request: queue_request, work: work)
+                     mutating: mutating, watch: attributes.verb.to_s == "watch", request: queue_request, work: work,
+                     queue_set: level.queue_set, response_headers: headers)
+        ensure
+          release_reservation(level)
         end
 
         def release(ticket)
@@ -1209,7 +1198,8 @@ module Rubernetes
             observe("apiserver_flowcontrol_request_execution_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - ticket.dispatched_at,
                     labels.merge("type" => ticket.watch ? "watch" : "regular"))
           end
-          @priority_levels[ticket.priority_level]&.queue_set&.finish(ticket.request)
+          ticket.queue_set.finish(ticket.request)
+          reap_idle_level(ticket.priority_level)
         end
 
         def stats
