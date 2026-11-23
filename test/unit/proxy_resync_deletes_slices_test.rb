@@ -57,6 +57,17 @@ class ProxyResyncToleratesUnusableSlicesTest < Minitest::Test
                                      "ports" => [{"name" => "http", "port" => 80, "targetPort" => 8080, "protocol" => "TCP"}]}})
   end
 
+  def test_a_service_reentering_its_watch_reuses_unchanged_endpoint_slices
+    service = @proxy.service("apps/web")
+    @proxy.apply_endpoint_slice(slice("web-1"))
+    @proxy.delete_service(service)
+
+    assert_nil @proxy.compiled_service("apps/web")
+    @proxy.apply_service(service)
+
+    assert_equal ["10.244.0.5"], @proxy.compiled_service("apps/web").rules.first.backends.map(&:address)
+  end
+
   def test_a_resync_with_an_unusable_slice_still_applies_the_others_and_prunes_vanished_keys
     @proxy.apply_endpoint_slice(slice("web-old", ip: "10.244.0.9"))
     source = Source.new([slice("web-1"), slice("custom", service: nil)])
