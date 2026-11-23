@@ -45,6 +45,24 @@ class ProbeIPv6HostsTest < Minitest::Test
     assert_equal ["http://[fd00::2]:8080/healthz", "http://10.0.0.5:8080/healthz", "http://[fd00::9]:8081/"], http.uris
   end
 
+  def test_runtime_probes_receive_the_resolved_endpoint
+    calls = {}
+    runtime = Object.new
+    %i[http_get tcp_socket grpc_check].each do |operation|
+      runtime.define_singleton_method(operation) do |_id, definition, **_options|
+        calls[operation] = definition.values_at("host", "port")
+        {"success" => true}
+      end
+    end
+    manager = Rubernetes::Node::ProbeManager.new(runtime: runtime)
+    context = {"host" => "fd00::9", "ports" => [{"name" => "web", "containerPort" => 8080}]}
+    manager.check("http", {"httpGet" => {"host" => "", "scheme" => "", "port" => "web"}}, context: context)
+    manager.check("tcp", {"tcpSocket" => {"host" => "10.0.0.3", "port" => "8081"}}, context: context)
+    manager.check("grpc", {"grpc" => {"port" => 8082}}, context: context)
+
+    assert_equal({http_get: ["fd00::9", 8080], tcp_socket: ["10.0.0.3", 8081], grpc_check: ["fd00::9", 8082]}, calls)
+  end
+
   def test_tcp_connect_uses_the_address_family_of_the_host
     server = begin
       TCPServer.new("::1", 0)
@@ -73,8 +91,6 @@ class ProbeIPv6HostsTest < Minitest::Test
     port = server.addr[1]
     seen = nil
     thread = Thread.new do
-      # The connector first checks connectivity (a connection that sends
-      # nothing), then sends the request on a second one.
       loop do
         client = server.accept
         data = if client.wait_readable(1.0)
