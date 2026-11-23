@@ -34,7 +34,6 @@ module Rubernetes
 
         def dump(object, canonical: false, max_bytes: Codec::DEFAULT_MAX_BYTES, max_depth: Codec::DEFAULT_MAX_DEPTH)
           normalized = Codec.normalize_value(object, max_depth: max_depth)
-          Codec.validate_depth!(normalized, max_depth)
           normalized = sort_keys(normalized, max_depth: max_depth) if canonical
           output = Psych.dump(normalized, line_width: -1)
           Codec.validate_output!(output, max_bytes)
