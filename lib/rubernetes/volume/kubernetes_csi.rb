@@ -91,10 +91,10 @@ module Rubernetes
       end
 
       def create_volume(spec, token: nil)
-        handle = Types.key(spec, "volumeHandle").to_s
-        raise CSIError.new("CSI volume for driver #{@driver} has no volumeHandle", operation: "CreateVolume") if handle.empty?
+        handle = Types.key(spec, "volumeHandle")
+        raise CSIError.new("CSI volume for driver #{@driver} has no volumeHandle", operation: "CreateVolume") unless Types.present?(handle)
 
-        {"volumeId" => handle, "volumeContext" => Types.deep_copy(Types.key(spec, "volumeAttributes", {}) || {}),
+        {"volumeId" => Types.csi_handle(handle), "volumeContext" => Types.deep_copy(Types.key(spec, "volumeAttributes", {}) || {}),
          "ephemeral" => ephemeral?(spec)}
       end
 
@@ -200,7 +200,7 @@ module Rubernetes
         return :none if fs_type.to_s.empty?
         return :kubelet if ephemeral
 
-        (Array(access_modes).map(&:to_s) & %w[ReadWriteOnce]).empty? ? :none : :kubelet
+        (Array(access_modes).map(&:to_s) & %w[ReadWriteOnce ReadWriteOncePod]).empty? ? :none : :kubelet
       end
 
       def unpublish_node(id, target, token: nil)
