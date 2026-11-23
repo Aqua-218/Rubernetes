@@ -69,6 +69,7 @@ module Rubernetes
               FileUtils.mkdir_p(workspace.work, mode: 0o700)
               File.chmod(0o700, workspace.work)
             end
+            root_stat = File.lstat(workspace.root)
             @mutex.synchronize do
               @workspaces[workspace.identity] = {
                 "workspace" => workspace,
@@ -77,7 +78,8 @@ module Rubernetes
                 "runtime_lower" => runtime_lower,
                 "namespace" => nil,
                 "mounted" => false,
-                "mount_identity" => nil
+                "mount_identity" => nil,
+                "root_identity" => {"device" => root_stat.dev, "inode" => root_stat.ino}.freeze
               }
             end
             workspace
@@ -152,7 +154,8 @@ module Rubernetes
                 "runtime_lower" => metadata["runtime_lower"] || metadata[:runtime_lower],
                 "namespace" => namespace_handle,
                 "mounted" => expected_mounted != false,
-                "mount_identity" => mount_identity&.freeze
+                "mount_identity" => mount_identity&.freeze,
+                "root_identity" => metadata["root_identity"] || metadata[:root_identity]
               }
             end
             workspace
@@ -168,7 +171,8 @@ module Rubernetes
                     "mounted" => metadata.fetch("mounted"),
                     "lowerdirs" => metadata.fetch("lowerdirs"),
                     "runtime_lower" => metadata.fetch("runtime_lower"),
-                    "mount_identity" => metadata.fetch("mount_identity")
+                    "mount_identity" => metadata.fetch("mount_identity"),
+                    "root_identity" => metadata.fetch("root_identity")
                   }
                 )
               end.freeze
