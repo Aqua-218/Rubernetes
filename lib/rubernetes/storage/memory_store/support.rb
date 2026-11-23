@@ -1,31 +1,48 @@
 # frozen_string_literal: true
 
+require_relative "../cbor_record"
+
 module Rubernetes
   module Storage
     # Copying, freezing and canonical encoding shared by the store's value objects.
     module MemoryStoreSupport
       module_function
 
-      def deep_dup(value, seen = nil)
+      COPYING = Object.new.freeze
+      private_constant :COPYING
+
+      # In checked mode a back edge is a cycle, while a second reference
+      # to a finished subtree reuses its copy. Ordinary deep_dup also
+      # supports cyclic graphs, as required by non-storage callers.
+      def deep_dup(value, seen = nil, check_keys: false)
         case value
-        when Hash
-          return seen.fetch(value) if seen&.key?(value)
+        when Hash, Array
+          seen ||= {}.compare_by_identity
+          if seen.key?(value)
+            previous = seen[value]
+            raise ArgumentError, "API object must not contain cycles" if previous.equal?(COPYING)
 
-          duplicate = {}
-          (seen ||= {}.compare_by_identity)[value] = duplicate
-          value.each { |key, child| duplicate[deep_dup(key, seen)] = deep_dup(child, seen) }
-          duplicate
-        when Array
-          return seen.fetch(value) if seen&.key?(value)
+            return previous
+          end
+          copy = case value
+                 when CBORRecord::Unreadable then CBORRecord::Unreadable.new(value.encoded, value.key)
+                 when CBORRecord::Object then CBORRecord::Object.new
+                 when Hash then {}
+                 else []
+                 end
+          seen[value] = check_keys ? COPYING : copy
+          if value.is_a?(Hash)
+            value.each do |key, child|
+              raise ArgumentError, "API object Hash keys must be Strings" if check_keys && !key.is_a?(String)
 
-          duplicate = []
-          (seen ||= {}.compare_by_identity)[value] = duplicate
-          value.each { |child| duplicate << deep_dup(child, seen) }
-          duplicate
-        when String
-          value.dup
-        else
-          value
+              copy[check_keys ? key : deep_dup(key, seen)] = deep_dup(child, seen, check_keys: check_keys)
+            end
+          else
+            value.each { |child| copy << deep_dup(child, seen, check_keys: check_keys) }
+          end
+          seen[value] = copy
+        when String then value.dup
+        else value
         end
       end
 
@@ -75,6 +92,7 @@ module Rubernetes
 
       def canonical(value)
         case value
+        when CBORRecord::Unreadable then {"encoded" => value.encoded}
         when Hash
           value.keys.map(&:to_s).zip(value.values).sort_by(&:first).to_h do |key, child|
             [key, canonical(child)]
@@ -105,6 +123,8 @@ module Rubernetes
       # of sorted intermediate hashes, which cost more than the hashing did.
       def canonical_json(value, out = +"")
         case value
+        when CBORRecord::Unreadable
+          canonical_json(canonical(value), out)
         when Hash
           by_key = {}
           value.each { |key, child| by_key[key.to_s] = child }
