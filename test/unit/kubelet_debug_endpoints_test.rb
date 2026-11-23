@@ -14,8 +14,10 @@ class KubeletDebugEndpointsTest < Minitest::Test
 
   def test_configz_reports_defaults_overlaid_with_the_agent_configuration
     config = {"streaming" => {"host" => "127.0.0.1", "port" => 21_250},
+              "healthz_port" => 21_248, "healthz_bind_address" => "127.0.0.2", "read_only_port" => 21_255,
               "sync" => {"period_seconds" => 5}, "lease" => {"duration_seconds" => 40}, "max_pods" => 64,
-              "static_pod_path" => "/etc/kubernetes/manifests", "cgroup_root" => "/sys/fs/cgroup",
+              "static_pod_path" => "/etc/kubernetes/manifests", "file_check_frequency_seconds" => 30, "cgroup_root" => "/sys/fs/cgroup",
+              "kubelet_cgroups" => "/system.slice/rubernetes-agent.service", "system_cgroups" => "/system.slice",
               "system_reserved" => {"cpu" => "500m", "memory" => "512Mi"}, "cpu_manager" => {"policy" => "static"},
               "eviction" => {"hard" => {"memory.available" => "200Mi"}}, "image_gc" => {"high_threshold_percent" => 90},
               "shutdown" => {"grace_period" => "30s", "grace_period_critical_pods" => "10s"},
@@ -23,7 +25,11 @@ class KubeletDebugEndpointsTest < Minitest::Test
               "feature_gates" => {"KubeletCrashLoopBackOffMax" => true}}
     kubelet = Configz.build(config, cluster_dns: ["10.240.0.1"], cluster_domain: "cluster.local").fetch("kubeletconfig")
 
+    assert_equal "30s", kubelet["fileCheckFrequency"]
+    assert_equal %w[kubelet.config.k8s.io/v1beta1 KubeletConfiguration], kubelet.values_at("apiVersion", "kind")
     assert_equal 21_250, kubelet["port"]
+    assert_equal [21_248, "127.0.0.2"], kubelet.values_at("healthzPort", "healthzBindAddress")
+    assert_equal 21_255, kubelet["readOnlyPort"]
     assert_equal "5s", kubelet["syncFrequency"]
     assert_equal 64, kubelet["maxPods"]
     assert_equal "/etc/kubernetes/manifests", kubelet["staticPodPath"]
@@ -40,6 +46,7 @@ class KubeletDebugEndpointsTest < Minitest::Test
     assert_equal "AlwaysAllow", kubelet.dig("authorization", "mode"), "no authorizer configured: say so"
     assert_equal true, kubelet.dig("authentication", "anonymous", "enabled")
     assert_equal "cgroupfs", kubelet["cgroupDriver"]
+    assert_equal %w[/system.slice/rubernetes-agent.service /system.slice], kubelet.values_at("kubeletCgroups", "systemCgroups")
     assert_equal "", kubelet["containerRuntimeEndpoint"], "no CRI configured"
 
     secured = Configz.build({"streaming" => {"tls" => {"cert_file" => "/pki/k.crt", "key_file" => "/pki/k.key", "client_ca_file" => "/pki/ca.crt"},
@@ -54,6 +61,14 @@ class KubeletDebugEndpointsTest < Minitest::Test
                   "imagefs.available" => "15%", "imagefs.inodesFree" => "5%"}, secured["evictionHard"])
   end
 
+  def test_configz_reports_configured_cri_log_retention
+    cri = {"enabled" => true, "endpoint" => "/run/containerd.sock", "container_log_max_size" => "128Ki", "container_log_max_files" => 2}
+    fields = %w[containerLogMaxSize containerLogMaxFiles]
+
+    assert_equal ["128Ki", 2], Configz.build({"cri" => cri}).fetch("kubeletconfig").values_at(*fields)
+    assert_equal ["10Mi", 5], Configz.build({"cri" => cri.merge("enabled" => false)}).fetch("kubeletconfig").values_at(*fields)
+  end
+
   def test_durations_render_like_metav1_duration
     assert_equal "1m0s", Configz.duration(60)
     assert_equal "1h0m0s", Configz.duration(3600)
@@ -62,6 +77,19 @@ class KubeletDebugEndpointsTest < Minitest::Test
     assert_equal "2m30s", Configz.duration("2m30s")
     assert_equal "100ms", Configz.duration(0.1)
     assert_equal "0s", Configz.duration(0)
+  end
+
+  def test_configz_reports_the_restart_maximum_only_when_its_gate_is_enabled
+    gates = {"ReduceDefaultCrashLoopBackOffDecay" => true}
+
+    kubelet = Configz.build({"feature_gates" => gates}).fetch("kubeletconfig")
+
+    assert_equal gates, kubelet["featureGates"]
+    assert_equal({"maxContainerRestartPeriod" => "5m0s"}, kubelet["crashLoopBackOff"])
+
+    disabled = Configz.build({"feature_gates" => gates.merge("KubeletCrashLoopBackOffMax" => false)}).fetch("kubeletconfig")
+
+    assert_equal({}, disabled["crashLoopBackOff"])
   end
 
   class Lifecycle
