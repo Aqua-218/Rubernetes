@@ -21,12 +21,7 @@ EXECUTABLES = %w[
   rubernetes-proxy
 ].freeze
 def source_inventory
-  paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-    next false unless regular_source_file?(path)
-
-    relative = path.delete_prefix("#{ROOT}/")
-    !M0SourceInventory.excluded?(relative)
-  end.sort
+  paths = M0SourceInventory.source_files(ROOT) { |path| regular_source_file?(path) }
   entries = paths.map do |path|
     {
       "path" => path.delete_prefix("#{ROOT}/"),
