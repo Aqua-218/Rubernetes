@@ -9,11 +9,10 @@
 # binds the reply to the generated ID, the question, and the upstream
 # address, and rejects oversized or looping traffic before decoding it.
 require "socket"
-require "securerandom"
 
 require_relative "errors"
 require_relative "support"
-require_relative "dns_wire"
+require_relative "dns64"
 
 module Rubernetes
   module Network
@@ -128,6 +127,7 @@ module Rubernetes
         MAX_TCP_MESSAGE_BYTES = Resolver::MAX_PACKET_BYTES
         TCP_IDLE_TIMEOUT = 5.0
         MAX_CNAME_DEPTH = 8
+        IPV6_BIND_TIMEOUT = 3.0
 
         COUNTERS = %w[queries udp_queries tcp_queries authoritative nxdomain nodata forwarded refused
                       formerr notimp truncated oversized loops upstream_errors].freeze
@@ -135,7 +135,7 @@ module Rubernetes
         attr_reader :resolver, :port, :bind_addresses, :udp_sockets, :tcp_servers
 
         def initialize(resolver:, bind_addresses: ["127.0.0.1"], port: DEFAULT_PORT, udp: true, tcp: true,
-                       upstream_client: nil, logger: nil, max_packet_bytes: Resolver::MAX_PACKET_BYTES)
+                       upstream_client: nil, logger: nil, max_packet_bytes: Resolver::MAX_PACKET_BYTES, nat64_prefix: nil)
           @resolver = resolver
           @bind_addresses = Array(bind_addresses).map { |address| Support.ip(address, name: "DNS bind address").to_s }.uniq.freeze
           raise ArgumentError, "at least one DNS bind address is required" if @bind_addresses.empty?
@@ -146,6 +146,7 @@ module Rubernetes
           raise ArgumentError, "DNS server requires UDP or TCP" unless @udp || @tcp
 
           @upstream_client = upstream_client
+          @dns64 = DNS64.new(nat64_prefix) if nat64_prefix
           @logger = logger
           @max_packet_bytes = Support.integer(max_packet_bytes, "DNS packet size", min: 512, max: 65_535)
           @udp_sockets = [].freeze
@@ -195,22 +196,22 @@ module Rubernetes
                 family = IPAddr.new(address).ipv6? ? Socket::AF_INET6 : Socket::AF_INET
                 if @udp
                   socket = UDPSocket.new(family)
+                  udp_sockets << socket
                   socket.setsockopt(Socket::IPPROTO_IPV6, Socket::IPV6_V6ONLY, 1) if family == Socket::AF_INET6
-                  socket.bind(address, bound_port)
+                  bind_when_ready(family) { socket.bind(address, bound_port) }
                   # Port 0 picks one ephemeral port; every other listener must
                   # share it so a single nameserver entry reaches all of them.
                   bound_port = socket.local_address.ip_port if bound_port.zero?
-                  udp_sockets << socket
                 end
                 next unless @tcp
 
                 server = Socket.new(family, Socket::SOCK_STREAM, 0)
+                tcp_servers << server
                 server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, 1)
                 server.setsockopt(Socket::IPPROTO_IPV6, Socket::IPV6_V6ONLY, 1) if family == Socket::AF_INET6
-                server.bind(Socket.sockaddr_in(bound_port, address))
+                bind_when_ready(family) { server.bind(Socket.sockaddr_in(bound_port, address)) }
                 server.listen(128)
                 bound_port = server.local_address.ip_port if bound_port.zero?
-                tcp_servers << server
               end
             rescue SystemCallError
               (udp_sockets + tcp_servers).each do |socket|
@@ -242,14 +243,13 @@ module Rubernetes
             rescue StandardError
               nil
             end
-            @threads
-          end
-          threads.each { |thread| thread.join(TCP_IDLE_TIMEOUT + 1) }
-          @mutex.synchronize do
+            previous_threads = @threads
             @udp_sockets = [].freeze
             @tcp_servers = [].freeze
             @threads = [].freeze
+            previous_threads
           end
+          threads.each { |thread| thread.join(TCP_IDLE_TIMEOUT + 1) }
           true
         end
 
@@ -300,7 +300,7 @@ module Rubernetes
 
           response = if @resolver.authoritative?(question.name)
                        increment("authoritative")
-                       authoritative_response(message, question)
+                       authoritative_response(message, question, transport: transport)
                      else
                        forward_response(message, question, client: client, transport: transport)
                      end
@@ -313,7 +313,21 @@ module Rubernetes
 
         private
 
-        def authoritative_response(message, question)
+        def bind_when_ready(family)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + IPV6_BIND_TIMEOUT
+          begin
+            yield
+          rescue Errno::EADDRNOTAVAIL
+            # A newly assigned Pod bridge address is tentative while Linux
+            # performs IPv6 duplicate address detection.
+            raise if family != Socket::AF_INET6 || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+            sleep(0.05)
+            retry
+          end
+        end
+
+        def authoritative_response(message, question, transport:)
           response = base_response(message, aa: true)
           response.edns = edns_reply(message)
           type_name = Wire::TYPE_NAMES[question.type]
@@ -343,7 +357,7 @@ module Rubernetes
             return response
           end
           response.answers.concat(answers)
-          chase_cname(response, question, answers)
+          chase_cname(response, question, answers, transport: transport)
           response
         end
 
@@ -351,7 +365,7 @@ module Rubernetes
         # asked for something else, restart the lookup at the canonical name
         # and append.  Cluster-internal targets are answered here; external
         # ExternalName targets are fetched through the upstream (RA=1).
-        def chase_cname(response, question, answers)
+        def chase_cname(response, question, answers, transport:)
           return if question.type == Wire::TYPE_CNAME
 
           depth = 0
@@ -369,7 +383,7 @@ module Rubernetes
               response.answers.concat(records)
               current = records.find { |record| record.type == Wire::TYPE_CNAME }
             else
-              upstream = upstream_records(target, question.type)
+              upstream = upstream_records(target, question.type, response, transport: transport)
               response.ra = true if upstream
               response.answers.concat(upstream || [])
               current = nil
@@ -377,16 +391,13 @@ module Rubernetes
           end
         end
 
-        def upstream_records(name, type)
+        def upstream_records(name, type, request, transport:)
           return nil unless upstream_available?
 
-          query = Wire::Message.new(id: SecureRandom.random_number(65_536), rd: true,
-                                    questions: [Wire::Question.new(name: name, type: type, klass: Wire::CLASS_IN)],
-                                    edns: Wire::EDNS.new(udp_payload: Wire::EDNS_UDP_PAYLOAD, extended_rcode: 0, version: 0, flags: 0, options: []))
-          reply = @resolver.forward(Wire.encode(query))
-          decoded = Wire.decode(reply)
+          question = Wire::Question.new(name: name, type: type, klass: Wire::CLASS_IN)
+          reply = upstream_query(request, question, tcp: transport == :tcp)
           increment("forwarded")
-          decoded.answers
+          reply.answers
         rescue DNSUpstreamError, Wire::FormatError => error
           increment("upstream_errors")
           log(:warn, "dns.upstream_error", name: name, error: error.message)
@@ -403,19 +414,21 @@ module Rubernetes
             response.rcode = Wire::RCODE_REFUSED
             return response
           end
-          outbound = Wire::Message.new(id: message.id, rd: true, questions: [question],
-                                       edns: Wire::EDNS.new(udp_payload: Wire::EDNS_UDP_PAYLOAD, extended_rcode: 0, version: 0,
-                                                            flags: 0, options: []))
           begin
-            reply_bytes = @resolver.forward(Wire.encode(outbound), client_address: client && client[0], tcp: transport == :tcp)
-            reply = Wire.decode(reply_bytes)
+            reply = upstream_query(message, question, client_address: client && client[0], tcp: transport == :tcp)
             increment("forwarded")
             response.ra = true
             response.rcode = reply.rcode
             response.answers.concat(reply.answers)
             response.authority.concat(reply.authority)
             response.additional.concat(reply.additional)
-            response.tc = false
+            response.tc = reply.tc
+            extended_rcode = reply.edns&.extended_rcode.to_i
+            if response.edns
+              response.edns.extended_rcode = extended_rcode
+            elsif extended_rcode.positive?
+              response.rcode = Wire::RCODE_SERVFAIL
+            end
           rescue DNSUpstreamError, Wire::FormatError => error
             increment("upstream_errors")
             log(:warn, "dns.upstream_error", name: question.name, error: error.message)
@@ -424,19 +437,35 @@ module Rubernetes
           response
         end
 
+        def upstream_query(request, question, **)
+          outbound = Wire::Message.new(id: request.id, rd: true, cd: request.cd, questions: [question],
+                                       edns: new_edns(request))
+          reply = send_upstream(outbound, **)
+          return reply unless @dns64
+
+          @dns64.synthesize(outbound, reply) { |ipv4_query| send_upstream(ipv4_query, **) }
+        end
+
+        def send_upstream(query, **)
+          Wire.decode(@resolver.forward(Wire.encode(query), **))
+        end
+
         def upstream_available?
           @resolver.upstreams.any? || !@upstream_client.nil?
         end
 
         def base_response(message, aa:)
-          Wire::Message.new(id: message.id, qr: true, opcode: message.opcode, aa: aa, rd: message.rd, ra: false,
+          Wire::Message.new(id: message.id, qr: true, opcode: message.opcode, aa: aa, rd: message.rd, ra: false, cd: message.cd,
                             questions: message.questions.dup)
         end
 
         def edns_reply(message)
-          return nil unless message.edns
+          new_edns(message) if message.edns
+        end
 
-          Wire::EDNS.new(udp_payload: Wire::EDNS_UDP_PAYLOAD, extended_rcode: 0, version: 0, flags: 0, options: [])
+        def new_edns(message)
+          flags = message.edns&.flags.to_i & Wire::EDNS_FLAG_DO
+          Wire::EDNS.new(udp_payload: Wire::EDNS_UDP_PAYLOAD, extended_rcode: 0, version: 0, flags: flags, options: [])
         end
 
         def wire_record(record)
@@ -513,6 +542,11 @@ module Rubernetes
 
             begin
               socket.send(response, 0, sender[3], sender[1])
+            rescue IOError
+              # stop can close this listener after the response was built.
+              raise unless socket.closed?
+
+              break
             rescue SystemCallError => error
               log(:warn, "dns.udp_send_failed", client: client, error: error.message)
             end
