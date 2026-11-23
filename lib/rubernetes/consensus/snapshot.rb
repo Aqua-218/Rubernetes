@@ -3,6 +3,7 @@
 require "digest"
 require "fileutils"
 require "securerandom"
+require "stringio"
 
 require_relative "errors"
 require_relative "canonical"
@@ -41,23 +42,38 @@ module Rubernetes
         FileUtils.mkdir_p(@directory)
       end
 
-      def self.encode(state:, index:, term:, membership:, created_at:)
+      def self.encode(...)
+        output = StringIO.new(+"".b)
+        write_to(output, ...)
+        output.string
+      end
+
+      # Disk and wire snapshots share the framing. Write the state directly
+      # so persisting a large capture needs no second full-size buffer.
+      def self.write_to(output, state:, index:, term:, membership:, created_at:)
         raise ArgumentError, "state must be a binary String" unless state.is_a?(String)
 
+        state = state.b.freeze
+        state_sha256 = Digest::SHA256.hexdigest(state)
         header = Canonical.encode(
           "index" => index,
           "term" => term,
           "membership" => membership,
           "state_bytes" => state.bytesize,
-          "state_sha256" => Digest::SHA256.hexdigest(state),
+          "state_sha256" => state_sha256,
           "created_at" => created_at
         )
         raise ArgumentError, "snapshot header exceeds #{MAX_HEADER_BYTES} bytes" if header.bytesize > MAX_HEADER_BYTES
 
         # header is UTF-8 JSON (may hold non-ASCII membership metadata); everything
         # after this line is bytes.
-        body = header.b << state.b
-        MAGIC.b + [header.bytesize].pack("N") + body + Digest::SHA256.digest(body)
+        digest = Digest::SHA256.new.update(header).update(state).digest
+        prefix = MAGIC + [header.bytesize].pack("N") + header.b
+        [prefix, state, digest].each do |part|
+          written = output.write(part)
+          raise ShortWrite, "snapshot short write: #{written} of #{part.bytesize} bytes" unless written == part.bytesize
+        end
+        state_sha256
       end
 
       def self.decode(bytes, path: nil)
@@ -118,15 +134,13 @@ module Rubernetes
 
       # Write a snapshot atomically and return its metadata.
       def write(state:, index:, term:, membership:, created_at: Time.now.utc.iso8601(6))
-        bytes = self.class.encode(state: state, index: index, term: term, membership: membership, created_at: created_at)
         final = path_for(index, term)
         temporary = File.join(@directory, ".#{File.basename(final)}.tmp-#{Process.pid}-#{SecureRandom.hex(6)}")
         begin
-          File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
-            written = file.syswrite(bytes)
-            raise ShortWrite, "snapshot short write: #{written} of #{bytes.bytesize} bytes" unless written == bytes.bytesize
-
+          digest, size = File.open(temporary, File::WRONLY | File::CREAT | File::EXCL | File::BINARY, 0o600) do |file|
+            digest = self.class.write_to(file, state: state, index: index, term: term, membership: membership, created_at: created_at)
             file.fsync if @fsync
+            [digest, file.pos]
           end
           File.rename(temporary, final)
           sync_directory
@@ -141,7 +155,7 @@ module Rubernetes
           raise
         end
         Metadata.new(index: index, term: term, membership: Canonical.normalize(membership),
-                     state_sha256: Digest::SHA256.hexdigest(state), created_at: created_at, path: final, bytes: bytes.bytesize)
+                     state_sha256: digest, created_at: created_at, path: final, bytes: size)
       end
 
       # Install snapshot bytes received from a leader; verified before rename.
@@ -152,15 +166,25 @@ module Rubernetes
       end
 
       def read(path)
-        raise SnapshotCorruption.new("snapshot exceeds #{MAX_SNAPSHOT_BYTES} bytes", path: path) if File.size(path) > MAX_SNAPSHOT_BYTES
+        bytes = File.open(path, "rb") do |file|
+          raise SnapshotCorruption.new("snapshot exceeds #{MAX_SNAPSHOT_BYTES} bytes", path: path) if file.size > MAX_SNAPSHOT_BYTES
 
-        self.class.decode(File.binread(path), path: path)
+          file.read
+        end
+        snapshot = self.class.decode(bytes, path: path)
+        block_given? ? yield(snapshot, bytes) : snapshot
       end
 
       def read_bytes(path)
-        bytes = File.binread(path)
-        self.class.decode(bytes, path: path)
-        bytes
+        read(path) { |_snapshot, bytes| bytes }
+      end
+
+      # The InstallSnapshot metadata and chunks must come from the same file.
+      def latest_for_transfer
+        path = candidates.last
+        return unless path
+
+        read(path) { |snapshot, bytes| {index: snapshot.index, term: snapshot.term, bytes: bytes.freeze} }
       end
 
       # Latest valid snapshot.  Corrupted candidates are reported, never
