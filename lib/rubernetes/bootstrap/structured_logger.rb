@@ -33,6 +33,10 @@ module Rubernetes
         end
       end
 
+      def flush
+        @lock.synchronize { @io.flush }
+      end
+
       def log(level, event, **fields)
         severity = LEVELS.fetch(level) { raise ArgumentError, "unknown log level #{level.inspect}" }
         return false if severity < @threshold
