@@ -36,8 +36,8 @@ class GCExpeditedSweepTest < Minitest::Test
              "metadata" => {"name" => "rc", "namespace" => "ns", "uid" => "u",
                             "deletionTimestamp" => "2026-09-23T00:00:00Z", "finalizers" => ["foregroundDeletion"]}}
 
-    assert subject.send(:foreground_owner?, owner)
-    subject.send(:expedite_sweeps!) if subject.send(:foreground_owner?, owner)
+    assert subject.send(:deletion_finalizer, owner)
+    subject.send(:expedite_sweeps!) if subject.send(:deletion_finalizer, owner)
 
     refute_nil subject.instance_variable_get(:@expedite_until)
   end
