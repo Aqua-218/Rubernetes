@@ -10,6 +10,79 @@ require "rubernetes/security/cel"
 class APICRDAggregationTest < Minitest::Test
   include CRDAggregationHarness
 
+  def test_definition_cleanup_waits_for_instance_finalizers_and_remains_served_after_restart
+    definitions = "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"
+    definition = "#{definitions}/widgets.example.com"
+    widgets = "/apis/example.com/v1/namespaces/default/widgets"
+    hold = "example.com/hold"
+    object = {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "held", "finalizers" => [hold]}, "spec" => {"size" => 2}}
+    headers = {"content-type" => "application/merge-patch+json"}
+    descriptor = crd
+    descriptor["metadata"]["finalizers"] = [hold]
+
+    assert_equal 201, call("POST", definitions, body: descriptor).status
+    assert_equal 201, call("POST", widgets, body: object).status
+    assert_equal 201, call("POST", widgets, body: object.merge("metadata" => {"name" => "free"})).status
+    assert_equal 200, call("DELETE", "#{definition}?dryRun=All").status
+    assert_nil call("GET", "#{widgets}/held").body.dig("metadata", "deletionTimestamp")
+
+    assert_equal 200, call("DELETE", definition).status
+    assert(wait_until { call("GET", "#{widgets}/held").body.dig("metadata", "deletionTimestamp") && call("GET", "#{widgets}/free").status == 404 })
+    held = call("GET", "#{widgets}/held").body.fetch("metadata")
+
+    assert_equal [hold], held["finalizers"]
+    assert_equal 0, held["deletionGracePeriodSeconds"]
+    assert_equal 2, held["generation"]
+
+    # Rebuild discovery and the API handler over the same durable objects.
+    @registry = build_registry
+    @openapi = API::OpenAPIRepository.new
+    @crd_manager = API::CRD::Manager.new(registry: @registry, store: @store, openapi: @openapi, cel: Rubernetes::Security::CEL::Evaluator.new)
+    @crd_manager.bootstrap!([call("GET", definition).body])
+    @server = API::Server.new(registry: @registry, store: @store, crd_manager: @crd_manager, openapi_repository: @openapi)
+
+    assert_equal 200, call("GET", "#{widgets}/held").status
+    other = object.merge("metadata" => {"name" => "new"})
+
+    assert_equal 403, call("POST", widgets, body: other).status
+    apply_headers = {"content-type" => "application/apply-patch+yaml"}
+
+    assert_equal 403, call("PATCH", "#{widgets}/new?fieldManager=test", body: other, headers: apply_headers).status
+
+    assert_equal 200, call("PATCH", "#{widgets}/held", body: {"metadata" => {"finalizers" => []}}, headers: headers).status
+    assert(wait_until { call("GET", definition).body.dig("metadata", "finalizers") == [hold] })
+    assert_equal 404, call("GET", "#{widgets}/held").status
+    condition = call("GET", definition).body.dig("status", "conditions").find { |item| item["type"] == "Terminating" }
+
+    assert_equal %w[False InstanceDeletionCompleted], condition.values_at("status", "reason")
+    assert_equal [hold], call("DELETE", definition).body.dig("metadata", "finalizers")
+    assert_equal 200, call("PATCH", definition, body: {"metadata" => {"finalizers" => []}}, headers: headers).status
+    wait_for_crd_removal("widgets.example.com")
+  end
+
+  def test_custom_writes_require_a_scoped_url_and_a_resource_version_on_replace
+    path = "/apis/example.com/v1/namespaces/default/widgets"
+    member = "#{path}/one"
+    widget = {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "one"}, "spec" => {"size" => 1}}
+
+    assert_equal 201, call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd).status
+    assert_equal 404, call("POST", "/apis/example.com/v1/widgets", body: widget).status
+    assert_equal 201, call("POST", member, body: widget).status
+    named = widget.merge("metadata" => {"name" => "two"})
+
+    assert_equal "two", call("POST", member, body: named).body.dig("metadata", "name")
+    assert_equal 422, call("POST", member, body: widget.except("metadata")).status
+    replacement = widget.merge("spec" => {"size" => 2})
+    refused = call("PUT", member, body: replacement)
+
+    assert_equal 422, refused.status
+    assert_equal "metadata.resourceVersion", refused.body.dig("details", "causes", 0, "field")
+    current = call("GET", member).body
+
+    assert_equal 1, current.dig("spec", "size")
+    assert_equal 200, call("PUT", member, body: current.merge("spec" => {"size" => 2})).status
+  end
+
   def test_crd_lifecycle_serves_validates_defaults_prunes_and_cleans_up
     call("POST", "/api/v1/namespaces", body: {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
     created = call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd)
