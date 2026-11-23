@@ -43,7 +43,8 @@ module Rubernetes
           # PodLevelResourceManagers (alpha, off) needs PodLevelResources (on).
           pod_level = @feature_gates["PodLevelResourceManagers"] == true && @feature_gates.fetch("PodLevelResources", true) != false
           ContainerManager.new(state_directory: kubelet_root, reservation: @reservation, cpu: cpu, memory: memory, topology: topology,
-                               reserved_system_cpus: reserved_system_cpus, pod_level_resource_managers: pod_level)
+                               reserved_system_cpus: reserved_system_cpus, pod_level_resource_managers: pod_level,
+                               feature_gates: @feature_gates)
         rescue ContainerManager::Error, CPUManager::Topology::Error, SystemCallError => error
           # A configured policy that cannot run is fatal, as for the kubelet;
           # the default (none) policies must not keep the node from starting.
@@ -56,7 +57,7 @@ module Rubernetes
         def start_container_manager
           lifecycle = @lifecycle
           @container_manager.start(
-            active_pods: -> { lifecycle.admitted_pods },
+            active_pods: -> { lifecycle.admitted_pods(include_allocating: true) },
             container_statuses: ->(pod) { lifecycle.container_states(Helpers.key(Helpers.key(pod, "metadata", {}), "uid", "")) },
             update_cpuset: ->(container_id, cpus) { @runtime.update_container_cpuset(container_id, cpus) if runtime_moves_cpusets? },
             sources_ready: -> { @recovered }
@@ -77,6 +78,8 @@ module Rubernetes
             system_reserved: system, kube_reserved: kube,
             enforce_node_allocatable: config.fetch("enforce_node_allocatable", ["pods"]),
             system_reserved_cgroup: config["system_reserved_cgroup"], kube_reserved_cgroup: config["kube_reserved_cgroup"],
+            reserved_memory_percent: (QOSCgroupManager.parse_reserved_memory(config.fetch("qos_reserved", {})) if @feature_gates["QOSReserved"] == true),
+            memory_qos_policy: (config.fetch("memory_reservation_policy", "None") if @feature_gates["MemoryQoS"] == true),
             active_pods: -> { @lifecycle.admitted_pods },
             event: lambda { |type, reason, message|
               @event_recorder&.record(involved_object: reference, reason: reason, type: type, namespace: "default", message: message)
@@ -88,23 +91,36 @@ module Rubernetes
         # Image garbage collection over the resolver's unpacked images.
         def build_image_gc_manager(image_resolver, image_gc, error_handler)
           return nil unless image_resolver && @stats_provider && image_gc.fetch("enabled", true) != false
+          return nil if @default_cri_client && (!@stats_provider.is_a?(StatsProvider) || native_container_root.nil?)
 
           lifecycle = @lifecycle
-          ImageGCManager.new(resolver: image_resolver, fs_stats: -> { @stats_provider.image_fs_stats }, pods: -> { lifecycle.pods_on_node },
+          reclaim = image_resolver.method(:reclaim_unused_stages) if defined?(Image::Resolver) && image_resolver.is_a?(Image::Resolver)
+          stats = -> { @default_cri_client ? @stats_provider.native_image_fs_stats : @stats_provider.image_fs_stats }
+          ImageGCManager.new(resolver: image_resolver, fs_stats: stats, pods: -> { lifecycle.pods_on_node },
+                             used_roots: -> { lifecycle.image_roots_in_use + runtime_image_roots }, reclaim_stages: reclaim,
                              **image_gc_options(image_gc, error_handler))
+        end
+
+        def runtime_image_roots
+          return [] unless defined?(Runtime::Native) && defined?(Image::StagingLease)
+
+          (runtime_backends&.values || [@runtime]).grep(Runtime::Native).flat_map { |runtime| Image::StagingLease.runtime_roots(runtime.ledger) }
         end
 
         # The kubelet's image GC over each CRI runtime the node uses (one per
         # runtime connection, however many handlers share it), with the same
         # thresholds as the node's own images.
         def build_cri_image_gc_managers(image_gc, _node_reference, error_handler)
-          return [] unless runtime_backends && image_gc.fetch("enabled", true) != false
+          return [] if image_gc.fetch("enabled", true) == false
 
           lifecycle = @lifecycle
           pods = -> { lifecycle.records.values.filter_map { |record| record[:pod] unless record[:state].to_s == "Removed" } }
           cri_clients.map do |client|
-            source = Runtime::CRI::ImageGCSource.new(client: client, in_use: -> { images_in_use(pods.call) })
-            ImageGCManager.new(resolver: source, fs_stats: -> { source.fs_stats }, pods: pods, **image_gc_options(image_gc, error_handler))
+            source = Runtime::CRI::ImageGCSource.new(client: client, in_use: -> { images_in_use(pods.call) },
+                                                     runtime_class_in_image_api: @feature_gates["RuntimeClassInImageCriApi"] == true)
+            manager = ImageGCManager.new(resolver: source, fs_stats: -> { source.fs_stats }, pods: pods, **image_gc_options(image_gc, error_handler))
+            @default_cri_image_gc_manager = manager if client.equal?(@default_cri_client)
+            manager
           end
         end
 
@@ -139,14 +155,24 @@ module Rubernetes
             minimum_reclaim: config.fetch("minimum_reclaim", {})
           )
           lifecycle = @lifecycle
+          stats = @stats_provider if @stats_provider.is_a?(StatsProvider) && !@default_cri_client
+          image_fs = stats&.dedicated_image_fs?
+          split_fs = stats&.split_container_fs? || false
+          disk_summary = @stats_provider.method(:summary_with_filesystems) if @default_cri_client && @stats_provider.is_a?(StatsProvider)
+          reclaim = if @default_cri_client
+                      method(:cri_disk_reclaim_functions)
+                    else
+                      disk_reclaim_functions(image_fs: image_fs, split_fs: split_fs, manager: @image_gc_manager)
+                    end
           EvictionManager.new(
             summary_provider: @stats_provider, thresholds: thresholds,
             active_pods: -> { lifecycle.admitted_pods },
             kill_pod: method(:evict_pod),
             pressure_transition_period: EvictionManager.parse_duration(config.fetch("pressure_transition_period", "5m")),
             max_pod_grace_period_seconds: config.fetch("max_pod_grace_period_seconds", 0),
-            dedicated_image_fs: -> { @stats_provider.dedicated_image_fs? },
-            node_reclaim: disk_reclaim_functions,
+            dedicated_image_fs: image_fs.nil? ? -> { @stats_provider.dedicated_image_fs? } : image_fs,
+            split_container_fs: split_fs,
+            node_reclaim: reclaim, disk_summary: disk_summary,
             recorder: @event_recorder,
             node_ref: node_reference,
             pod_cleaned_up: lambda { |pod|
@@ -160,13 +186,21 @@ module Rubernetes
 
         # buildSignalToNodeReclaimFuncs: disk signals first try deleting unused
         # images (dead containers are already removed when replaced).
-        def disk_reclaim_functions
-          return {} unless @image_gc_manager
+        def cri_disk_reclaim_functions(layout)
+          return {} unless layout
 
-          delete_images = -> { @image_gc_manager.delete_unused_images }
-          [EvictionManager::NODEFS_AVAILABLE, EvictionManager::NODEFS_INODES_FREE, EvictionManager::IMAGEFS_AVAILABLE,
-           EvictionManager::IMAGEFS_INODES_FREE, EvictionManager::CONTAINERFS_AVAILABLE,
-           EvictionManager::CONTAINERFS_INODES_FREE].to_h { |signal| [signal, [delete_images]] }
+          image_fs, split_fs = layout
+          disk_reclaim_functions(image_fs: image_fs, split_fs: split_fs, manager: @default_cri_image_gc_manager)
+        end
+
+        def disk_reclaim_functions(image_fs:, split_fs:, manager:)
+          return {} unless manager
+
+          delete_images = -> { manager.delete_unused_images }
+          signals = [EvictionManager::IMAGEFS_AVAILABLE, EvictionManager::IMAGEFS_INODES_FREE]
+          signals += [EvictionManager::NODEFS_AVAILABLE, EvictionManager::NODEFS_INODES_FREE] unless image_fs
+          signals += [EvictionManager::CONTAINERFS_AVAILABLE, EvictionManager::CONTAINERFS_INODES_FREE] unless split_fs
+          signals.to_h { |signal| [signal, [delete_images]] }
         end
 
         # killPodFunc: the Pod's own worker carries the eviction out.
