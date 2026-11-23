@@ -8,6 +8,28 @@ require "tmpdir"
 class VolumeLedgerTest < Minitest::Test
   Ledger = Rubernetes::Volume::MountIdentityLedger
 
+  def test_partial_batch_removal_retains_the_mount_whose_record_could_not_be_deleted
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "mounts")
+      ledger = Ledger.new(path: path, fsync: false)
+      register_mount(ledger, target: "/one", mount_id: "101")
+      second = register_mount(ledger, target: "/two", mount_id: "102")
+      target = Rubernetes::Volume::RecordFiles.new(path: path).file_for(ledger.identity_for(second))
+      backup = File.join(dir, "second.saved")
+      File.rename(target, backup)
+      Dir.mkdir(target)
+
+      assert_raises(Rubernetes::Volume::JournalError) { ledger.remove_volume("volume") }
+      assert_equal [second], ledger.entries
+      Dir.rmdir(target)
+      File.rename(backup, target)
+
+      assert_equal [second], Ledger.new(path: path).entries
+      assert_equal 1, ledger.remove_volume("volume")
+      assert_empty Ledger.new(path: path).entries
+    end
+  end
+
   def test_bind_mount_without_uuid_persists_kernel_identity_and_canonical_paths
     ledger = Ledger.new
     record = register_mount(ledger, volume_id: "bind", source: "/var/lib/../source",
@@ -55,6 +77,26 @@ class VolumeLedgerTest < Minitest::Test
     ledger = Ledger.new
     assert_raises(Rubernetes::Volume::MountIdentityError) do
       register_mount(ledger, source_identity: nil, filesystem: "bind")
+    end
+  end
+
+  def test_a_storage_device_can_stage_for_multiple_pods_and_survive_reload
+    Dir.mktmpdir("volume-ledger-shared") do |directory|
+      path = File.join(directory, "mounts.json")
+      fields = {source: "/dev/sdb", source_identity: "/dev/sdb",
+                filesystem: "ext4", filesystem_uuid: "disk-uuid", filesystem_uuid_available: true,
+                device_id: "8:16", shared_source: "san-volume"}
+      ledger = Ledger.new(path: path, fsync: false)
+      register_mount(ledger, **fields, volume_id: "a", target: "/a", mount_id: "100")
+      register_mount(ledger, **fields, volume_id: "b", target: "/b", mount_id: "101")
+
+      assert_equal %w[a b], Ledger.new(path: path, fsync: false).entries.map { |entry| entry.fetch("volumeId") }.sort
+      assert_raises(Rubernetes::Volume::MountIdentityError) do
+        register_mount(ledger, **fields, device_id: "8:32", volume_id: "clone", target: "/clone", mount_id: "102")
+      end
+      assert_raises(Rubernetes::Volume::MountIdentityError) do
+        register_mount(ledger, **fields, shared_source: "other", volume_id: "other", target: "/other", mount_id: "103")
+      end
     end
   end
 
