@@ -52,14 +52,16 @@ class NetworkPolicyNativeTest < Minitest::Test
     refute(rules.any? { |rule| rule.dig("peer", "cidr") == "10.0.0.0/26" })
   end
 
-  def test_egress_named_port_without_to_resolves_every_destination_pod
+  def test_egress_named_port_without_to_stays_bound_to_each_destination_address_and_protocol
     pods = [
       {"namespace" => "apps", "name" => "client", "labels" => {"app" => "client"},
-       "ips" => ["10.0.0.10"]},
+       "ips" => ["10.0.0.10", "fd00::10"]},
       {"namespace" => "apps", "name" => "web-a", "labels" => {"app" => "web"},
-       "ips" => ["10.0.0.20"], "ports" => [{"name" => "web", "port" => 8080}]},
+       "ips" => ["10.0.0.20", "fd00::20"], "ports" => [{"name" => "web", "port" => 8080}], "local" => false},
       {"namespace" => "other", "name" => "web-b", "labels" => {"app" => "web"},
-       "ips" => ["10.0.0.30"], "ports" => [{"name" => "web", "port" => 8081}]}
+       "ips" => ["10.0.0.30"], "ports" => [{"name" => "web", "port" => 8081}]},
+      {"namespace" => "other", "name" => "web-udp", "labels" => {"app" => "web"},
+       "ips" => ["10.0.0.40"], "ports" => [{"name" => "web", "containerPort" => 8082, "protocol" => "UDP"}]}
     ]
     engine = Rubernetes::Network::PolicyEngine.new(pod_index: pods)
     policy = {
@@ -75,9 +77,32 @@ class NetworkPolicyNativeTest < Minitest::Test
 
     rules = engine.apply([policy], revision: 1).entries.dig("kernel", "rules")
 
-    assert_equal [8080, 8081], rules.map { |rule| rule.fetch("port") }.uniq.sort
-    assert(rules.all? { |rule| rule.dig("peer", "kind") == "all" })
-    assert(rules.all? { |rule| rule.fetch("direction") == "egress" })
+    assert_equal [["10.0.0.20", 8080], ["10.0.0.30", 8081], ["fd00::20", 8080]],
+                 rules.map { |rule| [rule.dig("peer", "ip"), rule.fetch("port")] }.sort
+    assert(rules.all? { |rule| rule.values_at("direction", "protocol") == %w[egress TCP] })
+    assert engine.allowed?(source: pods[0], destination: pods[1], direction: "Egress", protocol: "TCP", port: 8080)
+    refute engine.allowed?(source: pods[0], destination: pods[1], direction: "Egress", protocol: "TCP", port: 8081)
+    refute engine.allowed?(source: pods[0], destination: pods[3], direction: "Egress", protocol: "TCP", port: 8082)
+  end
+
+  def test_protocol_only_ports_and_local_target_scope_keep_remote_peers
+    local = {"namespace" => "apps", "name" => "server", "ip" => "10.0.0.10"}
+    remote = {"namespace" => "apps", "name" => "client", "ip" => "10.0.1.20", "local" => false}
+    engine = Rubernetes::Network::PolicyEngine.new
+    policy = {"metadata" => {"name" => "local", "namespace" => "apps"},
+              "spec" => {"podSelector" => {}, "ingress" => [{"from" => [{"podSelector" => {}}], "ports" => [{"protocol" => "UDP"}]}]}}
+    empty = engine.apply([policy], pod_index: [])
+    populated = engine.sync_pods([local, remote]).entries.fetch("kernel")
+    targets = populated.fetch("targets").map { |target| target.fetch("ip") }
+
+    assert_equal true, empty.entries.dig("kernel", "pod_index_present")
+    assert_empty empty.entries.dig("kernel", "targets")
+    assert_equal ["10.0.0.10"], targets
+    remote_rule = populated.fetch("rules").find { |rule| rule.dig("peer", "ip") == "10.0.1.20" }
+
+    assert_equal ["10.0.0.10", "UDP", nil], remote_rule.values_at("target", "protocol", "port")
+    assert engine.allowed?(source: remote, destination: local, direction: "Ingress", protocol: "UDP", port: 1)
+    refute engine.allowed?(source: remote, destination: local, direction: "Ingress", protocol: "TCP", port: 1)
   end
 
   def test_cross_family_peers_are_not_compiled_and_omitted_peers_cover_both_families
@@ -167,6 +192,19 @@ class NetworkPolicyNativeTest < Minitest::Test
 
     assert_equal(%w[meta cmp payload cmp immediate], decoded.map { |entry| entry.fetch("name") })
     refute(decoded.any? { |entry| entry.fetch("data").nil? })
+  end
+
+  def test_nft_policy_readback_rejects_reordered_rules_with_the_same_markers
+    adapter = Rubernetes::Network::NftablesPolicyAdapter.new(table_name: "rkpol_order_unit")
+    desired = adapter.send(:desired_policy_objects, "kernel" => {"targets" => [], "rules" => []})
+    actual_rules = desired.fetch("rules").map do |entry|
+      expressions = adapter.send(:decoded_rule_expressions_from_attributes, entry.fetch("message").fetch(:attributes))
+      entry.except("message").merge("expressions" => expressions)
+    end
+    actual = desired.merge("rules" => actual_rules)
+
+    assert adapter.send(:verify_policy_readback, actual, desired)
+    refute adapter.send(:verify_policy_readback, actual.merge("rules" => actual_rules.reverse), desired)
   end
 
   def test_pod_selector_peer_defaults_to_policy_namespace
@@ -294,6 +332,14 @@ class NetworkPolicyNativeTest < Minitest::Test
     assert_same old_maps, adapter.instance_variable_get(:@maps)
     assert_equal(old_links.map { |link| link.values_at(:ifindex, :direction) },
                  adapter.instance_variable_get(:@links).map { |link| link.values_at(:ifindex, :direction) })
+  end
+
+  def test_ebpf_resolves_only_local_pod_interfaces_from_the_snapshot
+    adapter = Rubernetes::Network::EBPFPolicyAdapter.new
+    kernel = {"pods" => [{"interface" => 7, "local" => true}, {"interface" => "8"},
+                         {"interface" => 9, "local" => false}]}
+
+    assert_equal [7, 8], adapter.send(:resolve_policy_ifindices, kernel: kernel)
   end
 
   def test_ebpf_failed_swap_refuses_partial_previous_filter_inventory
