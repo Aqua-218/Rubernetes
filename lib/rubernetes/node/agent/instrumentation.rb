@@ -30,6 +30,7 @@ module Rubernetes
           @dra_manager.active_pods = -> { lifecycle.admitted_pods } if @dra_manager
           @stats_provider.metrics_observer = ->(source, seconds) { metrics.volume_metric_collection(source, seconds) } if @stats_provider
           @lifecycle.metrics_observer = metrics
+          metrics.pod_inventory = method(:pod_metrics_inventory)
           attach_selinux_tracker
           attach_pod_certificate_manager
           @status.sync_observer = ->(pod, status, seconds) { metrics.pod_status_synced(pod, status, seconds) }
@@ -40,6 +41,11 @@ module Rubernetes
 
           @eviction_manager.on_eviction = ->(signal) { metrics.eviction(signal) }
           @eviction_manager.on_stats_age = ->(signal, seconds) { metrics.eviction_stats_age(signal, seconds) }
+        end
+
+        def pod_metrics_inventory
+          mirrors, api_pods = @sync_loop.pods.partition { |pod| mirror_pod?(pod) }
+          [api_pods + Array(@static_pods&.pods), mirrors.length]
         end
 
         # canAdmitPod: the eviction manager (node under pressure), the
@@ -58,7 +64,29 @@ module Rubernetes
             metrics = @kubelet_metrics
             @qos_cgroup_manager.cgroup_observer = ->(operation, seconds) { metrics.cgroup_operation(operation, seconds) }
           end
+          attach_memory_qos_metrics(registry) if @feature_gates["MemoryQoS"] == true
           @shutdown_manager.gauge_sink = ->(name, value) { registry.set(name, value) } if @shutdown_manager
+        end
+
+        def attach_runtime_handlers(shutdown_manager, shutdown, feature_gates)
+          attach_observers
+          initialize_shutdown(shutdown_manager, shutdown, feature_gates)
+          attach_metrics_registry
+          attach_admit_handlers
+        end
+
+        def attach_memory_qos_metrics(registry)
+          min = "kubelet_memory_qos_node_memory_min_bytes"
+          low = "kubelet_memory_qos_node_memory_low_bytes"
+          registry.register(min, type: :gauge, help: "Total cgroup v2 memory.min in bytes for Guaranteed pods.")
+          registry.register(low, type: :gauge, help: "Total cgroup v2 memory.low in bytes for Burstable pods.")
+          [min, low].each { |name| registry.set(name, 0) }
+          return unless @qos_cgroup_manager.is_a?(QOSCgroupManager)
+
+          @qos_cgroup_manager.memory_qos_gauge = lambda do |guaranteed, burstable|
+            registry.set(min, guaranteed)
+            registry.set(low, burstable)
+          end
         end
       end
     end
