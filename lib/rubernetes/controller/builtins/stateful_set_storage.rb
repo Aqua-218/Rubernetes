@@ -55,7 +55,7 @@ module Rubernetes
           pod
         end
 
-        def reconcile_claims(owner, templates, claims, desired, start, existing_by_ordinal)
+        def reconcile_claims(owner, templates, claims, desired, start, existing_by_ordinal, create_through:)
           return [] if templates.empty? || claims.nil?
 
           existing = Array(claims).each_with_object({}) do |claim, result|
@@ -65,15 +65,22 @@ module Rubernetes
           (start...(start + desired)).each do |ordinal|
             templates.each do |template_value|
               name = "#{Support.name(template_value)}-#{Support.name(owner)}-#{ordinal}"
-              desired_claim = claim_for(owner, template_value, name, ordinal, scaled_down: false)
               current = existing[name]
               if current.nil?
-                operations << operation_create(desired_claim, descriptor: PERSISTENT_VOLUME_CLAIM,
-                                                              reason: "statefulset volume claim")
+                next if ordinal > create_through
+
+                claim = claim_for(owner, template_value, name, ordinal, scaled_down: false)
+                # Create the claim before the Pod and attach the retention
+                # references when the controller can see the Pod's identity.
+                claim.fetch("metadata").delete("ownerReferences")
+                operations << operation_create(claim, descriptor: PERSISTENT_VOLUME_CLAIM, reason: "statefulset volume claim")
                 next
               end
+              pod = existing_by_ordinal[ordinal]
+              next unless pod
 
-              candidate = claim_metadata_update(current, desired_claim, owner: owner)
+              desired_claim = claim_for(owner, template_value, name, ordinal, scaled_down: false)
+              candidate = claim_metadata_update(current, desired_claim, owner: owner, pod: pod)
               update = operation_update(current, candidate, descriptor: PERSISTENT_VOLUME_CLAIM,
                                                             reason: "statefulset volume claim retention policy")
               operations << update if update
@@ -117,20 +124,30 @@ module Rubernetes
           candidate
         end
 
-        def claim_metadata_update(current, desired, owner:, pod: nil)
-          candidate = Support.deep_copy(current)
-          candidate["metadata"] ||= {}
-          desired_metadata = Support.metadata(desired)
-          candidate["metadata"]["labels"] = Support.deep_copy(Support.value(desired_metadata, "labels", {}))
-          desired_refs = Array(Support.value(desired_metadata, "ownerReferences", []))
-          managed = [[Support.kind(owner), Support.name(owner)], ["Pod", Support.name(pod)]]
-          existing_refs = Support.owner_references(current)
-          retained_refs = existing_refs.reject do |reference|
-            managed.include?([Support.ref_value(reference, "kind", ""),
-                              Support.ref_value(reference, "name", "")])
+        def claim_metadata_update(current, desired, owner:, pod:)
+          managed_uids = [owner, pod].to_h do |object|
+            [claim_owner_key(Support.owner_reference(object)), Support.uid(object).to_s]
           end
-          candidate["metadata"]["ownerReferences"] = retained_refs + Support.deep_copy(desired_refs)
+          existing_refs = Support.owner_references(current)
+          managed_refs, retained_refs = existing_refs.partition { |reference| managed_uids.key?(claim_owner_key(reference)) }
+          # The referenced StatefulSet or Pod may have been recreated with
+          # the same name. Leave that previous incarnation's claim alone.
+          stale_owner = managed_refs.any? do |reference|
+            Support.ref_value(reference, "uid").to_s != managed_uids[claim_owner_key(reference)]
+          end
+          return current if stale_owner
+
+          controller = Support.controller_owner_reference(current)
+          retained_refs.concat(Support.owner_references(desired)) if controller.nil? || managed_refs.include?(controller)
+          return current if retained_refs == existing_refs
+
+          candidate = Support.deep_copy(current)
+          candidate["metadata"] = Support.metadata(candidate).merge("ownerReferences" => retained_refs)
           candidate
+        end
+
+        def claim_owner_key(reference)
+          %w[apiVersion kind name].map { |field| Support.ref_value(reference, field).to_s }
         end
 
         def desired_claim_owner_references(owner, _claim, scaled_down:, pod: nil)
