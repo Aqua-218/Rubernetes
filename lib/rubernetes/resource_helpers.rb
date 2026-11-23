@@ -17,6 +17,9 @@ module Rubernetes
     SUPPORTED_POD_LEVEL = %w[cpu memory].freeze
     HUGE_PAGES_PREFIX = "hugepages-"
     QOS_RESOURCES = %w[cpu memory].freeze
+    DOWNWARD_RESOURCE_FIELDS = %w[limits.cpu limits.ephemeral-storage limits.memory
+                                  requests.cpu requests.ephemeral-storage requests.memory].freeze
+    DOWNWARD_STORAGE_DIVISORS = %w[1 1k 1M 1G 1T 1P 1E 1Ki 1Mi 1Gi 1Ti 1Pi 1Ei].freeze
 
     module_function
 
@@ -24,6 +27,26 @@ module Rubernetes
 
     def supported_pod_level_resource?(name)
       SUPPORTED_POD_LEVEL.include?(name.to_s) || name.to_s.start_with?(HUGE_PAGES_PREFIX)
+    end
+
+    def downward_resource_field?(field)
+      field.is_a?(String) && (DOWNWARD_RESOURCE_FIELDS.include?(field) ||
+        field.start_with?("limits.#{HUGE_PAGES_PREFIX}", "requests.#{HUGE_PAGES_PREFIX}"))
+    end
+
+    def downward_divisor_error(field, quantity)
+      resource = field.split(".", 2).last
+      return if quantity.zero?
+
+      if resource == "cpu"
+        return if %w[1m 1].include?(quantity.to_s)
+
+        return "only divisor's values 1m and 1 are supported with the cpu resource"
+      end
+      return if DOWNWARD_STORAGE_DIVISORS.include?(quantity.to_s)
+
+      description = resource.start_with?(HUGE_PAGES_PREFIX) ? "hugepages" : resource.sub(/\Aephemeral-storage\z/, "local ephemeral storage")
+      "only divisor's values #{DOWNWARD_STORAGE_DIVISORS.join(", ")} are supported with the #{description} resource"
     end
 
     def spec(pod)
@@ -174,13 +197,19 @@ module Rubernetes
     # PodRequests: pod-level requests replace the aggregate for the resources
     # they name; the overhead is added on top.
     def pod_requests(pod, use_status_resources: false, exclude_overhead: false, skip_pod_level: false,
-                     skip_container_level: false, in_place_pod_level_resize: true, non_missing: nil, container_fn: nil)
+                     skip_container_level: false, in_place_pod_level_resize: true, non_missing: nil, container_fn: nil,
+                     use_dra_node_allocatable: false)
       requests = if skip_container_level
                    {}
                  else
                    aggregate_container_requests(pod, use_status_resources: use_status_resources,
                                                      non_missing: non_missing, container_fn: container_fn)
                  end
+      if use_dra_node_allocatable && !skip_container_level
+        Array(status(pod)["nodeAllocatableResourceClaimStatuses"]).each do |claim|
+          add!(requests, resource_list(claim["resources"]))
+        end
+      end
       if !skip_pod_level && pod_level_requests_set?(pod)
         spec_requests = resource_list(pod_resources(pod)["requests"])
         effective = nil
