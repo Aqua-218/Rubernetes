@@ -84,4 +84,14 @@ class SchedulerServiceTypedCacheTest < Minitest::Test
 
     assert_empty subject.instance_variable_get(:@pods)
   end
+
+  def test_cluster_events_only_retry_for_resource_kinds_that_can_unblock_scheduling
+    subject = Service.new(config: {}, logger: nil)
+    retries = []
+    subject.define_singleton_method(:retry_unschedulable) { |reason, **fields| retries << [reason, fields[:event]] }
+    subject.send(:observe_cluster_object, "StatefulSet", {"metadata" => {"name" => "web", "namespace" => "ns"}})
+    subject.send(:observe_cluster_object, "Namespace", {"metadata" => {"name" => "ns"}})
+
+    assert_equal [%w[namespace_changed NamespaceAdd]], retries
+  end
 end
