@@ -126,7 +126,7 @@ module Rubernetes
           namespaces -= [:user] if host_users
           namespaces << :user unless host_users || host.include?(:user)
           user_mapping = host_users ? nil : build_user_mapping(input)
-          hostname = input["hostname"] || input["subdomain"]
+          hostname = input["hostname"] || input["subdomain"] unless host.include?(:network)
           Plan.new(namespaces: namespaces.freeze, shared: shared.freeze, host: host.freeze, user_mapping: user_mapping,
                    hostname: hostname && String(hostname).freeze)
         end
@@ -142,6 +142,7 @@ module Rubernetes
                   "a shared PID namespace requires the holder PID namespace"
           end
           raise InvalidPlan, "the user namespace requires a uid/gid mapping" if plan.namespaces.include?(:user) && plan.user_mapping.nil?
+          raise Unsupported, "the native runtime does not support user namespaces with host networking" if plan.user_mapping && plan.host.include?(:network)
           if plan.user_mapping && Integer(plan.user_mapping.fetch(:size) { plan.user_mapping.fetch("size") }) != 65_536
             raise InvalidPlan, "user namespace mapping must allocate exactly 65536 IDs"
           end
@@ -177,6 +178,12 @@ module Rubernetes
           # cleanup retry can start at this owner again.
           @mutex.synchronize { @handles.delete(handle.id) } unless result == false
           result
+        end
+
+        def commit(handle)
+          return unless defined?(Platform::Linux::NativeAdapters::NamespaceAdapter) && @adapter.is_a?(Platform::Linux::NativeAdapters::NamespaceAdapter)
+
+          @adapter.commit(handle.adapter_handle)
         end
 
         # Reconstruct an adapter-owned namespace handle after durable ledger
@@ -235,6 +242,10 @@ module Rubernetes
         private
 
         def invoke_create(plan, id, identity)
+          if defined?(Platform::Linux::NativeAdapters::NamespaceAdapter) && @adapter.is_a?(Platform::Linux::NativeAdapters::NamespaceAdapter)
+            return @adapter.create(plan: plan, id: id, identity: identity, durable: true)
+          end
+
           if @adapter.respond_to?(:create)
             @adapter.create(plan: plan, id: id, identity: identity)
           elsif @adapter.respond_to?(:call)
