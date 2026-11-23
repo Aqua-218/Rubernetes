@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "json"
+require "open3"
+require "rbconfig"
 require "tmpdir"
 require_relative "../test_helper"
 require "rubernetes/volume"
@@ -49,6 +51,59 @@ class VolumeRecordFilesTest < Minitest::Test
       assert_equal "Staged", reloaded["vol-7"].state
       assert_nil reloaded["vol-8"]
       assert_equal 299, reloaded.values.length
+    end
+  end
+
+  def test_unencodable_record_leaves_only_the_last_committed_file
+    Dir.mktmpdir do |dir|
+      store = Volume::RecordFiles.new(path: File.join(dir, "records"), fsync: false)
+      store.write("one", {"key" => "before"})
+      assert_raises(JSON::GeneratorError) { store.write("one", {"key" => "\xff".b}) }
+
+      assert_equal [File.basename(store.file_for("one"))], Dir.children(store.directory)
+      assert_equal [{"key" => "before"}], store.load
+    end
+  end
+
+  def test_recovery_reads_utf8_records_in_the_c_locale
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "records")
+      legacy = {"payload" => "日本語"}
+      current = {"payload" => "é"}
+      File.binwrite(path, JSON.generate([legacy]))
+      Volume::RecordFiles.new(path: path, fsync: false).write("current", current)
+
+      output, error, status = Open3.capture3(
+        {"LC_ALL" => "C"}, RbConfig.ruby, "-Ilib", "-rrubernetes/volume/record_files", "-e",
+        "puts JSON.generate(Rubernetes::Volume::RecordFiles.read(ARGV.fetch(0)))", path
+      )
+
+      assert_predicate status, :success?, error
+      assert_equal [legacy, current], JSON.parse(output)
+    end
+  end
+
+  def test_failed_ledger_writes_do_not_advance_in_memory_state
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "operations")
+      records = "#{path}.d"
+      ledger = Volume::OperationLedger.new(path: path, fsync: false)
+      ledger.begin!(key: "v", operation: "create", token: "first", fingerprint: "f")
+      File.rename(records, "#{records}.saved")
+      File.write(records, "unavailable")
+
+      assert_raises(Volume::JournalError) { ledger.finish!(key: "v", operation: "create", token: "first", result: "done") }
+      assert_raises(Volume::JournalError) { ledger.begin!(key: "other", operation: "create", token: "second", fingerprint: "f") }
+      assert_raises(Volume::JournalError) { ledger.retract!(key: "v", operation: "create") }
+      File.unlink(records)
+      File.rename("#{records}.saved", records)
+      [ledger, Volume::OperationLedger.new(path: path, fsync: false)].each do |view|
+        assert_equal "pending", view.fetch_token(key: "v", token: "first").status
+        assert_nil view.fetch_token(key: "other", token: "second")
+      end
+      ledger.finish!(key: "v", operation: "create", token: "first", result: "done")
+
+      assert_equal "done", Volume::OperationLedger.new(path: path).fetch_token(key: "v", token: "first").result
     end
   end
 
