@@ -43,7 +43,7 @@ class KubeletLifecycleHookFallbackTest < Minitest::Test
     subject.send(:execute_hook, "c1", hook, record: record)
 
     assert_equal(%w[HTTPS HTTP], runtime.requests.map { |request| request["scheme"] })
-    assert_equal [{"name" => "X", "value" => "y"}], runtime.requests.last["httpHeaders"]
+    assert_equal [{"name" => "X", "value" => "y"}, {"name" => "User-Agent", "value" => "kube-lifecycle/1.36"}], runtime.requests.last["httpHeaders"]
     fallback = @entries.find { |entry| entry["type"] == "hook.http_fallback" }
     reasons = Rubernetes::Node::KubeletEventPublisher::REASONS.fetch("hook.http_fallback")
 
