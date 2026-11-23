@@ -16,15 +16,11 @@ require "optparse"
 require "rbconfig"
 require "shellwords"
 require "time"
+require_relative "m0_source_inventory"
 
 require_relative "m2_gate"
 
 ROOT = File.expand_path("../..", __dir__) unless defined?(ROOT)
-# Keep the temporary generator exclusion anchored to a root-level mktemp name;
-# broad prefixes would let a real source directory disappear from the input.
-unless defined?(SOURCE_EXCLUSIONS)
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
-end
 REPORT_SPECS = {
   "runtime" => {filename: "runtime-report.json", kind: "m2_runtime_profiles",
                 default: [RbConfig.ruby, "tools/milestones/m2_runtime_probe.rb"]},
@@ -44,11 +40,7 @@ FORMAL_REPORT_SPEC = {
 }.freeze
 
 def source_identity
-  paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-    next false unless File.file?(path)
-
-    !path.delete_prefix("#{ROOT}/").match?(SOURCE_EXCLUSIONS)
-  end.sort
+  paths = M0SourceInventory.source_files(ROOT)
   entries = paths.map do |path|
     {
       "path" => path.delete_prefix("#{ROOT}/"),
@@ -91,28 +83,14 @@ def command_record(name, command, started_at, finished_at, status, stdout: "", s
   record
 end
 
-EMBEDDED_STDOUT_LIMIT = 4 * 1024 * 1024
-
 def capture_command(name, command, destination_path, input)
   started_at = iso8601_now
   environment = {
     "RUBERNETES_M2_INPUT_SHA256" => input.fetch("sha256"),
     "RUBERNETES_M2_INPUT_FILE_COUNT" => input.fetch("file_count").to_s
   }
-  stdout, stderr, status = Open3.capture3(environment, *command, chdir: ROOT)
-  File.binwrite(destination_path, stdout)
-  record = command_record(name, command, started_at, iso8601_now, status.exitstatus || 1, stdout: stdout, stderr: stderr)
-  # The adapter report is the content-addressed artifact; a very large
-  # report (the 1,000-cycle resource ledger) is referenced by digest instead
-  # of being embedded a second time, so the manifest stays within the gate's
-  # JSON limit.
-  if stdout.bytesize > EMBEDDED_STDOUT_LIMIT
-    record["stdout"] = ""
-    record["stdout_sha256"] = Digest::SHA256.hexdigest(stdout)
-    record["stdout_bytes"] = stdout.bytesize
-    record["stdout_artifact"] = File.basename(destination_path)
-  end
-  record
+  output, stderr, status = MilestoneReportOutput.capture(destination_path, environment, command, chdir: ROOT)
+  command_record(name, command, started_at, iso8601_now, status.exitstatus || 1, stderr: stderr).merge(output)
 rescue SystemCallError => error
   command_record(name, command, started_at, iso8601_now, 127, error: "adapter command could not be executed: #{error.message}")
 end
