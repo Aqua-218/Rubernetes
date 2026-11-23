@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "socket"
 
 require_relative "../node"
+require_relative "../node/kernel_tunables"
+require_relative "../node/kubelet_healthz"
+require_relative "../node/kubelet_tls_files"
 require_relative "../image"
 require_relative "../runtime/native"
 require "openssl"
@@ -75,17 +80,22 @@ module Rubernetes
                      trusted_subresources: false,
                      log_service: nil, exec_service: nil, attach_service: nil, port_forward_service: nil,
                      subresources: nil, api_adapter: nil, runtime_observer: nil, runtime_cleaner: nil,
-                     node_resolver: nil, dns_service: nil,
-                     runtime_adapters: {},
+                     node_resolver: nil, dns_service: nil, policy_lifecycle: nil,
+                     image_staging_root: nil, live_image_roots: -> { [] },
+                     runtime_adapters: {}, kernel_tunables: Node::KernelTunables.new,
                      request_id_generator: -> { SecureRandom.uuid },
                      clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
         @config = immutable_config(config)
         @logger = logger
         @runtime = runtime || runtime_adapter || Runtime::Native.new(profile: :pure, adapters: runtime_adapters)
+        @image_staging_root = image_staging_root || @config.dig("image", "staging_root")
+        @live_image_roots = live_image_roots
+        @kernel_tunables = kernel_tunables
         @api_adapter = api_adapter
         @node_agent = node_agent
         @node_resolver = node_resolver
         @dns_service = dns_service
+        @policy_lifecycle = policy_lifecycle
         @node_name = @config["node_name"]&.to_s
         @node_endpoint_registered = false
         @runtime_observer = runtime_observer
@@ -111,10 +121,10 @@ module Rubernetes
 
       def start
         @mutex.synchronize do
-          raise "rubernetes-agent is already started" if @started
+          raise "rubernetes-agent is already started" if @started || @stopping
 
           begin
-            reclaim_abandoned_image_stages!
+            setup_kernel_tunables!
             invoke_lifecycle(@runtime, :start, config: @config)
             recovery_options = {}
             recovery_options[:observer] = @runtime_observer if @runtime_observer
@@ -129,6 +139,9 @@ module Rubernetes
               @recovery_report = invoke_lifecycle(@runtime, :reconcile)
               ensure_recovery_ready!(@recovery_report)
             end
+            reclaim_abandoned_image_stages!
+            invoke_lifecycle(@runtime, :start_log_rotation)
+            @policy_lifecycle&.start_policy(@node_agent.lifecycle, runtime: @runtime)
             invoke_lifecycle(
               @sync_loop,
               :start,
@@ -141,15 +154,18 @@ module Rubernetes
             start_dns_service!
             start_certificate_rotation!
             start_server_certificate_rotation!
+            start_healthz_server!
             @started = true
           rescue StandardError
             unregister_node_endpoint
             @certificate_manager&.stop
             @serving_certificate_manager&.stop
+            @healthz_server&.stop
             stop_dns_service!
             stop_streaming_server!
             @started = false
             safely_stop(@sync_loop)
+            stop_policy_lifecycle
             safely_close(@api_adapter)
             safely_stop(@runtime)
             raise
@@ -166,30 +182,35 @@ module Rubernetes
 
       def stop(reason:)
         should_stop = @mutex.synchronize do
-          next false unless @started
+          next false if !@started || @stopping
 
-          @started = false
-          true
+          @stopping = true
         end
         return self unless should_stop
 
-        errors = []
+        # The local health check disappearing signals that it is safe to stop
+        # the runtime externally. Quiesce Pod mutation before dropping it.
+        sync_error = stop_component(@sync_loop, reason)
+        @mutex.synchronize { @started = false }
         unregister_node_endpoint
         @certificate_manager&.stop
         @serving_certificate_manager&.stop
+        @healthz_server&.stop
         stop_dns_service!
         stop_streaming_server!
-        [@sync_loop, @api_adapter, @runtime].compact.uniq.each do |component|
-          operation = component.respond_to?(:stop) ? :stop : :close
-          invoke_lifecycle(component, operation, reason: reason)
-        rescue StandardError => error
-          errors << error
-          log(:error, "process.stop_failed", component: component.class.name, error: error)
+        errors = [sync_error, stop_policy_lifecycle].compact
+        [@api_adapter, @runtime].compact.uniq.each do |component|
+          next if component.equal?(@sync_loop)
+
+          error = stop_component(component, reason)
+          errors << error if error
         end
         log(:info, "process.stopped", reason: reason)
         raise StopError, errors if errors.any?
 
         self
+      ensure
+        @mutex.synchronize { @stopping = false } if should_stop
       end
 
       def started?
@@ -198,6 +219,7 @@ module Rubernetes
 
       def ready?
         return false unless started?
+        return false if @policy_lifecycle && !@policy_lifecycle.policy_ready?
         return false if @node_agent.respond_to?(:ready?) && !@node_agent.ready?
 
         report = @recovery_report
@@ -230,6 +252,14 @@ module Rubernetes
 
       private
 
+      def stop_policy_lifecycle
+        @policy_lifecycle&.stop_policy
+        nil
+      rescue StandardError => error
+        log(:error, "network.policy.stop_failed", error: error)
+        error
+      end
+
       def invoke_lifecycle(component, operation, **options)
         return true unless component.respond_to?(operation)
 
@@ -248,11 +278,25 @@ module Rubernetes
       end
 
       def safely_stop(component)
+        invoke_lifecycle(component, :stop_log_rotation) if component.equal?(@runtime)
         return unless component.respond_to?(:stop)
 
         invoke_lifecycle(component, :stop, reason: "startup_failed")
       rescue StandardError => error
         log(:error, "process.rollback_failed", component: component.class.name, error: error)
+      end
+
+      def stop_component(component, reason)
+        return unless component
+
+        invoke_lifecycle(component, :stop_log_rotation) if component.equal?(@runtime)
+
+        operation = component.respond_to?(:stop) ? :stop : :close
+        invoke_lifecycle(component, operation, reason: reason)
+        nil
+      rescue StandardError => error
+        log(:error, "process.stop_failed", component: component.class.name, error: error)
+        error
       end
 
       def safely_close(component)
@@ -268,6 +312,14 @@ module Rubernetes
         deep_freeze(copy)
       end
 
+      def setup_kernel_tunables!
+        profile = @config.fetch("runtime_profile", "pure").to_s.downcase.tr("-", "_")
+        return unless %w[host_integration kernel_isolation l3].include?(profile)
+
+        @kernel_tunables.apply!(protect_defaults: @config["protect_kernel_defaults"],
+                                allow_user_namespace: @config.dig("feature_gates", Node::SystemOOMWatcher::GATE) == true)
+      end
+
       def deep_copy(value)
         case value
         when Hash
@@ -279,18 +331,7 @@ module Rubernetes
         end
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
 
       def log(level, event, **fields)
         return unless logger.respond_to?(level)
@@ -344,39 +385,83 @@ module Rubernetes
         "#{kind}:#{id}"
       end
 
-      # The kubelet-style streaming endpoint.  Without it the API server has
-      # nowhere to proxy `kubectl logs`/`exec` to, so it is a startup failure
-      # rather than a silent degradation when it is configured but cannot bind.
-      # Staging directories left by a previous agent on this node can no longer
-      # be released by anyone: their owner is gone and the state that named
-      # them went with it.  Reclaiming them at startup is what keeps a node
-      # that restarts from filling its own disk.
       def reclaim_abandoned_image_stages!
-        staging_root = (@config["image"] || {}).to_h["staging_root"]
-        Image::Resolver.reclaim_abandoned_stages(staging_root: staging_root, logger: method(:log))
+        return unless @image_staging_root
+
+        Image::Resolver.reclaim_abandoned_stages(staging_root: @image_staging_root, protected_roots: @live_image_roots.call,
+                                                 logger: method(:log))
       rescue StandardError => error
         log(:warn, "image.stage_reclaim_failed", error: error.class.name, message: error.message)
       end
 
+      # The API server needs this kubelet-style endpoint to proxy logs and exec.
       def start_streaming_server!
         options = (@config["streaming"] || {}).to_h
+        hosts = [options.fetch("host", "127.0.0.1"), *options.fetch("additional_hosts", [])].map(&:to_s).uniq
+        start_read_only_servers!(options, hosts)
         return if options["enabled"] == false
 
-        host = options.fetch("host", "127.0.0.1").to_s
-        loopback = %w[127.0.0.1 ::1 localhost].include?(host)
         auth = streaming_auth(options)
-        if !loopback && auth.nil?
+        if auth.nil? && hosts.any? { |host| !%w[127.0.0.1 ::1 localhost].include?(host) }
           raise Config::Error,
-                "rubernetes-agent.streaming.host #{host.inspect} is not loopback: the streaming endpoint trusts the " \
-                "API server's authorization, so it must not be reachable off-host without its own authorizer"
+                "rubernetes-agent.streaming requires authentication and authorization on non-loopback addresses"
         end
 
-        # The API server authenticates and runs a SubjectAccessReview before it
-        # proxies here, and the listener is loopback-only, so this surface takes
-        # the API server as its authorization boundary rather than re-deciding
-        # with no identity to decide on.
-        @streaming_server = Node::StreamingServer.new(
+        common = streaming_server_options(options, auth)
+        port = Integer(options.fetch("port", 10_250))
+        @streaming_servers = []
+        hosts.each do |host|
+          server = Node::StreamingServer.new(**common, host: host, port: port)
+          @streaming_servers << server
+          start_streaming_listener(server)
+          port = server.port
+        end
+        @streaming_server = @streaming_servers.first
+        start_tls_file_reload!(options, auth)
+      end
+
+      def start_read_only_servers!(options, hosts)
+        port = @config.fetch("read_only_port", 0)
+        return if port.zero?
+
+        settings = streaming_server_options(options.except("tls"), nil).merge(read_only: true)
+        @read_only_servers = []
+        hosts.each do |host|
+          server = Node::StreamingServer.new(**settings, host: host, port: port)
+          @read_only_servers << server
+          start_streaming_listener(server)
+        end
+      end
+
+      def start_streaming_listener(server)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 3
+        begin
+          server.start(background: true)
+        rescue Transport::ConfigurationError => error
+          # A new IPv6 bridge address remains tentative until DAD completes.
+          raise unless error.cause.is_a?(Errno::EADDRNOTAVAIL) && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+
+          sleep(0.05)
+          retry
+        end
+      end
+
+      def start_healthz_server!
+        return unless @node_agent || @config.key?("healthz_port")
+
+        node = Node::KubeletHealthz
+        port = @config.fetch("healthz_port", node::DEFAULT_PORT)
+        return if port.zero?
+
+        host = @config.fetch("healthz_bind_address", node::DEFAULT_HOST)
+        @healthz_server = node.new(host: host, port: port, ready: method(:ready?), logger: @logger)
+        @healthz_server.start
+      end
+
+      def streaming_server_options(options, auth)
+        {
           log_service: Node::LogService.new(**@service_options, trusted: true),
+          split_log_streams: @config.dig("feature_gates", "PodLogsQuerySplitStreams") == true,
           lifecycle: @node_agent.respond_to?(:lifecycle) ? @node_agent.lifecycle : nil,
           exec_service: Node::ExecService.new(**@service_options, trusted: true),
           attach_service: Node::AttachService.new(**@service_options, trusted: true),
@@ -391,24 +476,27 @@ module Rubernetes
                          Node::SystemLogs.new(log_dir: options.fetch("system_log_dir", "/var/log").to_s,
                                               query_enabled: options.fetch("enable_system_log_query", false) == true)
                        end,
-          flags: Observability::ZPages.flags_from(arguments: ARGV.dup, config: @config.to_h),
+          flags: Observability::ZPages.flags_from(arguments: ARGV.dup, config: @config.to_h.except("static_pod_url_header")),
           # kubelet <root>/checkpoints, beside this node's sandbox root.
           checkpoint_dir: options["checkpoint_dir"] ||
-                          (@config["sandbox_root"] ? File.join(File.dirname(@config["sandbox_root"].to_s), "checkpoints") : nil),
-          host: host,
-          port: Integer(options.fetch("port", 10_250)),
+            (@config["sandbox_root"] ? File.join(File.dirname(@config["sandbox_root"].to_s), "checkpoints") : nil),
           auth: auth,
           tls: streaming_tls(options),
           log_level_setter: ->(level) { @logger.level = level if @logger.respond_to?(:level=) },
           kubelet_metrics: @node_agent.respond_to?(:kubelet_metrics) ? @node_agent.kubelet_metrics : nil,
           # The node's own configuration, with the resolver its Pods get.
           configz: lambda do
-            Node::KubeletConfigz.build(@config,
-                                       cluster_dns: @dns_service.respond_to?(:bind_addresses) ? Array(@dns_service.bind_addresses) : [],
-                                       cluster_domain: (@config["dns"] || {}).to_h["cluster_domain"] || @config["cluster_domain"] || "cluster.local")
+            configz
           end
-        )
-        @streaming_server.start(background: true)
+        }
+      end
+
+      def configz
+        dns = (@config["dns"] || {}).to_h
+        cluster_dns = Array(dns["cluster_dns"])
+        cluster_dns = Array(@dns_service.bind_addresses) if cluster_dns.empty? && @dns_service.respond_to?(:bind_addresses)
+        cluster_domain = @config["cluster_domain"] || dns["cluster_domain"] || "cluster.local"
+        Node::KubeletConfigz.build(@config, cluster_dns: cluster_dns, cluster_domain: cluster_domain, streaming_port: @streaming_server&.port)
       end
 
       # kubelet --tls-cert-file / --tls-private-key-file and the client CA
@@ -420,11 +508,31 @@ module Rubernetes
         result = {cert_file: tls.fetch("cert_file"), key_file: tls.fetch("key_file")}
         if tls["client_ca_file"]
           result[:request_client_certificates] = true
-          result[:client_ca_certificates] = File.read(tls["client_ca_file"])
-            .scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
-            .map { |pem| OpenSSL::X509::Certificate.new(pem) }
+          result[:client_ca_certificates] = Node::KubeletTLSFiles.certificates(tls["client_ca_file"])
         end
         result
+      end
+
+      def start_tls_file_reload!(options, auth)
+        tls = options["tls"]
+        return if tls.nil? || tls.empty?
+
+        gates = @config.fetch("feature_gates", {})
+        serving = tls.values_at("cert_file", "key_file") if !rotating_serving_certificate? && gates["ReloadKubeletServerCertificateFile"] != false
+        client_ca = tls["client_ca_file"] if gates["ReloadKubeletClientCAFile"] != false
+        return unless serving || client_ca
+
+        install = lambda do |**material|
+          @streaming_servers.each { |listener| listener.server.reload_tls!(**material) }
+          authorities = material[:client_ca_certificates]
+          auth&.reload_client_ca!(authorities) if authorities
+        end
+        @tls_file_reloader = Node::KubeletTLSFiles.new(serving: serving, client_ca: client_ca, install: install, logger: method(:log))
+        @tls_file_reloader.start
+      end
+
+      def rotating_serving_certificate?
+        @config["server_tls_bootstrap"] == true && @config.dig("feature_gates", "RotateKubeletServerCertificate") != false
       end
 
       # KubeletConfiguration authentication / authorization: webhook
@@ -478,7 +586,7 @@ module Rubernetes
       # kubelet-serving CertificateSigningRequest and is rotated; the static
       # tls.cert_file stays the fallback until the first one is issued.
       def start_server_certificate_rotation!
-        return unless @config["server_tls_bootstrap"] == true
+        return unless rotating_serving_certificate?
 
         client = @node_agent.respond_to?(:api) && @node_agent.api.respond_to?(:client) ? @node_agent.api.client : nil
         return log(:warn, "serving_certificate.rotation_disabled", reason: "no API client") if client.nil?
@@ -506,8 +614,7 @@ module Rubernetes
         end
         install = lambda do |certificate, previous|
           key = manager.current_private_key
-          server = @streaming_server.respond_to?(:server) ? @streaming_server.server : nil
-          server.reload_tls!(certificate: certificate, private_key: key) if server.respond_to?(:reload_tls!) && certificate && key
+          Array(@streaming_servers).each { |listener| listener.server.reload_tls!(certificate: certificate, private_key: key) } if certificate && key
           metrics.server_certificate_rotated(previous) if metrics.respond_to?(:server_certificate_rotated)
         end
         current = manager.current_certificate
@@ -520,9 +627,15 @@ module Rubernetes
       end
 
       def stop_streaming_server!
-        @streaming_server&.stop
-        @streaming_server = nil
-      rescue StandardError
+        @tls_file_reloader&.stop
+        @tls_file_reloader = nil
+        (Array(@streaming_servers) + Array(@read_only_servers)).each do |server|
+          server.stop
+        rescue StandardError => error
+          log(:error, "streaming.stop_failed", error: error)
+        end
+        @streaming_servers = nil
+        @read_only_servers = nil
         @streaming_server = nil
       end
 
