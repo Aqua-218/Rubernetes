@@ -331,8 +331,8 @@ module Rubernetes
 
     # pkg/proxy/conntrack.CleanStaleEntries: after every rules sync, UDP
     # conntrack flows that point a Service IP:port / NodePort at an endpoint
-    # that is no longer serving are deleted (otherwise a client keeps hitting
-    # the dead backend until the entry times out).  Per IP family, timed in
+    # that is no longer serving are deleted. Also retire DNAT flows for UDP
+    # NodePorts removed from the datapath. Per IP family, timed in
     # kubeproxy_conntrack_reconciler_sync_duration_seconds and counted in
     # kubeproxy_conntrack_reconciler_deleted_entries_total.
     class ConntrackReconciler
@@ -349,6 +349,7 @@ module Rubernetes
         @clock = clock
         @last_error = nil
         @disabled = false
+        @node_port_frontends = {}
       end
 
       def disabled? = @disabled
@@ -364,9 +365,12 @@ module Rubernetes
         started = @clock.call
         deleted = 0
         begin
+          frontends = self.class.node_port_frontends(family, rules)
+          retired = @node_port_frontends.fetch(family, Set.new) - frontends
           entries = @netlink.list(family)
-          stale = self.class.stale_flows(family, rules, entries)
+          stale = self.class.stale_flows(family, rules, entries, retired_node_ports: retired)
           deleted = @netlink.delete(family, stale) unless stale.empty?
+          @node_port_frontends[family] = frontends
           @last_error = nil
         rescue ConntrackNetlinkError, ArgumentError => error
           @last_error = error
@@ -388,7 +392,7 @@ module Rubernetes
       # (VIP:port and *:nodePort) with at least one serving endpoint, a flow
       # whose original destination is that front end and whose reply source
       # is not one of those endpoints is stale.
-      def self.stale_flows(family, rules, flows)
+      def self.stale_flows(family, rules, flows, retired_node_ports: Set.new)
         vip_endpoints = {}
         node_port_endpoints = {}
         Array(rules).each do |rule|
@@ -406,17 +410,36 @@ module Rubernetes
             (node_port_endpoints[rule.node_port] ||= Set.new).merge(serving)
           end
         end
-        return [] if vip_endpoints.empty? && node_port_endpoints.empty?
+        return [] if vip_endpoints.empty? && node_port_endpoints.empty? && retired_node_ports.empty?
 
         Array(flows).select do |flow|
           next false unless flow.protocol == ConntrackNetlink::IPPROTO_UDP
 
           reply = [canonical(flow.reply_src), flow.reply_sport]
-          endpoints = vip_endpoints[[canonical(flow.orig_dst), flow.orig_dport]]
+          original = [canonical(flow.orig_dst), flow.orig_dport]
+          endpoints = vip_endpoints[original]
           next true if endpoints && !endpoints.include?(reply)
+          next true if !endpoints && original != reply && retired_node_ports.include?(original)
 
           endpoints = node_port_endpoints[flow.orig_dport]
           endpoints && !endpoints.include?(reply)
+        end
+      end
+
+      def self.node_port_frontends(family, rules)
+        local_addresses = nil
+        Array(rules).each_with_object(Set.new) do |rule, result|
+          next unless rule.kind == "NodePort" && rule.protocol == "UDP" && rule.node_port
+
+          families = Array(rule.metadata["serviceFamilies"])
+          next if !families.empty? && !families.include?(family)
+
+          addresses = Array(rule.metadata["nodeAddresses"])
+          addresses = (local_addresses ||= Socket.ip_address_list.select(&:ip?).map(&:ip_address)) if addresses.empty?
+          addresses.each do |address|
+            ip = address.to_s.split("%", 2).first
+            result.add([canonical(ip), rule.node_port]) if ModelSupport.ip_family(ip) == family
+          end
         end
       end
 
