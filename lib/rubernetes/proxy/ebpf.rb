@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "digest"
 require "etc"
 require "ipaddr"
@@ -7,6 +9,8 @@ require "socket"
 
 require_relative "../platform/linux/bpf"
 require_relative "ebpf_program"
+require_relative "ebpf/tc_interfaces"
+require_relative "nftables_netlink"
 
 module Rubernetes
   module Proxy
@@ -16,6 +20,8 @@ module Rubernetes
     # EBPFProgram::ServiceDatapath so the same Ruby wire format drives both
     # map synchronization and the verifier-visible packet path.
     class LinuxEBPFAdapter
+      include TCInterfaces
+
       BPF = Rubernetes::Platform::Linux::BPF
 
       AF_UNSPEC = 0
@@ -196,11 +202,13 @@ module Rubernetes
       def initialize(bpf: BPF.new, netlink: TCNetlink.new, interface: nil, ifindex: nil,
                      complete_semantics: false, semantic_probe: nil,
                      program_name: DEFAULT_PROGRAM_NAME, map_layout: nil, kernel_release: nil,
-                     helper_attestation: nil, kernel_waiver: ENV.fetch(KERNEL_WAIVER_ENV, nil))
+                     helper_attestation: nil, kernel_waiver: ENV.fetch(KERNEL_WAIVER_ENV, nil), fragment_policy: :reassemble)
         @bpf = bpf
         @netlink = netlink
         @interface = interface
         @ifindex = ifindex
+        @fragment_policy = fragment_policy
+        @fragment_fallback = build_fragment_fallback(fragment_policy)
         @complete_semantics = !!complete_semantics
         @semantic_probe = semantic_probe
         raise ArgumentError, "semantic_probe must respond to call" if @semantic_probe && !@semantic_probe.respond_to?(:call)
@@ -246,7 +254,7 @@ module Rubernetes
       end
 
       attr_reader :kernel_release_override, :bpf, :netlink, :maps, :program, :links, :semantic_evidence, :kernel_release,
-                  :actual_kernel_release, :kernel_waiver
+                  :actual_kernel_release, :kernel_waiver, :fragment_policy
 
       def production_release_attested?
         @kernel_release_override.nil? && sctp_crc32c_kernel_supported?(release: @actual_kernel_release)
@@ -384,7 +392,7 @@ module Rubernetes
       def production_capable?
         @complete_semantics && @semantic_verified && service_semantics_complete? &&
           production_release_attested? && @verifier_attested && @helper_attested && @helper_live_readback_attested &&
-          @tc_attach_attested && @semantic_evidence_attested
+          @tc_attach_attested && @semantic_evidence_attested && fragment_fallback_ready?
       end
 
       def service_semantics_complete?
@@ -408,7 +416,7 @@ module Rubernetes
 
       def unimplemented_semantics
         EBPFProgram::ServiceDatapath::FEATURE_MATRIX.each_with_object([]) do |(feature, supported), result|
-          result << feature.to_s unless supported
+          result << feature.to_s unless supported || (feature == :ipv4_fragment_reassembly && @fragment_fallback)
         end.freeze
       end
 
@@ -435,7 +443,7 @@ module Rubernetes
         detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only" unless @helper_live_readback_attested
         detail << "TC filter identity readback is incomplete" unless @tc_attach_attested
         detail << "kernel_release override is test-only and cannot authorize production" if @kernel_release_override
-        detail << "TC cannot reassemble IPv4 fragments; both datapaths use explicit fail-closed fragment handling" if gaps.include?("ipv4_fragment_reassembly")
+        detail << "fragment rejection is enabled for this TC adapter" if gaps.include?("ipv4_fragment_reassembly")
         "eBPF adapter is not production-capable: #{(detail + gaps).join("; ")}"
       end
 
@@ -475,6 +483,7 @@ module Rubernetes
 
         {
           "kernelRelease" => @actual_kernel_release,
+          "fragmentPolicy" => @fragment_policy.to_s,
           "sctpCrc32c" => sctp_crc32c_status,
           "kernelWaiver" => @kernel_waiver,
           "program" => {
@@ -527,7 +536,7 @@ module Rubernetes
             specs.each do |name, spec|
               maps[name] = create_map(name, spec, ifindex: target_ifindex)
             end
-            sync_maps(maps, Array(backend&.rules))
+            sync_datapaths(maps, backend)
             instructions = compile_program(maps: maps)
             @inlinable_array_lookups = count_inlinable_array_lookups(instructions, maps)
             @loaded_instructions = instructions
@@ -607,7 +616,7 @@ module Rubernetes
             @helper_attestation = nil
             @tc_attach_attested = false
             @attached_program_spec = nil
-            @loaded_instructions = nil
+            reset_loaded_datapaths(backend)
             raise
           end
         end
@@ -623,7 +632,7 @@ module Rubernetes
           return false unless @attached && @program && @program.id
 
           readback = verify_kernel_state(Integer(target_ifindex))
-          identity_matches?(result, readback) && expected_program_matches?(expected)
+          identity_matches?(result, readback) && expected_program_matches?(expected) && fragment_fallback_verified?(backend)
         end
       rescue StandardError
         false
@@ -634,7 +643,7 @@ module Rubernetes
           raise "eBPF adapter is not attached" unless @attached
 
           rules = Array(backend.rules)
-          sync_maps(@maps, rules)
+          sync_datapaths(@maps, backend)
           @service_keys = current_service_keys(rules).freeze
           @backend_keys = current_backend_keys(rules).freeze
           @source_range_keys = current_source_range_keys(rules).freeze
@@ -652,7 +661,7 @@ module Rubernetes
           next false unless @attached && @program
 
           readback = verify_kernel_state(@links.first.fetch(:ifindex))
-          result[:program_id].to_i == @program.id && identity_matches?(result, readback)
+          result[:program_id].to_i == @program.id && identity_matches?(result, readback) && fragment_fallback_verified?(backend)
         end
       rescue StandardError
         false
@@ -680,6 +689,11 @@ module Rubernetes
           end
           begin
             restore_accept_local!
+          rescue StandardError => error
+            errors << error
+          end
+          begin
+            @fragment_fallback&.detach
           rescue StandardError => error
             errors << error
           end
@@ -716,10 +730,36 @@ module Rubernetes
           name, map = entry
           result[name.to_s] = map.fd
         end
-        EBPFProgram::ServiceDatapath.new(map_fds: normalized_maps).build
+        EBPFProgram::ServiceDatapath.new(map_fds: normalized_maps, kernel_reassembly: !@fragment_fallback.nil?).build
       end
 
       private
+
+      def build_fragment_fallback(policy)
+        case policy
+        when :reject then nil
+        when :reassemble then NftablesNetlinkAdapter.new(table_name: "rubernetes_ebpf_fragments")
+        else raise ArgumentError, "fragment_policy must be :reassemble or :reject"
+        end
+      end
+
+      def sync_datapaths(maps, backend)
+        @fragment_fallback&.update(backend: backend) if backend
+        sync_maps(maps, Array(backend&.rules))
+      end
+
+      def fragment_fallback_ready?
+        !@fragment_fallback || @fragment_fallback.last_readback&.fetch("verified", false) == true
+      end
+
+      def fragment_fallback_verified?(backend)
+        !@fragment_fallback || !backend || @fragment_fallback.readback(backend: backend).fetch("verified", false)
+      end
+
+      def reset_loaded_datapaths(backend)
+        @loaded_instructions = nil
+        @fragment_fallback&.detach(backend: backend)
+      end
 
       def ensure_sctp_crc32c_kernel!(layout: @map_layout)
         names = layout.respond_to?(:keys) ? layout.keys.map(&:to_s) : []
@@ -1094,78 +1134,6 @@ module Rubernetes
         name
       end
 
-      def normalize_hooks(hook)
-        values = hook.to_sym == :tc ? %i[ingress egress] : [hook.to_sym]
-        values.each do |value|
-          raise ArgumentError, "unsupported TC hook #{value.inspect}" unless %i[ingress egress].include?(value)
-        end
-        values.freeze
-      rescue NoMethodError
-        raise ArgumentError, "TC hook must be ingress, egress, or tc"
-      end
-
-      # Accept one interface/ifindex or a list of them; the first entry is
-      # the identity reported in attach results.
-      ACCEPT_LOCAL_SYSCTL = "/proc/sys/net/ipv4/conf/%s/accept_local"
-
-      def configure_accept_local!(ifindices)
-        @accept_local_restore = {}
-        ifindices.each do |index|
-          name = Socket.getifaddrs.find { |address| address.ifindex == index }&.name
-          next unless name
-
-          path = format(ACCEPT_LOCAL_SYSCTL, name)
-          next unless File.file?(path)
-
-          previous = File.read(path).strip
-          next if previous == "1"
-
-          File.write(path, "1\n")
-          @accept_local_restore[path] = previous
-        end
-      end
-
-      def restore_accept_local!
-        Hash(@accept_local_restore).each do |path, previous|
-          File.write(path, "#{previous}\n") if File.file?(path)
-        end
-        @accept_local_restore = {}
-      end
-
-      def resolve_ifindices(interface:, ifindex:)
-        interfaces = interface.is_a?(Array) ? interface : [interface]
-        ifindices = ifindex.is_a?(Array) ? ifindex : [ifindex]
-        pairs = if interfaces.length >= ifindices.length
-                  interfaces.each_with_index.map do |name, index|
-                    [name, ifindices[index]]
-                  end
-                else
-                  ifindices.each_with_index.map do |value, index|
-                    [interfaces[index], value]
-                  end
-                end
-        resolved = pairs.map { |name, value| resolve_ifindex(interface: name, ifindex: value) }.uniq
-        raise ArgumentError, "at least one TC interface is required" if resolved.empty?
-
-        resolved.freeze
-      end
-
-      def resolve_ifindex(interface:, ifindex:)
-        ifindex_value = ifindex.nil? ? nil : Integer(ifindex)
-        return ifindex_value if ifindex_value && ifindex_value.positive?
-
-        name = String(interface || "")
-        raise ArgumentError, "a real interface name or positive ifindex is required for TC attach" if name.empty?
-
-        entry = Socket.getifaddrs.find { |address| address.name == name && address.ifindex }
-        resolved = entry&.ifindex
-        raise Errno::ENODEV, "interface #{name.inspect} was not found" unless resolved && resolved.positive?
-
-        resolved
-      rescue TypeError, ArgumentError => error
-        raise ArgumentError, "invalid TC interface reference: #{error.message}"
-      end
-
       def normalize_map_layout(layout)
         raise ArgumentError, "eBPF map layout must be a non-empty hash" unless layout.respond_to?(:each_pair) && !layout.empty?
 
@@ -1233,7 +1201,7 @@ module Rubernetes
           service_rule_families(rule).each do |family|
             service_key, service_value = encode_service_rule_for_family(rule, family)
             update_map_entry(maps.fetch("service_rules"), service_key, service_value, "service_rule")
-            backend_candidates(rule).select { |backend| backend_family(backend) == family }.each_with_index do |backend, index|
+            backend_candidates(rule, family: family).each_with_index do |backend, index|
               backend_key, backend_value = encode_backend(backend, token: service_token(rule), index: index,
                                                                    family: family)
               update_map_entry(maps.fetch("backends"), backend_key, backend_value, "backend")
@@ -1292,7 +1260,7 @@ module Rubernetes
       def current_backend_keys(rules)
         Array(rules).each_with_object({}) do |rule, result|
           service_rule_families(rule).each do |family|
-            backend_candidates(rule).select { |backend| backend_family(backend) == family }.each_with_index do |backend, index|
+            backend_candidates(rule, family: family).each_with_index do |backend, index|
               key, = encode_backend(backend, token: service_token(rule), index: index, family: family)
               identity = [rule.key, family, backend_identity(backend), index].join("|")
               result[identity] = key
@@ -1339,7 +1307,7 @@ module Rubernetes
         key_node_port = rule.node_port || 0
         key = [Integer(family), protocol, Integer(key_port), Integer(key_node_port), 0].pack("CCS<S<S<") +
               virtual_ip + ("\0".b * 16)
-        candidates = backend_candidates(rule).select { |backend| backend_family(backend) == Integer(family) }
+        candidates = backend_candidates(rule, family: Integer(family))
         value = "\0".b * 64
         value[0, 8] = service_token(rule)
         value.setbyte(8, EBPFProgram::WireFormat::SERVICE_KIND.fetch(rule.kind, 0))
@@ -1454,7 +1422,7 @@ module Rubernetes
         (families.empty? ? [4] : families).uniq.sort.freeze
       end
 
-      def backend_candidates(rule)
+      def backend_candidates(rule, family: nil)
         all = Array(rule.backends)
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
         groups = metadata["backendGroups"] || metadata[:backendGroups] || {}
@@ -1466,66 +1434,37 @@ module Rubernetes
         terminating_ids = Array(groups["terminating"] || groups[:terminating]).map(&:to_s)
         selected_ids = all_ids.empty? ? by_identity.keys : all_ids
         local_node = metadata["node"] || metadata[:node]
-        if %w[NodePort ExternalIP LoadBalancer HealthCheckNodePort].include?(rule.kind.to_s)
-          selected_ids &= local_ids if rule.external_traffic_policy.to_s == "Local" && !local_node.to_s.empty?
-        elsif rule.kind.to_s == "ClusterIP"
-          selected_ids &= local_ids if rule.internal_traffic_policy.to_s == "Local" && !local_node.to_s.empty?
-        end
+        policy = rule.kind.to_s == "ClusterIP" ? rule.internal_traffic_policy : rule.external_traffic_policy
+        selected_ids &= local_ids if policy.to_s == "Local" && !local_node.to_s.empty?
         selected = selected_ids.filter_map { |identity| by_identity[identity] }
+        selected.select! { |backend| backend_family(backend) == family } if family
         healthy_selected = if healthy_ids.empty?
                              selected.select { |backend| endpoint_healthy?(backend) }
                            else
                              selected.select { |backend| healthy_ids.include?(backend_identity(backend)) }
                            end
-        selected = if publish_not_ready_addresses?(rule)
-                     non_terminating = selected.reject { |backend| endpoint_terminating?(backend) }
-                     if non_terminating.any?
-                       non_terminating
-                     else
-                       selected.select do |backend|
-                         identity = backend_identity(backend)
-                         terminating = terminating_ids.empty? ? endpoint_terminating?(backend) : terminating_ids.include?(identity)
-                         serving = serving_ids.empty? ? endpoint_serving?(backend) : serving_ids.include?(identity)
-                         terminating && serving
-                       end
-                     end
-                   elsif healthy_selected.any?
-                     healthy_selected
-                   else
-                     terminating_selected = selected.select do |backend|
-                       identity = backend_identity(backend)
-                       terminating = terminating_ids.empty? ? endpoint_terminating?(backend) : terminating_ids.include?(identity)
-                       serving = serving_ids.empty? ? endpoint_serving?(backend) : serving_ids.include?(identity)
-                       terminating && serving
-                     end
-                     if terminating_selected.any?
-                       terminating_selected
-                     else
-                       []
-                     end
-                   end
-        if rule_topology_hints_enabled?(rule)
-          zone = metadata["zone"] || metadata[:zone]
-          if zone && !zone.to_s.empty? && selected.all? { |backend| backend.respond_to?(:hints) && !Array(backend.hints).empty? }
-            hinted = selected.select { |backend| Array(backend.hints).map(&:to_s).include?(zone.to_s) }
-            selected = hinted unless hinted.empty?
+        if healthy_selected.empty?
+          terminating_selected = selected.select do |backend|
+            identity = backend_identity(backend)
+            terminating = terminating_ids.empty? ? endpoint_terminating?(backend) : terminating_ids.include?(identity)
+            serving = serving_ids.empty? ? endpoint_serving?(backend) : serving_ids.include?(identity)
+            terminating && serving
+          end
+          return terminating_selected.sort_by { |backend| backend_identity(backend) }
+        end
+        selected = healthy_selected
+        if policy.to_s != "Local" && rule_topology_hints_enabled?(rule)
+          selected = TopologyHints.preferred(selected, node: local_node, zone: ModelSupport.key(metadata, "zone")) do |backend, field|
+            backend.public_send(field) if backend.respond_to?(field)
           end
         end
         selected.sort_by { |backend| backend_identity(backend) }
       end
 
-      def publish_not_ready_addresses?(rule)
-        metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
-        ModelSupport.bool(metadata["publishNotReadyAddresses"] || metadata[:publishNotReadyAddresses], default: false)
-      end
-
       def endpoint_healthy?(backend)
         return backend.healthy? if backend.respond_to?(:healthy?)
 
-        ready = backend.respond_to?(:ready) ? backend.ready : true
-        serving = backend.respond_to?(:serving?) ? backend.serving? : true
-        terminating = backend.respond_to?(:terminating?) ? backend.terminating? : false
-        !!ready && !!serving && !terminating
+        !backend.respond_to?(:ready) || backend.ready
       end
 
       def endpoint_serving?(backend)
@@ -1538,7 +1477,7 @@ module Rubernetes
 
       def rule_topology_hints_enabled?(rule)
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
-        value = metadata["topologyAwareHints"] || metadata[:topologyAwareHints]
+        value = ModelSupport.key(metadata, "topologyAwareHints")
         value.nil? || ModelSupport.bool(value, default: true)
       end
 
@@ -1751,29 +1690,9 @@ module Rubernetes
         end
       end
 
-      def deep_copy_for_compare(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, child), result| result[key] = deep_copy_for_compare(child) }
-        when Array
-          value.map { |child| deep_copy_for_compare(child) }
-        else
-          value
-        end
-      end
+      def deep_copy_for_compare(value) = ObjectTree.copy(value)
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            deep_freeze(key)
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value)
     end
 
     EBPFKernelAdapter = LinuxEBPFAdapter unless const_defined?(:EBPFKernelAdapter, false)
