@@ -62,6 +62,23 @@ class MemoryStoreSortedKeysTest < Minitest::Test
     assert_nil third.continue_token
   end
 
+  def test_continue_tokens_allow_a_new_limit_at_the_original_revision
+    store = Store.new
+    prefix = "registry/things/ns/"
+    %w[a b c d].each { |name| store.create("#{prefix}#{name}", object(name)) }
+    first = store.list(prefix, limit: 1)
+    store.delete("#{prefix}d")
+    store.create("#{prefix}e", object("e"))
+    second = store.list(prefix, limit: 2, continue: first.continue_token)
+
+    assert_equal %w[b c], names(second)
+    third = store.list(prefix, continue: second.continue_token)
+
+    assert_equal %w[d], names(third)
+    assert_nil third.continue_token
+    assert_equal first.resource_version, third.resource_version
+  end
+
   def test_an_imported_state_lists_correctly
     store = Store.new
     %w[b a].each { |name| store.create("registry/things/ns/#{name}", object(name)) }
