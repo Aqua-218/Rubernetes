@@ -17,9 +17,11 @@
 
 require "digest"
 require "fileutils"
+require "find"
 require "json"
 require "open3"
 require "optparse"
+require "tempfile"
 require "time"
 
 ROOT = File.expand_path("../..", __dir__)
@@ -33,6 +35,7 @@ BASE_IMAGE_DIGEST = ENV.fetch("RUBERNETES_M7_BASE_IMAGE_DIGEST", "sha256:c5a5064
 FIRECRACKER_TGZ_SHA256 = "382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6"
 KERNEL = File.join(BUILD, "kernel", "vmlinux-rubernetes-6.1.128")
 ROOTFS_SIZE_MIB = Integer(ENV.fetch("RUBERNETES_M7_ROOTFS_MIB", "768"))
+FILESYSTEM_BUILD_ENV = {"LC_ALL" => "C", "E2FSPROGS_FAKE_TIME" => "1700000000"}.freeze
 
 def run!(*arguments, chdir: nil, env: {})
   output, status = Open3.capture2e(env, *arguments, chdir: chdir || ROOT)
@@ -115,6 +118,50 @@ def build_rootfs(staging)
    "generated_platform_sha256" => tree_digest(File.join(ROOT, "generated/platform")), "ext_sha256" => sha256(File.join(ext_output, "rubernetes_linux.so"))}
 end
 
+def filesystem_uuid(kind, identity)
+  hash = Digest::SHA256.hexdigest("#{kind}\0#{identity}")
+  "#{hash[0, 8]}-#{hash[8, 4]}-5#{hash[13, 3]}-8#{hash[17, 3]}-#{hash[20, 12]}"
+end
+
+# mke2fs -d copies inode times from staging, including access and change
+# times assigned by the host filesystem. Normalize the read-only image
+# after population so neither extraction time nor the staging path matters.
+def normalize_inode_times(rootfs, staging)
+  timestamp = "@#{FILESYSTEM_BUILD_ENV.fetch("E2FSPROGS_FAKE_TIME")}"
+  paths = Find.find(staging).map { |path| path.delete_prefix(staging) }
+  paths[0] = "/"
+  paths << "/lost+found"
+  Tempfile.create("rubernetes-guest-inode-times") do |commands|
+    paths.uniq.each do |path|
+      raise "guest path cannot be passed to debugfs: #{path.inspect}" if path.match?(/["\\\r\n]/)
+
+      %w[atime ctime mtime crtime].each { |field| commands.puts %(set_inode_field "#{path}" #{field} #{timestamp}) }
+    end
+    commands.flush
+    _output, errors, status = Open3.capture3(FILESYSTEM_BUILD_ENV, "debugfs", "-w", "-f", commands.path, rootfs)
+    diagnostics = errors.lines.reject { |line| line.start_with?("debugfs ") }.join
+    raise "debugfs inode normalization failed: #{diagnostics}" unless status.success? && diagnostics.empty?
+  end
+end
+
+def pack_guest_filesystem(rootfs, staging, provenance)
+  uuid = filesystem_uuid("rubernetes-guest-ext4", JSON.generate([provenance, ROOTFS_SIZE_MIB]))
+  FileUtils.rm_f(rootfs)
+  run!("mkfs.ext4", "-q", "-F", "-d", staging, "-L", "rubernetes-guest", "-O", "^has_journal", "-U", uuid,
+       "-E", "hash_seed=#{uuid},lazy_itable_init=0,lazy_journal_init=0", rootfs, "#{ROOTFS_SIZE_MIB}M", env: FILESYSTEM_BUILD_ENV)
+  normalize_inode_times(rootfs, staging)
+  run!("e2fsck", "-f", "-n", rootfs, env: FILESYSTEM_BUILD_ENV)
+end
+
+def format_guest_verity(rootfs, hash_image)
+  identity = sha256(rootfs)
+  uuid = filesystem_uuid("rubernetes-guest-verity", identity)
+  salt = Digest::SHA256.hexdigest("rubernetes-guest-verity-salt\0#{identity}")
+  FileUtils.rm_f(hash_image)
+  run!("veritysetup", "format", "--uuid=#{uuid}", "--salt=#{salt}", "--hash=sha256", "--data-block-size=4096", "--hash-block-size=4096",
+       rootfs, hash_image, env: FILESYSTEM_BUILD_ENV)
+end
+
 def main
   options = {write_lock: true}
   OptionParser.new do |parser|
@@ -127,12 +174,10 @@ def main
   staging = File.join(BUILD, "rootfs-staging")
   provenance = build_rootfs(staging)
   rootfs = File.join(ARTIFACTS, "rootfs.ext4")
-  FileUtils.rm_f(rootfs)
-  run!("mkfs.ext4", "-q", "-F", "-d", staging, "-L", "rubernetes-guest", "-O", "^has_journal", rootfs, "#{ROOTFS_SIZE_MIB}M")
+  pack_guest_filesystem(rootfs, staging, provenance)
   FileUtils.rm_rf(staging)
   hash_image = File.join(ARTIFACTS, "rootfs.verity")
-  FileUtils.rm_f(hash_image)
-  output = run!("veritysetup", "format", "--hash=sha256", "--data-block-size=4096", "--hash-block-size=4096", rootfs, hash_image)
+  output = format_guest_verity(rootfs, hash_image)
   root_hash = output[/Root hash:\s*([0-9a-f]{64})/, 1] || raise("veritysetup reported no root hash")
   salt = output[/Salt:\s*([0-9a-f]+)/, 1]
   run!("veritysetup", "verify", rootfs, hash_image, root_hash)
