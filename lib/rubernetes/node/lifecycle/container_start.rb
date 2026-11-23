@@ -7,58 +7,118 @@ module Rubernetes
       # sidecars, application containers, and ephemeral containers added to a
       # running Pod.
       module ContainerStart
+        INIT_EXIT_REASON = "Init:Error"
+
         private
 
         # An init container whose exit matches a RestartAllContainers rule
         # resets the Pod and the init sequence runs again from the first one.
         def start_init_containers(pod, record)
           loop do
-            break unless run_init_containers(pod, record) == :restart_all
+            result = run_init_containers(pod, record)
+            return result unless result == :restart_all
           end
         end
 
         def run_init_containers(pod, record)
           spec = Helpers.key(pod, "spec", {})
-          Array(Helpers.key(spec, "initContainers", [])).each_with_index do |definition, index|
-            definition = Helpers.string_keys(definition)
+          first_index = record[:next_init_index].to_i
+          Array(Helpers.key(spec, "initContainers", [])).each_index do |index|
+            next if index < first_index
+
+            record[:next_init_index] = index
+            pod = adopt_init_image_updates(record)
+            return :pending unless pod
+
+            definition = Helpers.string_keys(pod.dig("spec", "initContainers", index))
             name = Helpers.key(definition, "name", "")
-            event(record, "init.start", name: name)
-            category = restartable_init?(definition) ? "sidecar" : "init"
-            entry = create_entry(record, definition, category: category, index: index)
-            record[:containers] << entry
-            start_entry(entry, record)
-            if restartable_init?(definition)
+            sidecar = restartable_init?(definition)
+            entry = init_entry(record, definition, sidecar ? "sidecar" : "init", index)
+            if sidecar
+              return :pending unless sidecar_startup_ready?(pod, record, entry)
+
               event(record, "init.sidecar.running", name: name)
               next
             end
+            return :pending if entry[:restart_pending]
+
+            # Controllers issuing certificates need the Pod IP while the init
+            # container is still waiting for its mounted Secret.
+            update_status(pod, record)
             exit_status = wait_for_init(entry, record)
-            if restart_all_rule?(entry, init_exit_code(exit_status))
+            pod = record[:pod]
+            exit_code = init_exit_code(exit_status)
+            if exit_code && restart_all_rule?(entry, exit_code)
               reset_all_containers(pod, record, [entry])
               return :restart_all
             end
-            unless init_success?(exit_status)
-              record[:reason] = "Init:Error"
-              record_failed_init_exit(record, entry, exit_status)
-              raise LifecycleError, "init container #{name.inspect} failed"
-            end
+            return handle_failed_init(pod, record, entry, exit_status, exit_code: exit_code) unless exit_code == 0
+
             # kubelet reports a completed init container as Ready and no longer
             # started (kubelet/status: initialized init containers are ready).
-            entry[:status] = status_hash(exit_status, fallback: {"state" => "terminated", "exitCode" => 0})
-              .merge("ready" => true, "started" => false, "restartCount" => entry[:status]["restartCount"].to_i)
+            entry[:status] = completed_init_status(entry, status_hash(exit_status), observed_at: Helpers.now(@clock).iso8601(6))
             entry[:status]["lastState"] = entry[:last_state] if entry[:last_state]
             entry[:started] = false
             event(record, "init.completed", name: name)
           end
+          record.delete(:next_init_index)
           :completed
+        end
+
+        # Native wait can report only a flat exit result. Preserve the runtime's
+        # times when available and use the lifecycle's start and exit observation.
+        def completed_init_status(entry, status, observed_at: nil)
+          runtime = status["terminated"]
+          runtime = status unless runtime.is_a?(Hash)
+          terminated = runtime.slice("message", "signal")
+          terminated["exitCode"] = 0
+          terminated["reason"] = runtime["reason"].to_s.empty? ? "Completed" : runtime["reason"]
+          terminated["containerID"] = runtime["containerID"].to_s.empty? ? entry[:id] : runtime["containerID"]
+          terminated["startedAt"] = runtime["startedAt"] || entry[:started_at]
+          terminated["finishedAt"] = runtime["finishedAt"] || observed_at
+          status.merge("state" => "terminated", "exitCode" => 0, "terminated" => terminated.compact,
+                       "ready" => true, "started" => false, "restartCount" => entry[:status]["restartCount"].to_i)
+        end
+
+        def init_entry(record, definition, category, index)
+          existing = record[:containers].find { |entry| entry[:name] == definition["name"] }
+          return existing if existing
+
+          event(record, "init.start", name: definition["name"])
+          entry = create_entry(record, definition, category: category, index: index)
+          record[:containers] << entry
+          start_entry(entry, record)
+          entry
+        end
+
+        def sidecar_startup_ready?(pod, record, entry)
+          return true if entry[:status]["started"]
+
+          return false unless entry[:started]
+
+          check_start_cancelled!(record)
+          outcomes = evaluate_probes(pod, record, entry, nil, startup_only: true)
+          apply_probe_results(pod, record[:uid], record, entry, outcomes, nil)
+          schedule_probe_wakeup(record[:uid], [entry], first: false) if entry[:started] && !entry[:status]["started"]
+          entry[:status]["started"] == true
         end
 
         def init_exit_code(exit_status)
           return 0 if init_success?(exit_status)
+          return Integer(exit_status) if exit_status.is_a?(Numeric)
 
-          code = Helpers.key(status_hash(exit_status), "exitCode", nil)
-          code.nil? ? 1 : Integer(code)
+          status = status_hash(exit_status)
+          code, signal = exit_details(status)
+          code ||= status["code"]
+          if value_reports?(exit_status, :exit_status)
+            code = exit_status.exit_status
+            signal = exit_status.term_signal if value_reports?(exit_status, :term_signal)
+          end
+          return Integer(code) unless code.nil?
+
+          128 + Integer(signal) if signal
         rescue ArgumentError, TypeError
-          1
+          nil
         end
 
         # A non-zero init container exit is a container exit like any other: it
@@ -66,30 +126,92 @@ module Rubernetes
         # its previous state.  Only the app-container path recorded exits, so an
         # init container that failed on every attempt stayed at restartCount 0
         # with an empty lastState no matter how long the Pod had been looping.
-        def record_failed_init_exit(record, entry, exit_status)
+        def record_failed_init_exit(record, entry, exit_status, exit_code:)
           status = status_hash(exit_status, fallback: {"state" => "terminated", "exitCode" => 1})
-          exit_code = Helpers.key(status, "exitCode", 1).to_i
-          terminated = {"exitCode" => exit_code, "reason" => "Error",
+          reason = Helpers.key(status, "reason", nil).to_s
+          reason = "Error" if reason.empty?
+          terminated = {"exitCode" => exit_code, "reason" => reason,
                         "finishedAt" => Helpers.now(@clock).iso8601(6), "containerID" => entry[:id]}
           terminated["startedAt"] = entry[:started_at] if entry[:started_at]
-          attempt = @restarts.record_exit(restart_identity(record, entry), exit_code: exit_code, reason: "Error",
-                                                                           policy: container_policy(record[:pod], entry[:spec]))
+          attempt = @restarts.record_exit(restart_identity(record, entry), exit_code: exit_code, reason: reason,
+                                                                           policy: container_policy(record[:pod], entry[:spec]),
+                                                                           rules: Helpers.key(entry[:spec], "restartPolicyRules", nil))
           entry[:started] = false
-          entry[:status] = status.merge("state" => "terminated", "exitCode" => exit_code, "reason" => "Error",
+          entry[:restart_count_before_exit] = entry[:status]["restartCount"].to_i
+          entry[:status] = status.merge("state" => "terminated", "exitCode" => exit_code, "reason" => reason,
                                         "terminated" => terminated, "ready" => false, "started" => false,
                                         "restartCount" => attempt.restart_count)
           entry[:status]["lastState"] = entry[:last_state] if entry[:last_state]
           entry[:last_state] = {"terminated" => terminated}
+          attempt
         end
 
-        def wait_for_init(entry, _record)
+        def handle_failed_init(pod, record, entry, exit_status, exit_code:)
+          message = "init container #{entry[:name].inspect} failed"
+          raise LifecycleError, message if exit_code.nil?
+
+          attempt = record_failed_init_exit(record, entry, exit_status, exit_code: exit_code)
+          if attempt.restart_pending?
+            restart_container(pod, record, entry, reason: entry[:status].fetch("reason"), attempt: attempt)
+            return :pending
+          end
+
+          record[:reason] = INIT_EXIT_REASON
+          record[:error] = message
+          :failed
+        end
+
+        INIT_WAIT_INTERVAL = 0.25
+
+        def wait_for_init(entry, record)
           if runtime_supports?(:wait_container)
-            invoke(@runtime, :wait_container, entry[:id])
+            return invoke(@runtime, :wait_container, entry[:id]) unless accepts_keyword?(@runtime, :wait_container, :timeout)
+
+            loop do
+              check_start_cancelled!(record)
+              desired = desired_during_initialization(record)
+              resize_while_initializing(record, desired) if desired
+              result = invoke(@runtime, :wait_container, entry[:id], timeout: INIT_WAIT_INTERVAL)
+              check_start_cancelled!(record)
+              return result unless %w[running created].include?(Helpers.key(result, "state", nil).to_s)
+
+              follow_running_init_sidecars(record) if record[:containers].any? { |candidate| candidate[:category] == "sidecar" }
+              sync_volumes(record, record[:pod]) if volume_sync_due?(record)
+            end
           elsif runtime_supports?(:container_status)
             invoke(@runtime, :container_status, entry[:id])
           else
             raise LifecycleError, "runtime cannot confirm init container exit"
           end
+        end
+
+        def follow_running_init_sidecars(record)
+          previous = record[:pod]
+          current = adopt_init_image_updates(record, sidecars_only: true)
+          raise StartCancelled unless record[:state] == "WorkloadStopped"
+
+          update_status(current, record) if current && !current.equal?(previous)
+          resume_backoff_restarts(record, record[:pod])
+          raise StartCancelled unless record[:state] == "WorkloadStopped"
+
+          probe_initialized_sidecars(record[:pod], record)
+        end
+
+        def check_start_cancelled!(record)
+          raise StartCancelled if @mutex.synchronize { record[:config_removed] }
+        end
+
+        def desired_during_initialization(record)
+          desired = @desired_pod_lookup&.call(record[:uid])
+          if desired.nil?
+            raise StartCancelled if record[:desired_pod_seen]
+
+            return nil
+          end
+          record[:desired_pod_seen] = true
+          raise StartCancelled if deletion_requested?(desired)
+
+          desired
         end
 
         def init_success?(value)
@@ -158,6 +280,7 @@ module Rubernetes
         def pending_ephemeral_containers?(pod, record)
           started = Array(record[:containers]).select { |entry| entry[:category] == "ephemeral" }
             .map { |entry| entry[:name].to_s }
+          started.concat(record.fetch(:rejected_ephemeral_containers, {}).keys)
           ephemeral_definitions(pod).any? do |definition|
             name = Helpers.key(definition, "name", "").to_s
             !name.empty? && !started.include?(name)
@@ -173,10 +296,13 @@ module Rubernetes
         # Ephemeral containers never restart and carry no resources or probes;
         # they join the Pod's existing sandbox.
         def start_ephemeral_containers(pod, record)
+          prepare_ephemeral_volumes(pod, record)
           started = record[:containers].select { |entry| entry[:category] == "ephemeral" }.map { |entry| entry[:name].to_s }
+          started.concat(record.fetch(:rejected_ephemeral_containers, {}).keys)
           ephemeral_definitions(pod).each_with_index do |definition, index|
             name = Helpers.key(definition, "name", "").to_s
             next if name.empty? || started.include?(name)
+            next if reject_ephemeral_apparmor(pod, record, definition)
 
             pin_ephemeral_image(pod, record, definition, index)
             event(record, "ephemeral.start", name: name)
@@ -191,6 +317,19 @@ module Rubernetes
           end
         end
 
+        def reject_ephemeral_apparmor(pod, record, definition)
+          return false unless Runtime::AppArmor.enforced?(Runtime::AppArmor.profile(pod, definition))
+
+          message = apparmor_support_error(pod)
+          return false unless message
+
+          waiting = {"reason" => "CreateContainerConfigError", "message" => message}
+          (record[:rejected_ephemeral_containers] ||= {})[definition.fetch("name")] = {"waiting" => waiting}
+          update_status(pod, record)
+          persist_state!
+          true
+        end
+
         def create_entry(record, definition, category:, index:)
           definition = Helpers.deep_copy(definition)
           # Restartable init containers are represented as sidecars for runtime
@@ -202,7 +341,7 @@ module Rubernetes
             definition["resolved_image"] = resolved_image
           end
           definition = build_container_spec(record, definition, category: category, index: index)
-          container_id = create_container(record[:sandbox_id], definition)
+          container_id = create_container(record, definition, category: category)
           if container_id.to_s.empty?
             raise LifecycleError,
                   "runtime returned an empty container identity for #{Helpers.key(definition, "name", "")}"
@@ -267,11 +406,12 @@ module Rubernetes
           spec = @container_spec.build(
             pod: pod, container: definition, category: category, index: index,
             resolved_image: definition["resolved_image"], volumes: record[:volume].is_a?(Hash) ? record[:volume] : {},
-            pod_files: record[:pod_files] || {}, pod_ips: pod_ips(record), host_ip: @host_ip,
-            pod_directory: pod_directory(record)
+            pod_files: record[:pod_files] || {}, pod_ips: pod_ips(record), host_ip: (@host_ips unless @host_ips.empty?),
+            pod_directory: pod_directory(record), default_home: false, resolve_image_command: !cri_runtime_for_pod?(pod)
           )
           spec = apply_cdi_devices(record, spec, definition)
           spec = apply_device_plugin_allocation(record, spec, definition)
+          ContainerSpec.ensure_home!(spec, definition["resolved_image"])
           apply_resource_affinity(record, spec, definition)
         rescue ContainerSpec::ConfigError, PodVolumes::Error => error
           record[:reason] = "CreateContainerConfigError"
@@ -283,6 +423,7 @@ module Rubernetes
           pre_start_container(record, entry)
           start_container(entry[:id])
           entry[:started] = true
+          remember_stop_signal(entry)
           started_at = mark_container_started(entry, record)
           entry[:status] = {"state" => "running", "running" => {"startedAt" => started_at},
                             "ready" => false, "started" => true,
@@ -291,10 +432,16 @@ module Rubernetes
           @probes.register(entry[:id], probes: probes_for(entry[:spec]), started_at: @clock.call)
           schedule_probe_wakeup(record[:uid], [entry], first: true)
           # Without a readiness probe a running container is Ready (kubelet parity).
-          entry[:status]["ready"] = @probes.ready?(entry[:id])
+          update_probe_status(entry)
           run_post_start_hook(entry, record)
           @restarts.record_start(restart_identity(record, entry), policy: container_policy(record[:pod], entry[:spec]))
           event(record, "container.started", name: entry[:name], container_id: entry[:id])
+        end
+
+        def remember_stop_signal(entry)
+          return unless @container_stop_signals && runtime_supports?(:container_stop_signal)
+
+          entry[:stop_signal] = best_effort { invoke(@runtime, :container_stop_signal, entry[:id]) }
         end
 
         def probes_for(definition)
@@ -305,8 +452,16 @@ module Rubernetes
           }
         end
 
-        def create_container(sandbox_id, definition)
-          value = invoke(@runtime, :create_container, sandbox_id, definition)
+        def create_container(record, definition, category:)
+          definition = definition.except("stop_signal") if definition.key?("stop_signal")
+          if @container_stop_signals && category != "ephemeral"
+            signal = ContainerStopSignals.custom_signal(definition)
+            definition = definition.merge("stop_signal" => signal) if ContainerStopSignals.cri_name(signal)
+          end
+          # Recovering a CRI sandbox restores its metadata from the runtime.
+          # The Pod still supplies the original RuntimeClass on container restart.
+          image_options = {runtime_class_name: record.dig(:pod, "spec", "runtimeClassName")}.compact
+          value = invoke(@runtime, :create_container, record[:sandbox_id], definition, **image_options)
           return value.id.to_s if value_reports?(value, :id) && !value.id.to_s.empty?
 
           if value.is_a?(Hash)
@@ -315,6 +470,9 @@ module Rubernetes
           end
 
           value
+        rescue Runtime::ContainerConfigError => error
+          record[:reason] = "CreateContainerConfigError"
+          raise LifecycleError, error.message
         end
 
         def start_container(container_id)
