@@ -62,17 +62,25 @@ module Rubernetes
             end
             byte += char.bytesize
           end
-          dry_run = Array(request.query_values("dryRun"))
-          unless dry_run.all? { |value| value.to_s == "All" }
-            causes << {"reason" => "FieldValueNotSupported", "field" => "dryRun",
-                       "message" => "Unsupported value: #{JSON.generate(dry_run.map(&:to_s))}: supported values: \"All\""}
-          end
+          dry_run_cause = invalid_dry_run(Array(request.query_values("dryRun")))
+          causes << dry_run_cause if dry_run_cause
           directive = query(request, "fieldValidation")
           unless directive.nil? || directive.to_s.empty? || FIELD_VALIDATION_DIRECTIVES.include?(directive.to_s)
             causes << {"reason" => "FieldValueNotSupported", "field" => "fieldValidation",
                        "message" => "Unsupported value: #{ManagedFields::Value.go_quote(directive.to_s)}: supported values: \"\", \"Ignore\", \"Strict\", " \
                                     "\"Warn\""}
           end
+          invalid_write_options!(kind, causes)
+        end
+
+        def invalid_dry_run(values)
+          return if values.all?("All")
+
+          {"reason" => "FieldValueNotSupported", "field" => "dryRun",
+           "message" => %(Unsupported value: #{JSON.generate(values)}: supported values: "All")}
+        end
+
+        def invalid_write_options!(kind, causes)
           return if causes.empty?
 
           rendered = causes.map { |cause| "#{cause.fetch("field")}: #{cause.fetch("message")}" }
@@ -101,7 +109,7 @@ module Rubernetes
 
         # `unknown field "spec.foo"` / `duplicate field "metadata.name"`, matching
         # sigs.k8s.io/json strictError.Error().
-        def strict_field_violations(resource, object, duplicates: [], yaml_errors: [])
+        def strict_field_violations(resource, object, duplicates: [], yaml_errors: [], check_types: false)
           # sigs.k8s.io/json reports strict errors in the order the decoder met
           # them, and the body a client sends declares its unknown field before
           # it repeats a known one -- which is the order conformance matches on
@@ -116,6 +124,7 @@ module Rubernetes
           if reporter
             # A validator that cannot walk the object reports no unknown fields.
             issues = best_effort { reporter.errors(object, unknown_fields: :reject) } || []
+            yield reporter.wire_type_error(issues) if check_types && reporter.is_a?(Schema::Validator)
             Array(issues).each do |issue|
               next unless issue.code == :unknown_field
 
@@ -146,7 +155,9 @@ module Rubernetes
           directive = field_validation_directive(request)
           yaml_errors = request_duplicate_yaml_errors(request) if yaml_errors.nil?
           violations = strict_field_violations(resource, document.nil? ? object : document,
-                                               duplicates: duplicates, yaml_errors: yaml_errors)
+                                               duplicates: duplicates, yaml_errors: yaml_errors, check_types: !apply) do |error|
+            refuse_undecodable_write!(resource, request, error) if error
+          end
           return :prune if violations.empty?
 
           case directive
@@ -165,6 +176,18 @@ module Rubernetes
             end
           end
           :prune
+        end
+
+        def refuse_undecodable_write!(resource, request, error)
+          if request.method == "PATCH"
+            # The merged object may include values the request did not supply.
+            # Report the offending field and type without echoing the object.
+            cause = {"reason" => "FieldValueInvalid", "message" => error, "field" => "patch"}
+            raise Status::Invalid.new("patch: #{error}", details: {"causes" => [cause]})
+          end
+
+          kind = resource.kind
+          raise Status::BadRequest.new("#{kind} in version #{resource.version.inspect} cannot be handled as a #{kind}: #{error}")
         end
 
         # Server-side apply reports an undeclared field through the typed
@@ -196,7 +219,6 @@ module Rubernetes
           result["metadata"]["namespace"] ||= namespace unless %i[cluster all].include?(namespace)
           result["metadata"]["uid"] ||= @uid_generator ? @uid_generator.call : SecureRandom.uuid
           result["metadata"]["creationTimestamp"] ||= @clock.call.utc.iso8601
-          result["metadata"]["resourceVersion"] ||= "0"
           result
         end
 
