@@ -2,10 +2,11 @@
 
 require_relative "../test_helper"
 require "json"
-require "logger"
+require "stringio"
 require "rubernetes/api"
 require "rubernetes/storage/memory_store"
 require "rubernetes/bootstrap/api_server_service"
+require "rubernetes/bootstrap/structured_logger"
 
 # A CRD written through one apiserver replica is served by every replica:
 # each runs its own reconciler over the shared store, the way every
@@ -43,13 +44,18 @@ class APIServerDynamicAPIReconcilerTest < Minitest::Test
   def test_a_replica_serves_crds_written_through_another
     store = Rubernetes::Storage::MemoryStore.new
     _registry_a, _manager_a, server_a = replica(store)
-    registry_b, manager_b, = replica(store)
+    registry_b, manager_b, server_b = replica(store)
     service = Rubernetes::Bootstrap::APIServerService.allocate
     service.instance_variable_set(:@store, store)
     service.instance_variable_set(:@registry, registry_b)
     service.instance_variable_set(:@crd_manager, manager_b)
+    service.instance_variable_set(:@api_server, server_b)
     service.instance_variable_set(:@aggregator, API::Aggregator.new)
-    service.instance_variable_set(:@logger, Logger.new(nil))
+    logger = Rubernetes::Bootstrap::StructuredLogger.new(io: StringIO.new, process_name: "dynamic-api-reconciler-test")
+    service.instance_variable_set(:@logger, logger)
+    startup = API::StartupHealth.new
+    server_b.startup_health = startup
+    service.instance_variable_set(:@startup_health, startup)
     service.send(:start_dynamic_api_reconciler)
 
     call = lambda do |method, path, body|
@@ -59,6 +65,8 @@ class APIServerDynamicAPIReconcilerTest < Minitest::Test
 
     assert_equal 201, call.call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", crd).status
     eventually { registry_b.find_gvr(group: "example.com", version: "v1", resource: "gadgets") }
+
+    assert startup.checks(readyz: true).fetch("informer-sync")
 
     assert_equal 200, call.call("DELETE", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/gadgets.example.com", {}).status
     eventually { registry_b.find_gvr(group: "example.com", version: "v1", resource: "gadgets").nil? }
