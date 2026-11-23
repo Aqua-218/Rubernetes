@@ -25,10 +25,10 @@ class OCILayerSecurityTest < Minitest::Test
     end
   end
 
-  def test_rejects_path_traversal_absolute_paths_and_escaping_links
+  def test_rejects_path_traversal_windows_paths_and_escaping_links
     archives = [
       gzip_layer { |tar| tar.add_file_simple("../escape", 0o644, 1) { |io| io.write("x") } },
-      gzip_layer { |tar| tar.add_file_simple("/absolute", 0o644, 1) { |io| io.write("x") } },
+      gzip_layer { |tar| tar.add_file_simple("C:/absolute", 0o644, 1) { |io| io.write("x") } },
       gzip_layer { |tar| tar.add_symlink("inside/link", "../../escape", 0o777) }
     ]
 
@@ -41,6 +41,21 @@ class OCILayerSecurityTest < Minitest::Test
         end
         refute_path_exists File.join(directory, "escape")
       end
+    end
+  end
+
+  def test_layer_members_rooted_at_the_image_use_the_extraction_root
+    layer = gzip_layer do |tar|
+      tar.mkdir("/ko-app", 0o755)
+      tar.add_file_simple("/ko-app/controller", 0o755, 4) { |io| io.write("file") }
+    end
+    Dir.mktmpdir do |directory|
+      root = File.join(directory, "root")
+      extractor = Rubernetes::Image::LayerExtractor.new(root)
+      extractor.extract(layer, digest: digest_for(layer), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
+
+      assert_equal("file", File.read(File.join(root, "ko-app/controller")))
+      refute_path_exists File.join(directory, "ko-app")
     end
   end
 
