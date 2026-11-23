@@ -55,6 +55,23 @@ class ProxyRulePublicationRaceTest < Minitest::Test
                  "every compiled rule must be programmed")
   end
 
+  def test_zone_changes_republish_all_rules_once_and_restore_the_configured_zone
+    subject = Rubernetes::Proxy::Proxy.new(node_zone: "configured", backend: Rubernetes::Proxy::MemoryBackend.new)
+    subject.apply_service(service("first", "10.96.0.10"))
+    subject.apply_service(service("second", "10.96.0.11"))
+
+    assert_equal(%w[configured configured], subject.backend.rules.map { |rule| rule.metadata["zone"] })
+    subject.publish_stats(reset: true)
+
+    assert subject.update_node_zone("observed")
+    assert_equal(%w[observed observed], subject.backend.rules.map { |rule| rule.metadata["zone"] })
+    refute subject.update_node_zone("observed")
+    assert_equal 1, subject.publish_stats[:count]
+
+    assert subject.update_node_zone(nil)
+    assert_equal(%w[configured configured], subject.backend.rules.map { |rule| rule.metadata["zone"] })
+  end
+
   # Defence in depth: a backend can also roll itself back after failing to
   # commit a diff.  The next publication has to resynchronise it rather than
   # refuse every diff from then on.
