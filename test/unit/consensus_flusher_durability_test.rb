@@ -55,12 +55,14 @@ class ConsensusFlusherDurabilityTest < Minitest::Test
     servers.each_value(&:start)
     servers.each_value { |server| servers.each { |peer_id, peer| server.add_peer(peer_id, peer.address) unless peer.equal?(server) } }
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
-    sleep 0.02 until servers.values.any?(&:leader?) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-    sleep 0.2
-    leader = servers.values.find(&:leader?)
-    unless leader.equal?(servers["a"])
-      leader.transfer_leadership("a")
-      sleep 0.02 until servers["a"].leader? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    until servers.fetch("a").leader? || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      begin
+        leader = servers.values.find(&:leader?)
+        leader.transfer_leadership("a") if leader && !leader.equal?(servers.fetch("a"))
+      rescue C::NotLeader
+        # A new election started between observation and transfer.
+      end
+      sleep 0.1
     end
 
     assert_predicate servers["a"], :leader?, "replica a must lead"
