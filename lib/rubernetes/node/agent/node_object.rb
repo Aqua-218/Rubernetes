@@ -27,7 +27,7 @@ module Rubernetes
             "apiVersion" => "v1",
             "kind" => "Node",
             "metadata" => {"name" => @node_name, "labels" => @node_labels, "annotations" => @node_annotations},
-            "spec" => {},
+            "spec" => @node_registration_spec,
             "status" => node_status(conditions)
           )
         end
@@ -54,9 +54,12 @@ module Rubernetes
         end
 
         def node_status(conditions)
+          images = @status_images&.images
+          images = nil if images && images.empty?
+          device_counts, healthy_devices = device_capacity
           {
-            "capacity" => @capacity.merge(device_capacity.first),
-            "allocatable" => @allocatable.merge(device_capacity.last),
+            "capacity" => @capacity.merge(device_counts),
+            "allocatable" => @allocatable.merge(healthy_devices),
             "addresses" => @addresses,
             "conditions" => conditions,
             # The API server proxies logs/exec/attach/port-forward to this port;
@@ -69,7 +72,7 @@ module Rubernetes
             "daemonEndpoints" => @streaming_port ? {"kubeletEndpoint" => {"Port" => @streaming_port}} : nil,
             # kubelet_node_status.go: set on every status update while the gate is on.
             "declaredFeatures" => @declared_features,
-            "images" => @status_images&.images,
+            "images" => images,
             "volumesInUse" => volumes_in_use,
             "runtimeHandlers" => @runtime_handlers,
             # SupplementalGroupsPolicy: Merge and Strict both honoured.
@@ -82,13 +85,26 @@ module Rubernetes
           @host_info.merge(
             "architecture" => @architecture,
             "operatingSystem" => @operating_system,
-            "containerRuntimeVersion" => "rubernetes://#{Rubernetes::VERSION}",
+            "containerRuntimeVersion" => container_runtime_version,
             "kubeletVersion" => Rubernetes::KUBERNETES_GIT_VERSION,
             # DisableNodeKubeProxyVersion is locked on in v1.36: the field
             # is left empty.
             "kubeProxyVersion" => "",
             "osImage" => @host_info["osImage"].to_s.empty? ? @operating_system : @host_info["osImage"]
           )
+        end
+
+        def container_runtime_version
+          backend = default_node_runtime
+          return "rubernetes://#{Rubernetes::VERSION}" unless cri_backend?(backend)
+
+          response = backend.version
+          runtime = response["runtime_name"].to_s
+          @cri_runtime_name = runtime unless runtime.empty?
+          version = response["runtime_version"].to_s.strip.delete_prefix("v")
+          "#{@cri_runtime_name || "cri"}://#{version.empty? ? "Unknown" : version}"
+        rescue Runtime::CRI::Client::Error
+          "#{@cri_runtime_name || "cri"}://Unknown"
         end
 
         # nodestatus MemoryPressureCondition / DiskPressureCondition /
@@ -128,7 +144,8 @@ module Rubernetes
         end
 
         def cri_clients
-          (runtime_backends || {}).values.select { |backend| cri_backend?(backend) }.map(&:client).uniq
+          clients = [@default_cri_client, *cri_runtime_backends.map(&:client)].compact
+          clients.uniq { |client| client.is_a?(Runtime::CRI::Client) ? client.endpoint : client }
         end
 
         # nodestatus.RuntimeHandlers: the default handler ("") and every handler
@@ -140,18 +157,23 @@ module Rubernetes
           kernel = HostResources.uname_release.to_s[/\A(\d+)\.(\d+)/] ? [Regexp.last_match(1).to_i, Regexp.last_match(2).to_i] : [0, 0]
           native = {"recursiveReadOnlyMounts" => (kernel <=> [5, 12]) >= 0, "userNamespaces" => true}
           cri_features = {}
+          default_backend = default_node_runtime
+          default_features = native
           served = (runtime_backends || {"rubernetes-native" => @runtime}).map do |name, backend|
             features = if cri_backend?(backend)
                          cri_features[backend.client] ||= cri_handler_features(backend.client)
-                         cri_features[backend.client].fetch(backend.handler, cri_features[backend.client].fetch("", {}))
+                         cri_features[backend.client].fetch(backend.handler) do
+                           {"recursiveReadOnlyMounts" => false, "userNamespaces" => false}
+                         end
                        elsif name.to_s.start_with?("rubernetes-firecracker")
                          {"recursiveReadOnlyMounts" => false, "userNamespaces" => false}
                        else
                          native
                        end
+            default_features = features if backend.equal?(default_backend)
             {"name" => name.to_s, "features" => features}
           end
-          [{"name" => "", "features" => native}, *served]
+          [{"name" => "", "features" => default_features}, *served]
         end
       end
     end
