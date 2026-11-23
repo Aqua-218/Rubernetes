@@ -30,7 +30,7 @@ module Rubernetes
                      retry_period_seconds: DEFAULT_RETRY_PERIOD_SECONDS,
                      clock: -> { Time.now.utc })
         @store = store
-        @adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
+        @adapter = StoreAdapter.wrap(store)
         @identity = identity.to_s
         raise ArgumentError, "leader identity must not be empty" if @identity.empty?
 
@@ -51,7 +51,6 @@ module Rubernetes
         @last_renew_time = nil
         @last_step_time = nil
         @last_step_result = nil
-        @leader_transitions = 0
       end
 
       def lease_descriptor
@@ -124,7 +123,7 @@ module Rubernetes
           return :unavailable
         end
         if lease.nil?
-          candidate = build_lease(now, acquire_time: now, leader_transitions: 1)
+          candidate = build_lease(now, acquire_time: now)
           begin
             stored = @adapter.create(candidate, descriptor: lease_descriptor)
             become_leader(now, stored_record(stored, candidate))
@@ -223,6 +222,7 @@ module Rubernetes
         candidate["spec"] ||= {}
         candidate["spec"]["renewTime"] = now.utc.iso8601(6)
         candidate["spec"]["leaseDurationSeconds"] = lease_duration_seconds.to_i
+        normalize_lease_transitions!(candidate["spec"])
         begin
           stored = @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         rescue StandardError => error
@@ -252,7 +252,7 @@ module Rubernetes
         candidate["spec"]["acquireTime"] = now.utc.iso8601(6)
         candidate["spec"]["renewTime"] = now.utc.iso8601(6)
         candidate["spec"]["leaseDurationSeconds"] = lease_duration_seconds.to_i
-        candidate["spec"]["leaderTransitions"] = Support.integer(Support.value(candidate["spec"], "leaderTransitions", 0), 0) + 1 unless same_holder
+        normalize_lease_transitions!(candidate["spec"], increase: same_holder ? 0 : 1)
         begin
           stored = @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         rescue StandardError => error
@@ -267,7 +267,6 @@ module Rubernetes
           @state = :follower
           return :contended
         end
-        @leader_transitions = candidate["spec"]["leaderTransitions"]
         become_leader(now, stored_record(stored, candidate))
         :acquired
       end
@@ -280,6 +279,7 @@ module Rubernetes
         candidate["spec"] ||= {}
         candidate["spec"]["holderIdentity"] = ""
         candidate["spec"]["renewTime"] = nil
+        normalize_lease_transitions!(candidate["spec"])
         @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         @state = :follower
         @last_step_time = nil
@@ -297,12 +297,19 @@ module Rubernetes
             "leaseDurationSeconds" => lease_duration_seconds.to_i,
             "acquireTime" => (acquire_time || now).utc.iso8601(6),
             "renewTime" => now.utc.iso8601(6),
-            "leaderTransitions" => Integer(leader_transitions)
+            "leaseTransitions" => Integer(leader_transitions)
           }
         }
       end
 
       private
+
+      # Older state used client-go's internal LeaderElectionRecord field
+      # name. Preserve its value on the first successful API write.
+      def normalize_lease_transitions!(spec, increase: 0)
+        legacy = spec.delete("leaderTransitions")
+        spec["leaseTransitions"] = Support.integer(spec.fetch("leaseTransitions", legacy), 0) + increase
+      end
 
       # The record the store returned (it carries the new resourceVersion the
       # next fast-path renewal is conditioned on), else what we sent.
