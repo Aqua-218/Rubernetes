@@ -1,9 +1,13 @@
 # frozen_string_literal: true
 
+require_relative "bootstrap_discovery"
+
 module Rubernetes
   module Cluster
     # Certificates, kubeconfigs and the bootstrap objects a new cluster needs.
     module Pki
+      include BootstrapDiscovery
+
       def issue_pki
         directory = File.join(root, "pki")
         FileUtils.mkdir_p(directory)
@@ -24,7 +28,7 @@ module Rubernetes
                                          "DNS:kubernetes.default.svc", "DNS:kubernetes.default.svc.cluster.local",
                                          "IP:127.0.0.1", "IP:::1",
                                          *families.map { |family| "IP:#{host_advertise_address(family)}" },
-                                         *service_cluster_ips.map { |ip| "IP:#{ip}" }].uniq)
+                                         *service_cluster_ips.map { |ip| "IP:#{ip}" }, *worker_gateway_ip_sans].uniq)
 
         admin_key = OpenSSL::PKey::RSA.new(2048)
         admin = certificate(subject: "/O=system:masters/CN=#{ADMIN_USER}", key: admin_key,
@@ -67,10 +71,15 @@ module Rubernetes
         paths
       end
 
+      def worker_gateway_ip_sans
+        isolated_worker_networks? ? worker_networks.control_addresses.map { |address| "IP:#{address}" } : []
+      end
+
       # Client certificates for the components' own identities.
       def component_subjects
         subjects = {"kube-scheduler" => "/CN=system:kube-scheduler", "kube-proxy" => "/CN=system:kube-proxy",
                     "kube-controller-manager" => "/CN=system:kube-controller-manager", "coredns" => "/CN=#{COREDNS_USER}",
+                    "network-policy-reader" => "/CN=#{NETWORK_POLICY_READER}",
                     "kube-apiserver-kubelet-client" => "/CN=#{KUBELET_CLIENT_USER}"}
         worker_ids.each { |id| subjects["node-#{id}"] = "/O=system:nodes/CN=system:node:#{id}" }
         subjects
@@ -78,15 +87,17 @@ module Rubernetes
 
       def issue_component_identities(directory, ca, ca_key)
         component_subjects.to_h do |name, subject|
-          key = OpenSSL::PKey::RSA.new(2048)
-          cert = certificate(subject: subject, key: key, issuer_key: ca_key, issuer: ca, ca: false, client: true)
-          cert_path = File.join(directory, "#{name}.crt")
-          key_path = File.join(directory, "#{name}.key")
-          File.write(cert_path, cert.to_pem)
-          File.write(key_path, key.to_pem)
-          [cert_path, key_path].each { |path| File.chmod(0o600, path) }
-          [name, {cert: cert_path, key: key_path}]
+          [name, issue_component_identity(directory, name, subject, ca, ca_key)]
         end.merge(issue_kubelet_serving(directory, ca, ca_key))
+      end
+
+      def issue_component_identity(directory, name, subject, ca, ca_key)
+        key = OpenSSL::PKey::RSA.new(2048)
+        cert = certificate(subject: subject, key: key, issuer_key: ca_key, issuer: ca, ca: false, client: true)
+        paths = {cert: File.join(directory, "#{name}.crt"), key: File.join(directory, "#{name}.key")}
+        File.write(paths.fetch(:cert), cert.to_pem, perm: 0o600)
+        File.write(paths.fetch(:key), key.to_pem, perm: 0o600)
+        paths
       end
 
       # kubelet --tls-cert-file: each worker's serving certificate, valid for
@@ -108,11 +119,17 @@ module Rubernetes
 
       # The kubeconfig a component uses: its own identity when component
       # identities are on, the conformance admin otherwise.
-      def component_kubeconfig(endpoint, pki, component, fallback)
+      def component_kubeconfig(endpoint, pki, component, fallback, instance: nil)
         identity = pki[:identities]&.fetch(component, nil)
         return fallback unless identity
 
-        write_kubeconfig(endpoint, pki, name: "kubeconfig-#{component}", user: [component, identity])
+        name = ["kubeconfig", component, instance].compact.join("-")
+        write_kubeconfig(endpoint, pki, name: name, user: [component, identity])
+      end
+
+      def prepare_tls_bootstrap!(kubeconfig, endpoint, pki)
+        install_bootstrap_discovery!(kubeconfig, endpoint, pki.fetch(:ca))
+        create_bootstrap_token!(kubeconfig)
       end
 
       # kubeadm init's bootstrap token (bootstrap.kubernetes.io/token in
@@ -185,6 +202,56 @@ module Rubernetes
         apply!(kubeconfig, manifest, "the CoreDNS RBAC")
       end
 
+      def apply_policy_reader_rbac!(kubeconfig)
+        manifest = YAML.safe_load_file(File.join(SOURCE_ROOT, "config", "addons", "network-policy-rbac.yml"))
+        apply!(kubeconfig, manifest, "the network policy reader's RBAC")
+      end
+
+      # Older owned clusters already have the CA and the routed client
+      # endpoint for each agent. Upgrade only their generated native configs.
+      def restore_policy_reader!(processes)
+        updates = processes.filter_map { |process| policy_reader_config_update(process) }
+        return if updates.empty?
+
+        apply_policy_reader_rbac!(kubeconfig)
+        pki = policy_reader_pki
+        updates.each do |name, document, endpoint|
+          path = component_kubeconfig(endpoint, pki, "network-policy-reader", nil, instance: name)
+          document.fetch("processes").fetch("rubernetes-agent").fetch("network")["policy_kubeconfig"] = path
+          write_config(name, document)
+        end
+      end
+
+      def policy_reader_config_update(process)
+        return unless process["executable"] == "rubernetes-agent"
+
+        document = YAML.safe_load_file(process.fetch("config"))
+        agent = document.fetch("processes").fetch("rubernetes-agent")
+        network = agent["network"]
+        endpoint_config = agent.dig("dns", "kubeconfig")
+        return unless endpoint_config && network && !network["policy_kubeconfig"]
+        return if network["plugin"] == "cni" || network["policy_backend"] == "disabled"
+
+        endpoint = Client::Kubeconfig.load(path: endpoint_config).resolve.server
+        [process.fetch("name"), document, endpoint]
+      end
+
+      def policy_reader_pki
+        directory = File.join(root, "pki")
+        ca_path = File.join(directory, "ca.crt")
+        reader = "network-policy-reader"
+        cert_path = File.join(directory, "#{reader}.crt")
+        key_path = File.join(directory, "#{reader}.key")
+        credentials = if File.file?(cert_path) && File.file?(key_path)
+                        {cert: cert_path, key: key_path}
+                      else
+                        ca = OpenSSL::X509::Certificate.new(File.binread(ca_path))
+                        ca_key = OpenSSL::PKey.read(File.binread(File.join(directory, "ca.key")))
+                        issue_component_identity(directory, reader, "/CN=#{NETWORK_POLICY_READER}", ca, ca_key)
+                      end
+        {ca: ca_path, identities: {reader => credentials}}
+      end
+
       # The raft transport authenticates peers with its own per-node bundles; the
       # datastore reads them from `pki_dir` and refuses to start without one.
       def issue_raft_identities(cluster_id)
@@ -211,6 +278,8 @@ module Rubernetes
         extensions = OpenSSL::X509::ExtensionFactory.new
         extensions.subject_certificate = certificate
         extensions.issuer_certificate = issuer || certificate
+        certificate.add_extension(extensions.create_extension("subjectKeyIdentifier", "hash"))
+        certificate.add_extension(extensions.create_extension("authorityKeyIdentifier", "keyid:always")) if issuer
         if ca
           certificate.add_extension(extensions.create_extension("basicConstraints", "CA:TRUE", true))
           certificate.add_extension(extensions.create_extension("keyUsage", "keyCertSign,cRLSign", true))
