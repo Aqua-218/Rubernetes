@@ -648,6 +648,12 @@ class M3SchedulerTest < Minitest::Test
                                                                        "creationTimestamp" => timestamp}))
     end
 
+    oldest, newest, low = queue.pending
+    sort = Scheduler::PrioritySort.new
+
+    assert sort.less(oldest, newest)
+    assert sort.less(newest, low)
+    refute sort.less(low, oldest)
     assert_equal(%w[high-old high-new low], Array.new(3) { queue.pop.pod.name })
 
     pending = pod("default-bind")
