@@ -205,24 +205,39 @@ class HTTP2ServerTest < Minitest::Test
 
   # client-go needs a moment to move a watch event into its informer cache; a
   # write whose event went out on the writer's own watch is answered after it.
-  def test_a_write_is_answered_a_moment_after_its_event_on_the_same_connection
+  def test_a_write_is_answered_after_its_event_on_the_same_connection
     decoder = T::HPACK::Decoder.new
     @client.get(1, "/events")
     block = T::HPACK::Encoder.encode([[":method", "POST"], [":scheme", "https"], [":path", "/write"], [":authority", "localhost"]])
     @client.write(H2.frame(H2::HEADERS, H2::FLAG_END_HEADERS | H2::FLAG_END_STREAM, 3, block))
-    event_at = nil
+    saw_event = false
     loop do
       type, _flags, id, payload = @client.read_frame
-      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       status = decoder.decode(payload).to_h[":status"] if type == H2::HEADERS
-      event_at = now if type == H2::DATA && id == 1 && payload == "event\n"
+      saw_event = true if type == H2::DATA && id == 1 && payload == "event\n"
       next unless type == H2::HEADERS && id == 3
 
       assert_equal "201", status
-      refute_nil event_at, "the event is sent before the response"
-      assert_operator now - event_at, :>=, 0.002
+      assert saw_event, "the event is sent before the response"
       break
     end
+  end
+
+  def test_watch_lead_accounts_for_time_already_spent_before_the_response
+    # Userspace may read two ordered TLS records after both arrive. Check
+    # elapsed time at the sending connection, independent of client scheduling.
+    connection = H2::Connection.allocate
+    connection.instance_variable_set(:@mutex, Mutex.new)
+    connection.instance_variable_set(:@last_watch_data_at, 100.0)
+    delays = []
+    connection.stub(:sleep, ->(delay) { delays << delay }) do
+      connection.stub(:monotonic_time, 100.001) { connection.send(:let_watch_event_lead, 99.99) }
+      connection.stub(:monotonic_time, 100.010) { connection.send(:let_watch_event_lead, 99.99) }
+      connection.stub(:monotonic_time, 100.002) { connection.send(:let_watch_event_lead, 100.001) }
+    end
+
+    assert_equal 1, delays.size
+    assert_in_delta 0.002, delays.first, 0.000001
   end
 
   def test_ping_is_acknowledged
