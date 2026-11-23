@@ -1,0 +1,30 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: k6-smoke
+spec:
+  version: 9.4.3
+  image: docker.elastic.co/elasticsearch/elasticsearch:9.4.3@sha256:851ff5f9615ab7d2f00931114f6db32850f0208ec9fe7e841f135ac78f5f13d5
+  nodeSets:
+    - name: default
+      count: 1
+      config:
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          initContainers:
+            # ECK's own prepare-fs script assigns its data directory to the
+            # Elasticsearch user when a provisioner supplies a root-owned PVC.
+            - name: elastic-internal-init-filesystem
+              securityContext:
+                runAsUser: 0
+                runAsNonRoot: false
+                capabilities:
+                  drop: ["ALL"]
+                  add: ["CHOWN", "FOWNER"]
+          containers:
+            - name: elasticsearch
+              resources:
+                limits:
+                  memory: 4Gi
+                  cpu: 1
