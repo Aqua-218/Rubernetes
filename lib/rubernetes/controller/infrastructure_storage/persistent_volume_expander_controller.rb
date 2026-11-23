@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../volume/csi_migration"
+
 module Rubernetes
   module Controller
     # Expands a PVC only after its bound PV reports enough capacity. Filesystem
@@ -10,16 +12,21 @@ module Rubernetes
       PV = ResourceDescriptor.parse("PersistentVolume")
       PVC = ResourceDescriptor.parse("PersistentVolumeClaim")
       STORAGE_CLASS = ResourceDescriptor.parse("StorageClass")
+      STORAGE_RESIZER = "volume.kubernetes.io/storage-resizer"
 
       def plan(claim, store: nil, persistent_volume: nil, volume: nil, storage_class: nil,
                allow_volume_expansion: nil, node_expanded: false, provider: nil,
                cloud_provider: nil, cloud: nil, **_options)
-        adapter = adapter_for_storage(store)
+        adapter = adapter_for(store)
         pv = persistent_volume || volume || bound_volume(claim, adapter)
         return no_expansion_result(claim) unless pv
 
         requested = claim_requested_capacity(claim)
         return no_expansion_result(claim) unless requested > claim_status_capacity(claim)
+
+        volume_spec = Support.spec(pv)
+        migrated_driver = ::Rubernetes::Volume::CSIMigration::DRIVERS.find { |source, _| volume_spec[source].is_a?(Hash) }&.last
+        return external_expansion_result(claim, migrated_driver: migrated_driver) if volume_spec["csi"].is_a?(Hash) || migrated_driver
 
         class_object = storage_class.nil? ? claim_storage_class(claim, adapter) : storage_class
         return failed_expansion_result(claim, "VolumeExpansionNotAllowed") unless expansion_allowed?(class_object, allow_volume_expansion)
@@ -36,6 +43,23 @@ module Rubernetes
       end
 
       private
+
+      def external_expansion_result(claim, migrated_driver:)
+        annotations = Support.value(Support.metadata(claim), "annotations", {}) || {}
+        resizer = annotations[STORAGE_RESIZER]
+        return no_expansion_result(claim) if resizer && (!migrated_driver || resizer == migrated_driver)
+
+        operations = []
+        if migrated_driver
+          candidate = Support.deep_copy(claim)
+          (candidate.fetch("metadata")["annotations"] ||= {})[STORAGE_RESIZER] = migrated_driver
+          operations << operation_update(claim, candidate, descriptor: PVC, subresource: "status",
+                                                           reason: "assign migrated volume to external resizer")
+        end
+        ReconcileResult.new(operations: operations, status: Support.status(claim), controller: name, key: name_key(claim),
+                            events: [{"type" => "Normal", "reason" => "ExternalExpanding",
+                                      "message" => "waiting for an external controller to expand this PVC"}])
+      end
 
       def bound_volume(claim, adapter)
         volume_name = Support.value(Support.spec(claim), "volumeName", nil).to_s
