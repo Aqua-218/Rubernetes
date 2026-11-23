@@ -70,6 +70,7 @@ module Rubernetes
           # Never returns.
           def run_wrapper(launch, pipes)
             Process.setsid
+            DurableProcess.redirect_standard_io
             pipes.close_agent_ends
             # This wrapper lives as long as its workload, and fork gave it a
             # copy of EVERY descriptor the agent had open: the pipes of every
@@ -81,6 +82,11 @@ module Rubernetes
             # ours before waiting on the gate.
             close_inherited_descriptors(keep: pipes.wrapper_ends + [launch.cgroup_procs].compact)
             begin
+              if launch.durable_exit && launch.stdin_once
+                # The durable wrapper keeps the writer so an agent restart
+                # before the first attachment does not prematurely send EOF.
+                Signal.trap(DurableProcess::STDIN_EOF_SIGNAL) { pipes.stdin_writer.close unless pipes.stdin_writer.closed? }
+              end
               set_parent_death_signal(expected_parent_pid: launch.agent_pid, expected_parent_start_time: launch.agent_start_time)
               set_child_subreaper
               pipes.gate_reader.read(1) if launch.gate
@@ -88,7 +94,7 @@ module Rubernetes
               namespace_descriptors = wrapper_namespace_descriptors(launch)
               workload = clone_workload(launch, pipes, namespace_descriptors)
               hand_over_workload(workload.pid, pipes, namespace_descriptors)
-              exit_code = workload_exit_code(workload, launch.cgroup_procs)
+              exit_code = workload_exit_code(workload, launch, pipes.wrapper)
               pipes.stderr_writer.close
               exit!(exit_code)
             rescue StandardError => error
@@ -127,9 +133,12 @@ module Rubernetes
             wrapper_pid = kernel_process_id
             bootstrap = workload_bootstrap(launch, pipes, namespace_descriptors)
             workload = @clone3.call(args: Clone3::Args.new(flags: launch.clone_flags), resource_id: "process:workload")
-            return workload unless workload.child?
+            unless workload.child?
+              launch.cgroup_procs_before_setup&.close
+              return workload
+            end
 
-            bootstrap.run(expected_parent_pid: wrapper_pid)
+            bootstrap.run(expected_parent_pid: wrapper_pid, cgroup_procs: launch.cgroup_procs_before_setup, oom_score_adj: launch.oom_score_adj)
             IMMEDIATE_EXIT.call(127)
           end
 
@@ -143,13 +152,14 @@ module Rubernetes
               command: launch.command, env: launch.env, cwd: launch.cwd, rootfs: launch.rootfs,
               plan: plan.with(context: context.with(fd_allowlist: context.fd_allowlist + pipes.workload_descriptors)),
               namespace_descriptors: namespace_descriptors,
+              user_mapping: launch.namespace_handle&.user_mapping,
               build_rootfs: launch.build_rootfs?, unshare_mount: launch.private_mount_namespace?,
               unshare_cgroup: launch.unshare_cgroup?,
               mounts: launch.mounts,
               status_writer: pipes.status_writer,
               stdio: pipes.workload_stdio,
               controlling_tty: !pipes.pty_slave.nil?,
-              trace_exec: !launch.cgroup_procs.nil?,
+              trace_exec: launch.join_cgroup_at_exec?,
               hooks: hooks ? hooks["hooks"] : nil,
               hook_state: hooks ? hooks["state"] : nil,
               hook_reply: pipes.hook_reply_reader, clone3: @clone3
@@ -175,13 +185,32 @@ module Rubernetes
           # The workload's exit code is the wrapper's exit code; nothing is
           # written to the container's stderr (a kubelet never adds its own lines
           # to a container's log or an exec's output).
-          def workload_exit_code(workload, cgroup_procs)
-            reaped = cgroup_procs ? join_cgroup_at_exec_stop(workload.pid, cgroup_procs) : nil
+          def workload_exit_code(workload, launch, owner)
+            reaped = join_cgroup_at_exec_stop(workload.pid, launch.cgroup_procs) if launch.join_cgroup_at_exec?
+            accept_durable_commit(workload.pidfd, owner) if owner && !reaped
             status = reaped ? nil : @pidfd.wait(pidfd: workload.pidfd, timeout: nil, resource_id: "process:workload")
             IO.for_fd(workload.pidfd).close if workload.pidfd
-            return reaped.exitstatus || (128 + reaped.termsig.to_i) if reaped
+            code = reaped ? reaped.exitstatus : status&.exit_status
+            signal = reaped ? reaped.termsig : status&.term_signal
+            DurableProcess.publish_exit(launch.durable_exit, {"exit_status" => code, "term_signal" => signal})
+            code || (128 + signal.to_i)
+          end
 
-            status&.exit_status || (128 + status&.term_signal.to_i)
+          def accept_durable_commit(pidfd, owner)
+            process = IO.for_fd(pidfd, autoclose: false)
+            return if IO.select([process, owner]).first.include?(process)
+            return unless owner.read(1) == DurableProcess::COMMIT
+
+            if PRCTL.call(PR_SET_PDEATHSIG, 0, 0, 0, 0) == -1
+              raise Linux::Error.new(errno: Fiddle.last_error, operation: "prctl(PR_SET_PDEATHSIG)", resource_id: "process:commit")
+            end
+
+            owner.write(DurableProcess::COMMIT)
+          rescue Errno::EPIPE, Errno::ECONNRESET
+            # A crash after sending commit can close the old agent's socket.
+            nil
+          ensure
+            owner.close
           end
 
           def report_wrapper_failure(pipes, error)
