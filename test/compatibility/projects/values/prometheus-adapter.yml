@@ -1,0 +1,16 @@
+extraArguments:
+  - --metrics-relist-interval=10s
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'up{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: '^up$'
+        as: k6_health
+      metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
