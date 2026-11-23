@@ -80,6 +80,36 @@ class OpenAPIV2StructuralTest < Minitest::Test
     assert(spec.fetch("x-kubernetes-preserve-unknown-fields"))
   end
 
+  def test_embedded_resources_publish_native_metadata_in_schema_locations
+    marker = {"x-kubernetes-embedded-resource" => true}
+    embedded = marker.merge("type" => "object", "required" => %w[payload kind],
+                            "properties" => {"payload" => {"type" => "string"},
+                                             "metadata" => {"type" => "object"}})
+    schema = {"type" => "object", "properties" => {
+      "list" => {"type" => "array", "items" => embedded}, "map" => {"type" => "object", "additionalProperties" => embedded},
+      "free" => embedded.merge("x-kubernetes-preserve-unknown-fields" => true),
+      "ordinary" => {"type" => "object", "default" => marker}
+    }}
+    original = JSON.parse(JSON.generate(schema))
+    v2 = publish(schema)
+    v3 = @repository.document_for("/openapi/v3/apis/nested.example.com/v1").dig("components", "schemas", "com.example.nested.v1.Waldo")
+    [v2, v3].each do |version|
+      [version.dig("properties", "list", "items"), version.dig("properties", "map", "additionalProperties")].each do |item|
+        assert_equal %w[payload kind apiVersion], item["required"]
+        assert_match(/\AapiVersion defines/, item.dig("properties", "apiVersion", "description"))
+        assert_equal "string", item.dig("properties", "kind", "type")
+      end
+    end
+
+    assert_nil v2.dig("properties", "ordinary", "default")
+    assert_equal marker, v3.dig("properties", "ordinary", "default")
+    assert_match(%r{#/definitions/.+ObjectMeta$}, v2.dig("properties", "list", "items", "properties", "metadata", "$ref"))
+    assert_match(%r{#/components/schemas/.+ObjectMeta$}, v3.dig("properties", "map", "additionalProperties", "properties", "metadata", "allOf", 0, "$ref"))
+    refute v2.fetch("properties").fetch("free").key?("properties")
+    assert_equal %w[payload kind apiVersion], v3.dig("properties", "free", "required")
+    assert_equal original, schema
+  end
+
   def test_a_nullable_schema_loses_its_type_items_and_properties
     published = publish(
       "type" => "object",
