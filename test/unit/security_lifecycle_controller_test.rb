@@ -44,7 +44,15 @@ class SecurityLifecycleControllerTest < Minitest::Test
 
     refute secret_watch.predicate.call(ordinary_secret)
     assert secret_watch.predicate.call(bootstrap_secret)
-    assert token_cleaner.watches.fetch(0).predicate.call(bootstrap_secret)
+    cleaner_watch = token_cleaner.watches.fetch(0)
+
+    assert cleaner_watch.predicate.call(bootstrap_secret)
+    manager = Controller::Manager.allocate
+    signer = bootstrap.implementation.new(definition: bootstrap)
+    cleaner = token_cleaner.implementation.new(definition: token_cleaner)
+
+    assert_equal ["kube-public/cluster-info"], manager.send(:queue_keys_for, signer, secret_watch, bootstrap_secret)
+    assert_equal ["kube-system/bootstrap-token-abcdef"], manager.send(:queue_keys_for, cleaner, cleaner_watch, bootstrap_secret)
 
     config_watch = bootstrap.watches.find { |watch| watch.resource.kind == "ConfigMap" }
 
@@ -187,6 +195,21 @@ class SecurityLifecycleControllerTest < Minitest::Test
     malformed = active.merge("data" => active.fetch("data").merge("expiration" => "not-a-time"))
 
     assert_equal :delete, controller.plan(malformed, now: now).operations.fetch(0).action
+  end
+
+  def test_bootstrap_controllers_use_base64_encoded_api_secret_data
+    now = Time.utc(2026, 1, 1)
+    active = bootstrap_secret("abcdef", "secret", now + 60)
+    expired = bootstrap_secret("123456", "expired", now - 60)
+    [active, expired].each { |token| token.fetch("data").transform_values! { |value| Base64.strict_encode64(value) } }
+    config_map = {"kind" => "ConfigMap", "metadata" => {"name" => "cluster-info", "namespace" => "kube-public"}, "data" => {"kubeconfig" => "cluster"}}
+    signed = Controller::BootstrapSignerController.new.plan(config_map, secrets: [active, expired], now: now, secret_data_encoded: true)
+
+    assert_equal %w[jws-kubeconfig-abcdef kubeconfig], signed.operations.fetch(0).object.fetch("data").keys.sort
+    cleaner = Controller::TokenCleanerController.new
+
+    assert_empty cleaner.plan(active, now: now, secret_data_encoded: true).operations
+    assert_equal :delete, cleaner.plan(expired, now: now, secret_data_encoded: true).operations.fetch(0).action
   end
 
   def test_node_ipam_allocates_non_overlapping_cidrs_and_preserves_existing_assignment
