@@ -33,7 +33,9 @@ module Rubernetes
         continue_token: nil,
         resource_version: nil,
         resource_version_match: nil,
+        shard_selector: nil,
         stats: nil,
+        token_time: nil,
         **options
       )
         resource_version = options.delete(:at_revision) if options.key?(:at_revision)
@@ -44,22 +46,23 @@ module Rubernetes
         normalized_prefix = String(prefix || "")
         normalized_limit = normalize_limit(limit)
         normalized_resource_version_match = normalize_resource_version_match(resource_version_match)
-        selector_object = build_selector(selector, label_selector, field_selector)
+        selector_object = build_selector(selector, label_selector, field_selector, shard: shard_selector)
 
         @monitor.synchronize do
+          token_time ||= clock_value if continue || normalized_limit
           token = decode_continue_token(continue) if continue
           if token
             normalized_resource_version_match ||= token["resource_version_match"]
-            validate_continue_token!(token, normalized_prefix, selector_object, normalized_limit,
-                                     normalized_resource_version_match)
-            token = restart_compacted_continue(token)
-            list_page_locked(normalized_prefix, selector_object, token.fetch("revision"), token.fetch("limit"),
-                             token.fetch("last_key"), normalized_resource_version_match, stats)
+            validate_continue_token!(token, normalized_prefix, selector_object, normalized_resource_version_match)
+            expire_continue!(token, token_time)
+            snapshot_revision = token["latest"] == true && @token_secret ? @revision : token.fetch("revision")
+            list_page_locked(normalized_prefix, selector_object, snapshot_revision, normalized_limit,
+                             token.fetch("last_key"), normalized_resource_version_match, stats, expires_at: token["expires_at"])
           else
             snapshot_revision = resolve_list_revision(resource_version, normalized_resource_version_match,
                                                       limit: normalized_limit)
             list_page_locked(normalized_prefix, selector_object, snapshot_revision, normalized_limit, nil,
-                             normalized_resource_version_match, stats)
+                             normalized_resource_version_match, stats, expires_at: (token_time + LIST_CONTINUE_SECONDS if normalized_limit))
           end
         end
       end
@@ -67,56 +70,56 @@ module Rubernetes
       private
 
       # One page of the snapshot at +snapshot_revision+, starting after +last_key+.
-      def list_page_locked(prefix, selector_object, snapshot_revision, effective_limit, last_key, resource_version_match, stats)
+      def list_page_locked(prefix, selector_object, snapshot_revision, effective_limit, last_key, resource_version_match, stats, expires_at:)
         ensure_snapshot_available!(snapshot_revision)
-        # One pass.  This used to resolve every key in the prefix to its
-        # object at the snapshot revision, keep them all, and then -- to
-        # find the key the next page starts after -- resolve every key
-        # again.  A paged walk of N objects therefore cost O(N) resolutions
-        # per page and O(N^2) over the walk, which is why listing a
-        # thousand objects a hundred at a time took minutes.  Without a
-        # selector the scan stops one object past the page; with one it
-        # must go on, because remainingItemCount counts the matches behind
-        # the page and only a selector can hide them.
+        # If every indexed key is live, the width of the prefix range gives
+        # its count without reading objects beyond the page. Historical lists
+        # and retained deletions still need MVCC lookups for that count.
+        keys = sorted_keys_locked
+        range = prefix_range(keys, prefix, last_key)
+        live_count = range.size if snapshot_revision == @revision && @deleted_versions.empty?
         selected = []
-        last_selected_key = nil
-        more = false
-        extra_matches = 0
         fetched = 0
-        keys_with_prefix_locked(prefix, after: last_key).each do |key|
+        more = false
+        last_selected_key = nil
+        filtered = selector_object.filters_attributes?
+        range.each do |index|
+          key = keys[index]
           object = object_at_revision(key, snapshot_revision)
           next unless object
 
           fetched += 1
-          next unless selector_object.matches?(object)
+          next if more
 
-          if effective_limit && selected.length >= effective_limit
+          full = effective_limit && selected.length >= effective_limit
+          # Sharded pages resume after the last returned key even when all
+          # subsequent keys belong to another shard.
+          next unless (full && selector_object.shard) || selector_object.matches?(object)
+
+          if full
             more = true
-            break if selector_object.empty?
-
-            extra_matches += 1
-            next
+            break if live_count || (filtered && !selector_object.shard)
+          else
+            selected << object
+            last_selected_key = key
           end
-          selected << object
-          last_selected_key = key
         end
-        # apiserver_cache_list_*: objects read from the cache to serve the
-        # LIST, and objects returned.
+        fetched = live_count if more && live_count && (!filtered || selector_object.shard)
         if stats
           stats[:fetched] = fetched
           stats[:returned] = selected.length
         end
         ListResult.new(
-          items: selected.map { |object| MemoryStoreSupport.immutable_copy(object) },
+          items: selected,
           resource_version: snapshot_revision,
           continue_token: (if more && last_selected_key
                              encode_continue_token(
                                "revision" => snapshot_revision, "prefix" => prefix, "selector" => selector_object.signature,
                                "limit" => effective_limit, "resource_version_match" => resource_version_match,
-                               "last_key" => last_selected_key
+                               "last_key" => last_selected_key, "expires_at" => expires_at
                              )
                            end),
-          remaining_item_count: extra_matches.positive? && !selector_object.empty? ? extra_matches : nil
+          remaining_item_count: (fetched - selected.length if more && !filtered)
         )
       end
 
@@ -133,32 +136,14 @@ module Rubernetes
         # Kubernetes treats limit=0 as an unbounded list, while a resource
         # version still selects the snapshot used by the response. Exact
         # reads use that snapshot; NotOlderThan may use the latest revision.
-        if resource_version_match == "NotOlderThan"
-          requested = if resource_version.nil? || resource_version == "" || resource_version == 0 || resource_version == "0"
-                        @revision
-                      else
-                        parse_revision(resource_version)
-                      end
-          raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
+        exact = resource_version_match == "Exact" || (resource_version_match.nil? && limit)
+        return resolve_read_revision(resource_version) if exact
+        return @revision if resource_version.nil? || resource_version == ""
 
-          # NotOlderThan may safely serve the current revision even when the
-          # requested lower bound has already been compacted.  Exact reads,
-          # by contrast, must retain the requested snapshot and are rejected
-          # by resolve_read_revision when it is gone.
-          @revision
-        elsif resource_version_match == "Exact" || (limit && limit.positive?)
-          resolve_read_revision(resource_version)
-        else
-          # With no explicit match, the upstream cacher only honors an exact
-          # RV for a chunked list.  An unchunked list uses the latest
-          # consistent revision (including when the requested RV was compacted).
-          unless resource_version.nil? || resource_version == "" || resource_version == 0 || resource_version == "0"
-            requested = parse_revision(resource_version)
-            raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
+        requested = parse_revision(resource_version)
+        raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
 
-          end
-          @revision
-        end
+        @revision
       end
 
       def copy_to_out(out, response)
@@ -187,45 +172,82 @@ module Rubernetes
 
       def encode_continue_token(payload)
         body = payload.merge("version" => 1)
-        signed = body.merge("signature" => MemoryStoreSupport.digest(body.merge("secret" => @token_secret)))
-        MemoryStoreSupport.base64_url_encode(JSON.generate(signed))
+        # Older Raft replicas understand the outer envelope and its integer
+        # revision. Upgraded readers also verify the deadline and cursor
+        # against a per-cluster key before serving the pinned snapshot.
+        if @token_secret
+          body["signed_revision"] = body.fetch("revision")
+          body["authenticator"] = continue_authenticator(body)
+        else
+          body.delete("expires_at")
+          body.delete("latest")
+        end
+        body["signature"] = legacy_continue_signature(body)
+        MemoryStoreSupport.base64_url_encode(JSON.generate(body))
+      end
+
+      def continue_authenticator(payload)
+        OpenSSL::HMAC.hexdigest("SHA256", @token_secret, MemoryStoreSupport.canonical_json(payload))
+      end
+
+      def legacy_continue_signature(payload)
+        MemoryStoreSupport.digest(payload.merge("secret" => @legacy_token_secret))
       end
 
       def decode_continue_token(token)
         encoded = String(token)
         decoded = MemoryStoreSupport.base64_url_decode(encoded)
         payload = JSON.parse(decoded)
-        raise InvalidContinueToken unless payload.is_a?(Hash)
+        raise InvalidContinueToken unless payload.is_a?(Hash) && payload["version"] == 1
 
         signature = payload.delete("signature")
-        expected = MemoryStoreSupport.digest(payload.merge("secret" => @token_secret))
-        raise InvalidContinueToken unless signature == expected && payload["version"] == 1
+        expected = legacy_continue_signature(payload)
+        raise InvalidContinueToken unless signature.is_a?(String) && OpenSSL.fixed_length_secure_compare(signature, expected)
 
+        if @token_secret && payload.key?("authenticator")
+          authenticator = payload.fetch("authenticator")
+          # Legacy compaction recovery re-encodes the cursor with a new
+          # outer revision. Authenticate the original revision, then give
+          # that recovery token a new deadline via expire_continue!.
+          original = payload.except("authenticator").merge("revision" => payload["signed_revision"])
+          expected = continue_authenticator(original)
+          raise InvalidContinueToken unless authenticator.is_a?(String) && OpenSSL.fixed_length_secure_compare(authenticator, expected)
+        end
         payload
       rescue ArgumentError, JSON::ParserError, TypeError
         raise InvalidContinueToken
       end
 
-      def validate_continue_token!(token, prefix, selector, limit, resource_version_match)
+      def validate_continue_token!(token, prefix, selector, resource_version_match)
         raise InvalidContinueToken unless token["prefix"] == prefix && token["selector"] == selector.signature
-        raise InvalidContinueToken unless token["limit"] == limit
         raise InvalidContinueToken unless token["resource_version_match"] == resource_version_match
-        raise InvalidContinueToken unless token["revision"].is_a?(Integer) && token["last_key"].is_a?(String)
+
+        last_key = token["last_key"]
+        raise InvalidContinueToken unless last_key.is_a?(String) && last_key.start_with?(prefix)
+
+        revision = token["revision"]
+        raise InvalidContinueToken unless revision.is_a?(Integer) && revision >= 0
+        return unless @token_secret && token.key?("authenticator")
+
+        expires_at = token["expires_at"]
+        raise InvalidContinueToken unless expires_at.is_a?(Numeric) && expires_at.finite?
       end
 
-      # kube-apiserver answers a continue token whose snapshot has been
-      # compacted away with 410 and hands back an "inconsistent" token: the
-      # same position, resumed against the current snapshot.  A client given
-      # no such token starts the listing over and re-reads every page it
-      # already had, so a chunked listing returns more objects than exist.
-      def restart_compacted_continue(token)
-        revision = token.fetch("revision")
-        return token if revision >= @compacted_revision
+      def expire_continue!(token, now)
+        revision = token["revision"]
+        timed = @token_secret && token.key?("authenticator")
+        compacted = !(timed && token["latest"] == true) && revision < @compacted_revision
+        # Legacy tokens have no issuance time. Offer the same recovery as a
+        # timed-out token once this replica has the replicated signing key.
+        expired = @token_secret && (!timed || revision != token["signed_revision"] || now >= token.fetch("expires_at"))
+        return unless compacted || expired
 
-        inconsistent = encode_continue_token(token.merge("revision" => @revision))
-        error = Gone.new(revision, @compacted_revision)
-        error.details["continue"] = inconsistent
-        raise error
+        # The client may restart from the beginning for consistency, or
+        # resume at the same key against the newest snapshot at retry time.
+        cursor = token.slice("prefix", "selector", "resource_version_match", "last_key")
+        inconsistent = encode_continue_token(cursor.merge("revision" => @revision, "latest" => true,
+                                                          "expires_at" => now + LIST_CONTINUE_SECONDS))
+        raise Gone.new(revision, (@compacted_revision if compacted), continue_token: inconsistent)
       end
     end
   end
