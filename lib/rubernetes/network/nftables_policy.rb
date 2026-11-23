@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 # Native NetworkPolicy enforcement through the nf_tables netlink ABI. This
 # adapter deliberately shares only the wire-level transaction primitives with
 # the Service adapter; policy compilation remains owned by network/policy.rb.
@@ -21,6 +23,7 @@ module Rubernetes
       NFPROTO_IPV4 = 2
       NFPROTO_IPV6 = 10
       NFT_DROP = 0
+      NFT_RETURN = -5
       NFT_META_NFPROTO = 15
       NFT_META_L4PROTO = 16
       NFT_PAYLOAD_NETWORK_HEADER = 1
@@ -30,8 +33,8 @@ module Rubernetes
       NFT_CT_STATE = 0
       NFT_CT_ESTABLISHED = 2
       NFT_CT_RELATED = 4
-      NFTA_CHAIN_HOOK_NUM = 1
-      NFTA_CHAIN_HOOK_PRIORITY = 2
+      FORWARD_HOOK = {hook: NF_INET_FORWARD, priority: -150, type: "filter"}.freeze
+      POLICY_CHAINS = %w[forward egress ingress].freeze
 
       POLICY_PACKET_CASES = %w[
         default_deny_ingress default_deny_egress selector_ingress selector_egress
@@ -197,35 +200,23 @@ module Rubernetes
         raise PolicyError, "native NetworkPolicy snapshot revision is invalid"
       end
 
-      def stringify_hash(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, child), result| result[key.to_s] = stringify_hash(child) }
-        when Array
-          value.map { |child| stringify_hash(child) }
-        else
-          value
-        end
-      end
+      def stringify_hash(value) = ObjectTree.stringify_keys(value)
 
       def desired_policy_objects(snapshot)
         kernel = snapshot.fetch("kernel")
         targets = Array(kernel.fetch("targets")).map { |entry| normalize_target(entry) }
         rules = Array(kernel.fetch("rules")).map { |entry| normalize_kernel_rule(entry) }
-        chain_marker = policy_marker("chain", "policy:forward")
-        chain = {"name" => "forward", "marker" => chain_marker, "base" => true,
-                 "message" => new_policy_chain_message(name: "forward", marker: chain_marker)}
-        rule_objects = []
-        rule_objects.concat(conntrack_rule_objects)
-        rules.each_with_index do |rule, index|
-          rule_objects << policy_allow_rule_object(rule, index)
+        chains = POLICY_CHAINS.map do |name|
+          marker = policy_marker("chain", "policy:#{name}")
+          hook = FORWARD_HOOK if name == "forward"
+          {"name" => name, "marker" => marker, "message" => new_chain_message(name: name, marker: marker, hook: hook)}
         end
-        targets.each_with_index do |target, index|
-          rule_objects << policy_drop_rule_object(target, index)
-        end
+        rule_objects = conntrack_rule_objects + policy_jump_rule_objects
+        rules.each_with_index { |rule, index| rule_objects << policy_allow_rule_object(rule, index) }
+        targets.each_with_index { |target, index| rule_objects << policy_drop_rule_object(target, index) }
         {"table" => {"name" => @table_name, "marker" => policy_marker("table", @table_name),
                      "message" => new_table_message},
-         "chains" => [chain], "sets" => [], "set_elements" => [], "rules" => rule_objects}.freeze
+         "chains" => chains, "sets" => [], "set_elements" => [], "rules" => rule_objects}.freeze
       end
 
       def normalize_target(value)
@@ -310,31 +301,32 @@ module Rubernetes
         end
       end
 
+      def policy_jump_rule_objects
+        POLICY_CHAINS.drop(1).map do |direction|
+          marker = policy_marker("rule", "forward:jump:#{direction}")
+          {"chain" => "forward", "marker" => marker,
+           "message" => new_jump_rule_message("forward", direction, marker)}
+        end
+      end
+
       def policy_allow_rule_object(rule, index)
-        identity = "allow:#{rule.fetch("direction")}:#{rule.fetch("target")}:#{index}:#{Digest::SHA256.hexdigest(JSON.generate(rule))[0,
-                                                                                                                                      16]}"
+        direction = rule.fetch("direction")
+        identity = "allow:#{direction}:#{rule.fetch("target")}:#{index}:#{Digest::SHA256.hexdigest(JSON.generate(rule))[0, 16]}"
         marker_value = policy_marker("rule", identity)
-        {"chain" => "forward", "marker" => marker_value,
-         "message" => new_rule_message(chain_name: "forward", marker: marker_value,
-                                       expressions: policy_match_expressions(rule) + [accept_expression])}
+        # An allow finishes only this direction. The other direction can still
+        # deny the same connection before the forward hook accepts it.
+        {"chain" => direction, "marker" => marker_value,
+         "message" => new_rule_message(chain_name: direction, marker: marker_value,
+                                       expressions: policy_match_expressions(rule) + [verdict_expression(NFT_RETURN)])}
       end
 
       def policy_drop_rule_object(target, index)
-        identity = "drop:#{target.fetch("direction")}:#{target.fetch("ip")}:#{index}"
+        direction = target.fetch("direction")
+        identity = "drop:#{direction}:#{target.fetch("ip")}:#{index}"
         marker_value = policy_marker("rule", identity)
-        {"chain" => "forward", "marker" => marker_value,
-         "message" => new_rule_message(chain_name: "forward", marker: marker_value,
+        {"chain" => direction, "marker" => marker_value,
+         "message" => new_rule_message(chain_name: direction, marker: marker_value,
                                        expressions: target_match_expressions(target) + [drop_expression])}
-      end
-
-      def new_policy_chain_message(name:, marker:)
-        hook = attributes(attribute(NFTA_CHAIN_HOOK_NUM, u32(NF_INET_FORWARD)),
-                          attribute(NFTA_CHAIN_HOOK_PRIORITY, u32(-150)))
-        values = [attribute(NFTA_CHAIN_TABLE, cstring(@table_name)), attribute(NFTA_CHAIN_NAME, cstring(name)),
-                  attribute(NFTA_CHAIN_USERDATA, marker), attribute(NFTA_CHAIN_HOOK, hook, nested: true),
-                  attribute(NFTA_CHAIN_POLICY, u32(NFT_ACCEPT)), attribute(NFTA_CHAIN_TYPE, cstring("filter"))]
-        {type: NFT_MSG_NEWCHAIN, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
-         family: NFPROTO_INET, attributes: attributes(*values)}
       end
 
       def new_table_message
@@ -347,22 +339,25 @@ module Rubernetes
 
       def policy_lifecycle_messages(current, desired)
         messages = []
-        desired_rule_markers = desired.fetch("rules").map { |entry| entry.fetch("marker") }
+        current_chains = policy_chain_markers(current)
+        desired_chains = policy_chain_markers(desired)
+        current_sequences = policy_rule_sequences(current)
+        desired_sequences = policy_rule_sequences(desired)
+        changed = (current_sequences.keys | desired_sequences.keys).select do |chain|
+          current_chains != desired_chains || current_sequences[chain] != desired_sequences[chain]
+        end.to_set
         current.fetch("rules").each do |entry|
-          messages << delete_rule_message(entry) unless desired_rule_markers.include?(entry.fetch("marker"))
+          messages << delete_rule_message(entry) if changed.include?(entry.fetch("chain"))
         end
-        desired_chain_markers = desired.fetch("chains").map { |entry| entry.fetch("marker") }
         current.fetch("chains").reverse_each do |entry|
-          messages << delete_chain_message(entry) unless desired_chain_markers.include?(entry.fetch("marker"))
+          messages << delete_chain_message(entry) unless desired_chains[entry.fetch("name")] == entry.fetch("marker")
         end
         messages << desired.fetch("table").fetch("message") unless current["table"]
-        current_chain_markers = current.fetch("chains").map { |entry| entry.fetch("marker") }
         desired.fetch("chains").each do |entry|
-          messages << entry.fetch("message") unless current_chain_markers.include?(entry.fetch("marker"))
+          messages << entry.fetch("message") unless current_chains[entry.fetch("name")] == entry.fetch("marker")
         end
-        current_rule_markers = current.fetch("rules").map { |entry| entry.fetch("marker") }
         desired.fetch("rules").each do |entry|
-          messages << entry.fetch("message") unless current_rule_markers.include?(entry.fetch("marker"))
+          messages << entry.fetch("message") if changed.include?(entry.fetch("chain"))
         end
         messages
       end
@@ -402,19 +397,23 @@ module Rubernetes
         return false unless actual["table"] && actual.dig("table", "name") == @table_name
         return false unless actual.dig("table", "marker") == desired.dig("table", "marker")
 
-        actual_chain_markers = actual.fetch("chains").map { |entry| entry.fetch("marker") }.sort
-        desired_chain_markers = desired.fetch("chains").map { |entry| entry.fetch("marker") }.sort
-        actual_rules = actual.fetch("rules").map do |entry|
-          [entry.fetch("chain"), entry.fetch("marker"), expression_digest(entry.fetch("expressions"))]
-        end.sort_by { |entry| [entry.fetch(0), entry.fetch(1)] }
-        desired_rules = desired.fetch("rules").map do |entry|
-          expressions = decoded_rule_expressions_from_attributes(entry.fetch("message").fetch(:attributes))
-          [entry.fetch("chain"), entry.fetch("marker"), expression_digest(expressions)]
-        end.sort_by { |entry| [entry.fetch(0), entry.fetch(1)] }
-        actual_chain_markers == desired_chain_markers && actual_rules == desired_rules &&
+        policy_chain_markers(actual) == policy_chain_markers(desired) && policy_rule_sequences(actual) == policy_rule_sequences(desired) &&
           actual.fetch("sets").empty? && actual.fetch("set_elements").empty?
       rescue KeyError, TypeError
         false
+      end
+
+      def policy_chain_markers(ruleset)
+        ruleset.fetch("chains").to_h { |entry| entry.values_at("name", "marker") }
+      end
+
+      def policy_rule_sequences(ruleset)
+        ruleset.fetch("rules").group_by { |entry| entry.fetch("chain") }.transform_values do |rules|
+          rules.map do |entry|
+            expressions = entry["expressions"] || decoded_rule_expressions_from_attributes(entry.fetch("message").fetch(:attributes))
+            [entry.fetch("marker"), expression_digest(expressions)]
+          end
+        end
       end
 
       def policy_readback_difference(actual, desired)
@@ -437,7 +436,9 @@ module Rubernetes
                  else
                    ""
                  end
-        "missing=#{missing.length}, extra=#{extra.length}, changed=#{changed.length}, " \
+        order_changed = policy_rule_sequences(actual).transform_values { |rules| rules.map(&:first) } !=
+                        policy_rule_sequences(desired).transform_values { |rules| rules.map(&:first) }
+        "missing=#{missing.length}, extra=#{extra.length}, changed=#{changed.length}, order_changed=#{order_changed}, " \
           "actual_chains=#{actual.fetch("chains", []).length}, desired_chains=#{desired.fetch("chains", []).length}#{detail}"
       rescue StandardError => error
         "difference-unavailable=#{error.class}:#{error.message}"
@@ -691,17 +692,11 @@ module Rubernetes
       end
 
       def accept_expression
-        verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_ACCEPT)))
-        expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                           attribute(NFTA_IMMEDIATE_DATA,
-                                                     attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
+        verdict_expression(NFT_ACCEPT)
       end
 
       def drop_expression
-        verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_DROP)))
-        expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                           attribute(NFTA_IMMEDIATE_DATA,
-                                                     attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
+        verdict_expression(NFT_DROP)
       end
     end
 
