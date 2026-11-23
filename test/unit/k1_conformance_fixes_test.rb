@@ -17,6 +17,17 @@ class K1ConformanceFixesTest < Minitest::Test
     assert_equal "64", Rubernetes::Node::FieldRef.resolve_resource("limits.memory", container, divisor: "1Mi")
   end
 
+  def test_downward_api_prefers_pod_limits_for_unspecified_container_limits
+    pod = {"spec" => {"resources" => {"limits" => {"cpu" => "1250m"}}}}
+    container = {"resources" => {"limits" => {"cpu" => "0"}}}
+    allocatable = {"cpu" => "64", "memory" => "128Mi", "hugepages-2Mi" => "16Mi"}
+    fields = Rubernetes::Node::FieldRef
+
+    assert_equal "2", fields.resolve_resource("limits.cpu", container, pod: pod, node_allocatable: allocatable)
+    assert_equal "128", fields.resolve_resource("limits.memory", container, divisor: "1Mi", pod: pod, node_allocatable: allocatable)
+    assert_equal "0", fields.resolve_resource("limits.hugepages-2Mi", container, pod: pod, node_allocatable: allocatable)
+  end
+
   # kubelet AtomicWriter links only the first path segment into ..data.
   def test_projected_nested_paths_are_exposed_through_their_first_segment
     Dir.mktmpdir do |dir|
@@ -30,10 +41,37 @@ class K1ConformanceFixesTest < Minitest::Test
       assert_equal "t", File.read(File.join(root, "top"))
       refute File.symlink?(File.join(root, "path/to/data-2"))
 
-      writer.write({"other" => "o"})
+      old_file = File.open(File.join(root, "top"))
+      begin
+        writer.write({"other" => "o"})
+
+        assert_equal "t", old_file.read
+        assert_equal [writer.current_generation], writer.generations
+      ensure
+        old_file.close
+      end
 
       refute_path_exists File.join(root, "path")
       assert_equal "o", File.read(File.join(root, "other"))
+    end
+  end
+
+  def test_projection_keeps_published_files_readable_when_an_update_fails
+    Dir.mktmpdir do |root|
+      writer = Rubernetes::Volume::AtomicWriter.new(root, fsync: false)
+      writer.write({"ca.crt" => "one"}, generation: "..initial")
+
+      assert_raises(Rubernetes::Volume::PathSecurityError) { writer.write({"ca.crt" => "two"}, generation: "..initial") }
+      assert_equal "one", File.read(File.join(root, "ca.crt"))
+
+      # A file occupying a new link name prevents publication of that link.
+      File.write(File.join(root, "occupied"), "existing")
+      assert_raises(Rubernetes::Volume::PathSecurityError) { writer.write({"ca.crt" => "two", "occupied" => "value"}) }
+      assert_equal "two", File.read(File.join(root, "ca.crt"))
+      File.unlink(File.join(root, "occupied"))
+      writer.write({"ca.crt" => "two", "occupied" => "value"})
+
+      assert_equal "value", File.read(File.join(root, "occupied"))
     end
   end
 
@@ -46,7 +84,7 @@ class K1ConformanceFixesTest < Minitest::Test
     causes = Rubernetes::API::ObjectValidation.validate("PriorityClass", changed, old: old, namespaced: false)
 
     assert_equal ["value"], causes.map(&:field)
-    assert_equal ["Invalid value: 200: field is immutable"], causes.map(&:message)
+    assert_equal ["Forbidden: may not be changed in an update."], causes.map(&:message)
   end
 
   # registry strategies: AllowUnconditionalUpdate is true for ConfigMap, false for Lease.
@@ -204,12 +242,17 @@ class K1ConformanceFixesTest < Minitest::Test
     volumes = Rubernetes::Node::PodVolumes.new(volume: manager, reader: reader, root: "/tmp/fake-pods")
     handle = {"mounts" => {"cm" => {"id" => "vol-cm"}}}
 
-    assert_empty volumes.refresh_contents(pod_with_volumes, handle) # first pass records
+    # A recovered handle has no in-memory signature. Reproject it because the
+    # API object may already have changed since the volume was mounted.
+    assert_equal ["cm"], volumes.refresh_contents(pod_with_volumes, handle)
     assert_empty volumes.refresh_contents(pod_with_volumes, handle) # unchanged
     reader.object = {"data" => {"key" => "v2"}}
 
+    backend.stub(:update, ->(**) { raise Rubernetes::Node::PodVolumes::MissingDependency, "not ready" }) do
+      assert_empty volumes.refresh_contents(pod_with_volumes, handle)
+    end
     assert_equal ["cm"], volumes.refresh_contents(pod_with_volumes, handle)
-    assert_equal [{files: {"key" => "v2"}}], backend.updates
+    assert_equal [{files: {"key" => "v1"}}, {files: {"key" => "v2"}}], backend.updates
   end
 end
 
@@ -229,10 +272,10 @@ class K1ConformanceFixesBatch2Test < Minitest::Test
   def test_replicaset_releases_a_pod_whose_labels_stopped_matching
     rs, pod = rs_and_pods({"app" => "other"})
     result = Rubernetes::Controller::ReplicaSetController.new.plan(rs, pods: [pod])
-    release = result.operations.find { |operation| operation.action == :update }
+    release = result.operations.find { |operation| operation.action == :strategic_patch }
 
     refute_nil release
-    assert_empty release.object.dig("metadata", "ownerReferences")
+    assert_equal({"uid" => "p1", "ownerReferences" => [{"uid" => "rs-1", "$patch" => "delete"}]}, release.patch.fetch("metadata"))
     assert_equal 1, result.operations.count(&:create?), "the released pod no longer counts as a replica"
   end
 
@@ -246,10 +289,10 @@ class K1ConformanceFixesBatch2Test < Minitest::Test
                                                  "controller" => true}]},
            "spec" => {"nodeName" => "n"}, "status" => {"phase" => "Running"}}
     result = Rubernetes::Controller::ReplicationControllerController.new.plan(rc, pods: [pod])
-    release = result.operations.find { |operation| operation.action == :update }
+    release = result.operations.find { |operation| operation.action == :strategic_patch }
 
     refute_nil release
-    assert_empty release.object.dig("metadata", "ownerReferences")
+    assert_equal({"uid" => "p1", "ownerReferences" => [{"uid" => "rc-1", "$patch" => "delete"}]}, release.patch.fetch("metadata"))
     assert_equal 1, result.operations.count(&:create?)
   end
 
@@ -366,6 +409,32 @@ class K1ConformanceFixesBatch6Test < Minitest::Test
 end
 
 class K1ConformanceFixesBatch7Test < Minitest::Test
+  def test_service_ports_match_on_protocol_and_ignore_non_restartable_init_containers
+    service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default", "uid" => "svc"},
+               "spec" => {"selector" => {"app" => "web"}, "ports" => [{"port" => 80, "name" => "web", "targetPort" => "proxy", "protocol" => "TCP"}]}}
+    port = ->(number, protocol) { {"name" => "proxy", "containerPort" => number, "protocol" => protocol} }
+    regular = {"name" => "app", "ports" => [port.call(8000, "UDP")]}
+    init = {"name" => "setup", "ports" => [port.call(8100, "TCP")]}
+    sidecar = {"name" => "proxy", "restartPolicy" => "Always", "ports" => [port.call(8443, "TCP")]}
+    pod = {"metadata" => {"name" => "p", "namespace" => "default", "uid" => "p", "labels" => {"app" => "web"}},
+           "spec" => {"containers" => [regular], "initContainers" => [init, sidecar]},
+           "status" => {"phase" => "Running", "podIP" => "10.0.0.1", "conditions" => [{"type" => "Ready", "status" => "True"}]}}
+
+    endpoints = -> { Rubernetes::Controller::EndpointController.new.plan(service, pods: [pod]).creates.first.object }
+    slice = -> { Rubernetes::Controller::EndpointSliceController.new.plan(service, pods: [pod]).creates.first.object }
+
+    assert_equal 8443, endpoints.call.dig("subsets", 0, "ports", 0, "port")
+    assert_equal 8443, slice.call.dig("ports", 0, "port")
+    regular.fetch("ports") << port.call(8080, "TCP")
+
+    assert_equal 8080, endpoints.call.dig("subsets", 0, "ports", 0, "port")
+    assert_equal 8080, slice.call.dig("ports", 0, "port")
+    service["spec"]["ports"][0]["targetPort"] = "absent"
+
+    assert_empty endpoints.call.fetch("subsets")
+    assert_empty slice.call.fetch("ports", [])
+  end
+
   def test_endpointslice_omits_a_named_target_port_no_pod_exposes
     service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default", "uid" => "svc"},
                "spec" => {"selector" => {"app" => "web"}, "ports" => [{"name" => "http", "port" => 80, "targetPort" => "missing"}]}}
