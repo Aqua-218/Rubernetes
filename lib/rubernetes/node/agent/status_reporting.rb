@@ -26,8 +26,8 @@ module Rubernetes
           last, last_at = @mutex.synchronize { [@last_reported_status, @last_status_report_at] }
           due = last_at.nil? || Process.clock_gettime(Process::CLOCK_MONOTONIC) - last_at >= @node_status_report_frequency
           if force || due || self.class.node_status_changed?(last, node["status"])
-            persist_node(node)
-            true
+            persisted = persist_node(node)
+            @register_node || !persisted.nil?
           else
             mark_volumes_from_status(last)
             false
@@ -49,6 +49,7 @@ module Rubernetes
           status = object.is_a?(Hash) ? object["status"] : nil
           persisted = write_node(with_status_tombstones(object, status))
           @kubelet_metrics&.node_registered if api_created_node?
+          remember_node_taints(persisted)
           node_status_persisted(persisted)
           @mutex.synchronize do
             @last_reported_status = status
@@ -56,6 +57,17 @@ module Rubernetes
           end
           mark_volumes_from_status(status)
           persisted
+        rescue Client::APIError => error
+          raise unless missing_unregistered_node?(error)
+
+          @mutex.synchronize { @last_reported_status = @last_status_report_at = nil }
+          nil
+        end
+
+        # Keep taints from the Node returned by registration, status reports,
+        # or an admission check that refreshed the cached view.
+        def remember_node_taints(node)
+          @observed_node_taints = Array(node.dig("spec", "taints")) if node.is_a?(Hash) && node["kind"] == "Node"
         end
 
         # updateNodeStatus: a status the API server took with Ready=True
@@ -70,12 +82,15 @@ module Rubernetes
         # and this one, so a status field that went away (the last volume in
         # use, a condition) arrives as null and is removed.  The built status
         # is compacted; the keys the last report had and this one lacks are
-        # sent as null (a merge patch deletes them).
+        # sent as null (a merge patch deletes them). The native image inventory
+        # is also cleared on the first report after an agent restart.
         def with_status_tombstones(object, status)
           previous = @mutex.synchronize { @last_reported_status }
-          return object unless object.is_a?(Hash) && previous.is_a?(Hash) && status.is_a?(Hash)
+          return object unless object.is_a?(Hash) && status.is_a?(Hash)
 
-          gone = previous.keys.map(&:to_s) - status.keys.map(&:to_s)
+          owned = previous.to_h.keys.map(&:to_s)
+          owned << "images" if @status_images
+          gone = owned - status.keys.map(&:to_s)
           return object if gone.empty?
 
           object.merge("status" => status.merge(gone.to_h { |key| [key, nil] }))
@@ -141,6 +156,7 @@ module Rubernetes
           return unless node_adapter?
 
           node = @api.read_object("nodes", @node_name)
+          remember_node_taints(node)
           status = node.is_a?(Hash) ? (node["status"] || {}) : {}
           capacity = status["capacity"].is_a?(Hash) ? status["capacity"] : {}
           allocatable = status["allocatable"].is_a?(Hash) ? status["allocatable"] : {}
@@ -169,9 +185,9 @@ module Rubernetes
           return unless registered?
 
           manager = @admission.resource_manager
-          current = manager.allocatable_values.select { |name, _| ResourceManager.extended_resource?(name) }
+          current = manager.allocatable_strings.select { |name, _| ResourceManager.extended_resource?(name) }
           managed = @device_plugins.resource_names
-          current = current.reject { |name, _| managed.include?(name.to_s) }.transform_values(&:to_s)
+          current = current.reject { |name, _| managed.include?(name.to_s) }
           manager.replace_extended(current.merge(device_capacity.last))
           publish_device_resources
         rescue StandardError => error
@@ -179,19 +195,14 @@ module Rubernetes
         end
 
         # Status is a subresource: an apply of the Node object does not carry
-        # it, so the device counts go out as a merge patch of /status, and a
-        # resource whose plugin is gone is removed from both maps.
+        # it, so the device counts go out as a merge patch of /status.
         def publish_device_resources
           capacity, allocatable = device_capacity
-          gone = (@published_device_resources || []) - capacity.keys
-          patch = {"capacity" => capacity.merge(gone.to_h { |name| [name, nil] }),
-                   "allocatable" => allocatable.merge(gone.to_h { |name| [name, nil] })}
           if node_adapter?
-            @api.patch_node_status(@node_name, patch)
+            @api.patch_node_status(@node_name, {"capacity" => capacity, "allocatable" => allocatable})
           else
             persist_node(build_node(ready: ready?))
           end
-          @published_device_resources = capacity.keys
         end
       end
     end
