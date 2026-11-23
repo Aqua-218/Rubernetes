@@ -33,6 +33,7 @@ class NodeWorkerTest < Minitest::Test
 
     assert_equal 1, maximum
     assert_equal 2, worker.processed
+    assert_equal %i[ok ok], worker.results
   end
 
   def test_different_pods_run_in_parallel
