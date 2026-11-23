@@ -34,6 +34,7 @@ module Rubernetes
       IDENTITY_LEASE_GC_PERIOD = 3600.0
       ENDPOINT_ANNOTATION = "rubernetes.io/endpoint"
       DEFAULT_INTERVAL = 10.0
+      STORAGE_VERSION_REPORT_INTERVAL = 600.0
       # An API server serves the kubernetes Endpoints while it renewed its
       # Lease within this window (the lease reconciler's TTL).
       LEASE_DURATION_SECONDS = 30
@@ -43,7 +44,7 @@ module Rubernetes
       attr_reader :endpoint, :service_ip, :secure_port
 
       def initialize(api_server:, logger:, advertise_address:, secure_port:, service_cidrs:, identity:,
-                     interval: DEFAULT_INTERVAL, clock: -> { Time.now.utc })
+                     interval: DEFAULT_INTERVAL, clock: -> { Time.now.utc }, peer_directory: nil, on_storage_versions_ready: nil)
         @api_server = api_server
         @logger = logger
         @advertise_address = advertise_address.to_s
@@ -53,12 +54,17 @@ module Rubernetes
         @clock = clock
         cidr = IPAddr.new(String(Array(service_cidrs).first))
         @service_ip = IPAddr.new(cidr.to_i + 1, cidr.family).to_s
-        @endpoint = "#{@advertise_address}:#{@secure_port}"
+        host = @advertise_address.include?(":") ? "[#{@advertise_address}]" : @advertise_address
+        @endpoint = "#{host}:#{@secure_port}"
+        @peer_directory = peer_directory
+        @on_storage_versions_ready = on_storage_versions_ready
         @thread = nil
         @stopping = false
         @mutex = Mutex.new
+        @condition = ConditionVariable.new
         @holder = "#{lease_name}_#{SecureRandom.uuid}"
         @last_gc = nil
+        @last_storage_version_report = nil
       end
 
       def start
@@ -73,15 +79,27 @@ module Rubernetes
       end
 
       def stop
-        @mutex.synchronize { @stopping = true }
+        @mutex.synchronize do
+          @stopping = true
+          @condition.broadcast
+        end
         @thread&.join(2)
+        @peer_directory&.withdraw(@holder)
+        self
+      rescue Storage::Error, Consensus::Error => error
+        @logger.debug("peer_proxy.lease_withdraw_failed", error: error.class.name)
         self
       end
 
       # One reconciliation: Service, own Lease, Endpoints, EndpointSlice.
       def reconcile_once
-        ensure_service
+        reporting = @api_server.storage_version_reporting?
+        ensure_service unless reporting
         renew_lease
+        if reporting
+          reconcile_storage_versions
+          ensure_service
+        end
         addresses = live_addresses
         ensure_endpoints(addresses)
         ensure_endpoint_slice(addresses)
@@ -98,6 +116,15 @@ module Rubernetes
 
       private
 
+      def reconcile_storage_versions
+        return if @last_storage_version_report && @clock.call - @last_storage_version_report < STORAGE_VERSION_REPORT_INTERVAL
+
+        return unless @api_server.publish_storage_versions!(lease_name)
+
+        @on_storage_versions_ready&.call unless @last_storage_version_report
+        @last_storage_version_report = @clock.call
+      end
+
       def loop_forever
         until @mutex.synchronize { @stopping }
           begin
@@ -105,7 +132,7 @@ module Rubernetes
           rescue StandardError => error
             @logger.debug("kubernetes_service.reconcile_retry", error: "#{error.class}: #{error.message}")
           end
-          sleep(@interval)
+          @mutex.synchronize { @condition.wait(@mutex, @interval) unless @stopping }
         end
       end
 
@@ -131,11 +158,13 @@ module Rubernetes
       def renew_lease
         now = @clock.call.utc.iso8601(6)
         path = "/apis/coordination.k8s.io/v1/namespaces/#{LEASE_NAMESPACE}/leases/#{lease_name}"
+        annotations = {ENDPOINT_ANNOTATION => @endpoint}
+        annotations[PeerDirectory::ENDPOINT_ANNOTATION] = @peer_directory.address if @peer_directory
         body = {
           "apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease",
           "metadata" => {"name" => lease_name, "namespace" => LEASE_NAMESPACE,
                          "labels" => {LEASE_LABEL => LEASE_LABEL_VALUE, "kubernetes.io/hostname" => hostname_label},
-                         "annotations" => {ENDPOINT_ANNOTATION => @endpoint}},
+                         "annotations" => annotations},
           "spec" => {"holderIdentity" => @holder, "leaseDurationSeconds" => IDENTITY_LEASE_DURATION_SECONDS, "renewTime" => now}
         }
         existing = get(path)
@@ -152,6 +181,7 @@ module Rubernetes
         else
           create("/apis/coordination.k8s.io/v1/namespaces/#{LEASE_NAMESPACE}/leases", body)
         end
+        @peer_directory&.publish(@holder)
       end
 
       def hostname_label
