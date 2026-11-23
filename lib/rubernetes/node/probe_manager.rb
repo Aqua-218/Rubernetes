@@ -5,6 +5,8 @@ require "uri"
 require "time"
 
 require_relative "status"
+require_relative "probe_endpoint"
+require_relative "../http_probe_headers"
 require_relative "../observability/metrics"
 
 module Rubernetes
@@ -19,6 +21,7 @@ module Rubernetes
       DEFAULT_SUCCESS_THRESHOLD = 1
       DEFAULT_PERIOD_SECONDS = 10
       DEFAULT_TIMEOUT_SECONDS = 1
+      NAMESPACE_SETUP_SECONDS = 5
 
       Result = Data.define(
         :container_id, :type, :success, :state, :failure_count, :success_count,
@@ -112,41 +115,45 @@ module Rubernetes
 
       # Run one probe.  `probe` may be a full `{startupProbe: ...}` object or
       # the action body itself.  The explicit type takes precedence.
-      def check(container_id, probe_value = nil, probe: nil, type: nil, kind: nil, now: nil, context: {}, **options)
+      def check(container_id, probe_value = nil, probe: nil, type: nil, kind: nil, now: nil, context: {}, registered_only: false, **options)
         identifier = normalize_id(container_id)
         probe = probe_value if probe.nil?
         probe_type = normalize_type(type || kind || infer_type(probe, options))
         definition = extract_probe(probe, probe_type, options)
-        ensure_registered(identifier, probe_type, definition, now)
+        ensure_registered(identifier, probe_type, definition, now) unless registered_only
         timestamp = time_value(now)
+        probe_state, registered_at = @mutex.synchronize { [@states.dig(identifier, probe_type), @registered_at[identifier]] }
+        return unless probe_state && registered_at
+
         if definition.nil? || definition.empty?
           return apply_result(identifier, probe_type, true, "Success", "no probe configured", timestamp,
-                              action: nil, deferred: false)
+                              action: nil, deferred: false, probe_state: probe_state)
         end
-        state = @mutex.synchronize { @states.fetch(identifier).fetch(probe_type) }
-        delay = state.fetch(:initial_delay_seconds)
-        registered_at = @mutex.synchronize { @registered_at.fetch(identifier) }
+        delay = probe_state.fetch(:initial_delay_seconds)
         if delay.positive? && elapsed_seconds(timestamp, registered_at) < delay
           return apply_result(identifier, probe_type, nil, "InitialDelay", "initial delay has not elapsed", timestamp,
-                              action: action_name(definition), deferred: true)
+                              action: action_name(definition), deferred: true, probe_state: probe_state)
         end
 
-        period = state.fetch(:period_seconds)
-        last_checked_at = state.fetch(:last_checked_at)
-        if state.fetch(:period_configured, false) && last_checked_at && elapsed_seconds(timestamp, last_checked_at) < period
+        period = probe_state.fetch(:period_seconds)
+        last_checked_at = probe_state.fetch(:last_checked_at)
+        if probe_state.fetch(:period_configured, false) && last_checked_at && elapsed_seconds(timestamp, last_checked_at) < period
           return apply_result(identifier, probe_type, nil, "Period", "probe period has not elapsed", timestamp,
-                              action: action_name(definition), deferred: true)
+                              action: action_name(definition), deferred: true, probe_state: probe_state)
         end
 
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        success, message, action = execute(identifier, definition, context: context)
+        success, message, action, warning = execute(identifier, definition, context: context)
         record_probe_metrics(probe_type, success, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, context)
-        apply_result(identifier, probe_type, success, success ? "Success" : "Failure", message, timestamp,
-                     action: action, deferred: false)
+        state = success ? "Success" : "Failure"
+        state = "Warning" if warning
+        apply_result(identifier, probe_type, success, state, message, timestamp, action: action, deferred: false, probe_state: probe_state)
       rescue ArgumentError => error
+        return if registered_only && probe_state.nil?
+
         probe_type = "liveness" unless PROBE_TYPES.include?(probe_type.to_s)
         apply_result(identifier, probe_type, false, "Failure", error.message,
-                     time_value(now), action: nil, deferred: false)
+                     time_value(now), action: nil, deferred: false, probe_state: probe_state)
       end
 
       alias run check
@@ -159,8 +166,11 @@ module Rubernetes
         identifier = normalize_id(container_id)
         probes = probes_value if probes.nil?
         definitions = Helpers.string_keys(probes || {})
-        startup = check(identifier, probe: definitions["startupProbe"], type: "startup",
-                                    context: context, now: now)
+        startup = if definitions["startupProbe"] && startup_succeeded?(identifier)
+                    result(identifier, type: "startup")
+                  else
+                    check(identifier, probe: definitions["startupProbe"], type: "startup", context: context, now: now)
+                  end
         return {"startup" => startup, "liveness" => nil, "readiness" => nil} unless startup_ready?(identifier)
 
         liveness = check(identifier, probe: definitions["livenessProbe"], type: "liveness",
@@ -177,6 +187,12 @@ module Rubernetes
       end
 
       alias startup_ready? startup_succeeded?
+
+      def startup_failed?(container_id)
+        state_value(container_id, "startup").fetch(:failed)
+      rescue KeyError
+        false
+      end
 
       def liveness_failed?(container_id)
         state_value(container_id, "liveness").fetch(:failed)
@@ -359,7 +375,8 @@ module Rubernetes
         when "httpGet"
           action_definition = Helpers.key(definition, "httpGet", Helpers.key(definition, "http_get", definition))
           result = invoke_http(container_id, Helpers.string_keys(action_definition), context, timeout_seconds(definition))
-          [probe_success?(result, action: "httpGet"), result_message(result), "httpGet"]
+          warning = result.is_a?(Hash) && Helpers.key(result, "warning", false) == true
+          [probe_success?(result, action: "httpGet"), result_message(result), "httpGet", warning]
         when "tcpSocket"
           action_definition = Helpers.key(definition, "tcpSocket", Helpers.key(definition, "tcp_socket", definition))
           result = invoke_tcp(container_id, Helpers.string_keys(action_definition), context, timeout_seconds(definition))
@@ -460,15 +477,12 @@ module Rubernetes
       end
 
       def invoke_http(container_id, definition, context, timeout)
-        host = Helpers.key(definition, "host", Helpers.key(context, "host", "127.0.0.1"))
-        port = resolve_port(Helpers.key(definition, "port", 80), context)
+        host = ProbeEndpoint.host(definition, Helpers.key(context, "host", nil))
+        port = ProbeEndpoint.port(Helpers.key(definition, "port", 80), Helpers.key(context, "ports", []))
         path = Helpers.key(definition, "path", "/").to_s
         path = "/#{path}" unless path.start_with?("/")
         scheme = Helpers.key(definition, "scheme", "HTTP").to_s.downcase
-        headers = Array(Helpers.key(definition, "httpHeaders", [])).each_with_object({}) do |header, result|
-          item = Helpers.string_keys(header)
-          result[Helpers.key(item, "name", "")] = Helpers.key(item, "value", "")
-        end
+        scheme = "http" if scheme.empty?
         # probe/http formatURL: the host and port joined as net.JoinHostPort
         # does, so an IPv6 Pod IP is bracketed (URI() rejects a bare one).
         uri = URI("#{scheme}://#{Helpers.join_host_port(host, port)}#{path}")
@@ -476,8 +490,10 @@ module Rubernetes
           # The connector runs inside the sandbox and knows nothing about the
           # container's named ports: hand it the resolved number (a named port
           # such as "healthcheck" failed every probe and restarted the container).
-          resolved = definition.merge("port" => port)
-          return invoke_with_timeout(timeout) do
+          resolved = definition.merge("host" => host, "port" => port)
+          # The native connector applies the HTTP deadline to the exchange
+          # inside the sandbox. Bound helper setup and retirement separately.
+          return invoke_with_timeout(timeout + NAMESPACE_SETUP_SECONDS) do
             @runtime.http_get(container_id, resolved, timeout: timeout, context: context)
           rescue ArgumentError => error
             raise unless signature_error?(error)
@@ -487,6 +503,7 @@ module Rubernetes
         end
         raise ArgumentError, "http_client is required for httpGet probes" unless @http_client
 
+        headers = HTTPProbeHeaders.from_action(Helpers.key(definition, "httpHeaders", []))
         if @http_client.respond_to?(:get)
           invoke_with_timeout(timeout) do
             @http_client.get(uri, headers: headers, timeout: timeout, container_id: container_id)
@@ -505,16 +522,18 @@ module Rubernetes
       end
 
       def invoke_tcp(container_id, definition, context, timeout)
-        host = Helpers.key(definition, "host", Helpers.key(context, "host", "127.0.0.1"))
-        port = resolve_port(Helpers.key(definition, "port", nil), context)
-        raise ArgumentError, "tcpSocket probe port is required" if port.nil?
+        host = ProbeEndpoint.host(definition, Helpers.key(context, "host", nil))
+        port = ProbeEndpoint.port(Helpers.key(definition, "port", nil), Helpers.key(context, "ports", []))
         if @tcp_client.nil? && @runtime.respond_to?(:tcp_socket)
-          return invoke_with_timeout(timeout) do
-            @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout, context: context)
+          # The connector applies the probe timeout to the socket dial.
+          # Creating and entering its namespace helper has a separate bound.
+          resolved = definition.merge("host" => host, "port" => port)
+          return invoke_with_timeout(timeout + NAMESPACE_SETUP_SECONDS) do
+            @runtime.tcp_socket(container_id, resolved, timeout: timeout, context: context)
           rescue ArgumentError => error
             raise unless signature_error?(error)
 
-            @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout)
+            @runtime.tcp_socket(container_id, resolved, timeout: timeout)
           end
         end
         raise ArgumentError, "tcp_client is required for tcpSocket probes" unless @tcp_client
@@ -538,16 +557,15 @@ module Rubernetes
 
       # gRPC health probe (grpc.health.v1.Health/Check against the Pod IP).
       def invoke_grpc(container_id, definition, context, timeout)
-        host = Helpers.key(definition, "host", Helpers.key(context, "host", "127.0.0.1"))
-        port = resolve_port(Helpers.key(definition, "port", nil), context)
-        raise ArgumentError, "grpc probe port is required" if port.nil?
+        host = ProbeEndpoint.host(definition, Helpers.key(context, "host", nil))
+        port = ProbeEndpoint.port(Helpers.key(definition, "port", nil), Helpers.key(context, "ports", []))
 
         service = Helpers.key(definition, "service", "")
         # A runtime that can probe from inside the Pod's namespace is
         # preferred over a client dialing from the agent's own.
         if @runtime.respond_to?(:grpc_check)
-          return invoke_with_timeout(timeout) do
-            @runtime.grpc_check(container_id, definition.merge("port" => port), timeout: timeout, context: context)
+          return invoke_with_timeout(timeout + NAMESPACE_SETUP_SECONDS) do
+            @runtime.grpc_check(container_id, definition.merge("host" => host, "port" => port), timeout: timeout, context: context)
           end
         end
         raise ArgumentError, "grpc_client is required for grpc probes" unless @grpc_client
@@ -555,24 +573,6 @@ module Rubernetes
         invoke_with_timeout(timeout + 1) do
           @grpc_client.check(host, port, service: service, timeout: timeout, container_id: container_id)
         end
-      end
-
-      def resolve_port(value, context)
-        return value if value.is_a?(Numeric)
-
-        value = value.to_s
-        return value.to_i if value.match?(/\A\d+\z/)
-
-        ports = Helpers.key(context, "ports", {})
-        if ports.is_a?(Array)
-          ports = ports.to_h do |entry|
-            [Helpers.key(entry, "name", ""), Helpers.key(entry, "containerPort", nil)]
-          end
-        end
-        resolved = Helpers.key(ports, value, nil)
-        raise ArgumentError, "named probe port #{value.inspect} is not defined" if resolved.nil?
-
-        resolved
       end
 
       def invoke_with_timeout(seconds, &)
@@ -615,9 +615,11 @@ module Rubernetes
         nil
       end
 
-      def apply_result(identifier, type, success, state_name, message, timestamp, action:, deferred:)
+      def apply_result(identifier, type, success, state_name, message, timestamp, action:, deferred:, probe_state: nil)
         normalized = normalize_type(type)
         @mutex.synchronize do
+          return if probe_state && !@states.dig(identifier, normalized).equal?(probe_state)
+
           @snapshot_cache.delete(identifier)
           @states[identifier] ||= {}
           @states[identifier][normalized] ||= initial_state({})
