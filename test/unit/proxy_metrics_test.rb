@@ -112,14 +112,19 @@ class ProxyMetricsTest < Minitest::Test
     now = 5_000.0
     metrics = Proxy::Metrics.new(clock: -> { now })
 
-    assert_predicate metrics, :healthy?, "nothing queued yet"
+    metrics.sync_queued
+    now += 70
+
+    assert_predicate metrics, :healthy?, "each proxier is healthy until its first completed sync"
+    metrics.synced(0.01)
     metrics.sync_queued
     now += 10
 
     assert_predicate metrics, :healthy?, "within the timeout of the queued sync"
-    now += 60
+    metrics.sync_queued
+    now += 50
 
-    refute_predicate metrics, :healthy?, "queued 70s ago and never synced"
+    refute_predicate metrics, :healthy?, "a newer update cannot hide one pending for 60 seconds"
     metrics.synced(0.01)
 
     assert_predicate metrics, :healthy?
