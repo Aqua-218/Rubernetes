@@ -9,6 +9,7 @@ require "socket"
 require "time"
 
 require_relative "api_client"
+require_relative "container_files"
 require_relative "errors"
 require_relative "framing"
 require_relative "jailer"
@@ -28,6 +29,7 @@ module Rubernetes
         BROKER_PORT = 7000
         DEFAULT_MACHINE = {"vcpu_count" => 1, "mem_size_mib" => 512}.freeze
         BOOT_ARGS = "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/rubernetes-init root=/dev/vda ro"
+        LEGACY_VIRTIO_IRQS = 19
 
         Stream = Struct.new(:socket, :kind, :container_id, keyword_init: true) do
           def read(_length = nil, _outbuf = nil)
@@ -114,6 +116,7 @@ module Rubernetes
           @drive_layout = nil
           @workspace_path = nil
           @image_disks = []
+          @block_volumes = {}
           @tap_name = "tap0"
         end
 
@@ -131,8 +134,9 @@ module Rubernetes
 
         # ------------------------------------------------------- workspace
 
-        def allocate_workspace(images:, workspace_mib: nil)
+        def allocate_workspace(images:, workspace_mib: nil, block_volumes: nil)
           measure(:workspace) do
+            @block_volumes = validate_block_volumes(block_volumes)
             @workspace_path = @disks.workspace_disk(identity.fields.fetch("workspace_id"),
                                                     **(workspace_mib ? {size_mib: workspace_mib} : {}))
             claim("workspace", identity.fields.fetch("workspace_id"), "workspace:#{identity.fields.fetch("workspace_id")}:#{File.stat(@workspace_path).ino}",
@@ -151,6 +155,10 @@ module Rubernetes
             claim("identity", vm_id, "identity:#{vm_id}", {"jail_uid" => uid, "guest_cid" => identity.fields["guest_cid"]})
             @phase = "workspace"
           end
+        end
+
+        def block_volumes?
+          !@block_volumes.empty?
         end
 
         # ------------------------------------------------------- isolation
@@ -179,16 +187,7 @@ module Rubernetes
             @verity_mapping = mapping
             claim("verity", verity_name, "verity:#{mapping.uuid}", mapping.to_h)
             @drive_layout = build_drive_layout
-            inputs = {"/vmlinux" => @artifacts.path(:kernel), "/drives/rootfs" => mapping.device}
-            @drive_layout.each do |drive|
-              next if drive["id"] == "rootfs"
-
-              inputs[drive["jail_path"]] = {"path" => drive["host_path"], "writable" => drive["writable"] || drive["placeholder"]}
-            end
-            if base
-              inputs["/snapshot/mem"] = base.mem_path
-              inputs["/snapshot/vmstate"] = base.vmstate_path
-            end
+            inputs = jail_inputs(mapping.device, base)
             candidate = File.join(@jailer.chroot_for(jail_id), "run", "v.sock_#{BROKER_PORT}")
             if candidate.bytesize > MAX_UNIX_PATH_BYTES
               raise JailerError,
@@ -223,6 +222,7 @@ module Rubernetes
                       "guest supervisor answered from phase #{@guest_hello["phase"]}, expected base"
               end
             end
+            raise ArtifactError, "microVM guest does not support block volumes" if block_volumes? && @guest_hello.dig("capabilities", "block_volumes") != true
 
             @phase = "hello"
             @guest_hello
@@ -247,6 +247,14 @@ module Rubernetes
               end,
               "files" => files
             }
+            if block_volumes?
+              payload["block_volumes"] = @drive_layout.each_with_index.filter_map do |drive, index|
+                name = drive["volume_name"]
+                next unless name
+
+                [name, @block_volumes.fetch(name).slice("uid", "gid", "mode").merge("slot" => index, "readonly" => drive["read_only"])]
+              end.to_h
+            end
             response = measure(:identity_call) { control.call("identity.apply", payload) }
             @timings["identity_guest"] = response["timings"] if response.is_a?(Hash) && response["timings"]
             verify_ack!(response, "identity.apply", nonce)
@@ -306,7 +314,9 @@ module Rubernetes
         end
 
         def container_create(id, spec)
-          control.call("container.create", {"sandbox_id" => sandbox_id, "id" => id, "spec" => spec, "request_id" => "create:#{id}"})
+          payload = container_spec_for_guest(spec)
+          payload, files = prepare_container_files(id, payload)
+          control.call("container.create", {"sandbox_id" => sandbox_id, "id" => id, "spec" => payload, "files" => files, "request_id" => "create:#{id}"})
         end
 
         def container_start(id)
@@ -467,6 +477,82 @@ module Rubernetes
           limits
         end
 
+        def validate_block_volumes(volumes)
+          return {} if volumes.nil?
+          raise PolicyError, "microVM block volumes must be a map" unless volumes.is_a?(Hash)
+
+          # Root, workspace, images and vsock each use a legacy IRQ, as does the TAP.
+          limit = LEGACY_VIRTIO_IRQS - 3 - ImageDisks::MAX_IMAGE_DRIVES - (@network_device ? 1 : 0)
+          raise PolicyError, "at most #{limit} block volumes per microVM" if volumes.size > limit
+
+          volumes.to_h do |name, entry|
+            source = entry["source"] if entry.is_a?(Hash)
+            unless source.is_a?(String) && source.start_with?("/") && !source.include?("\0")
+              raise PolicyError, "block volume #{name.inspect} requires an absolute source path"
+            end
+
+            stat = File.stat(source)
+            raise PolicyError, "block volume #{name.inspect} source is not a block device" unless stat.blockdev?
+
+            [name, {"source" => source, "readonly" => entry["readonly"] == true, "rdev" => stat.rdev,
+                    "uid" => stat.uid, "gid" => stat.gid, "mode" => stat.mode & 0o777}]
+          rescue SystemCallError => error
+            raise PolicyError, "could not open block volume #{name.inspect}: #{error.message}"
+          end
+        end
+
+        def container_spec_for_guest(spec)
+          return spec unless spec["mounts"].is_a?(Array)
+
+          devices = Array(spec["volumeDevices"]).to_h do |entry|
+            [File.expand_path(entry.fetch("devicePath")), entry.fetch("name")]
+          end
+          mounts = spec["mounts"].map do |mount|
+            next mount unless mount["device"] == true
+
+            name = mount["name"]
+            volume = @block_volumes[name]
+            unless devices[mount["destination"]] == name && volume && volume["source"] == mount["source"] &&
+                   volume["readonly"] == (mount["readonly"] == true)
+              raise PolicyError, "host device mapping #{name.inspect} is not a prepared microVM block volume"
+            end
+
+            mount.slice("name", "destination", "readonly", "device").merge("volume_device" => true)
+          end
+          spec.merge("mounts" => mounts)
+        end
+
+        def prepare_container_files(id, spec)
+          return [spec, {}] unless spec["mounts"].is_a?(Array)
+
+          files = {}
+          termination = spec["termination_message"]
+          mounts = spec["mounts"].map do |mount|
+            destination = mount["destination"]
+            name = ContainerFiles::TERMINATION
+            if mount["name"] == name && mount["source"] && mount["source"] == termination&.fetch("host_path", nil)
+              files[name] = ""
+              termination = termination.merge("host_path" => File.join(ContainerFiles.directory(id), name))
+            elsif ContainerFiles::POD_PATHS.include?(destination) && mount["name"] == "pod-file:#{File.basename(destination)}"
+              name = File.basename(destination)
+              source = mount.fetch("source")
+              files[name] = File.open(source, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
+                raise PolicyError, "invalid kubelet file #{source}" unless file.stat.file? && file.stat.size < Framing::MAX_FRAME_BYTES
+
+                Base64.strict_encode64(file.read(Framing::MAX_FRAME_BYTES).to_s)
+              end
+            else
+              next mount
+            end
+            mount.merge("source" => File.join(ContainerFiles.directory(id), name))
+          end
+          return [spec, files] if files.empty?
+
+          raise ArtifactError, "microVM guest does not support kubelet-generated files" unless @guest_hello.dig("capabilities", "container_files") == true
+
+          [spec.merge("mounts" => mounts, "termination_message" => termination), files]
+        end
+
         def build_drive_layout
           layout = [{"id" => "rootfs", "jail_path" => "/drives/rootfs", "host_path" => nil, "read_only" => true, "root" => true}]
           layout << {"id" => "workspace", "jail_path" => "/drives/workspace.ext4", "host_path" => @workspace_path, "read_only" => false,
@@ -476,7 +562,26 @@ module Rubernetes
             layout << {"id" => "image#{index}", "jail_path" => "/drives/image#{index}.ext4", "host_path" => disk ? disk["path"] : @disks.placeholder(index),
                        "read_only" => true, "root" => false, "placeholder" => disk.nil?}
           end
+          @block_volumes.each_with_index do |(name, volume), index|
+            layout << {"id" => "block#{index}", "jail_path" => "/drives/block#{index}", "host_path" => volume["source"],
+                       "volume_name" => name, "rdev" => volume["rdev"], "root" => false,
+                       "read_only" => volume["readonly"], "writable" => !volume["readonly"],
+                       "cache_type" => ("Writeback" unless volume["readonly"])}
+          end
           layout
+        end
+
+        def jail_inputs(rootfs, base)
+          inputs = {"/vmlinux" => @artifacts.path(:kernel), "/drives/rootfs" => rootfs}
+          @drive_layout.reject { |drive| drive["root"] }.each do |drive|
+            inputs[drive["jail_path"]] = {"path" => drive["host_path"], "writable" => drive["writable"] || drive["placeholder"],
+                                          "rdev" => drive["rdev"]}.compact
+          end
+          if base
+            inputs["/snapshot/mem"] = base.mem_path
+            inputs["/snapshot/vmstate"] = base.vmstate_path
+          end
+          inputs
         end
 
         def cold_boot!(api)
@@ -484,7 +589,7 @@ module Rubernetes
           api.boot_source(kernel_image_path: "/vmlinux", boot_args: BOOT_ARGS)
           @drive_layout.each do |drive|
             api.drive(drive_id: drive["id"], path_on_host: drive["jail_path"], is_root_device: drive["root"],
-                      is_read_only: drive["read_only"])
+                      is_read_only: drive["read_only"], cache_type: drive["cache_type"])
           end
           api.vsock(guest_cid: identity.fields.fetch("guest_cid"), uds_path: vsock_jail_path)
           if @network_device
