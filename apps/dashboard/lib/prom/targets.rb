@@ -3,6 +3,7 @@
 require "yaml"
 require "json"
 require_relative "target"
+require_relative "protobuf_exposition"
 
 module Prom
   # Service discovery for a Rubernetes cluster, in the spirit of the
@@ -222,8 +223,14 @@ module Prom
     end
 
     def api_fetch(client, path)
-      response = client.respond_to?(:raw) ? client.raw(:get, path, raise_for_status: false) : client.request("GET", path)
-      [response.status.to_i, response.body.to_s]
+      headers = {"Accept" => ProtobufExposition::ACCEPT}
+      response = if client.respond_to?(:raw)
+                   client.raw(:get, path, headers: headers, raise_for_status: false)
+                 else
+                   client.request("GET", path, headers: headers)
+                 end
+      content_type = response.headers&.fetch("content-type", nil) if response.respond_to?(:headers)
+      [response.status.to_i, response.body.to_s, *content_type]
     end
 
     def plain_http_fetch(url)
@@ -236,8 +243,8 @@ module Prom
       http.verify_mode = OpenSSL::SSL::VERIFY_NONE if http.use_ssl?
       http.open_timeout = 5
       http.read_timeout = 10
-      response = http.get(uri.request_uri, {"Accept" => "text/plain;version=0.0.4"})
-      [response.code.to_i, response.body.to_s]
+      response = http.get(uri.request_uri, {"Accept" => ProtobufExposition::ACCEPT})
+      [response.code.to_i, response.body.to_s, response["content-type"]]
     end
   end
 end
