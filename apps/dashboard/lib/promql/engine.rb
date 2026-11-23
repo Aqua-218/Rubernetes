@@ -35,29 +35,42 @@ module Promql
       end
     end
 
-    Result = Struct.new(:type, :value, keyword_init: true) do
-      # value: Float (scalar), String (string), Array<Series> (vector/matrix)
+    Result = Struct.new(:type, :value, :warnings, :infos, keyword_init: true) do
       def to_api
-        case type
-        when :scalar then {"resultType" => "scalar", "result" => [value[0] / 1000.0, Engine.format_value(value[1])]}
-        when :string then {"resultType" => "string", "result" => [value[0] / 1000.0, value[1]]}
-        when :vector
-          {"resultType" => "vector",
-           "result" => value.map { |s| {"metric" => s.metric, "value" => [s.point[0] / 1000.0, Engine.format_value(s.point[1])]} }}
-        when :matrix
-          {"resultType" => "matrix",
-           "result" => value.map { |s| {"metric" => s.metric, "values" => s.points.map { |t, v| [t / 1000.0, Engine.format_value(v)] }} }}
-        end
+        result = case type
+                 when :scalar then api_point(value)
+                 when :string then [value[0] / 1000.0, value[1]]
+                 when :vector
+                   value.map do |series|
+                     key = histogram?(series.point) ? "histogram" : "value"
+                     {"metric" => series.metric, key => api_point(series.point)}
+                   end
+                 when :matrix
+                   value.map do |series|
+                     histograms, floats = series.points.partition { |point| histogram?(point) }
+                     entry = {"metric" => series.metric}
+                     entry["values"] = floats.map { |point| api_point(point) } unless floats.empty?
+                     entry["histograms"] = histograms.map { |point| api_point(point) } unless histograms.empty?
+                     entry
+                   end
+                 end
+        {"resultType" => type.to_s, "result" => result}
+      end
+
+      private
+
+      def histogram?(point) = point[1].is_a?(Prom::NativeHistogram)
+
+      def api_point(point)
+        t, v = point
+        [t / 1000.0, histogram?(point) ? v.to_api : Engine.format_value(v)]
       end
     end
 
     def self.format_value(value)
-      return "NaN" if value.nan?
-      return "+Inf" if value == Float::INFINITY
-      return "-Inf" if value == -Float::INFINITY
-      return value.to_i.to_s if value.finite? && value == value.floor && value.abs < 1e15
+      return value.to_s if value.is_a?(Prom::NativeHistogram)
 
-      value.to_s
+      Prom::NativeHistogram.number_text(value)
     end
 
     attr_reader :store, :lookback_ms, :default_step_ms
@@ -75,7 +88,10 @@ module Promql
       ast = expression.is_a?(String) ? Promql::Parser.parse(expression) : expression
       context = Context.new(self, start_ms: time_ms, end_ms: time_ms, step_ms: 0)
       value = eval_node(ast, time_ms, context)
-      wrap_instant(value, time_ms)
+      wrap_instant(value, time_ms).tap do |result|
+        result.warnings = context.warnings.keys
+        result.infos = context.infos.keys
+      end
     end
 
     # Range query: evaluates the expression at every step and returns a
@@ -116,7 +132,8 @@ module Promql
         end
         t += step_ms
       end
-      Result.new(type: :matrix, value: order.map { |key| series_by_sig[key] })
+      Result.new(type: :matrix, value: order.map { |key| series_by_sig[key] },
+                 warnings: context.warnings.keys, infos: context.infos.keys)
     end
 
     # Series metadata for /api/v1/series.
@@ -133,7 +150,7 @@ module Promql
     # -------------------------------------------------------------- eval
 
     class Context
-      attr_reader :engine, :start_ms, :end_ms, :step_ms
+      attr_reader :engine, :start_ms, :end_ms, :step_ms, :warnings, :infos
       attr_accessor :samples_loaded
 
       def initialize(engine, start_ms:, end_ms:, step_ms:)
@@ -142,6 +159,8 @@ module Promql
         @end_ms = end_ms
         @step_ms = step_ms
         @cache = {}
+        @warnings = {}
+        @infos = {}
         @samples_loaded = 0
       end
 
@@ -153,7 +172,11 @@ module Promql
           min_t, max_t = engine.send(:window_for, selector, self, extra_ms)
           matchers = selector.matchers.map { |m| engine.send(:to_store_matcher, m) }
           data = engine.store.query(matchers, min_t, max_t).map { |series, points| [series.labels, points] }
-          @samples_loaded += data.sum { |_, points| points.length }
+          @samples_loaded += data.sum do |_, points|
+            points.sum do |_, value|
+              value.is_a?(Prom::NativeHistogram) ? 1 + ((value.negative.size + value.positive.size + value.custom_bounds.size) / 4) : 1
+            end
+          end
           raise EvalError, "query processing would load too many samples into memory" if @samples_loaded > MAX_SAMPLES
 
           data
@@ -302,6 +325,8 @@ module Promql
         end
         ts += step
       end
+      context.warnings.merge!(inner.warnings)
+      context.infos.merge!(inner.infos)
       MatrixValue.new(order.map { |key| by_sig[key] })
     end
 
@@ -367,26 +392,60 @@ module Promql
         return vector.filter_map do |series|
           a = swap ? scalar : series.point[1]
           b = swap ? series.point[1] : scalar
+          value = sample_op(op, a, b, context)
+          next if value.nil?
+
           if COMPARISON.key?(op)
-            keep = COMPARISON[op].call(a, b)
+            keep = value == 1.0
             if node.return_bool
               Series.new(metric: drop_name(series.metric), point: [t, keep ? 1.0 : 0.0])
             elsif keep
               Series.new(metric: series.metric, point: series.point)
             end
           else
-            Series.new(metric: drop_name(series.metric), point: [t, scalar_op(op, a, b)])
+            Series.new(metric: drop_name(series.metric), point: [t, value])
           end
         end
       end
-      vector_vector(op, lhs, rhs, node, t)
+      vector_vector(op, lhs, rhs, node, t, context)
+    end
+
+    def sample_op(op, left, right, context)
+      left_hist = left.is_a?(Prom::NativeHistogram)
+      right_hist = right.is_a?(Prom::NativeHistogram)
+      return scalar_op(op, left, right) unless left_hist || right_hist
+
+      if left_hist && right_hist
+        case op
+        when "+", "-" then histogram_arithmetic(op, left, right, context)
+        when "==", "!=" then COMPARISON.fetch(op).call(left, right) ? 1.0 : 0.0
+        end
+      elsif op == "*"
+        left_hist ? left * right : right * left
+      elsif op == "/" && left_hist
+        left / right
+      end
+    rescue Prom::NativeHistogram::IncompatibleSchema
+      context.warnings["PromQL warning: incompatible bucket layout encountered for binary operator #{op.inspect}"] = true
+      nil
+    end
+
+    def histogram_arithmetic(operator, left, right, context, operation: operator == "+" ? "addition" : "subtraction")
+      if left.custom? && right.custom? && left.custom_bounds != right.custom_bounds
+        context.infos["PromQL info: mismatched custom buckets were reconciled during #{operation}"] = true
+      end
+      left.public_send(operator, right)
+    end
+
+    def sum_histograms(samples, context)
+      samples.reduce { |a, b| histogram_arithmetic("+", a, b, context, operation: "aggregation") }
     end
 
     def match_signature(series, matching)
       series.signature(matching.labels, without: !matching.on, on: matching.on)
     end
 
-    def vector_vector(op, lhs, rhs, node, t)
+    def vector_vector(op, lhs, rhs, node, t, context)
       matching = node.matching || AST::VectorMatching.new
       # Right side is the "one" side for many_to_one; swap for one_to_many.
       if matching.card == :one_to_many
@@ -415,7 +474,9 @@ module Promql
 
         a = swapped ? other.point[1] : series.point[1]
         b = swapped ? series.point[1] : other.point[1]
-        value = scalar_op(op, a, b)
+        value = sample_op(op, a, b, context)
+        next if value.nil?
+
         if COMPARISON.key?(op)
           keep = value == 1.0
           value = swapped ? other.point[1] : series.point[1] unless node.return_bool
@@ -499,22 +560,45 @@ module Promql
       result = []
       order.each do |key|
         group = groups[key]
-        values = group[:members].map { |s| s.point[1] }
+        all_values = group[:members].map { |s| s.point[1] }
+        values = all_values.grep(Numeric)
         case node.op
-        when "sum" then result << Series.new(metric: group[:metric], point: [t, values.sum])
-        when "avg" then result << Series.new(metric: group[:metric], point: [t, values.sum / values.length])
-        when "min" then result << Series.new(metric: group[:metric], point: [t, values.reject(&:nan?).min || Float::NAN])
-        when "max" then result << Series.new(metric: group[:metric], point: [t, values.reject(&:nan?).max || Float::NAN])
-        when "count" then result << Series.new(metric: group[:metric], point: [t, values.length.to_f])
+        when "sum", "avg"
+          if values.empty?
+            begin
+              total = sum_histograms(all_values, context)
+            rescue Prom::NativeHistogram::IncompatibleSchema
+              warn_mixed_histogram_schemas(context, group[:metric])
+              next
+            end
+          elsif values.length == all_values.length
+            total = values.sum
+          else
+            warn_mixed(context, group[:metric])
+            next
+          end
+          total /= all_values.length if node.op == "avg"
+          result << Series.new(metric: group[:metric], point: [t, total])
+        when "min", "max"
+          next if values.empty?
+
+          value = values.reject(&:nan?).public_send(node.op) || Float::NAN
+          result << Series.new(metric: group[:metric], point: [t, value])
+        when "count" then result << Series.new(metric: group[:metric], point: [t, all_values.length.to_f])
         when "group" then result << Series.new(metric: group[:metric], point: [t, 1.0])
-        when "stddev" then result << Series.new(metric: group[:metric], point: [t, Math.sqrt(variance(values))])
-        when "stdvar" then result << Series.new(metric: group[:metric], point: [t, variance(values)])
-        when "quantile"
-          result << Series.new(metric: group[:metric], point: [t, quantile(param.to_f, values)])
+        when "stddev", "stdvar", "quantile"
+          next if values.empty?
+
+          value = case node.op
+                  when "stddev" then Math.sqrt(variance(values))
+                  when "stdvar" then variance(values)
+                  when "quantile" then quantile(param.to_f, values)
+                  end
+          result << Series.new(metric: group[:metric], point: [t, value])
         when "count_values"
           label = param.to_s
           counts = Hash.new(0)
-          values.each { |v| counts[Engine.format_value(v)] += 1 }
+          all_values.each { |v| counts[Engine.format_value(v)] += 1 }
           counts.each do |value, count|
             result << Series.new(metric: group[:metric].merge(label => value), point: [t, count.to_f])
           end
@@ -523,7 +607,7 @@ module Promql
           next if k.nan? || k < 1
 
           k = k.to_i
-          sorted = group[:members].reject { |s| s.point[1].nan? }
+          sorted = float_series(group[:members]).reject { |s| s.point[1].nan? }
           sorted = node.op == "topk" ? sorted.sort_by { |s| -s.point[1] } : sorted.sort_by { |s| s.point[1] }
           sorted.first(k).each { |s| result << Series.new(metric: s.metric, point: s.point) }
         when "limitk"
@@ -573,8 +657,8 @@ module Promql
       when "vector"
         [Series.new(metric: {}, point: [t, eval_node(args[0], t, context).to_f])]
       when "scalar"
-        vector = eval_node(args[0], t, context)
-        vector.length == 1 ? vector[0].point[1] : Float::NAN
+        floats = float_series(eval_node(args[0], t, context))
+        floats.length == 1 ? floats[0].point[1] : Float::NAN
       when "timestamp"
         eval_node(args[0], t, context).map { |s| Series.new(metric: drop_name(s.metric), point: [t, timestamp_of(s, args[0], t, context)]) }
       when "absent"
@@ -593,23 +677,29 @@ module Promql
            "stddev_over_time", "stdvar_over_time", "present_over_time", "mad_over_time"
         matrix = eval_node(args[0], t, context)
         range_ms = range_of(args[0])
+        window_end = range_end(args[0], t, context)
         matrix.series.filter_map do |series|
-          value = range_function(name, series.points, t, range_ms)
+          value = range_function(name, series, window_end, range_ms, context)
           next if value.nil?
 
-          Series.new(metric: drop_name(series.metric), point: [t, value])
+          metric = name == "last_over_time" ? series.metric : drop_name(series.metric)
+          Series.new(metric: metric, point: [t, value])
         end
       when "quantile_over_time"
         q = eval_node(args[0], t, context).to_f
         matrix = eval_node(args[1], t, context)
-        matrix.series.map { |s| Series.new(metric: drop_name(s.metric), point: [t, quantile(q, s.points.map(&:last))]) }
+        matrix.series.filter_map do |s|
+          values = float_points(s.points).map(&:last)
+          Series.new(metric: drop_name(s.metric), point: [t, quantile(q, values)]) unless values.empty?
+        end
       when "predict_linear"
         matrix = eval_node(args[0], t, context)
         seconds = eval_node(args[1], t, context).to_f
         matrix.series.filter_map do |s|
-          next if s.points.length < 2
+          points = float_points(s.points)
+          next if points.length < 2
 
-          slope, intercept = linear_regression(s.points, t)
+          slope, intercept = linear_regression(points, t)
           Series.new(metric: drop_name(s.metric), point: [t, (slope * seconds) + intercept])
         end
       when "holt_winters", "double_exponential_smoothing"
@@ -620,13 +710,25 @@ module Promql
         raise EvalError, "invalid trend factor. Expected: 0 < tf < 1" unless tf.positive? && tf < 1
 
         matrix.series.filter_map do |s|
-          next if s.points.length < 2
+          points = float_points(s.points)
+          next if points.length < 2
 
-          Series.new(metric: drop_name(s.metric), point: [t, holt_winters(s.points.map(&:last), sf, tf)])
+          Series.new(metric: drop_name(s.metric), point: [t, holt_winters(points.map(&:last), sf, tf)])
+        end
+      when *HISTOGRAM_FIELDS.keys
+        field = HISTOGRAM_FIELDS.fetch(name)
+        eval_node(args[0], t, context).filter_map do |s|
+          value = s.point[1]
+          Series.new(metric: drop_name(s.metric), point: [t, value.public_send(field)]) if value.is_a?(Prom::NativeHistogram)
         end
       when "histogram_quantile"
         q = eval_node(args[0], t, context).to_f
-        histogram_quantile(q, eval_node(args[1], t, context), t)
+        histogram_function(eval_node(args[1], t, context), t, context, ->(h) { h.quantile(q) }, ->(b) { bucket_quantile(q, b) })
+      when "histogram_fraction"
+        lower = eval_node(args[0], t, context).to_f
+        upper = eval_node(args[1], t, context).to_f
+        histogram_function(eval_node(args[2], t, context), t, context,
+                           ->(h) { h.fraction(lower, upper) }, ->(b) { bucket_fraction(lower, upper, b) })
       when "label_replace"
         vector = eval_node(args[0], t, context)
         dst, replacement, src, regex = args[1..].map { |a| eval_node(a, t, context).to_s }
@@ -663,8 +765,8 @@ module Promql
           value.empty? ? metric.delete(dst) : metric[dst] = value
           Series.new(metric: metric, point: s.point)
         end
-      when "sort" then eval_node(args[0], t, context).sort_by { |s| sort_key(s.point[1]) }
-      when "sort_desc" then eval_node(args[0], t, context).sort_by { |s| sort_key(s.point[1]) }.reverse
+      when "sort" then float_series(eval_node(args[0], t, context)).sort_by { |s| sort_key(s.point[1]) }
+      when "sort_desc" then float_series(eval_node(args[0], t, context)).sort_by { |s| sort_key(s.point[1]) }.reverse
       when "sort_by_label", "sort_by_label_desc"
         vector = eval_node(args[0], t, context)
         labels = args[1..].map { |a| eval_node(a, t, context).to_s }
@@ -673,30 +775,35 @@ module Promql
       when "round"
         vector = eval_node(args[0], t, context)
         nearest = args[1] ? eval_node(args[1], t, context).to_f : 1.0
-        vector.map { |s| Series.new(metric: drop_name(s.metric), point: [t, round_to(s.point[1], nearest)]) }
+        float_series(vector).map { |s| Series.new(metric: drop_name(s.metric), point: [t, round_to(s.point[1], nearest)]) }
       when "clamp"
         vector = eval_node(args[0], t, context)
         lo = eval_node(args[1], t, context).to_f
         hi = eval_node(args[2], t, context).to_f
         return [] if lo > hi
 
-        vector.map { |s| Series.new(metric: drop_name(s.metric), point: [t, s.point[1].clamp(lo, hi)]) }
+        float_series(vector).map { |s| Series.new(metric: drop_name(s.metric), point: [t, s.point[1].clamp(lo, hi)]) }
       when "clamp_min"
         lo = eval_node(args[1], t, context).to_f
-        eval_node(args[0], t, context).map { |s| Series.new(metric: drop_name(s.metric), point: [t, [s.point[1], lo].max]) }
+        float_series(eval_node(args[0], t, context)).map { |s| Series.new(metric: drop_name(s.metric), point: [t, [s.point[1], lo].max]) }
       when "clamp_max"
         hi = eval_node(args[1], t, context).to_f
-        eval_node(args[0], t, context).map { |s| Series.new(metric: drop_name(s.metric), point: [t, [s.point[1], hi].min]) }
+        float_series(eval_node(args[0], t, context)).map { |s| Series.new(metric: drop_name(s.metric), point: [t, [s.point[1], hi].min]) }
       when *Functions::TIME_FUNCTIONS
         vector = args.empty? ? [Series.new(metric: {}, point: [t, t / 1000.0])] : eval_node(args[0], t, context)
-        vector.map { |s| Series.new(metric: drop_name(s.metric), point: [t, time_function(name, s.point[1])]) }
+        float_series(vector).map { |s| Series.new(metric: drop_name(s.metric), point: [t, time_function(name, s.point[1])]) }
       else
         math = MATH_FUNCTIONS[name]
         raise EvalError, "unsupported function #{name}" unless math
 
-        eval_node(args[0], t, context).map { |s| Series.new(metric: drop_name(s.metric), point: [t, math.call(s.point[1])]) }
+        float_series(eval_node(args[0], t, context)).map { |s| Series.new(metric: drop_name(s.metric), point: [t, math.call(s.point[1])]) }
       end
     end
+
+    HISTOGRAM_FIELDS = {
+      "histogram_avg" => :average, "histogram_count" => :count, "histogram_stddev" => :standard_deviation,
+      "histogram_stdvar" => :variance, "histogram_sum" => :sum
+    }.freeze
 
     MATH_FUNCTIONS = {
       "abs" => lambda(&:abs),
@@ -756,6 +863,19 @@ module Promql
       }
     }.freeze
 
+    def float_series(vector) = vector.select { |s| s.point[1].is_a?(Numeric) }
+    def float_points(points) = points.select { |_, v| v.is_a?(Numeric) }
+
+    def warn_mixed(context, labels)
+      context.warnings["PromQL warning: encountered a mix of histograms and floats for #{labels.fetch("__name__", labels)}"] = true
+    end
+
+    def warn_mixed_histogram_schemas(context, labels)
+      metric = labels.fetch("__name__", "")
+      context.warnings["PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name #{metric.inspect}"] =
+        true
+    end
+
     def sort_key(value)
       value.nan? ? -Float::INFINITY : value
     end
@@ -777,6 +897,14 @@ module Promql
       when AST::SubqueryExpr then node.range_ms
       when AST::ParenExpr then range_of(node.expr)
       else raise EvalError, "range function needs a range vector"
+      end
+    end
+
+    def range_end(node, t, context)
+      case node
+      when AST::MatrixSelector then eval_time_for(node.selector, t, context)
+      when AST::SubqueryExpr then eval_time_for(node, t, context)
+      when AST::ParenExpr then range_end(node.expr, t, context)
       end
     end
 
@@ -815,19 +943,49 @@ module Promql
 
     # ----------------------------------------------------- range functions
 
-    def range_function(name, points, t, range_ms)
+    def range_function(name, series, t, range_ms, context)
+      points = series.points
+      floats = float_points(points)
+      case name
+      when "count_over_time" then return points.length.to_f
+      when "last_over_time" then return points.last&.last
+      when "present_over_time" then return 1.0
+      when "changes", "resets"
+        return points.each_cons(2).count { |a, b| sample_changed?(name, a[1], b[1]) }.to_f
+      when "rate", "increase", "delta", "avg_over_time", "sum_over_time"
+        if !floats.empty? && floats.length != points.length
+          warn_mixed(context, series.metric)
+          return nil
+        end
+      when "irate", "idelta"
+        points = points.last(2)
+        if points.length == 2 && points[0][1].class != points[1][1].class
+          warn_mixed(context, series.metric)
+          return nil
+        end
+      else
+        points = floats
+      end
+      return nil if points.empty?
+
       values = points.map(&:last)
       case name
-      when "rate" then extrapolated_rate(points, t, range_ms, counter: true, rate: true)
-      when "increase" then extrapolated_rate(points, t, range_ms, counter: true, rate: false)
-      when "delta" then extrapolated_rate(points, t, range_ms, counter: false, rate: false)
+      when "rate" then extrapolated_rate(points, t, range_ms, counter: true, rate: true, context: context)
+      when "increase" then extrapolated_rate(points, t, range_ms, counter: true, rate: false, context: context)
+      when "delta" then extrapolated_rate(points, t, range_ms, counter: false, rate: false, context: context)
       when "irate", "idelta"
         return nil if points.length < 2
 
         last = points[-1]
         prev = points[-2]
-        result = last[1] - prev[1]
-        result = last[1] if name == "irate" && last[1] < prev[1]
+        result = if name == "irate" && sample_changed?("resets", prev[1], last[1])
+                   last[1]
+                 elsif last[1].is_a?(Prom::NativeHistogram)
+                   histogram_arithmetic("-", last[1], prev[1], context)
+                 else
+                   last[1] - prev[1]
+                 end
+        result = result.as_gauge if result.is_a?(Prom::NativeHistogram)
         return nil if last[0] == prev[0]
 
         name == "irate" ? result / ((last[0] - prev[0]) / 1000.0) : result
@@ -835,25 +993,11 @@ module Promql
         return nil if points.length < 2
 
         linear_regression(points, points[0][0]).first
-      when "changes"
-        return nil if points.empty?
-
-        count = 0
-        points.each_cons(2) { |a, b| count += 1 if a[1] != b[1] && !(a[1].nan? && b[1].nan?) }
-        count.to_f
-      when "resets"
-        return nil if points.empty?
-
-        count = 0
-        points.each_cons(2) { |a, b| count += 1 if b[1] < a[1] }
-        count.to_f
-      when "avg_over_time" then values.empty? ? nil : values.sum / values.length
-      when "sum_over_time" then values.empty? ? nil : values.sum
+      when "avg_over_time", "sum_over_time"
+        total = values.first.is_a?(Prom::NativeHistogram) ? sum_histograms(values, context) : values.sum
+        name == "avg_over_time" ? total / values.length : total
       when "min_over_time" then values.empty? ? nil : values.reject(&:nan?).min || Float::NAN
       when "max_over_time" then values.empty? ? nil : values.reject(&:nan?).max || Float::NAN
-      when "count_over_time" then values.empty? ? nil : values.length.to_f
-      when "last_over_time" then values.empty? ? nil : values.last
-      when "present_over_time" then values.empty? ? nil : 1.0
       when "stddev_over_time" then values.empty? ? nil : Math.sqrt(variance(values))
       when "stdvar_over_time" then values.empty? ? nil : variance(values)
       when "mad_over_time"
@@ -862,24 +1006,55 @@ module Promql
         median = quantile(0.5, values)
         quantile(0.5, values.map { |v| (v - median).abs })
       end
+    rescue Prom::NativeHistogram::IncompatibleSchema
+      warn_mixed_histogram_schemas(context, series.metric)
+      nil
+    end
+
+    def sample_changed?(name, previous, current)
+      return true if previous.class != current.class
+
+      if current.is_a?(Prom::NativeHistogram)
+        return current.reset_from?(previous) if name == "resets"
+
+        current != previous
+      elsif name == "resets"
+        current < previous
+      else
+        current != previous && !(current.nan? && previous.nan?)
+      end
     end
 
     # promql/functions.go extrapolatedRate: the increase over the window is
     # extrapolated to the window's edges, but by at most half a sample
     # interval, and for counters never below zero.
-    def extrapolated_rate(points, t, range_ms, counter:, rate:)
+    def extrapolated_rate(points, t, range_ms, counter:, rate:, context:)
       return nil if points.length < 2
 
       range_start = t - range_ms
       range_end = t
       first = points.first
       last = points.last
-      result = last[1] - first[1]
+      histogram = first[1].is_a?(Prom::NativeHistogram)
+      # A reset between the first two samples makes the first histogram's
+      # bucket layout irrelevant to the result.
+      initial = first[1]
+      first_reset = histogram && counter && points[1][1].reset_from?(initial)
+      if histogram
+        initial = points[1][1].empty if first_reset
+        raise Prom::NativeHistogram::IncompatibleSchema if counter && points.drop(1).any? { |_, sample| sample.custom? != initial.custom? }
+
+        result = histogram_arithmetic("-", last[1], initial, context)
+      else
+        result = last[1] - initial
+      end
       if counter
-        prev = first[1]
-        points.each do |_, value|
-          result += prev if value < prev
-          prev = value
+        points.each_cons(2).with_index do |((_, previous), (_, value)), index|
+          next if first_reset && index.zero?
+
+          next unless sample_changed?("resets", previous, value)
+
+          result = histogram ? histogram_arithmetic("+", result, previous, context) : result + previous
         end
       end
       duration_to_start = (first[0] - range_start) / 1000.0
@@ -889,8 +1064,10 @@ module Promql
       extrapolation_threshold = average_interval * 1.1
       extrapolate_to_interval = sampled_interval
       duration_to_start = average_interval / 2 if duration_to_start >= extrapolation_threshold
-      if counter && result.positive? && first[1] >= 0
-        duration_to_zero = sampled_interval * (first[1] / result)
+      initial_count = histogram ? first[1].count : initial
+      result_count = histogram ? result.count : result
+      if counter && result_count.positive? && initial_count >= 0
+        duration_to_zero = sampled_interval * (initial_count / result_count)
         duration_to_start = duration_to_zero if duration_to_zero < duration_to_start
       end
       extrapolate_to_interval += duration_to_start
@@ -935,35 +1112,40 @@ module Promql
 
     # Classic histogram buckets: interpolate within the bucket containing
     # the quantile, as promql/quantile.go bucketQuantile does.
-    def histogram_quantile(q, vector, t)
+    def histogram_function(vector, t, context, native, classic)
+      histograms, floats = vector.partition { |series| series.point[1].is_a?(Prom::NativeHistogram) }
       groups = {}
-      order = []
-      vector.each do |series|
+      floats.each do |series|
         le = series.metric["le"]
         next if le.nil?
 
         upper = parse_le(le)
         next if upper.nil?
 
-        metric = series.metric.reject { |k, _| %w[le __name__].include?(k) }
-        key = metric.sort.to_s
-        unless groups.key?(key)
-          groups[key] = {metric: metric, buckets: []}
-          order << key
+        metric = series.metric.reject { |k, _| k == "le" }
+        groups[metric] ||= []
+        groups[metric] << [upper, series.point[1]]
+      end
+      results = histograms.filter_map do |series|
+        equivalent = series.metric.merge("__name__" => "#{series.metric["__name__"]}_bucket")
+        if groups.delete(equivalent)
+          context.warnings["PromQL warning: encountered a mix of classic and native histograms for #{series.metric["__name__"]}"] = true
+          next
         end
-        groups[key][:buckets] << [upper, series.point[1]]
+
+        Series.new(metric: drop_name(series.metric), point: [t, native.call(series.point[1])])
       end
-      order.map do |key|
-        group = groups[key]
-        Series.new(metric: group[:metric], point: [t, bucket_quantile(q, group[:buckets])])
-      end
+      groups.each { |metric, buckets| results << Series.new(metric: drop_name(metric), point: [t, classic.call(buckets)]) }
+      results
     end
 
     def parse_le(text)
       case text
       when "+Inf" then Float::INFINITY
       when "-Inf" then -Float::INFINITY
-      else Float(text)
+      else
+        value = Float(text)
+        value unless value.nan?
       end
     rescue ArgumentError
       nil
@@ -974,16 +1156,9 @@ module Promql
       return -Float::INFINITY if q.negative?
       return Float::INFINITY if q > 1
 
-      buckets = buckets.sort_by(&:first)
+      buckets = normalize_buckets(buckets)
       return Float::NAN if buckets.length < 2 || buckets.last[0] != Float::INFINITY
 
-      # Ensure monotonicity: counts may be slightly non-monotonic after
-      # scrapes of a moving histogram.
-      running = -Float::INFINITY
-      buckets = buckets.map do |upper, count|
-        running = [running, count].max
-        [upper, running]
-      end
       observations = buckets.last[1]
       return Float::NAN if observations.zero?
 
@@ -1000,6 +1175,50 @@ module Promql
       return upper_bound if count.zero?
 
       lower_bound + ((upper_bound - lower_bound) * (rank / count))
+    end
+
+    def bucket_fraction(lower, upper, buckets)
+      return Float::NAN if lower.nan? || upper.nan?
+
+      buckets = normalize_buckets(buckets)
+      return Float::NAN unless buckets.last[0] == Float::INFINITY
+
+      count = buckets.last[1]
+      return Float::NAN if count.zero?
+      return 0.0 if lower >= upper
+
+      ranks = [lower, upper].map do |boundary|
+        previous_bound = -Float::INFINITY
+        previous_count = 0.0
+        rank = count
+        buckets.each do |bound, running|
+          if boundary < bound
+            previous_bound = 0.0 if previous_bound.infinite? && bound.positive?
+            rank = if boundary <= previous_bound || bound.infinite?
+                     previous_count
+                   elsif previous_bound.infinite?
+                     running
+                   else
+                     previous_count + ((running - previous_count) * (boundary - previous_bound) / (bound - previous_bound))
+                   end
+            break
+          end
+          previous_bound = bound
+          previous_count = running
+        end
+        rank
+      end
+      (ranks[1] - ranks[0]) / count
+    end
+
+    def normalize_buckets(buckets)
+      counts = Hash.new(0.0)
+      buckets.each { |upper, count| counts[upper] += count }
+      running = 0.0
+      counts.sort.map do |upper, count|
+        running = count if count > running
+        [upper, running]
+      end
     end
   end
 end
