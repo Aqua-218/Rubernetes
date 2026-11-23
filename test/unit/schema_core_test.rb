@@ -32,6 +32,25 @@ class SchemaCoreTest < Minitest::Test
     assert_equal({"name" => "demo", "spec" => {"replicas" => 2}, "futureField" => {"enabled" => true}}, object.to_h)
   end
 
+  def test_value_object_prefers_direct_field_keys_then_the_first_matching_alias
+    schema = Rubernetes::Schema
+    fields = {
+      "first" => schema::Field.new("internal", :integer, json_name: "shared", ruby_name: "first_value"),
+      "second" => schema::Field.new("second", :integer, json_name: "other", ruby_name: "shared"),
+      "other" => {type: :integer, json_name: "third", ruby_name: "third_value"}
+    }
+    definition = schema::Definition.new(name: "Example", version: "v1", fields: fields)
+    value = definition.build(shared: 1, second: 2, other: 3)
+
+    assert_equal 1, value[:first_value]
+    assert_equal 1, value["shared"]
+    assert_equal 2, value["second"]
+    assert_equal 3, value["other"]
+    assert definition.known_key?("internal")
+    assert_nil value["internal"]
+    assert_raises(ArgumentError) { definition.build(first: 1, first_value: 2) }
+  end
+
   def test_validator_reports_required_type_enum_range_and_pattern_errors
     validator = schema_definition.validator
     errors = validator.errors(
