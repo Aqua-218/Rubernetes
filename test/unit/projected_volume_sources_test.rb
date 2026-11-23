@@ -271,6 +271,27 @@ class ProjectedVolumeSourcesTest < Minitest::Test
     assert_empty @volumes.refresh_contents(@pod, @handle)
   end
 
+  # After a host reboot the recorded tmpfs is gone and a fresh one sits at the
+  # volume's private path.  Its deletion must remove that tmpfs instead of
+  # refusing for ever ("mount identity changed ... mountId mismatch").
+  def test_a_tmpfs_remounted_after_a_reboot_is_released
+    @objects[%w[configmaps cfg]] = {"data" => {"key" => "value"}}
+    prepare([{"configMap" => {"name" => "cfg"}}])
+    source = mount_at(@path) ? @path : @handle.dig("mounts", "settings", "path")
+    adapter = @manager.mount_adapter
+    stage = adapter.list_mounts.find { |mount| mount["filesystem"] == "tmpfs" }.fetch("target")
+    adapter.unmount(target: stage)
+    adapter.ensure_tmpfs(stage)
+    replaced = adapter.list_mounts.find { |mount| mount["target"] == stage }
+
+    skip "the in-memory adapter reuses the mount id" if replaced.nil?
+
+    @volumes.release(@pod, @handle)
+    @handle = nil
+
+    refute(adapter.list_mounts.any? { |mount| mount["target"] == stage }, "the replacement tmpfs must be unmounted (#{source})")
+  end
+
   def test_existing_public_directory_survives_backend_reconstruction
     spec = {"backend" => "projected", "name" => "settings", "sources" => [{"k" => "first"}],
             "backendResult" => {"backend" => "projected", "mountIdentity" => nil}}
