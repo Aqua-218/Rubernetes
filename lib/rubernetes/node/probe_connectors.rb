@@ -5,6 +5,10 @@ require "openssl"
 require "socket"
 require "timeout"
 require "uri"
+require_relative "../http_probe_headers"
+require_relative "../http_probe_response"
+require_relative "../grpc_health_probe"
+require_relative "status"
 
 module Rubernetes
   module Node
@@ -16,27 +20,34 @@ module Rubernetes
       # to a different host is treated as success with a warning, and the
       # body is capped at 10 KiB for the message.
       class HTTP
-        MAX_REDIRECTS = 10
-        MAX_BODY_BYTES = 10 * 1024
-        USER_AGENT = "kube-probe/1.36"
+        MAX_REDIRECTS = HTTPProbeResponse::REDIRECT_LIMIT
+        MAX_BODY_BYTES = HTTPProbeResponse::BODY_LIMIT
+        USER_AGENT = HTTPProbeHeaders::USER_AGENT
+
+        # Net::HTTP normally joins repeated values with a comma. A kubelet
+        # probe writes each value on its own line.
+        class Get < Net::HTTP::Get
+          def each_capitalized
+            return enum_for(__method__) unless block_given?
+
+            super { |name, _joined| get_fields(name).each { |value| yield name, value } }
+          end
+        end
 
         def get(uri, headers: {}, timeout: 1.0, **_options)
           target = uri.is_a?(URI) ? uri : URI(uri.to_s)
-          redirects = 0
-          loop do
-            response = request(target, headers, timeout)
-            code = response.code.to_i
-            if code.between?(300, 399) && response["location"] && redirects < MAX_REDIRECTS
-              location = URI.join(target.to_s, response["location"])
-              return {"status" => 200, "success" => true, "message" => "probe redirected to #{location}"} if location.host != target.host
+          MAX_REDIRECTS.times do
+            result = request(target, headers, timeout)
+            location = result.delete("location")
+            return result unless HTTPProbeResponse::REDIRECT_CODES.include?(result.fetch("status")) && !location.to_s.empty?
 
-              target = location
-              redirects += 1
-              next
-            end
-            body = response.body.to_s.byteslice(0, MAX_BODY_BYTES)
-            return {"status" => code, "success" => code.between?(200, 399), "message" => "HTTP probe #{code}: #{body}".strip}
+            redirected = target.merge(location)
+            return result unless redirected.hostname == target.hostname
+
+            headers = HTTPProbeHeaders.redirected(headers, location)
+            target = redirected
           end
+          {"status" => 0, "success" => false, "message" => "stopped after #{MAX_REDIRECTS} redirects"}
         rescue Timeout::Error
           {"status" => 0, "success" => false, "message" => "HTTP probe timed out after #{timeout}s"}
         rescue SystemCallError, IOError, OpenSSL::SSL::SSLError, SocketError => error
@@ -46,7 +57,7 @@ module Rubernetes
         private
 
         def request(uri, headers, timeout)
-          http = Net::HTTP.new(uri.host, uri.port)
+          http = Net::HTTP.new(uri.hostname, uri.port, nil)
           http.open_timeout = timeout
           http.read_timeout = timeout
           http.write_timeout = timeout if http.respond_to?(:write_timeout=)
@@ -54,11 +65,15 @@ module Rubernetes
             http.use_ssl = true
             http.verify_mode = OpenSSL::SSL::VERIFY_NONE
           end
-          get = Net::HTTP::Get.new(uri.request_uri.empty? ? "/" : uri.request_uri)
-          get["User-Agent"] = USER_AGENT
-          get["Accept"] = "*/*"
-          headers.each { |name, value| get[name.to_s] = value.to_s }
-          http.start { |session| session.request(get) }
+          get = Get.new(uri.request_uri.empty? ? "/" : uri.request_uri)
+          get.delete("User-Agent")
+          get.delete("Accept")
+          get.delete("Accept-Encoding")
+          get["Connection"] = "close"
+          authority = Helpers.join_host_port(uri.hostname, uri.port)
+          HTTPProbeHeaders.for_request(headers, authority).each { |name, values| get[name] = values }
+          http.ignore_eof = false
+          http.start { |session| HTTPProbeResponse.capture { |consume| session.request(get, &consume) } }
         end
       end
 
@@ -78,20 +93,7 @@ module Rubernetes
       # counts as success; UNIMPLEMENTED and errors fail the probe).
       class GRPC
         def check(host, port, service: nil, timeout: 1.0, **_options)
-          require "grpc"
-          require "grpc/health/v1/health_services_pb"
-          # probe/grpc: net.JoinHostPort(host, port) as the target.
-          stub = ::Grpc::Health::V1::Health::Stub.new(Helpers.join_host_port(host, port), :this_channel_is_insecure, timeout: timeout)
-          request = ::Grpc::Health::V1::HealthCheckRequest.new(service: service.to_s)
-          response = stub.check(request, deadline: Time.now + timeout)
-          status = response.status.to_s
-          {"success" => status == "SERVING", "message" => "gRPC health check status: #{status}"}
-        rescue ::GRPC::DeadlineExceeded
-          {"success" => false, "message" => "gRPC probe timed out after #{timeout}s"}
-        rescue ::GRPC::BadStatus => error
-          {"success" => false, "message" => "gRPC probe failed: #{error.message}"}
-        rescue LoadError => error
-          {"success" => false, "message" => "gRPC probe unavailable: #{error.message}"}
+          GRPCHealthProbe.check(Helpers.join_host_port(host, port), service, timeout)
         end
       end
     end
