@@ -44,4 +44,34 @@ class OCIStoreTest < Minitest::Test
       assert_raises(Rubernetes::Image::StoreError) { store.put(digest, bytes) }
     end
   end
+
+  def test_competing_stages_keep_the_winners_verified_inode
+    Dir.mktmpdir do |directory|
+      store = Rubernetes::Image::ContentStore.new(directory)
+      bytes = "concurrent content"
+      digest = "sha256:#{Digest::SHA256.hexdigest(bytes)}"
+      ready = Queue.new
+      finish = Queue.new
+      writer = Thread.new do
+        store.write_blob(digest, size: bytes.bytesize) do |file|
+          file.write(bytes)
+          ready << true
+          finish.pop
+        end
+      end
+      ready.pop
+
+      path = store.write_blob(digest, size: bytes.bytesize) { |file| file.write(bytes) }
+      inode = File.stat(path).ino
+      finish << true
+
+      assert_equal path, writer.value
+      assert_equal inode, File.stat(path).ino
+      assert_equal [File.basename(path)], Dir.children(File.dirname(path))
+      assert_equal bytes, store.fetch(digest)
+    ensure
+      finish << true if writer&.alive?
+      writer&.join
+    end
+  end
 end
