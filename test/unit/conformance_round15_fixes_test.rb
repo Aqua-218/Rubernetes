@@ -43,22 +43,21 @@ class ConformanceRound15FixesTest < Minitest::Test
     3.times { |i| store.update("pods/ns/a", {"metadata" => {"name" => "a"}, "spec" => {"x" => i}}) }
     store.delete("pods/ns/a")
     store.create("pods/ns/b", {"metadata" => {"name" => "b"}})
-    versions = store.instance_variable_get(:@versions)
 
-    assert versions.key?("pods/ns/a"), "inside the window the deleted key keeps its history"
+    assert store.export_state.fetch("versions").key?("pods/ns/a"), "inside the window the deleted key keeps its history"
 
     now += 120
     store.update("pods/ns/b", {"metadata" => {"name" => "b"}, "spec" => {"y" => 1}})
     now += 120
     store.update("pods/ns/b", {"metadata" => {"name" => "b"}, "spec" => {"y" => 2}})
 
-    refute versions.key?("pods/ns/a"), "a deleted key older than the window is gone"
+    refute store.export_state.fetch("versions").key?("pods/ns/a"), "a deleted key older than the window is gone"
     # The next window's compaction (triggered by any write) leaves a live key
     # its current version only.
     now += 120
     store.create("pods/ns/c", {"metadata" => {"name" => "c"}})
 
-    assert_equal 1, versions.fetch("pods/ns/b").length, "a live key keeps only its current version"
+    assert_equal 1, store.export_state.fetch("versions").fetch("pods/ns/b").length, "a live key keeps only its current version"
     assert_equal({"y" => 2}, store.get("pods/ns/b")["spec"])
   end
 
@@ -98,8 +97,7 @@ class ConformanceRound15FixesTest < Minitest::Test
   # PodObservedGenerationTracking: each kubelet condition records the
   # generation it observed, as a wire field of the condition.
   def test_pod_conditions_carry_the_observed_generation
-    status = Rubernetes::Node::Status.allocate
-    status.instance_variable_set(:@clock, -> { Time.utc(2026, 9, 16) })
+    status = Rubernetes::Node::Status.new(clock: -> { Time.utc(2026, 9, 16) })
     pod = {"metadata" => {"generation" => 3}, "spec" => {"containers" => [{"name" => "a"}]}}
     running = {"name" => "a", "ready" => true, "state" => {"running" => {}}}
     conditions = status.send(:build_conditions, phase: "Running", regular_statuses: [running], init_statuses: [], pod: pod)
