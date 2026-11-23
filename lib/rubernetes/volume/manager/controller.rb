@@ -114,7 +114,8 @@ module Rubernetes
                            end
           attachments = Types.deep_copy(record.attachments)
           attachments[node] = {
-            "node" => node, "pods" => [], "publishContext" => Types.deep_copy(durable_result["publishContext"] || {}),
+            "node" => node, "generation" => record.generation + 1, "pods" => [],
+            "publishContext" => Types.deep_copy(durable_result["publishContext"] || {}),
             "volumeContext" => Types.deep_copy(context["volumeContext"] || {}),
             "accessModes" => Types.deep_copy(context["accessModes"] || []),
             "volumeMode" => context["volumeMode"].to_s,
@@ -132,32 +133,17 @@ module Rubernetes
       def unpublish(id, node, token:)
         id = Types.identifier(id, "volume id")
         node = Types.identifier(node, "node")
-        current = @manager.fetch_record(id)
-        @manager.ensure_known!(current, action: "Cleanup")
-        return true unless current.attachments.key?(node)
-
-        operation = "controller-unpublish:#{node}:#{current.generation}"
-        execute_operation(key: id, operation: operation, token: token,
-                          payload: {"id" => id, "node" => node, "generation" => current.generation}) do |effect_boundary|
+        @manager.with_volume_lock(id) do
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record, action: "Cleanup")
-          return true unless record.attachments.key?(node)
-          raise ConflictError, "volume #{id} still has published consumers on #{node}" if record.publishes.values.any? do |entry|
-            entry["node"].to_s == node
-          end
+          attachment = record.attachments[node]
+          next true unless attachment
 
-          backend = @manager.backends.fetch(id)
-          context = attachment_context(record, node, attachment: record.attachments[node])
-          if backend.is_a?(RemoteBackend)
-            backend.detach(node: node, context: context, effect_boundary: effect_boundary)
-          else
-            backend.detach(node: node, context: context)
+          generation = attachment["generation"] || legacy_detach_generation(record, node, token)
+          execute_operation(key: id, operation: "controller-unpublish:#{node}:#{generation}", token: token,
+                            payload: {"id" => id, "node" => node, "generation" => generation}) do |effect_boundary|
+            detach_attachment(record, node, attachment, effect_boundary)
           end
-          attachments = Types.deep_copy(record.attachments)
-          attachments.delete(node)
-          state = attachments.empty? && record.stages.empty? ? "Detached" : record.state
-          @manager.volume_store[id] = record.with(state: state, attachments: attachments, generation: record.generation + 1)
-          true
         end
       end
 
@@ -221,6 +207,34 @@ module Rubernetes
       end
 
       private
+
+      # Stage cleanup can advance the volume generation between detach
+      # attempts. Old records recover the generation already reserved for
+      # this attachment from their operation token.
+      def legacy_detach_generation(record, node, token)
+        attempt = @manager.operations.fetch_token(key: record.id, token: token)
+        can_resume = attempt && attempt.status != "succeeded" && attempt.operation.start_with?("controller-unpublish:#{node}:")
+        return attempt.payload.fetch("generation") if can_resume
+
+        record.generation
+      end
+
+      def detach_attachment(record, node, attachment, effect_boundary)
+        published = record.publishes.values.any? { |entry| entry["node"].to_s == node }
+        raise ConflictError, "volume #{record.id} still has published consumers on #{node}" if published
+
+        backend = @manager.backends.fetch(record.id)
+        context = attachment_context(record, node, attachment: attachment)
+        if backend.is_a?(RemoteBackend)
+          backend.detach(node: node, context: context, effect_boundary: effect_boundary)
+        else
+          backend.detach(node: node, context: context)
+        end
+        attachments = record.attachments.except(node)
+        state = attachments.empty? && record.stages.empty? ? "Detached" : record.state
+        @manager.volume_store[record.id] = record.with(state: state, attachments: attachments, generation: record.generation + 1)
+        true
+      end
 
       def provision_declared_volume(id, record, backend, persisted_spec, token, effect_boundary)
         provisioned = if backend.is_a?(RemoteBackend)
