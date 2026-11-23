@@ -80,12 +80,21 @@ class M9GateTest < Minitest::Test
       {"id" => "lean_has_no_escape_hatch", "passed" => false,
        "occurrences" => [{"file" => "verification/lean/RaftLog.lean", "line" => 12}]},
       {"id" => "lean_proofs_compile", "passed" => true},
+      {"id" => "lean_implementation_parity", "passed" => true},
       {"id" => "model_checked_claims_have_a_run", "passed" => true},
       {"id" => "every_claim_states_its_level", "passed" => true}
     ]
     M9Gate.send(:validate_formal, report("m9_formal_verification", cases), cases, errors)
 
     assert errors.any? { |error| error.include?("no sorry/admit/native_decide") }, errors.inspect
+  end
+
+  def test_lean_implementation_mismatch_is_rejected
+    errors = []
+    cases = M9Gate::FORMAL_REQUIRED.map { |id| {"id" => id, "passed" => id != "lean_implementation_parity"} }
+    M9Gate.send(:validate_formal, report("m9_formal_verification", cases), cases, errors)
+
+    assert errors.any? { |error| error.include?("must match the Ruby implementation") }, errors.inspect
   end
 
   def test_supply_chain_rejects_critical_findings
