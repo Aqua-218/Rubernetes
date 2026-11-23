@@ -27,6 +27,18 @@ class NativePodLevelResourcesTest < Minitest::Test
     assert_equal "guaranteed", R.qos_class(spec(containers: [{"limits" => {"cpu" => "1", "memory" => "1Gi"}}]))
   end
 
+  def test_oom_kill_setting_only_changes_the_container_cgroup
+    container = {"resources" => {"limits" => {"memory" => "15Mi"}}}
+    default = R.container_cgroup_limits(container, qos: "burstable")
+    disabled = R.container_cgroup_limits(container, qos: "burstable", single_process_oom_kill: false)
+    enabled = R.container_cgroup_limits(container, qos: "burstable", single_process_oom_kill: true)
+
+    assert_equal "1", default.fetch("memory.oom.group")
+    assert_equal default, disabled
+    assert_equal default.except("memory.oom.group"), enabled
+    refute R.pod_cgroup_limits(spec(containers: [container.fetch("resources")])).key?("memory.oom.group")
+  end
+
   def test_pod_cgroup_follows_pod_level_limits
     pod = spec(containers: [{"requests" => {"cpu" => "100m"}}, {}], resources: {"requests" => {"cpu" => "500m", "memory" => "256Mi"},
                                                                                 "limits" => {"cpu" => "2", "memory" => "1Gi"}})
@@ -60,6 +72,14 @@ class NativePodLevelResourcesTest < Minitest::Test
     assert_equal "max 100000", plain.fetch("cpu.max")
   end
 
+  def test_container_zero_cpu_limit_is_unbounded_unless_the_pod_has_a_limit
+    container = {"resources" => {"limits" => {"cpu" => "0"}}}
+    pod = spec(containers: [{}], resources: {"limits" => {"cpu" => "1500m"}})
+
+    assert_equal "max 100000", R.container_cgroup_limits(container, qos: "besteffort").fetch("cpu.max")
+    assert_equal "150000 100000", R.container_cgroup_limits(container, qos: "burstable", pod: pod).fetch("cpu.max")
+  end
+
   def test_sidecars_and_overhead_in_pod_requests
     pod = spec(containers: [{"requests" => {"cpu" => "500m"}, "limits" => {"cpu" => "500m"}}],
                init: [{"name" => "s", "restartPolicy" => "Always", "resources" => {"requests" => {"cpu" => "1"}, "limits" => {"cpu" => "1"}}},
@@ -69,5 +89,25 @@ class NativePodLevelResourcesTest < Minitest::Test
     # max(500m + 1, 2 + 1) + 250m overhead = 3250m.
     assert_equal R.cpu_weight(3250).to_s, limits.fetch("cpu.weight")
     assert_equal "325000 100000", limits.fetch("cpu.max")
+  end
+
+  def test_memory_qos_uses_allocatable_and_only_tiered_policy_protects_requests
+    megabyte = 1024**2
+    resources = {"requests" => {"memory" => "64Mi"}}
+    container = {"resources" => resources}
+    pod = spec(containers: [resources])
+    options = {factor: 0.5, allocatable: 512 * megabyte}
+
+    disabled = R.container_cgroup_limits(container, qos: "burstable")
+
+    refute disabled.key?("memory.high")
+    default = R.container_cgroup_limits(container, qos: "burstable", memory_qos: options)
+
+    assert_equal [(288 * megabyte).to_s, "0", "0"], default.values_at("memory.high", "memory.min", "memory.low")
+    tiered = options.merge(policy: "TieredReservation")
+
+    assert_equal (64 * megabyte).to_s, R.container_cgroup_limits(container, qos: "burstable", memory_qos: tiered)["memory.low"]
+    assert_equal (64 * megabyte).to_s, R.pod_cgroup_limits(pod, memory_qos: tiered)["memory.low"]
+    refute R.pod_cgroup_limits(pod, memory_qos: options).key?("memory.low")
   end
 end
