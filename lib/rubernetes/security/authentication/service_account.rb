@@ -19,9 +19,11 @@ module Rubernetes
       # (and bound object) still exist with the same UID.
       class ServiceAccount
         NAME = "serviceaccount"
+        MIN_EXPIRATION_SECONDS = 600
         DEFAULT_EXPIRATION_SECONDS = 3600
         MAX_EXPIRATION_SECONDS = 1 << 32
-        WARN_AFTER_SECONDS = 3600
+        WARN_ONLY_BOUND_TOKEN_EXPIRATION_SECONDS = 3607
+        EXPIRATION_EXTENSION_SECONDS = 365 * 24 * 60 * 60
         PRIVATE_CLAIM = "kubernetes.io"
         # legacy.go: secret-based tokens.
         LEGACY_ISSUER = "kubernetes/serviceaccount"
@@ -40,7 +42,8 @@ module Rubernetes
         # +external_signer+: an ExternalJWTSigner that signs the tokens and
         # serves the verification keys instead of +signing_key+.
         def initialize(issuer:, api_audiences:, lookup:, signing_key: nil, verification_keys: nil, clock: -> { Time.now.utc },
-                       max_expiration_seconds: nil, extend_expiration: true, secret_writer: nil, external_signer: nil)
+                       max_expiration_seconds: nil, extend_expiration: true, max_extended_expiration_seconds: EXPIRATION_EXTENSION_SECONDS,
+                       secret_writer: nil, external_signer: nil)
           @issuer = String(issuer)
           @external_signer = external_signer
           raise ArgumentError, "a signing key or an external signer is required" if signing_key.nil? && external_signer.nil?
@@ -54,6 +57,7 @@ module Rubernetes
           @clock = clock
           @max_expiration_seconds = max_expiration_seconds
           @extend_expiration = extend_expiration
+          @max_extended_expiration_seconds = max_extended_expiration_seconds
           # (namespace, name, labels) -> merges labels into the Secret (the
           # legacy token's last-used date); nil disables the tracking.
           @secret_writer = secret_writer
@@ -110,16 +114,22 @@ module Rubernetes
            "subject_types_supported" => ["public"], "id_token_signing_alg_values_supported" => [algorithm]}
         end
 
-        # TokenRequest (authentication.k8s.io/v1): returns [token, expiration_time].
+        def limit_expiration_seconds(requested)
+          return requested unless @max_expiration_seconds&.positive?
+
+          [requested, @max_expiration_seconds].min
+        end
+
+        # TokenRequest returns the token and the expiration time for client rotation.
         def issue(namespace:, service_account_name:, service_account_uid:, audiences: nil, expiration_seconds: nil,
                   bound_object: nil, now: @clock.call)
           audiences = Array(audiences).map(&:to_s)
           audiences = @api_audiences if audiences.empty?
           requested = expiration_seconds.nil? ? DEFAULT_EXPIRATION_SECONDS : Integer(expiration_seconds)
-          raise ArgumentError, "expirationSeconds must be at least 600" if requested < 600
+          raise ArgumentError, "expirationSeconds must be at least 600" if requested < MIN_EXPIRATION_SECONDS
           raise ArgumentError, "expirationSeconds exceeds the maximum" if requested > MAX_EXPIRATION_SECONDS
 
-          capped = @max_expiration_seconds && requested > @max_expiration_seconds ? @max_expiration_seconds : requested
+          capped = limit_expiration_seconds(requested)
           issued = now.to_i
           private_claims = {"namespace" => namespace, "serviceaccount" => {"name" => service_account_name, "uid" => service_account_uid}}
           if bound_object
@@ -127,19 +137,22 @@ module Rubernetes
             private_claims[kind] = {"name" => bound_object.fetch("name"), "uid" => bound_object.fetch("uid")}
             private_claims["node"] = bound_object["node"] if kind == "pod" && bound_object["node"].is_a?(Hash)
           end
+          expiration = capped
+          # The migration extension keeps the rotation deadline at the effective lifetime.
+          if @extend_expiration && private_claims.key?("pod") && capped == WARN_ONLY_BOUND_TOKEN_EXPIRATION_SECONDS && (audiences - @api_audiences).empty?
+            private_claims["warnafter"] = issued + capped
+            expiration = @max_extended_expiration_seconds
+          end
           claims = {
             "iss" => @issuer,
             "aud" => audiences.length == 1 ? audiences.first : audiences,
-            "exp" => issued + capped,
+            "exp" => issued + expiration,
             "iat" => issued,
             "nbf" => issued,
             "sub" => "#{UserInfo::SERVICE_ACCOUNT_USERNAME_PREFIX}#{namespace}:#{service_account_name}",
             "jti" => SecureRandom.uuid,
             PRIVATE_CLAIM => private_claims
           }
-          # Tokens requested for longer than an hour are still issued for the
-          # requested duration but the kubelet-style warnAfter marks them.
-          claims[PRIVATE_CLAIM]["warnafter"] = issued + WARN_AFTER_SECONDS if capped > WARN_AFTER_SECONDS
           [sign_claims(claims), Time.at(issued + capped).utc]
         end
 
