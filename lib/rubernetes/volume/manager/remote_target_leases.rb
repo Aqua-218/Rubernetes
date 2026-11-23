@@ -10,13 +10,16 @@ module Rubernetes
       module TargetLeases
         private
 
-        def with_secure_csi_target(path, directory:, create:, post_effect: :unchanged, compensation: nil)
+        def with_secure_csi_target(path, directory:, create:, post_effect: :unchanged, compensation: nil, removed_identity: nil)
           ensure_descriptor_target_security!
           mounted = mounted_post_effect?(post_effect)
-          lease = @path_security.acquire_target!(path, directory: directory, create: create)
+          lease = with_stale_unmount_fallback(path, removed_identity) do
+            @path_security.acquire_target!(path, directory: directory, create: create)
+          end
           result = nil
           primary_error = nil
           begin
+            release_csi_unmount_leaf!(lease, path) if post_effect == :removed
             # CSI plugins receive the canonical pathname, exactly as kubelet
             # sends it.  A /proc/<pid>/fd/<n> alias breaks real drivers: the
             # mount-utils IsLikelyNotMountPoint heuristic compares st_dev of the
@@ -31,7 +34,7 @@ module Rubernetes
             primary_error = error
           end
 
-          verification_error = post_effect_verification_error(lease, path, result, mounted: mounted)
+          verification_error = post_effect_verification_error(lease, path, result, mounted: mounted, removed: post_effect == :removed)
           compensation_error = compensation_error_for(compensation, lease, primary_error, verification_error)
           close_error = lease_close_error(lease)
           verification_error ||= close_error
@@ -42,9 +45,21 @@ module Rubernetes
           result
         end
 
-        def post_effect_verification_error(lease, path, result, mounted:)
+        def release_csi_unmount_leaf!(lease, path)
+          observation = mount_identity_for_target(path)
+          verify_csi_target_lease!(lease, mounted: !observation.nil?, mount_identity: observation)
+          # A CSI plugin can use a non-lazy unmount. Retaining the mounted
+          # leaf descriptor prevents that syscall from finishing.
+          lease.release_leaf_for_unmount!
+        end
+
+        def post_effect_verification_error(lease, path, result, mounted:, removed:)
           observation = mounted ? mount_identity_for_target(path, result) : nil
-          verify_target_lease!(lease, mounted: mounted, mount_identity: observation)
+          if removed && lease.leaf_released?
+            lease.verify_original!(removed: true)
+          else
+            verify_csi_target_lease!(lease, mounted: !observation.nil?, mount_identity: observation)
+          end
           nil
         rescue StandardError => error
           error
@@ -124,7 +139,7 @@ module Rubernetes
           mounted = mounted_post_effect?(post_effect)
           Array(leases).each do |path, lease|
             observation = mounted ? mount_identity_for_target(path) : nil
-            verify_target_lease!(lease, mounted: mounted, mount_identity: observation)
+            verify_csi_target_lease!(lease, mounted: mounted, mount_identity: observation)
           end
           true
         rescue StandardError => error
@@ -136,7 +151,7 @@ module Rubernetes
           verification_error = nil
           Array(leases).each do |lease|
             observation = mount_identity || (mount_observer && mount_observer.call(lease.original_path))
-            verify_target_lease!(lease, mounted: mounted, mount_identity: observation)
+            verify_csi_target_lease!(lease, mounted: mounted, mount_identity: observation)
           rescue StandardError => error
             verification_error ||= error
           end
@@ -149,7 +164,7 @@ module Rubernetes
 
         # Leases only ever come from PathSecurity#acquire_target!, so the
         # verifier is PathSecurity::TargetLease#verify_original!.
-        def verify_target_lease!(lease, mounted:, mount_identity: nil)
+        def verify_csi_target_lease!(lease, mounted:, mount_identity: nil)
           return true unless lease
 
           lease.verify_original!(mounted: mounted, mount_identity: mount_identity)
