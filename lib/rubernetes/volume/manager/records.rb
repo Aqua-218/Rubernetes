@@ -137,7 +137,8 @@ module Rubernetes
             filesystem: hash["filesystem"] || hash[:filesystem] || hash["fsType"] || hash[:fs_type],
             # A bind mount rides on another superblock; the ledger must not
             # treat its device as a second attachment of that block device.
-            bind: bind
+            bind: bind,
+            shared_source: hash["sharedSource"] || hash[:shared_source]
           }
           optional.each { |key, value| arguments[key] = value if keyword_names.include?(key) }
           @mount_ledger.register(**arguments)
