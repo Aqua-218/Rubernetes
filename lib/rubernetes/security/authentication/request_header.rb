@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "openssl"
+require "uri"
 
 require_relative "../identity"
 
@@ -15,16 +16,24 @@ module Rubernetes
       # percent-encoded keys.
       class RequestHeader
         NAME = "request-header"
+        PEER_HEADER = "x-kubernetes-peer-proxied"
+        PEER_USERNAME = ["X-Remote-User"].freeze
+        PEER_UID = ["X-Remote-Uid"].freeze
+        PEER_GROUPS = ["X-Remote-Group"].freeze
+        PEER_EXTRA = ["x-remote-extra-"].freeze
 
         def initialize(ca_certificates:, allowed_names: [], username_headers: ["X-Remote-User"], uid_headers: ["X-Remote-Uid"],
-                       group_headers: ["X-Remote-Group"], extra_header_prefixes: ["X-Remote-Extra-"], clock: -> { Time.now.utc })
+                       group_headers: ["X-Remote-Group"], extra_header_prefixes: ["X-Remote-Extra-"], peer_proxy: false,
+                       clock: -> { Time.now.utc })
           @store = OpenSSL::X509::Store.new
+          @store.purpose = OpenSSL::X509::PURPOSE_SSL_CLIENT
           Array(ca_certificates).each { |certificate| @store.add_cert(certificate) }
           @allowed_names = Array(allowed_names).map(&:to_s)
           @username_headers = Array(username_headers)
           @uid_headers = Array(uid_headers)
           @group_headers = Array(group_headers)
           @extra_prefixes = Array(extra_header_prefixes).map(&:downcase)
+          @peer_proxy = peer_proxy
           @clock = clock
           @verified = {}
           @verified_mutex = Mutex.new
@@ -43,25 +52,29 @@ module Rubernetes
           # header the answer is nil whoever sent it, so the certificate --
           # a signature check per request, a quarter of a GET -- is looked at
           # only when there is one.
-          username = first_header(context, @username_headers)
+          # API-server peers speak client-go's fixed auth-proxy header
+          # protocol. The same CA and allowed CN gate both header sets.
+          peer = @peer_proxy && context.header(PEER_HEADER) == "true"
+          username = first_header(context, peer ? PEER_USERNAME : @username_headers)
           return nil if username.nil? || username.empty?
           return nil unless verified?(certificate, context.client_chain)
 
           common_name = certificate.subject.to_a.find { |entry| entry[0] == "CN" }&.fetch(1).to_s
           return nil unless @allowed_names.empty? || @allowed_names.include?(common_name)
 
-          uid = first_header(context, @uid_headers)
-          groups = @group_headers.flat_map { |header| context.header_values(header) }.map(&:to_s).reject(&:empty?)
+          uid = first_header(context, peer ? PEER_UID : @uid_headers)
+          groups = (peer ? PEER_GROUPS : @group_headers).flat_map { |header| context.header_values(header) }.map(&:to_s).reject(&:empty?)
+          prefixes = peer ? PEER_EXTRA : @extra_prefixes
           extra = {}
-          all_headers(context).each do |header_name, values|
-            prefix = @extra_prefixes.find { |candidate| header_name.downcase.start_with?(candidate) }
+          context.headers.to_h.each_key do |header_name|
+            prefix = prefixes.find { |candidate| header_name.downcase.start_with?(candidate) }
             next unless prefix
 
             key = unescape(header_name[prefix.length..])
-            extra[key] = (extra[key] || []) + values.map(&:to_s)
+            extra[key] = (extra[key] || []) + context.header_values(header_name).map(&:to_s)
           end
-          user = UserInfo.new(name: username, uid: uid.to_s.empty? ? nil : uid, groups: groups + [UserInfo::ALL_AUTHENTICATED],
-                              extra: extra)
+          groups << UserInfo::ALL_AUTHENTICATED if username != UserInfo::ANONYMOUS_NAME && !groups.include?(UserInfo::ALL_UNAUTHENTICATED)
+          user = UserInfo.new(name: username, uid: uid.to_s.empty? ? nil : uid, groups: groups, extra: extra)
           AuthenticationResult.new(user: user, authenticator: NAME)
         end
 
@@ -95,19 +108,8 @@ module Rubernetes
           nil
         end
 
-        def all_headers(context)
-          headers = context.headers
-          if headers.respond_to?(:each_pair_raw)
-            headers.each_pair_raw.to_h
-          elsif headers.respond_to?(:to_h)
-            headers.to_h.transform_values { |value| Array(value) }
-          else
-            {}
-          end
-        end
-
         def unescape(value)
-          value.gsub(/%([0-9A-Fa-f]{2})/) { Regexp.last_match(1).hex.chr }.downcase
+          URI::RFC2396_PARSER.unescape(value).force_encoding(Encoding::UTF_8).scrub.downcase
         end
       end
     end
