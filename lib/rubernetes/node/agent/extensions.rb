@@ -35,7 +35,10 @@ module Rubernetes
           if @csi_plugins.nil? && client && dra.fetch("csi_plugins", true) != false
             @csi_plugins = CSIPlugins.new(client: client, node_name: @node_name, error_handler: @error_handler)
           end
-          volume.csi_registry = @csi_plugins if @csi_plugins && volume_manager?(volume)
+          if @csi_plugins && volume_manager?(volume)
+            volume.csi_registry = @csi_plugins
+            volume.configure_kubelet_csi_paths(kubelet_root) if kubelet_root && volume.is_a?(Volume::Manager)
+          end
           handlers = {"DRAPlugin" => @dra_manager, CSIPlugins::TYPE => @csi_plugins}.compact
           @plugin_manager = plugin_manager
           return unless @plugin_manager.nil? && !handlers.empty? && kubelet_root
@@ -48,6 +51,7 @@ module Rubernetes
           DRAManager.new(client: client, node_name: @node_name,
                          state_directory: dra.fetch("state_dir", File.join(kubelet_root, "dra")),
                          error_handler: @error_handler,
+                         workload_claims: @feature_gates["DRAWorkloadResourceClaims"] == true,
                          # ResourceHealthStatus (Beta, on): follow each driver's health stream.
                          resource_health: @feature_gates.fetch("ResourceHealthStatus", true) != false)
         end
