@@ -3,6 +3,8 @@
 require_relative "../test_helper"
 require "rubernetes/node"
 require "rubernetes/image"
+require "rubernetes/runtime/cri"
+require "rubernetes/runtime/multiplexer"
 
 # kubelet nodestatus.Images / RuntimeHandlers: the node's images (native store
 # and CRI runtimes) largest first, 50 at most, digests then tags, 5 names at
@@ -48,6 +50,22 @@ class NodeStatusImagesTest < Minitest::Test
     assert_equal 159, images.first["sizeBytes"]
   end
 
+  def test_zero_skips_inventory_and_negative_one_keeps_all_images
+    unreadable = Object.new
+    def unreadable.cached_images = raise Minitest::Assertion, "zero must not query the image store"
+
+    assert_empty Rubernetes::Node::StatusImages.new(resolver: unreadable, max_images: 0).images
+
+    resolver = Resolver.new(Array.new(53) { |index| native("repo/image#{index}:1", 100 + index) })
+    unlimited = Rubernetes::Node::StatusImages.new(resolver: resolver, max_images: -1).images
+    limited = Rubernetes::Node::StatusImages.new(resolver: resolver, max_images: 2).images
+    sizes = limited.map { |image| image.fetch("sizeBytes") }
+
+    assert_equal 53, unlimited.length
+    assert_equal [152, 151], sizes
+    assert_equal unlimited.first(2), limited
+  end
+
   def test_runtime_handlers_report_real_features
     agent = Rubernetes::Node::Agent.allocate
     agent.instance_variable_set(:@runtime, Object.new)
@@ -55,5 +73,21 @@ class NodeStatusImagesTest < Minitest::Test
 
     assert_equal(["", "rubernetes-native"], handlers.map { |handler| handler["name"] })
     assert_equal({"recursiveReadOnlyMounts" => true, "userNamespaces" => true}, handlers.first["features"])
+  end
+
+  def test_missing_cri_handler_does_not_inherit_default_features
+    client = Object.new
+    client.define_singleton_method(:runtime) do |*, **|
+      {"runtime_handlers" => [{"name" => "", "features" => {"recursive_read_only_mounts" => true, "user_namespaces" => true}}]}
+    end
+    backend = Rubernetes::Runtime::CRI::Backend.new(client: client, handler: "limited")
+    runtime = Rubernetes::Runtime::Multiplexer.new(backends: {"cri" => backend}, default: "cri")
+    agent = Rubernetes::Node::Agent.allocate
+    agent.instance_variable_set(:@runtime, runtime)
+
+    expected = {"recursiveReadOnlyMounts" => false, "userNamespaces" => false}
+    handlers = agent.send(:node_runtime_handlers).to_h { |handler| handler.values_at("name", "features") }
+
+    assert_equal({"" => expected, "cri" => expected}, handlers)
   end
 end
