@@ -21,7 +21,7 @@ module Rubernetes
         @refilled_at = @clock.call
       end
 
-      def wait
+      def wait(_path = nil)
         delay = @mutex.synchronize { reserve }
         @sleeper.call(delay) if delay.positive?
         delay
@@ -37,6 +37,25 @@ module Rubernetes
         @refilled_at = now
         @tokens -= 1
         @tokens.negative? ? -@tokens / @qps : 0.0
+      end
+
+      # A zero-QPS clientset lets each versioned REST client apply its own
+      # defaults. Discovery requests share a separate bucket.
+      class ByAPIVersion
+        API_VERSION = %r{\A/?(api/[^/]+|apis/[^/]+/[^/]+)/[^/]}
+
+        def initialize(qps:, burst:)
+          @qps = qps
+          @burst = burst
+          @buckets = {}
+          @mutex = Mutex.new
+        end
+
+        def wait(path)
+          version = path[API_VERSION, 1]
+          bucket = @mutex.synchronize { @buckets[version] ||= RateLimiter.new(qps: @qps, burst: @burst) }
+          bucket.wait
+        end
       end
     end
   end
