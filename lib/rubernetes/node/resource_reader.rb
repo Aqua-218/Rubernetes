@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "json"
+require_relative "api_client_adapter"
 
 module Rubernetes
   module Node
@@ -15,6 +18,7 @@ module Rubernetes
     # from its informer cache rather than hitting the API server each time.
     class ResourceReader
       class NotFound < StandardError; end
+      class Unavailable < StandardError; end
 
       DEFAULT_TTL_SECONDS = 5.0
 
@@ -25,6 +29,7 @@ module Rubernetes
         "runtimeclasses" => "node.k8s.io/v1", "clustertrustbundles" => "certificates.k8s.io/v1beta1"
       }.freeze
       CLUSTER_SCOPED = %w[persistentvolumes nodes runtimeclasses clustertrustbundles].freeze
+      TRUST_BUNDLE_API_VERSIONS = %w[certificates.k8s.io/v1beta1 certificates.k8s.io/v1alpha1].freeze
 
       SLOW_FETCH_SECONDS = 2.0
 
@@ -39,6 +44,7 @@ module Rubernetes
         @wall_clock = wall_clock
         @cache = {}
         @mutex = Mutex.new
+        @trust_bundle_discovery_mutex = Mutex.new
       end
 
       # Returns the object as a String-keyed Hash, or nil when it does not
@@ -93,7 +99,7 @@ module Rubernetes
         return cached.fetch(:value) if cached
 
         response = if @client.respond_to?(:list_objects)
-                     @client.list_objects(plural, namespace: namespace, api_version: RESOURCES.fetch(plural, "v1"))
+                     @client.list_objects(plural, namespace: namespace, api_version: api_version_for(plural))
                    else
                      raw_get(plural, nil, namespace: namespace)
                    end
@@ -157,7 +163,7 @@ module Rubernetes
 
       def fetch_object(plural, name, namespace:)
         response = if @client.respond_to?(:read_object)
-                     @client.read_object(plural, name, namespace: namespace, api_version: RESOURCES.fetch(plural, "v1"))
+                     @client.read_object(plural, name, namespace: namespace, api_version: api_version_for(plural))
                    else
                      raw_get(plural, name, namespace: namespace)
                    end
@@ -169,7 +175,7 @@ module Rubernetes
       end
 
       def raw_get(plural, name, namespace:)
-        api_version = RESOURCES.fetch(plural, "v1")
+        api_version = api_version_for(plural)
         scope = CLUSTER_SCOPED.include?(plural) ? nil : namespace
         if @client.respond_to?(:get)
           @client.get(plural, name, namespace: scope, api_version: api_version)
@@ -178,6 +184,28 @@ module Rubernetes
         else
           raise ArgumentError, "resource reader client must implement get"
         end
+      end
+
+      def api_version_for(plural)
+        return RESOURCES.fetch(plural, "v1") unless plural == "clustertrustbundles"
+
+        @trust_bundle_discovery_mutex.synchronize do
+          @trust_bundle_api_version ||= TRUST_BUNDLE_API_VERSIONS.find do |version|
+            resources = case @client
+                        when APIClientAdapter
+                          @client.group_version_resources(version)
+                        when Client::KubernetesClient
+                          normalize(@client.get("/apis/#{version}"))
+                        else
+                          return TRUST_BUNDLE_API_VERSIONS.first
+                        end
+            Array(resources && resources["resources"]).any? { |resource| resource["name"] == plural }
+          rescue Client::APIError => error
+            raise unless error.status.to_i == 404
+
+            false
+          end
+        end || raise(Unavailable, "no version of the ClusterTrustBundle API is served")
       end
 
       def normalize(response)
@@ -196,13 +224,7 @@ module Rubernetes
         value.nil? ? nil : stringify(value)
       end
 
-      def stringify(value)
-        case value
-        when Hash then value.each_with_object({}) { |(key, child), result| result[key.to_s] = stringify(child) }
-        when Array then value.map { |child| stringify(child) }
-        else value
-        end
-      end
+      def stringify(value) = ObjectTree.stringify_keys(value)
 
       def not_found?(error)
         return true if error.is_a?(NotFound)
@@ -213,6 +235,8 @@ module Rubernetes
       end
 
       def read_cache(key)
+        return if @ttl.zero?
+
         @mutex.synchronize do
           entry = @cache[key]
           return nil unless entry
@@ -223,6 +247,8 @@ module Rubernetes
       end
 
       def write_cache(key, value)
+        return value if @ttl.zero?
+
         @mutex.synchronize { @cache[key] = {value: value, at: @clock.call, read_at: @wall_clock.call} }
         value
       end
