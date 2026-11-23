@@ -10,17 +10,26 @@ class NodeWakeupTimerTest < Minitest::Test
 
   def test_a_wakeup_fires_once_at_its_time_and_the_earliest_request_wins
     fired = Queue.new
-    timer = Node::WakeupTimer.new { |key| fired << [key, Process.clock_gettime(Process::CLOCK_MONOTONIC)] }
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    timer.schedule("pod-a", 0.3)
-    timer.schedule("pod-a", 0.1)
-    timer.schedule("pod-b", 0.2)
-    sleep 0.45
+    now = 0.0
+    timer = Node::WakeupTimer.new(clock: -> { now }) { |key| fired << [key, now] }
+    timer.schedule("pod-a", 3)
+    timer.schedule("pod-a", 1)
+    timer.schedule("pod-a", 4)
+    timer.schedule("pod-b", 2)
 
-    events = Array.new(fired.size) { fired.pop }
+    assert_equal({"pod-a" => 1.0, "pod-b" => 2.0}, timer.pending)
 
-    assert_equal %w[pod-a pod-b], events.map(&:first)
-    assert_in_delta 0.1, events.first.last - started, 0.08
+    now = 1.0
+    timer.schedule("tick-1", 0)
+    first = Array.new(2) { fired.pop(timeout: 2) }
+
+    assert_equal [["pod-a", 1.0], ["tick-1", 1.0]], first
+
+    now = 2.0
+    timer.schedule("tick-2", 0)
+    second = Array.new(2) { fired.pop(timeout: 2) }
+
+    assert_equal [["pod-b", 2.0], ["tick-2", 2.0]], second
     assert_empty timer.pending
   ensure
     timer&.stop
