@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../taint_toleration"
+
 module Rubernetes
   module Controller
     module Builtins
@@ -20,7 +22,7 @@ module Rubernetes
 
         def plan(node, store: nil, pods: nil, now: nil, lease: nil, **_options)
           health_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= adapter ? adapter.list(POD, namespace: :all) : []
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
@@ -47,7 +49,7 @@ module Rubernetes
         end
 
         def delete(node, pods: nil, store: nil, orphan: false)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= adapter ? adapter.list(POD, namespace: :all) : []
           operations = if orphan
                          []
@@ -219,17 +221,7 @@ module Rubernetes
         end
 
         def tolerates_taint?(pod, taint)
-          tolerations = Array(Support.value(Support.spec(pod), "tolerations", []))
-          tolerations.any? do |toleration|
-            key = Support.value(toleration, "key", "").to_s
-            effect = Support.value(toleration, "effect", "").to_s
-            operator = Support.value(toleration, "operator", "Equal").to_s
-            value = Support.value(toleration, "value", "").to_s
-            next false unless effect.empty? || effect == Support.value(taint, "effect", "").to_s
-            next true if operator == "Exists" && (key.empty? || key == Support.value(taint, "key", "").to_s)
-
-            key == Support.value(taint, "key", "").to_s && value == Support.value(taint, "value", "").to_s
-          end
+          Array(Support.value(Support.spec(pod), "tolerations", [])).any? { |entry| TaintToleration.matches?(entry, taint) }
         end
       end
     end
