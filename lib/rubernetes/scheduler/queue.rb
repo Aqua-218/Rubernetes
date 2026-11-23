@@ -6,20 +6,25 @@ module Rubernetes
     # plugin.  Creation time is the first stable tie-breaker, while identity
     # remains a deterministic fallback for synthetic Pods without timestamps.
     class PrioritySort
+      def initialize
+        @tie_breakers = ObjectSpace::WeakMap.new
+      end
+
       def name
         "PrioritySort"
       end
 
       def less(left, right)
-        left_key = sort_key(pod_for(left))
-        right_key = sort_key(pod_for(right))
-        left_key < right_key
+        compare(left, right).negative?
       end
 
       def compare(left, right)
-        left_key = sort_key(pod_for(left))
-        right_key = sort_key(pod_for(right))
-        left_key <=> right_key
+        left = pod_for(left)
+        right = pod_for(right)
+        priority = right.priority <=> left.priority
+        return priority unless priority.zero?
+
+        sort_key(left) <=> sort_key(right)
       end
 
       private
@@ -33,7 +38,14 @@ module Rubernetes
       end
 
       def sort_key(pod)
-        [-pod.priority, Support.timestamp_key(pod), pod.namespace, pod.name, pod.uid]
+        # A queued Pod is an immutable snapshot. Tied comparisons reuse its
+        # parsed timestamp without retaining a Pod after it leaves the queue.
+        cached = @tie_breakers[pod] if pod.instance_of?(Pod)
+        return cached if cached
+
+        key = [Support.timestamp_key(pod), pod.namespace, pod.name, pod.uid]
+        @tie_breakers[pod] = key if pod.instance_of?(Pod)
+        key
       end
     end
 
@@ -114,9 +126,11 @@ module Rubernetes
         # pkg/scheduler/metrics bookkeeping: pops per Pod (its Attempts),
         # the time of its first pop (InitialAttemptTimestamp), whether an
         # unschedulable entry is gated, and the plugins that rejected it.
+        # Timeout promotion belongs to the next attempt of that same Pod.
         @metrics = nil
         @pops = {}
         @first_pop = {}
+        @timeout_promotions = {}
         @gated = {}
         @rejecting_plugins = {}
         # SchedulerQueueingHints: Pods popped and not yet done, and the
@@ -201,6 +215,7 @@ module Rubernetes
           QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
                         reason: String(reason), unschedulable: true).tap do |entry|
             @pending.delete(key)
+            @timeout_promotions.delete(key)
             gated ? @gated[key] = true : @gated.delete(key)
             @rejecting_plugins[key] = Array(plugins).map(&:to_s).uniq.freeze
             # An event received while the Pod was in flight may already have
@@ -230,6 +245,7 @@ module Rubernetes
         key = identity_key(typed)
         @mutex.synchronize do
           attempts = (@attempts[key] = @attempts.fetch(key, 0) + 1)
+          @timeout_promotions.delete(key)
           (@first_failure_at ||= {})[key] = now_seconds
           @in_flight.delete(key)
           prune_in_flight_events_locked
@@ -276,6 +292,7 @@ module Rubernetes
           @attempts.delete(key)
           @pops.delete(key)
           @first_pop.delete(key)
+          @timeout_promotions.delete(key)
           @gated.delete(key)
           @rejecting_plugins.delete(key)
         end
@@ -292,6 +309,11 @@ module Rubernetes
       def seconds_since_first_attempt(pod)
         first = @mutex.synchronize { @first_pop[identity_key(pod)] }
         first && [now_seconds - first, 0.0].max
+      end
+
+      def promoted_by_timeout?(pod)
+        key = identity_key(pod)
+        @mutex.synchronize { @timeout_promotions.key?(key) }
       end
 
       # Unschedulable entries a PreEnqueue plugin gated.
@@ -317,14 +339,11 @@ module Rubernetes
         @mutex.synchronize do
           now = now_seconds
           flush_backoff_locked(now)
-          key, item = ordered(@pending, trace: trace).first
+          key, item = @pending.min { |left, right| compare_entries(left, right, trace: trace) }
           return nil unless item
 
           @pending.delete(key)
-          @pops[key] = @pops.fetch(key, 0) + 1
-          @first_pop[key] ||= now
-          @in_flight[key] = @event_sequence
-          item
+          record_pop(key, item, now)
         end
       end
 
@@ -339,10 +358,7 @@ module Rubernetes
 
           @gated.delete(key)
           now = now_seconds
-          @pops[key] = @pops.fetch(key, 0) + 1
-          @first_pop[key] ||= now
-          @in_flight[key] = @event_sequence
-          item
+          record_pop(key, item, now)
         end
       end
 
@@ -476,6 +492,7 @@ module Rubernetes
           @attempts.delete(key)
           @pops.delete(key)
           @first_pop.delete(key)
+          @timeout_promotions.delete(key)
           @gated.delete(key)
           @rejecting_plugins.delete(key)
           backed_off = @backoff.delete(key)
@@ -562,6 +579,7 @@ module Rubernetes
             next if @pending.key?(key)
 
             @pending[key] = item
+            @timeout_promotions[key] = true if event == EVENT_UNSCHEDULABLE_TIMEOUT
             incoming(event, "active")
           end
           enforce_capacity!
@@ -570,6 +588,13 @@ module Rubernetes
       end
 
       private
+
+      def record_pop(key, item, now)
+        @pops[key] = @pops.fetch(key, 0) + 1
+        @first_pop[key] ||= now
+        @in_flight[key] = @event_sequence
+        item
+      end
 
       def identity_key(pod)
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
@@ -662,28 +687,29 @@ module Rubernetes
         return unless @capacity
 
         while @pending.length > @capacity
-          key, = ordered(@pending).last
+          key, = @pending.max { |left, right| compare_entries(left, right) }
           @pending.delete(key)
+          @timeout_promotions.delete(key)
         end
       end
 
-      def ordered(collection, trace: nil)
-        collection.to_a.sort do |left, right|
-          left_key, left_item = left
-          right_key, right_item = right
-          comparison = compare_items(left_item, right_item, trace: trace)
-          if comparison.zero?
-            comparison = [left_item.key, left_item.sequence, left_key] <=>
-                         [right_item.key, right_item.sequence, right_key]
-          end
-          comparison
-        end
+      def ordered(collection)
+        collection.sort { |left, right| compare_entries(left, right) }
+      end
+
+      def compare_entries(left, right, trace: nil)
+        left_key, left_item = left
+        right_key, right_item = right
+        comparison = compare_items(left_item, right_item, trace: trace)
+        return comparison unless comparison.zero?
+
+        [left_item.key, left_item.sequence, left_key] <=> [right_item.key, right_item.sequence, right_key]
       end
 
       def compare_items(left_item, right_item, trace: nil)
         comparator = @queue_sort
-        left_pod = left_item.respond_to?(:pod) ? left_item.pod : left_item
-        right_pod = right_item.respond_to?(:pod) ? right_item.pod : right_item
+        left_pod = left_item.pod
+        right_pod = right_item.pod
         output = if comparator.respond_to?(:compare)
                    comparator.compare(left_pod, right_pod)
                  elsif comparator.respond_to?(:call)
@@ -696,9 +722,7 @@ module Rubernetes
                  else
                    raise ValidationError, "queue sort comparator must implement #call or #compare"
                  end
-        unless output.is_a?(Integer) && !output.is_a?(TrueClass) && !output.is_a?(FalseClass)
-          raise PluginError, "queue sort plugin #{@queue_sort_name} must return an integer comparator result"
-        end
+        raise PluginError, "queue sort plugin #{@queue_sort_name} must return an integer comparator result" unless output.is_a?(Integer)
 
         normalized = output <=> 0
         trace&.record(plugin: @queue_sort_name, phase: :queue_sort, weight: @queue_sort_weight,
