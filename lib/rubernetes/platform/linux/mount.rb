@@ -39,6 +39,7 @@ module Rubernetes
         MOUNT_ATTR_NOSUID = 0x00000002
         MOUNT_ATTR_NODEV = 0x00000004
         MOUNT_ATTR_NOEXEC = 0x00000008
+        MOUNT_ATTR_IDMAP = 0x00100000
         MOUNT_ATTR_NOSYMFOLLOW = 0x00200000
         # struct mount_attr { __u64 attr_set; __u64 attr_clr; __u64 propagation; __u64 userns_fd; }
         # MOUNT_ATTR_SIZE_VER0 (include/uapi/linux/mount.h).
@@ -114,10 +115,10 @@ module Rubernetes
         # mount_setattr(2) on a detached tree.  Setting read-only/nosuid/nodev
         # before move_mount(2) means the target is never observable in a
         # writable state, unlike the mount(2) bind + MS_REMOUNT sequence.
-        def mount_setattr(dirfd:, attr_set:, attr_clr: 0, path: "", flags: AT_EMPTY_PATH, propagation: 0,
+        def mount_setattr(dirfd:, attr_set:, attr_clr: 0, path: "", flags: AT_EMPTY_PATH, propagation: 0, userns_fd: 0,
                           resource_id: "mount_setattr:#{dirfd}")
           number = SYS_MOUNT_SETATTR.fetch(RbConfig::CONFIG.fetch("host_cpu"))
-          attributes = [Integer(attr_set), Integer(attr_clr), Integer(propagation), 0].pack("Q<4")
+          attributes = [Integer(attr_set), Integer(attr_clr), Integer(propagation), Integer(userns_fd)].pack("Q<4")
           raise ArgumentError, "struct mount_attr must be #{MOUNT_ATTR_SIZE_VER0} bytes" unless attributes.bytesize == MOUNT_ATTR_SIZE_VER0
 
           result = Syscall.call(number, Integer(dirfd), Fiddle::Pointer["#{path}\0"], Integer(flags),
@@ -134,7 +135,7 @@ module Rubernetes
         # read-only/nosuid/nodev state is final.  The detached descriptor is
         # closed on every path; an unattached clone disappears with its fd.
         def bind_tree(source_fd:, target_fd:, readonly: false, nosuid: false, nodev: false, noexec: false,
-                      recursive: false, resource_id: "bind_tree:#{target_fd}")
+                      recursive: false, propagation: 0, userns_fd: nil, resource_id: "bind_tree:#{target_fd}")
           open_flags = OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_EMPTY_PATH
           open_flags |= AT_RECURSIVE if recursive
           tree_fd = open_tree(dirfd: source_fd, flags: open_flags, resource_id: "#{resource_id}:open_tree")
@@ -144,11 +145,12 @@ module Rubernetes
             attributes |= MOUNT_ATTR_NOSUID if nosuid
             attributes |= MOUNT_ATTR_NODEV if nodev
             attributes |= MOUNT_ATTR_NOEXEC if noexec
-            unless attributes.zero?
+            attributes |= MOUNT_ATTR_IDMAP unless userns_fd.nil?
+            unless attributes.zero? && propagation.zero?
               setattr_flags = AT_EMPTY_PATH
               setattr_flags |= AT_RECURSIVE if recursive
-              mount_setattr(dirfd: tree_fd, attr_set: attributes, flags: setattr_flags,
-                            resource_id: "#{resource_id}:mount_setattr")
+              mount_setattr(dirfd: tree_fd, attr_set: attributes, flags: setattr_flags, propagation: propagation,
+                            userns_fd: userns_fd || 0, resource_id: "#{resource_id}:mount_setattr")
             end
             move_mount(from_dirfd: tree_fd, to_dirfd: target_fd, resource_id: "#{resource_id}:move_mount")
           ensure
@@ -178,6 +180,24 @@ module Rubernetes
           set_propagation(target: target, propagation: MS_SLAVE, recursive: recursive, resource_id: resource_id)
         end
 
+        # Keep only the nominated Pod-local volume peers. The surrounding
+        # inherited mount tree is made a slave without recursively changing
+        # the selected peers and their nested mounts.
+        def make_slave_except(sources, resource_id:)
+          if initial_mount_namespace?
+            raise Linux::Error.new(errno: Errno::EPERM::Errno, operation: "isolate workload mount propagation", resource_id: resource_id)
+          end
+
+          sources = sources.map { |source| File.expand_path(source) }
+          make_slave(recursive: false, resource_id: resource_id)
+          shared_mount_points.each do |path|
+            next if sources.any? { |source| path == source || path.start_with?("#{source}/") }
+
+            make_slave(target: path, recursive: false, resource_id: resource_id)
+          end
+          true
+        end
+
         def make_shared(target:, recursive: true, resource_id: "mount-propagation:#{target}")
           set_propagation(target: target, propagation: MS_SHARED, recursive: recursive, resource_id: resource_id)
         end
@@ -195,12 +215,13 @@ module Rubernetes
         # relies on from a systemd host whose "/" is shared, established here
         # for one directory because "/" may well be private.  Idempotent:
         # returns true when it changed anything.
-        def ensure_shared_self_bind(target:, resource_id: "shared-root:#{target}")
+        def ensure_shared_self_bind(target:, recursive_bind: false, resource_id: "shared-root:#{target}")
           path = File.expand_path(String(target))
           entry = mountinfo_entry(path)
           changed = false
           if entry.nil?
-            mount(source: path, target: path, filesystem: nil, flags: MS_BIND, resource_id: "#{resource_id}:bind")
+            flags = recursive_bind ? MS_BIND | MS_REC : MS_BIND
+            mount(source: path, target: path, filesystem: nil, flags: flags, resource_id: "#{resource_id}:bind")
             entry = mountinfo_entry(path)
             raise Linux::Error.new(errno: Errno::ENOENT::Errno, operation: "mount", resource_id: resource_id) if entry.nil?
 
@@ -217,12 +238,8 @@ module Rubernetes
         # mountinfo entry whose mount point is +path+, or nil.
         def mountinfo_entry(path, mountinfo: "/proc/self/mountinfo")
           found = nil
-          File.foreach(mountinfo) do |line|
-            fields = line.split
-            mount_point = fields[4].to_s.gsub(/\\(\d{3})/) { Regexp.last_match(1).to_i(8).chr }
-            next unless mount_point == path
-
-            found = fields.drop(6).take_while { |field| field != "-" }
+          each_mountpoint(mountinfo) do |mountpoint, options|
+            found = options if mountpoint == path
           end
           found
         end
@@ -255,6 +272,22 @@ module Rubernetes
         end
 
         private
+
+        def shared_mount_points
+          entries = {}
+          each_mountpoint("/proc/self/mountinfo") do |path, options|
+            entries[path] = options.any? { |field| field.start_with?("shared:") }
+          end
+          entries.select { |_, shared| shared }.keys
+        end
+
+        def each_mountpoint(mountinfo)
+          File.foreach(mountinfo) do |line|
+            fields = line.split
+            path = fields[4].to_s.gsub(/\\(\d{3})/) { Regexp.last_match(1).to_i(8).chr }
+            yield path, fields.drop(6).take_while { |field| field != "-" }
+          end
+        end
 
         def close_descriptor(fd)
           IO.for_fd(Integer(fd)).close
