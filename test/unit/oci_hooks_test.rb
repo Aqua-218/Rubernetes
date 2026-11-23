@@ -137,6 +137,23 @@ class OCIHooksTest < Minitest::Test
 
   Adapters = Rubernetes::Platform::Linux::NativeAdapters
 
+  def test_failed_hook_reports_output_written_just_before_reap
+    runner = Adapters::ContainerHook.new(clone3: nil)
+    IO.pipe do |reader, writer|
+      reaped = lambda do |_pid, _options|
+        writer.write("last diagnostic")
+        Adapters::ContainerHook::Status.new(exitstatus: 4, termsig: nil)
+      end
+      error = runner.stub(:reap, reaped) do
+        assert_raises(Adapters::EffectError) do
+          runner.send(:wait, 1, reader, {}, stage: "createContainer", index: 0, path: "/bin/sh")
+        end
+      end
+
+      assert_includes error.message, "exit status 4, output: last diagnostic"
+    end
+  end
+
   # The bootstrap runs in-container hooks itself: a clone3 child, then
   # execve(2), state on stdin, output kept for the error.
   def test_the_bootstrap_hook_runner
