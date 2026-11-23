@@ -3,6 +3,7 @@
 require_relative "remote_dispatch"
 require_relative "remote_mount_readback"
 require_relative "remote_target_leases"
+require_relative "../kubernetes_csi"
 
 # The CSI backend: one volume served by a CSI driver.  Every lifecycle call
 # becomes a CSI RPC issued through Dispatch, on a target pinned by TargetLeases
@@ -25,19 +26,19 @@ module Rubernetes
         @persistence_sanitizer = persistence_sanitizer
         @error_sanitizer = error_sanitizer
         backend_result = Types.key(spec, "backendResult", {})
-        @driver_volume_id = Types.key(backend_result, "volumeId", Types.key(backend_result, "volume_id"))
+        handle = Types.key(backend_result, "volumeId", Types.key(backend_result, "volume_id"))
+        @driver_volume_id = Types.csi_handle(handle) unless handle.nil?
       end
 
       attr_reader :driver_volume_id
 
       def provision(token:, effect_boundary: nil)
         request = Types.deep_copy(spec).merge("secrets" => secrets_for(:create_volume))
+        request.delete("secretRefs")
         result = sanitize_response(AdapterSupport.result_hash(
           invoke_remote_mutation(effect_boundary) { invoke_csi(:create_volume, request, token: token) }
         ))
-        @driver_volume_id = Types.identifier(
-          Types.key(result, "volumeId", Types.key(result, "volume_id")), "CSI driver volume id"
-        )
+        @driver_volume_id = Types.csi_handle(Types.key(result, "volumeId", Types.key(result, "volume_id")))
         result
       end
 
@@ -64,13 +65,19 @@ module Rubernetes
       # csi metricsCsi: NodeGetVolumeStats on a published target, or
       # :unsupported without GET_VOLUME_STATS; nil for a plugin that is not
       # a kubelet node plugin.
-      def kubelet_volume_stats(path)
+      def kubelet_volume_stats(path, health: false)
         return nil unless kubelet_csi?
         return :unsupported unless @csi.supports?("GET_VOLUME_STATS")
 
         ensure_path!(path)
         with_secure_csi_target(path, directory: nil, create: false, post_effect: :mounted) do |dispatch_path, _lease|
-          sanitize_response(AdapterSupport.result_hash(invoke_csi(:stats, remote_id, path: dispatch_path)))
+          result = sanitize_response(AdapterSupport.result_hash(invoke_csi(:stats, remote_id, path: dispatch_path)))
+          if health && @csi.supports?("VOLUME_CONDITION")
+            result["volumeCondition"] ||= {"abnormal" => false, "message" => ""}
+          else
+            result.delete("volumeCondition")
+          end
+          result
         end
       end
 
@@ -116,6 +123,45 @@ module Rubernetes
       def readonly?
         Types.key(spec, "readOnly", Types.key(spec, "readonly", false)) == true ||
           Array(Types.key(spec, "accessModes", [])).map(&:to_s).include?("ReadOnlyMany")
+      end
+
+      def kubelet_volume_identity
+        return unless @require_real_readback && kubelet_csi? && Types.key(spec, "ephemeral", false) != true
+        return unless @csi.is_a?(KubernetesCSIAdapter) || @csi.is_a?(RegisteredCSIDriver)
+
+        [@csi.driver, @driver_volume_id] if @driver_volume_id
+      end
+
+      def shared_stage_key(node)
+        identity = kubelet_volume_identity
+        return unless identity
+        return unless @csi.supports?(KubernetesCSIAdapter::STAGE_UNSTAGE)
+
+        "csi-#{Types.digest([*identity, node.to_s])}"
+      end
+
+      def kubelet_stage_path(paths)
+        identity = kubelet_volume_identity
+        paths.stage_path(*identity, block: Types.key(spec, "volumeMode", "Filesystem").to_s.casecmp?("Block")) if identity
+      end
+
+      def kubelet_filesystem_publish?
+        @require_real_readback && kubelet_csi? && Types.key(spec, "volumeMode", "Filesystem").to_s.casecmp?("Filesystem")
+      end
+
+      def verify_shared_stage!(identity)
+        target = identity.fetch("target")
+        with_secure_csi_target(target, directory: true, create: false, post_effect: :mounted) do |_path, lease|
+          if unmounted_stage_identity?(identity)
+            verify_remote_absent!(target)
+            raise MountIdentityError, "CSI staging directory identity changed" if lease.identity != identity["pathIdentity"]
+          else
+            raise MountIdentityError, "CSI staging mount is missing" unless remote_mount_readback(target)
+
+            verify_mount_identity!(target, identity)
+          end
+          true
+        end
       end
 
       def snapshot(token:, name: nil, effect_boundary: nil)
@@ -177,16 +223,18 @@ module Rubernetes
       end
 
       def unstage(path:, identity: nil, context: {}, effect_boundary: nil)
-        ensure_path!(path)
+        ensure_path!(path, teardown: true)
         # A stage the plugin completed without a kernel mount has no mount
         # identity to verify; the target must nevertheless still be absent
         # from mountinfo, otherwise a foreign mount appeared under our path.
         if unmounted_stage_identity?(identity)
           raise MountIdentityError, "CSI stage #{path.inspect} was recorded unmounted but a mount now covers it" if remote_mount_readback(path)
+          return true if kubelet_csi? && Types.key(identity, "stageSkipped") == true
         else
           verify_mount_identity!(path, identity)
         end
-        with_secure_csi_target(path, directory: true, create: false, post_effect: :removed) do |dispatch_path, _lease|
+        with_secure_csi_target(path, directory: true, create: !!Types.key(identity, "sharedCSIStage"), post_effect: :removed,
+                                     removed_identity: identity) do |dispatch_path, _lease|
           invoke_remote_mutation(effect_boundary) do
             invoke_csi(:unstage, remote_id, dispatch_path, token: Types.key(context, "token", "unstage-#{id}"))
           end
@@ -195,7 +243,15 @@ module Rubernetes
         true
       end
 
-      def publish(stage_path:, target:, node:, pod:, readonly: false, sub_path: nil, context: {}, effect_boundary: nil)
+      def publish(stage_path:, target:, node:, pod:, readonly: false, sub_path: nil, context: {}, effect_boundary: nil, pod_publishes: [])
+        if sub_path && kubelet_csi?
+          # kubelet makeMounts binds the subPath of the Pod's published CSI
+          # volume. STAGE_UNSTAGE_VOLUME is optional and a stage may be empty.
+          publication = kubelet_sub_path_source(pod, pod_publishes)
+          return super(stage_path: publication.fetch("target"), target: target, node: node, pod: pod,
+                       readonly: readonly || publication["readonly"] == true, sub_path: sub_path).merge("kubeletSubPath" => true)
+        end
+
         ensure_path!(stage_path)
         ensure_path!(target)
         parent_handle = nil
@@ -246,9 +302,12 @@ module Rubernetes
       end
 
       def unpublish(target:, identity: nil, context: {}, effect_boundary: nil)
-        ensure_path!(target)
+        return super(target: target, identity: identity, context: context) if Types.key(identity, "kubeletSubPath") == true
+
+        ensure_path!(target, teardown: true)
         verify_mount_identity!(target, identity)
-        with_secure_csi_target(target, directory: nil, create: false, post_effect: :removed) do |dispatch_target, _lease|
+        with_secure_csi_target(target, directory: nil, create: false, post_effect: :removed,
+                                       removed_identity: identity) do |dispatch_target, _lease|
           invoke_remote_mutation(effect_boundary) do
             invoke_csi(:unpublish_node, remote_id, dispatch_target,
                        token: Types.key(context, "token", "unpublish-#{id}-#{target}"))
@@ -354,6 +413,14 @@ module Rubernetes
 
       def kubelet_csi?
         Capability.declares_pod_context?(@csi) && @csi.pod_context?
+      end
+
+      def kubelet_sub_path_source(pod, pod_publishes)
+        uid = pod_identifier(pod)
+        matches = pod_publishes.select { |entry| entry["pod"] == uid && !entry["kubeletSubPath"] }
+        raise PathSecurityError, "subPath requires one published CSI volume for the Pod" unless matches.one?
+
+        matches.first.tap { |entry| verify_mount_identity!(entry.fetch("target"), entry) }
       end
 
       # What the kubelet sends a node plugin besides the manager's context:
