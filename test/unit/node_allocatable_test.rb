@@ -45,6 +45,39 @@ class NodeAllocatableTest < Minitest::Test
     assert_equal "0", allocatable["pods"]
   end
 
+  def test_storage_capacity_uses_the_existing_parent_of_a_new_pod_root
+    resources = Rubernetes::Node::HostResources
+    statfs = Rubernetes::Platform::Linux::Statfs
+    Dir.mktmpdir do |root|
+      probe = ->(path) { Struct.new(:capacity_bytes).new(path == root ? 1024 : 2048) }
+
+      statfs.stub(:statfs, probe) do
+        assert_equal "1Ki", resources.capacity(pod_root: File.join(root, "missing", "pods")).fetch("ephemeral-storage")
+      end
+    end
+  end
+
+  def test_pod_capacity_is_capped_by_max_pods_and_drives_allocatable
+    resources = Rubernetes::Node::HostResources
+    Etc.stub(:nprocessors, 4) do
+      assert_equal "13", resources.capacity(max_pods: 13, pods_per_core: 0).fetch("pods")
+      assert_equal "8", resources.capacity(max_pods: 13, pods_per_core: 2).fetch("pods")
+      assert_equal "13", resources.capacity(max_pods: 13, pods_per_core: 4).fetch("pods")
+
+      agent = Rubernetes::Node::Agent.allocate
+      reserved = [{}, {"pods" => "2"}, nil]
+      agent.send(:initialize_node_resources, {}, nil, reserved, {}, host: true, pod_root: nil, max_pods: 13, pods_per_core: 2)
+
+      assert_equal "8", agent.capacity.fetch("pods")
+      assert_equal "6", agent.allocatable.fetch("pods")
+
+      agent.send(:initialize_node_resources, {"pods" => "10"}, nil, reserved, {}, host: true, pod_root: nil, max_pods: 13, pods_per_core: 2)
+
+      assert_equal "10", agent.capacity.fetch("pods")
+      assert_equal "8", agent.allocatable.fetch("pods")
+    end
+  end
+
   def test_reserved_system_cpus_replace_both_cpu_reservations
     agent = Rubernetes::Node::Agent.allocate
     agent.instance_variable_set(:@capacity, capacity)
