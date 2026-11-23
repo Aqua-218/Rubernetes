@@ -27,8 +27,10 @@ class NetworkSysctlRebootTest < Minitest::Test
       assert_equal 0, restarted.snapshot.fetch("refcount")
       restarted.recover
       restarted.acquire(owner: "pod-b", bridge: "rbr0")
+
       assert(VALUES.all? { |relative, target| File.binread(File.join(directory, relative)).strip == target })
       restarted.release(owner: "pod-b")
+
       assert(VALUES.all? { |relative, _target| File.binread(File.join(directory, relative)).strip == "2" })
     end
   end
