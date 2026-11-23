@@ -116,6 +116,12 @@ module Rubernetes
           )
         end
 
+        def durable_content_result(operation, result)
+          return Types.deep_copy(result) unless operation.start_with?("token-rotate:") && result.is_a?(Hash)
+
+          sanitize_for_persistence(result.except("value", :value))
+        end
+
         def run_manager_operation(id, operation, token, payload)
           key = Types.identifier(id, "volume id")
           token = Types.identifier(token, "operation token")
@@ -128,7 +134,7 @@ module Rubernetes
 
             result = yield
             effect_applied = true
-            operations.finish!(key: key, operation: operation, token: token, result: Types.deep_copy(result))
+            operations.finish!(key: key, operation: operation, token: token, result: durable_content_result(operation, result))
             result
           end
         rescue StandardError => error
