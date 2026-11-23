@@ -163,6 +163,8 @@ class AdvancedMiscControllerTest < Minitest::Test
     deleting = Controller::Support.deep_copy(converged)
     deleting["metadata"]["deletionTimestamp"] = "2026-01-01T00:00:00Z"
     ip = object("IPAddress", "10.96.0.4", uid: "ip-1", api_version: "networking.k8s.io/v1", namespace: nil)
+    ip["metadata"]["labels"] = {"ipaddress.kubernetes.io/managed-by" => "ipallocator.k8s.io", "ipaddress.kubernetes.io/ip-family" => "IPv4"}
+    ip["spec"] = {"parentRef" => {"resource" => "services", "namespace" => "default", "name" => "web"}}
     blocked = controller.plan(deleting, service_cidrs: [deleting], ip_addresses: [ip], now: Time.utc(2026, 1, 1, 0, 1))
 
     assert_equal [:status_update], blocked.operations.map(&:action)
@@ -172,6 +174,48 @@ class AdvancedMiscControllerTest < Minitest::Test
 
     assert_equal [:update], unblocked.operations.map(&:action)
     assert_equal [], unblocked.operations.first.object.dig("metadata", "finalizers")
+  end
+
+  def test_service_cidr_protection_only_counts_ranges_that_can_allocate_the_address
+    start = Time.utc(2026, 1, 1)
+    cidr = object("ServiceCIDR", "pool", uid: "cidr", api_version: "networking.k8s.io/v1", namespace: nil)
+    cidr["metadata"].merge!("deletionTimestamp" => start.iso8601, "finalizers" => [Controller::AdvancedMiscSupport::SERVICE_CIDR_FINALIZER])
+    cidr["spec"] = {"cidrs" => ["203.0.113.0/24"]}
+    narrower = {"metadata" => {"name" => "second"}, "spec" => {"cidrs" => ["203.0.113.0/25"]}}
+    address = {"metadata" => {"name" => "203.0.113.127"}, "spec" => {"parentRef" => {"resource" => "services", "name" => "web"}}}
+    controller = Controller::ServiceCIDRController.new(name: "service-cidr-controller")
+    plan = lambda do |labels, now|
+      address["metadata"]["labels"] = labels
+      controller.plan(cidr, service_cidrs: [narrower, cidr], ip_addresses: [address], now: now)
+    end
+    labels = {"ipaddress.kubernetes.io/managed-by" => "ipallocator.k8s.io", "ipaddress.kubernetes.io/ip-family" => "IPv4"}
+
+    assert_equal [:status_update], plan.call(labels, start + 15).operations.map(&:action)
+    assert_equal [:status_update], plan.call({"ipaddress.kubernetes.io/managed-by" => "ipallocator.kubernetes.io"}, start + 15).operations.map(&:action)
+    assert_equal [:update], plan.call({}, start + 15).operations.map(&:action)
+    assert_equal [:update], plan.call(labels.merge("ipaddress.kubernetes.io/ip-family" => "IPv6"), start + 15).operations.map(&:action)
+    assert_in_delta 8, plan.call({}, start + 2).requeue_after
+    address["metadata"]["name"] = "203.0.113.126"
+
+    assert_equal [:update], plan.call(labels, start + 15).operations.map(&:action)
+  end
+
+  def test_service_cidr_watches_recheck_affected_deleting_pools
+    pools = %w[old other active].zip(%w[10.1.0.0/24 10.2.0.0/24 10.1.0.0/16]).map do |name, cidr|
+      metadata = {"name" => name}
+      metadata["deletionTimestamp"] = "2026-01-01T00:00:00Z" unless name == "active"
+      {"kind" => "ServiceCIDR", "metadata" => metadata, "spec" => {"cidrs" => [cidr]}}
+    end
+    adapter = Object.new
+    adapter.define_singleton_method(:list) { |_descriptor, namespace:| pools }
+    definition = Controller::AdvancedMiscControllerFactory.definition("service-cidr-controller")
+    watches = definition.watches.to_h { |watch| [watch.resource.kind, watch] }
+    address = {"kind" => "IPAddress", "metadata" => {"name" => "10.1.0.10"}}
+
+    assert_equal %w[IPAddress ServiceCIDR], watches.keys.sort
+    assert_equal :mapped, watches.fetch("IPAddress").route
+    assert_equal ["old"], watches.fetch("IPAddress").queue_key.call(address, adapter)
+    assert_equal %w[active old], watches.fetch("ServiceCIDR").queue_key.call(pools.last, adapter)
   end
 
   def test_storage_version_migrator_fences_resources_and_handles_conflict_retry_and_terminal_states
