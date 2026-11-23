@@ -102,9 +102,46 @@ class NodeAPIClientAdapterTest < Minitest::Test
     assert_equal %i[create patch], client.calls.map(&:first)
   end
 
+  def test_registration_and_heartbeats_use_their_own_clients
+    heartbeat = Client.new
+    events = Client.new
+    heartbeat.objects["/api/v1/nodes/node-a"] = {"metadata" => {"uid" => "node-id"}}
+    adapter = Rubernetes::Node::APIClientAdapter.new(client: @client, heartbeat_client: heartbeat, event_client: events, node_name: "node-a")
+    lease = {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {"name" => "node-a", "namespace" => "kube-node-lease"}}
+    @client.create_status = 409
+
+    adapter.register_node(NODE)
+    adapter.register_node(NODE)
+    adapter.renew_lease(lease)
+
+    assert_equal %i[create patch], @client.calls.map(&:first)
+    assert_equal %i[patch get get create], heartbeat.calls.map(&:first)
+    assert_same events, adapter.event_client
+  end
+
+  def test_external_cloud_provider_keeps_control_of_node_addresses_after_registration
+    adapter = Rubernetes::Node::APIClientAdapter.new(client: @client, node_name: "node-a", external_cloud_provider: true)
+    agent = Rubernetes::Node::Agent.new(api: adapter, node_name: "node-a", runtime: Object.new, external_cloud_provider: true,
+                                        provider_id: "test://worker-a", addresses: [{"type" => "InternalIP", "address" => "192.0.2.1"}])
+    adapter.register_node(agent.node)
+    adapter.register_node(agent.node)
+
+    registration = @client.calls.fetch(0).fetch(1)
+
+    assert_equal "test://worker-a", registration.dig("spec", "providerID")
+    assert_equal [{"key" => "node.cloudprovider.kubernetes.io/uninitialized", "value" => "true", "effect" => "NoSchedule"}],
+                 registration.dig("spec", "taints")
+    assert_equal [{"type" => "InternalIP", "address" => "192.0.2.1"}], registration.dig("status", "addresses")
+    patch = @client.calls.fetch(1).fetch(2)
+
+    refute patch.fetch("status").key?("addresses")
+    refute patch.key?("spec")
+  end
+
   # The node lease controller: created when missing, renewed with an Update
   # of the latest Lease written (no read in between).
   def test_the_lease_is_created_then_renewed_with_updates
+    @client.objects["/api/v1/nodes/node-a"] = {"metadata" => {"uid" => "node-id"}}
     lease = lambda { |time|
       {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {"name" => "node-a", "namespace" => "kube-node-lease"},
        "spec" => {"holderIdentity" => "node-a", "renewTime" => time}}
@@ -113,13 +150,29 @@ class NodeAPIClientAdapterTest < Minitest::Test
     @adapter.renew_lease(lease.call("t2"))
     path = "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/node-a"
 
-    assert_equal %i[get create update], @client.calls.map(&:first)
+    assert_equal %i[get get create update], @client.calls.map(&:first)
     assert_equal path, @client.calls.fetch(0).fetch(1)
-    update = @client.calls.fetch(2)
+    owner = {"apiVersion" => "v1", "kind" => "Node", "name" => "node-a", "uid" => "node-id"}
+    update = @client.calls.fetch(3)
 
+    assert_equal [owner], @client.calls.fetch(2).fetch(1).dig("metadata", "ownerReferences")
+    assert_equal [owner], update.fetch(1).dig("metadata", "ownerReferences")
     assert_equal "t2", update.fetch(1).dig("spec", "renewTime")
     assert_equal "1", update.fetch(1).dig("metadata", "resourceVersion")
     assert_equal path, update.fetch(3)
+  end
+
+  def test_existing_lease_gets_its_node_owner_on_renewal
+    path = "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/node-a"
+    lease = {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease",
+             "metadata" => {"name" => "node-a", "namespace" => "kube-node-lease", "resourceVersion" => "1"}}
+    @client.objects[path] = lease
+    @client.objects["/api/v1/nodes/node-a"] = {"metadata" => {"uid" => "node-id"}}
+
+    renewed = @adapter.renew_lease(lease)
+
+    assert_equal %i[get get update], @client.calls.map(&:first)
+    assert_equal "node-id", renewed.dig("metadata", "ownerReferences", 0, "uid")
   end
 
   def test_pod_status_uses_the_status_subresource
