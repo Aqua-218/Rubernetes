@@ -109,7 +109,7 @@ class NftablesNetlinkAdapterTest < Minitest::Test
   end
 
   def test_health_check_rule_is_node_local_and_fragment_guard_is_fail_closed
-    adapter = Adapter.new(table_name: "rubernetes_semantics_test", transport: Object.new)
+    adapter = Adapter.new(table_name: "rubernetes_semantics_test", transport: Object.new, fragment_policy: :reject)
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "health", "namespace" => "tests"},
       "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.3", "externalTrafficPolicy" => "Local",
@@ -125,6 +125,32 @@ class NftablesNetlinkAdapterTest < Minitest::Test
     refute health.fetch("dnat")
     assert_equal(2, objects.fetch("rules").count { |entry| entry["action"] == "drop_fragment" })
     assert_includes objects.fetch("chains").map { |entry| entry.fetch("name") }, "fragment_guard"
+  end
+
+  def test_default_netfilter_datapath_allows_fragment_reassembly_before_nat
+    adapter = Adapter.new(transport: Object.new)
+    objects = adapter.send(:desired_objects, [])
+
+    assert_equal :reassemble, adapter.fragment_policy
+    assert_equal(%w[prerouting output postrouting], objects.fetch("chains").map { |entry| entry.fetch("name") })
+    assert_empty objects.fetch("rules")
+  end
+
+  def test_unready_backends_are_not_routable_even_for_publish_not_ready_addresses
+    adapter = Adapter.new(transport: Object.new)
+    service = {"metadata" => {"name" => "selected"},
+               "spec" => {"clusterIP" => "10.96.0.3", "publishNotReadyAddresses" => true, "ports" => [{"port" => 80, "targetPort" => 8080}]}}
+    unready = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.3", port: 8080, ready: false, serving: true)
+    terminating = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.4", port: 8080, ready: false, serving: true, terminating: true)
+    ready = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.5", port: 8080, ready: true, serving: false)
+    compiler = Rubernetes::Proxy::RuleCompiler.new
+    missing = adapter.send(:desired_objects, compiler.compile(service, endpoints: [unready]).rules)
+
+    assert_empty missing.fetch("sets")
+    assert_equal(["reject"], missing.fetch("rules").filter_map { |rule| rule["action"] })
+    picked = adapter.send(:desired_objects, compiler.compile(service, endpoints: [unready, terminating, ready]).rules)
+
+    assert_equal([IPAddr.new("10.1.0.5").hton], picked.fetch("set_elements").map { |element| element.fetch("key") })
   end
 
   def test_kernel_lifecycle_and_ruleset_readback_when_enabled
@@ -159,7 +185,7 @@ class NftablesNetlinkAdapterTest < Minitest::Test
       assert_equal 5, readback.fetch("chains").length
       assert_equal 1, readback.fetch("sets").length
       assert_equal 2, readback.fetch("set_elements").length
-      assert_equal 6, readback.fetch("rules").length
+      assert_equal 7, readback.fetch("rules").length
     ensure
       begin
         adapter&.detach(backend: backend) if adapter && backend
