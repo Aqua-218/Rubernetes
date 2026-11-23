@@ -24,6 +24,19 @@ module Rubernetes
       MAX_FRAME_BYTES = 16 * 1024 * 1024
       HEADER_BYTES = 5
       TYPE_MESSAGE = 1
+      RELATED_VERSIONS_PROTOCOL = "rubernetes-raft-related-versions"
+
+      def self.guarded?(command)
+        command.is_a?(Hash) && command.key?("related_versions")
+      end
+
+      def self.requires_related_versions?(message)
+        case message
+        when Messages::ForwardProposal then guarded?(message.command)
+        when Messages::AppendEntries then message.entries.any? { |entry| guarded?(entry.fetch("command")) }
+        else false
+        end
+      end
 
       module Framing
         module_function
@@ -115,6 +128,14 @@ module Rubernetes
           @mutex.synchronize { @peers.dup }
         end
 
+        def supports_related_versions?(peers)
+          @mutex.synchronize { peers.all? { |peer| @connections[peer]&.supports_related_versions? } }
+        end
+
+        def require_related_versions_support!(peers)
+          raise NotReady, "Raft peers have not negotiated related resourceVersion checks" unless supports_related_versions?(peers)
+        end
+
         def stats
           @mutex.synchronize { @stats.dup }
         end
@@ -155,7 +176,7 @@ module Rubernetes
           return false unless connection
 
           @mutex.synchronize { @stats[:sent] += 1 }
-          connection.enqueue(Framing.encode(TYPE_MESSAGE, message.encode))
+          connection.enqueue(Framing.encode(TYPE_MESSAGE, message.encode), requires_related_versions: Transport.requires_related_versions?(message))
         end
 
         private
@@ -180,6 +201,7 @@ module Rubernetes
           store.add_cert(@bundle.ca_certificate)
           context.cert_store = store
           context.verify_mode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+          context.alpn_select_cb = ->(protocols) { protocols.find { |protocol| protocol == RELATED_VERSIONS_PROTOCOL } }
           context
         end
 
@@ -192,6 +214,7 @@ module Rubernetes
           store.add_cert(@bundle.ca_certificate)
           context.cert_store = store
           context.verify_mode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+          context.alpn_protocols = [RELATED_VERSIONS_PROTOCOL]
           context
         end
 
@@ -230,6 +253,9 @@ module Rubernetes
             end
             raise PeerIdentityMismatch, "message claims cluster #{message.cluster_id}" unless message.cluster_id == @cluster_id
             raise ProtocolError, "message addressed to #{message.to}" unless message.to == @node_id
+            if Transport.requires_related_versions?(message) && tls.alpn_protocol != RELATED_VERSIONS_PROTOCOL
+              raise ProtocolError, "guarded write received without TLS negotiation"
+            end
 
             @mutex.synchronize { @stats[:received] += 1 }
             begin
@@ -265,6 +291,8 @@ module Rubernetes
 
       # Outbound pipelined connection with automatic reconnect.
       class PeerConnection
+        def supports_related_versions? = @supports_related_versions == true
+
         def initialize(peer_id:, address:, context:, reconnect_interval:, max_queue:, logger:, expected_cluster:)
           @peer_id = peer_id
           @host, port = address.rpartition(":").values_at(0, 2)
@@ -281,13 +309,13 @@ module Rubernetes
           @thread.name = "raft-outbound-#{peer_id}"
         end
 
-        def enqueue(frame)
+        def enqueue(frame, requires_related_versions: false)
           return false if @closed
 
           # Drop the oldest frames when the peer is unreachable for long: a
           # bounded queue is what keeps a dead peer from exhausting memory.
           @queue.pop(true) while @queue.length >= @max_queue
-          @queue << frame
+          @queue << [frame, requires_related_versions]
           true
         rescue ThreadError
           false
@@ -307,13 +335,13 @@ module Rubernetes
             frame = @queue.pop
             break if frame == :close
 
-            deliver(frame)
+            deliver(*frame)
           end
         rescue StandardError => error
           @logger&.warn("consensus.transport.outbound_failed", peer: @peer_id, error: "#{error.class}: #{error.message}")
         end
 
-        def deliver(frame)
+        def deliver(frame, requires_related_versions)
           attempts = 0
           until @closed
             socket = ensure_connected
@@ -325,6 +353,8 @@ module Rubernetes
               sleep(@reconnect_interval)
               next
             end
+            return if requires_related_versions && socket.alpn_protocol != RELATED_VERSIONS_PROTOCOL
+
             begin
               socket.write(frame)
               socket.flush
@@ -352,6 +382,7 @@ module Rubernetes
             raise PeerIdentityMismatch,
                   "peer at #{@host}:#{@port} is #{identity[:cluster_id]}/#{identity[:node_id]}, expected #{@expected_cluster}/#{@peer_id}"
           end
+          @supports_related_versions = tls.alpn_protocol == RELATED_VERSIONS_PROTOCOL
           @socket = tls
         rescue PeerIdentityMismatch => error
           @logger&.warn("consensus.transport.peer_identity_mismatch", peer: @peer_id, error: error.message)
