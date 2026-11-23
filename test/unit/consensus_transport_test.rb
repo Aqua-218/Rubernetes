@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "stringio"
+require "timeout"
 require_relative "../test_helper"
 require "rubernetes/consensus"
 
@@ -31,6 +32,30 @@ class ConsensusTransportTest < Minitest::Test
     assert_equal 1, type
     assert_equal payload.b, read_back
     assert_equal payload, read_back.force_encoding(Encoding::UTF_8)
+  end
+
+  def test_legacy_tls_peer_receives_ordinary_messages_but_no_guarded_log_entries_or_proposals
+    ca, ca_key = C::Identity.generate_ca("c1")
+    a = C::Identity.issue_node(ca, ca_key, cluster_id: "c1", node_id: "a")
+    b = C::Identity.issue_node(ca, ca_key, cluster_id: "c1", node_id: "b")
+    server = C::Transport::Endpoint.new(node_id: "b", cluster_id: "c1", bundle: b)
+    legacy_context = server.method(:build_server_context)
+    server.define_singleton_method(:build_server_context) { legacy_context.call.tap { |context| context.alpn_select_cb = nil } }
+    received = Queue.new
+    server.on_message { |message, _identity| received << message }.start
+    client = C::Transport::Endpoint.new(node_id: "a", cluster_id: "c1", bundle: a, peers: {"b" => server.address}).start
+    header = {cluster_id: "c1", from: "a", to: "b", term: 1}
+    append = header.merge(prev_log_index: 0, prev_log_term: 0, leader_commit: 0)
+    guarded = {"type" => "create", "key" => "service", "related_versions" => {"port" => "1"}}
+    client.send(C::Messages::ForwardProposal.new(**header, request_id: "guarded-forward", command: guarded))
+    client.send(C::Messages::AppendEntries.new(**append, request_id: "guarded-append", entries: [{"index" => 1, "term" => 1, "command" => guarded}]))
+    client.send(C::Messages::AppendEntries.new(**append, request_id: "ordinary", entries: []))
+
+    assert_equal "ordinary", Timeout.timeout(5) { received.pop.request_id }
+    refute client.supports_related_versions?(["b"])
+  ensure
+    client&.stop
+    server&.stop
   end
 
   # A defect raised while handling one message is logged and the connection
