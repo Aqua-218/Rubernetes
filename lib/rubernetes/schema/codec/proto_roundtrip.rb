@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../support/object_tree"
+
 require "digest"
 require "json"
 
@@ -415,18 +417,7 @@ module Rubernetes
             }
           end
 
-          def deep_freeze(value)
-            case value
-            when Hash
-              value.each do |key, child|
-                key.freeze
-                deep_freeze(child)
-              end
-            when Array
-              value.each { |child| deep_freeze(child) }
-            end
-            value.freeze
-          end
+          def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
         end
 
         Roundtrip = RoundtripCoverage
