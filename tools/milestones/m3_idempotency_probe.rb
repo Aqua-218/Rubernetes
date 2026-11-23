@@ -4,7 +4,8 @@
 require_relative "m3_probe_support"
 require_relative "m3_gate"
 require_relative "../../lib/rubernetes/storage/memory_store"
-require "tmpdir"
+require_relative "../../lib/rubernetes/watch/work_queue"
+require "tempfile"
 
 module M3IdempotencyFixtures
   # A reconcile comparison must hold the logical clock and all informer
@@ -133,8 +134,16 @@ class M3IdempotencyJournal
   attr_reader :path
 
   def initialize(controller:)
-    @path = File.join(Dir.mktmpdir("rubernetes-m3-idempotency-"), "effects.jsonl")
+    @file = Tempfile.new(["rubernetes-m3-idempotency-", ".jsonl"])
+    @path = @file.path
+    @file.close
     @journal = Rubernetes::Controller::EffectJournal.new(path: @path, component: "controller-manager", identity: controller)
+  end
+
+  def close
+    @journal.close
+  ensure
+    @file.close!
   end
 
   def record(*, **)
@@ -443,8 +452,10 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
                                       event: M3ProbeSupport.normalize(events))
     end
     options = options.merge(store: adapter, now: M3IdempotencyFixtures::FIXED_NOW, cloud_provider: provider, event_sink: event_sink)
+    queue_time = 0.0
+    queue = Rubernetes::Watch::WorkQueue.new(name: "controller-manager", clock: -> { queue_time })
     manager = Rubernetes::Controller::Manager.new(
-      store: adapter, identity: "m3-idempotency-#{name}", registry: registry,
+      store: adapter, identity: "m3-idempotency-#{name}", registry: registry, queue: queue,
       lease: {clock: -> { M3IdempotencyFixtures::FIXED_NOW }, retry_period_seconds: 0.001},
       controller_options: options
     )
@@ -461,9 +472,9 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
     queue_retry_observed = store.fault_injections == 1
     first_success_observable = first_attempt_observable
     if queue_retry_observed
-      # WorkQueue backoff is deliberately allowed to elapse. The retry below
-      # is the production queue retry after the injected Conflict.
-      sleep(0.01)
+      # Keep the retry pending throughout the first observation, even if the
+      # OS preempts the probe while Manager#step is draining the queue.
+      queue_time += queue.base_delay
       retry_error_before = manager.last_error
       first_success_step = manager.step
       first_success_observable = M3IdempotencyMeasurement.step_observable(
@@ -596,6 +607,8 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
      "implementation_class" => "", "implementation_present" => false, "uses_corpus_controller" => false,
      "measurement_source" => "production_module", "api_mutation_inventory" => [], "event_inventory" => [],
      "provider_call_inventory" => [], "durable_journal" => {}, "passed" => false}
+  ensure
+    journal&.close
   end
   {
     "measurement_source" => "production_module",
