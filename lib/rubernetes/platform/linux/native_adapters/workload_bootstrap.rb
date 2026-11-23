@@ -27,7 +27,7 @@ module Rubernetes
 
           def initialize(security:, setns:, command:, env:, cwd:, rootfs:, plan:, namespace_descriptors:,
                          build_rootfs:, unshare_mount:, unshare_cgroup:, status_writer:, stdio:, mounts: [],
-                         controlling_tty: false, trace_exec: false, hooks: nil, hook_state: nil, hook_reply: nil, clone3: nil)
+                         controlling_tty: false, trace_exec: false, hooks: nil, hook_state: nil, hook_reply: nil, clone3: nil, user_mapping: nil)
             @hooks = hooks || {}
             @hook_state = hook_state
             @hook_reply = hook_reply
@@ -43,6 +43,7 @@ module Rubernetes
             @mounts = Array(mounts)
             @plan = plan
             @descriptors = namespace_descriptors
+            @user_mapping = user_mapping
             @build_rootfs = build_rootfs
             @unshare_mount = unshare_mount
             @unshare_cgroup = unshare_cgroup
@@ -53,17 +54,25 @@ module Rubernetes
 
           # Never returns: execveat(2) replaces the process, and every failure
           # path reports through the status pipe and _exit(2)s.
-          def run(expected_parent_pid:)
+          def run(expected_parent_pid:, cgroup_procs: nil, oom_score_adj: nil)
             bind_to_wrapper(expected_parent_pid)
+            apply_oom_score_adj(oom_score_adj) unless oom_score_adj.nil?
             install_stdio
             begin
+              join_workload_cgroup(cgroup_procs)
+              # IgnoreSIGPIPE on the agent's systemd unit survives a raw
+              # execveat. Workload pipelines expect the OS disposition.
+              Signal.trap("PIPE", "SYSTEM_DEFAULT")
               # Host identity is captured before any namespace transition:
               # verified image roots have no /proc, and the parent needs a
               # cross-namespace process identity for pidfd and cgroup checks.
               @host_pid = host_pid_from_status(File.read("/proc/self/status"))
               @host_pid = kernel_process_id if @host_pid.zero?
               host_start_time = self_start_time
-              apply_security_plan
+              @security.with_host_path_mount_trees(@mounts, context: @plan.context) do |mounts|
+                @mounts = mounts
+                apply_security_plan
+              end
               # A plan that neither builds a root nor mounts still runs its
               # hooks before the user process.
               start_stage
@@ -78,6 +87,19 @@ module Rubernetes
           end
 
           private
+
+          def join_workload_cgroup(procs)
+            procs&.syswrite("0")
+          ensure
+            procs&.close
+          end
+
+          def apply_oom_score_adj(value)
+            File.write("/proc/self/oom_score_adj", Integer(value).clamp(-1000, 1000).to_s)
+          rescue SystemCallError, IOError
+            # The hosting service may lack CAP_SYS_RESOURCE.
+            nil
+          end
 
           # The first instructions of the clone3 child.  Nothing here can report
           # a failure yet, so a failure is an immediate _exit(2).
@@ -179,7 +201,7 @@ module Rubernetes
           # A "#!" script runs by its path (SecurityAdapter#open_executable).
           def exec_workload
             argv = pointer_vector(@command.map { |value| c_string(value) })
-            envp = pointer_vector(@env.compact.sort_by { |key, _| key }.map { |key, value| c_string("#{key}=#{value}") })
+            envp = pointer_vector(@env.compact.map { |key, value| c_string("#{key}=#{value}") })
             if @executable_info&.fetch(:script)
               @pivot.execveat_path(path: @executable_info.fetch(:path), argv: argv, envp: envp, resource_id: "workload:execveat")
             else
@@ -258,11 +280,11 @@ module Rubernetes
 
           def build_filesystem(context)
             if @build_rootfs
-              @security.build_rootfs(@rootfs, context: context, cwd: @cwd, mounts: @mounts)
+              @security.build_rootfs(@rootfs, context: context, cwd: @cwd, mounts: @mounts, user_namespace: @descriptors[:user])
             elsif @cwd && !String(@cwd).empty?
               Dir.chdir(String(@cwd))
             end
-            @security.join_user_namespace(@descriptors[:user])
+            @security.join_user_namespace(@descriptors[:user], context: context, mapping: @user_mapping)
             true
           end
 
