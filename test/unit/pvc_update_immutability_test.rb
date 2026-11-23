@@ -38,6 +38,35 @@ class PVCUpdateImmutabilityTest < Minitest::Test
     refute_empty errors(claim("storageClassName" => "silver"), claim)
   end
 
+  def test_controller_can_assign_a_class_once_to_an_unclassified_claim
+    pending = claim({}, "Pending")
+    pending.fetch("spec").delete("storageClassName")
+    updated = claim({"storageClassName" => "new-default"}, "Pending")
+
+    assert_empty errors(updated, pending)
+    assert_empty errors(claim({"storageClassName" => ""}, "Pending"), pending)
+    refute_empty errors(updated, claim({"storageClassName" => ""}, "Pending"))
+    updated.fetch("spec")["accessModes"] = ["ReadWriteMany"]
+
+    refute_empty errors(updated, pending)
+  end
+
+  def test_preserves_legacy_storage_class_while_migrating_its_annotation
+    key = "volume.beta.kubernetes.io/storage-class"
+    legacy = claim
+    legacy.fetch("spec").delete("storageClassName")
+    legacy.fetch("metadata")["annotations"] = {key => "gold"}
+
+    assert_empty errors(claim, legacy)
+    assert_empty errors(claim.merge("metadata" => legacy.fetch("metadata")), legacy)
+    refute_empty errors(claim("storageClassName" => "silver"), legacy)
+    changed = claim
+    changed.fetch("metadata")["annotations"] = {key => "silver"}
+
+    refute_empty errors(changed, legacy)
+    refute_empty errors(changed, claim)
+  end
+
   def test_the_access_modes_may_not_change
     refute_empty errors(claim("accessModes" => ["ReadWriteMany"]), claim)
   end
@@ -59,6 +88,46 @@ class PVCUpdateImmutabilityTest < Minitest::Test
     unbound = claim({}, "Pending")
 
     refute_empty errors(claim({"resources" => {"requests" => {"storage" => "2Gi"}}}, "Pending"), unbound)
+  end
+
+  def test_failed_expansion_can_be_retried_only_above_the_actual_capacity
+    old = claim("resources" => {"requests" => {"storage" => "8Gi"}})
+    old.fetch("status")["capacity"] = {"storage" => "4Gi"}
+
+    refute_empty errors(claim("resources" => {"requests" => {"storage" => "4096Mi"}}), old)
+    assert_equal [%w[spec resources requests storage]], errors(claim, old).map(&:path)
+    assert_empty errors(claim("resources" => {"requests" => {"storage" => "6Gi"}}), old)
+  end
+
+  def test_empty_selector_retains_its_presence
+    assert_equal [%w[spec]], errors(claim("selector" => {}), claim).map(&:path)
+    assert_empty errors(claim("selector" => {"matchLabels" => {}}), claim("selector" => {}))
+  end
+
+  def test_pending_immutable_quantities_accept_equivalent_spelling_without_changing_input
+    pending = claim({}, "Pending")
+    same = claim({"resources" => {"requests" => {"storage" => "1024Mi"}}}, "Pending")
+
+    assert_empty errors(same, pending)
+    assert_equal "1024Mi", same.dig("spec", "resources", "requests", "storage")
+    assert_equal "1Gi", pending.dig("spec", "resources", "requests", "storage")
+  end
+
+  def test_attributes_class_cannot_be_removed_after_successful_application
+    previous = claim("volumeAttributesClassName" => "fast")
+
+    assert_empty errors(claim, previous)
+    previous.fetch("status")["currentVolumeAttributesClassName"] = "fast"
+
+    assert_equal [%w[spec volumeAttributesClassName]], errors(claim, previous).map(&:path)
+    empty = errors(claim("volumeAttributesClassName" => ""), previous)
+
+    assert_match(/to empty string/, empty.fetch(0).message)
+    assert_empty errors(claim("volumeAttributesClassName" => "faster"), previous)
+  end
+
+  def test_volume_mode_change_reports_the_immutable_field
+    assert_equal [%w[spec], %w[volumeMode]], errors(claim("volumeMode" => "Block"), claim("volumeMode" => "Filesystem")).map(&:path)
   end
 
   def test_a_create_is_never_restricted
