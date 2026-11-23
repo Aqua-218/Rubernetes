@@ -127,6 +127,9 @@ module Rubernetes
               "destination" => destination,
               "readonly" => mount["readonly"] == true || mount["read_only"] == true || mount["readOnly"] == true,
               "propagation" => propagation,
+              "host_path_source" => mount["host_path_source"].nil? ? nil : String(mount["host_path_source"]),
+              "sandbox_shared_volume" => (true if propagation == "Bidirectional" && mount["sandbox_shared_volume"] == true),
+              "userns_idmap" => (true if mount["userns_idmap"] == true),
               "name" => mount["name"].nil? ? nil : String(mount["name"]),
               # Disabled / IfPossible / Enabled (the bootstrap applies it).
               "recursive_readonly" => mount["recursive_readonly"].nil? ? nil : String(mount["recursive_readonly"]),
