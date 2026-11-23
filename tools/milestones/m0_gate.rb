@@ -422,16 +422,11 @@ module M0Gate
     def current_source_inventory
       return nil unless no_symlink_parents?(ROOT)
 
-      paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-        relative = path.delete_prefix("#{ROOT}/")
-        next false if M0SourceInventory.excluded?(relative)
-
-        begin
-          File.lstat(path).file? && safe_component_chain?(ROOT, path)
-        rescue Errno::ENOENT
-          false
-        end
-      end.sort
+      paths = M0SourceInventory.source_files(ROOT) do |path|
+        File.lstat(path).file? && safe_component_chain?(ROOT, path)
+      rescue Errno::ENOENT
+        false
+      end
       entries = paths.map do |path|
         {
           "path" => path.delete_prefix("#{ROOT}/"),
