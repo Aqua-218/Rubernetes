@@ -56,6 +56,23 @@ class NativeNonRootStdioTest < Minitest::Test
     end
   end
 
+  def test_a_workload_does_not_inherit_the_agents_ignored_sigpipe
+    skip "needs root and a cgroup v2 root" unless Process.euid.zero? && File.writable?("/sys/fs/cgroup/cgroup.procs")
+
+    with_runtime do |runtime, sandbox, lower|
+      previous = Signal.trap("PIPE", "IGNORE") || "DEFAULT"
+      script = "/bin/busybox sh -c 'kill -PIPE $$; echo piped-survived'; echo pipe-status:$?"
+      container = runtime.create_container(sandbox, {"id" => "sigpipe", "rootfs_path" => lower,
+                                                     "command" => ["/bin/busybox", "sh", "-c", script]})
+      runtime.start_container(container)
+      lines = output_lines(runtime, container, 1)
+
+      assert_equal ["pipe-status:#{128 + Signal.list.fetch("PIPE")}"], lines
+    ensure
+      Signal.trap("PIPE", previous)
+    end
+  end
+
   private
 
   def with_runtime
