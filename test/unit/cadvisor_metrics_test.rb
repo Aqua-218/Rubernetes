@@ -136,6 +136,43 @@ class CadvisorMetricsTest < Minitest::Test
     assert_in_delta(2.0, value(text, "machine_cpu_cores"))
   end
 
+  def test_filesystem_diskstats_are_attributed_to_the_node_and_container_inodes_to_the_upper_layer
+    text = with_fake_proc do |proc_root, sys_root|
+      mountpoint = File.join(File.dirname(proc_root), "base mount")
+      upper = File.join(mountpoint, "upper")
+      FileUtils.mkdir_p([upper, File.join(proc_root, "self")])
+      File.write(File.join(upper, "document"), "data")
+      stat = File.stat(mountpoint)
+      escaped_mount = mountpoint.gsub(" ") { "\\040" }
+      mount = "#{stat.dev_major}:#{stat.dev_minor} / #{escaped_mount} rw - ext4 /dev/system rw\n"
+      File.write(File.join(proc_root, "self", "mountinfo"), "44 1 #{mount}45 1 #{mount}")
+      File.write(File.join(proc_root, "diskstats"), <<~DISKSTATS)
+        #{stat.dev_major} #{stat.dev_minor} system 11 2 40 1500 12 3 50 2500 8 2700 2900 0 0 0 0
+        42 99 unmounted 99 99 99 99 99 99 99 99 99 99 99
+        42 98 malformed 99
+      DISKSTATS
+      record = {pod: {"metadata" => {"name" => "web", "namespace" => "shop"}}}
+      pod = {"containers" => [{"name" => "app", "usage" => usage(path: "/sandbox/app"), "rootfs" => upper}]}
+      Cadvisor.render([[record, pod]], now: Time.at(42), proc_root: proc_root, sys_root: sys_root)
+    end
+    root = {device: "/dev/system", id: "/"}
+
+    assert_in_delta 11, value(text, "container_fs_reads_total", **root)
+    assert_in_delta 2, value(text, "container_fs_reads_merged_total", **root)
+    assert_in_delta 40, value(text, "container_fs_sector_reads_total", **root)
+    assert_in_delta 1.5, value(text, "container_fs_read_seconds_total", **root)
+    assert_in_delta 3, value(text, "container_fs_writes_merged_total", **root)
+    assert_in_delta 50, value(text, "container_fs_sector_writes_total", **root)
+    assert_in_delta 2.5, value(text, "container_fs_write_seconds_total", **root)
+    assert_in_delta 8, value(text, "container_fs_io_current", **root)
+    assert_in_delta 2.7, value(text, "container_fs_io_time_seconds_total", **root)
+    assert_in_delta 2.9, value(text, "container_fs_io_time_weighted_seconds_total", **root)
+    assert_equal(1, text.lines.count { |line| line.start_with?("container_fs_io_current{") })
+    assert_in_delta 2, value(text, "container_fs_inodes_total", container: "app")
+    assert_nil value(text, "container_fs_inodes_free", container: "app")
+    assert_nil value(text, "container_fs_sector_reads_total", container: "app")
+  end
+
   def test_machine_info_reads_proc
     info = Cadvisor.machine_info
 
