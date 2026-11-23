@@ -28,6 +28,7 @@ module Rubernetes
             actions << {"kind" => "missing-mount-reconcile", "count" => reconciled_missing.length,
                         "entries" => reconciled_missing}
           end
+          recover_unmounted_projections(observations, actions, errors)
           unknown = still_unknown
           actions << {"kind" => "observe", "count" => unknown.length} unless unknown.empty?
           RecoveryReport.new(owned: reconciliation["owned"], orphans: reconciliation["orphans"], missing: reconciliation["missing"],
@@ -36,6 +37,37 @@ module Rubernetes
         end
 
         private
+
+        # Older agents fenced a declaration when a Pod disappeared before its
+        # TokenRequest completed. There was no mounted source to unmount.
+        def recover_unmounted_projections(observations, actions, errors)
+          volume_store.each_value do |candidate|
+            next unless candidate.state == "Unknown" && candidate.backend == "projected"
+
+            with_volume_lock(candidate.id) do
+              id = candidate.id
+              record = volume_store[id]
+              next unless record && record.state == "Unknown" && record.backend == "projected"
+              next unless record.operation&.values_at("previousState", "name") == ["Declared", nil]
+              next if record.spec.key?("backendResult") || !record.attachments.empty? || !record.stages.empty? || !record.publishes.empty?
+              next if mount_ledger.entries.any? { |mount| mount["volumeId"] == id }
+
+              entry = operations.fetch(key: id, operation: "create")
+              next if entry && entry.status != "failed"
+
+              backend = backends[id]
+              next unless backend
+              next if Array(observations).any? { |mount| Types.key(mount, "target") == backend.source_path }
+
+              backend.delete
+              volume_store.delete(id)
+              backends.delete(id)
+              actions << {"kind" => "discard-unmounted-projection", "volumeId" => id}
+            end
+          rescue SystemCallError, Error => error
+            errors << {"kind" => "discard-unmounted-projection", "volumeId" => candidate.id, "error" => error.message}
+          end
+        end
 
         # An operation that was in flight when the node stopped has an unknown
         # outcome; its volume is fenced until an observation resolves it.
@@ -105,6 +137,12 @@ module Rubernetes
 
         def still_unknown
           unknown = operations.unknown_entries.map(&:to_h)
+          operation_keys = unknown.to_h { |entry| [entry.fetch("key"), true] }
+          volume_store.each_value do |record|
+            next unless record.state == "Unknown" && !operation_keys.key?(record.id)
+
+            unknown << {"kind" => "volume", "id" => record.id, "state" => record.state}
+          end
           snapshot_manager.list.each do |snapshot|
             next unless Types.key(snapshot.metadata, "state") == "Unknown"
 
@@ -135,17 +173,32 @@ module Rubernetes
           entries.sort_by { |entry| rank.call(entry) }.each do |entry|
             volume_id = entry["volumeId"].to_s
             record = volume_store[volume_id]
-            next unless record
-            next if record.state == "Unknown"
-
             target = File.expand_path(entry["target"].to_s)
-            outcome = retract_missing_mount(record, entry, target)
+            outcome = if record
+                        retract_missing_mount(record, entry, target) unless record.state == "Unknown"
+                      elsif entry["owner"] == "volume:#{volume_id}" && volume_id.match?(/\Acsi-[a-f0-9]{64}\z/)
+                        retract_missing_shared_stage(volume_id, entry)
+                      end
             outcomes << {"volumeId" => volume_id, "target" => target, "owner" => entry["owner"], "outcome" => outcome} if outcome
           rescue StandardError => error
             errors << {"kind" => "missing-mount-reconcile", "volumeId" => entry["volumeId"], "target" => entry["target"],
                        "error" => redact_secret_text(error.message.to_s)}
           end
           outcomes
+        end
+
+        def retract_missing_shared_stage(stage_key, entry)
+          references = SharedCSIStages.references(volume_store, stage_key)
+          target = entry["target"]
+          return unless target == legacy_csi_stage_path(stage_key) ||
+                        (kubelet_csi_paths&.stage_path?(target) && references.any? { |_, _, stage| stage["target"] == target })
+
+          resolved = references.reject { |record, _, _| record.state == "Unknown" }
+          resolved.each do |record, logical_path, _identity|
+            retract_missing_stage(record, entry, logical_path, remove_ledger: false)
+          end
+          mount_ledger.remove(identity: entry) if resolved.length == references.length
+          "shared-stage-retracted" unless resolved.empty?
         end
 
         def retract_missing_mount(record, entry, target)
@@ -172,9 +225,9 @@ module Rubernetes
           "publish-retracted"
         end
 
-        def retract_missing_stage(record, entry, target)
+        def retract_missing_stage(record, entry, target, remove_ledger: true)
           id = record.id
-          mount_ledger.remove(identity: entry)
+          mount_ledger.remove(identity: entry) if remove_ledger
           stages = Types.deep_copy(record.stages)
           stages.delete(target)
           state = if !record.publishes.empty?
@@ -184,8 +237,8 @@ module Rubernetes
                   else
                     "Staged"
                   end
-          volume_store[id] = record.with(state: state, stages: stages, generation: record.generation + 1)
           operations.retract!(key: id, operation: "stage:#{target}")
+          volume_store[id] = record.with(state: state, stages: stages, generation: record.generation + 1)
           "stage-retracted"
         end
 
