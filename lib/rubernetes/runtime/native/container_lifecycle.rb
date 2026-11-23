@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../container_stop_signals"
+
 module Rubernetes
   module Runtime
     class Native
@@ -8,6 +10,9 @@ module Rubernetes
       # and removing it, and reporting its status and exit.  Every operation
       # is an idempotent request in the ledger.
       module ContainerLifecycle
+        EXIT_WAIT_SLICE = 0.1
+        RUNNING_EXIT_STATUS = {"state" => "running", "exitCode" => nil}.freeze
+
         def create_container(sandbox_value, spec, id: nil, request_id: nil)
           sandbox = sandbox(sandbox_value)
           raise InvalidState, "container creation requires a WorkloadStopped or Running sandbox" unless %i[workload_stopped running].include?(sandbox.state)
@@ -40,6 +45,12 @@ module Rubernetes
 
         def stop_container(value, timeout: 5.0, request_id: nil, release_process: true)
           sandbox, container = find_container(value)
+          container.exit_lock.synchronize do
+            stop_current_container(sandbox, sandbox.container(container.id), timeout: timeout, request_id: request_id, release_process: release_process)
+          end
+        end
+
+        def stop_current_container(sandbox, container, timeout:, request_id:, release_process:)
           request = request_id || "stop:#{sandbox.id}:#{container.id}"
           request_state = begin_native_request(request, operation: "container.stop", input: {
                                                  "sandbox_id" => sandbox.id, "container_id" => container.id, "timeout" => timeout
@@ -71,8 +82,9 @@ module Rubernetes
 
           stop_container_process(sandbox, container, request, timeout: timeout, release_process: release_process)
         end
+        private :stop_current_container
 
-        def remove_container(value, request_id: nil)
+        def remove_container(value, request_id: nil, preserve_logs: false)
           begin
             sandbox, container = find_container(value)
           rescue Error
@@ -91,7 +103,7 @@ module Rubernetes
           return true if request_state&.state == "Completed"
 
           begin
-            release_container(sandbox, container, request)
+            release_container(sandbox, container, request, preserve_logs: preserve_logs)
             complete_native_request(request, state: "Completed", result: {"container_id" => container.id, "removed" => true})
             true
           rescue StandardError => error
@@ -111,6 +123,7 @@ module Rubernetes
           reap_exited(sandbox, container)
           sandbox, container = find_container(value)
           status = container.to_h.merge("oom_killed" => @mutex.synchronize { @oom_reported.key?(container_resource_id(sandbox, container)) })
+          status["stopSignal"] = effective_stop_signal(container.spec).first
           if container.state == :stopped && container.process
             process = container.process
             exit_code = process.exit_status
@@ -122,34 +135,64 @@ module Rubernetes
           status
         end
 
+        def container_stop_signal(value)
+          _sandbox, container = find_container(value)
+          effective_stop_signal(container.spec).first
+        end
+
         # Status must stay readable whatever the reap runs into -- the
         # container or its handle went away under the query, the process
         # cannot be waited for, the ledger refuses the release: the next
         # status query, or the stop that follows, meets the same condition on
         # a path that reports it.
-        def reap_exited(_sandbox, container)
+        def reap_exited(sandbox, container)
           return unless container.state == :running && container.process
 
-          wait_container(container.id, timeout: 0)
+          try_wait_for_container_exit(sandbox, container, timeout: 0)
         rescue Error, Support::Error, *PROCESS_ERRORS
           nil
         end
 
         def wait_container(value, timeout: nil)
           sandbox, container = find_container(value)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout) unless timeout.nil?
+          loop do
+            remaining = deadline ? [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0.0].max : EXIT_WAIT_SLICE
+            result = try_wait_for_container_exit(sandbox, container, timeout: [remaining, EXIT_WAIT_SLICE].min)
+            return result if result && result["state"] == "terminated"
+            return RUNNING_EXIT_STATUS if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+            # An explicit wait must leave another thread a chance to stop the
+            # workload. The relist only ever tries to take the lock.
+            result ? Thread.pass : sleep([remaining, 0.01].min)
+          end
+        end
+
+        def try_wait_for_container_exit(sandbox, container, timeout:)
+          return unless container.exit_lock.try_lock
+
+          begin
+            wait_for_container_exit(sandbox, sandbox.container(container.id), timeout: timeout)
+          ensure
+            container.exit_lock.unlock
+          end
+        end
+        private :try_wait_for_container_exit
+
+        def wait_for_container_exit(sandbox, container, timeout:)
+          if container.state == :stopped && (process = container.process)
+            oom_killed = @mutex.synchronize { @oom_reported.key?(container_resource_id(sandbox, container)) }
+            return container_exit(process.exit_status, process.term_signal, oom_killed ? "OOMKilled" : nil)
+          end
+
           raise InvalidState, "wait requires a running container" unless container.state == :running
 
           process = container.process
           raise InvalidState, "container #{container.id} has no process handle" unless process
 
           result = @process_supervisor.wait(process, timeout: timeout, resource_id: "process:#{sandbox.id}:#{container.id}")
-          return {"state" => "running", "exitCode" => nil}.freeze unless result
+          return RUNNING_EXIT_STATUS unless result
 
-          exit_code = if !result.exit_status.nil?
-                        Integer(result.exit_status)
-                      elsif !result.term_signal.nil?
-                        128 + Integer(result.term_signal)
-                      end
           oom_reason = detect_oom(sandbox, container)
           # The container keeps the handle that carries the exit: the
           # supervisor's own copy is closed below, and status readers (the node's
@@ -160,11 +203,55 @@ module Rubernetes
           operation = @ledger.operation(sandbox.id)
           release_process_resource(operation, sandbox, stopped, process_hash)
           @process_supervisor.close(process)
-          record(:container_waited, sandbox_id: sandbox.id, container_id: stopped.id, exit_code: exit_code, reason: oom_reason)
-          {"state" => "terminated", "exitCode" => exit_code, "signal" => result.term_signal, "reason" => oom_reason}.freeze
+          status = container_exit(result.exit_status, result.term_signal, oom_reason)
+          record(:container_waited, sandbox_id: sandbox.id, container_id: stopped.id, exit_code: status["exitCode"], reason: oom_reason)
+          status
         end
+        private :wait_for_container_exit
+
+        def container_exit(exit_status, signal, reason)
+          exit_code = exit_status.nil? ? (128 + Integer(signal) if signal) : Integer(exit_status)
+          {"state" => "terminated", "exitCode" => exit_code, "signal" => signal, "reason" => reason}.freeze
+        end
+        private :container_exit
 
         private
+
+        # OCI image StopSignal takes effect unless the Pod supplies an override.
+        # Linux uses the libc range (34..64) for named real-time signals.
+        def effective_stop_signal(spec)
+          if (custom = spec["stop_signal"])
+            number = linux_signal_number(custom) if ContainerStopSignals.cri_name(custom)
+            return [custom, number] if number
+          end
+
+          image = spec.dig("resolved_image", "config", "config", "StopSignal").to_s.upcase
+          unless image.empty?
+            if /\A[0-9]+\z/.match?(image)
+              number = Integer(image, 10)
+              if number.between?(1, 64)
+                name = ContainerStopSignals::LINUX.find { |candidate| linux_signal_number(candidate) == number }
+                return [name, number]
+              end
+            else
+              name = image.start_with?("SIG") ? image : "SIG#{image}"
+              number = linux_signal_number(name)
+              return [name, number] if number&.positive?
+            end
+          end
+          ["SIGTERM", Signal.list.fetch("TERM")]
+        end
+
+        def linux_signal_number(name)
+          case name
+          when "SIGSTKFLT" then 16
+          when "SIGRTMIN" then 34
+          when "SIGRTMAX" then 64
+          when /\ASIGRTMIN\+(\d+)\z/ then 34 + Integer(Regexp.last_match(1), 10) if ContainerStopSignals.cri_name(name)
+          when /\ASIGRTMAX-(\d+)\z/ then 64 - Integer(Regexp.last_match(1), 10) if ContainerStopSignals.cri_name(name)
+          else Signal.list[name.delete_prefix("SIG")]
+          end
+        end
 
         # Builds the created container's resources in acquisition order and
         # records the answer to the create request; a failure at any step
@@ -173,7 +260,7 @@ module Rubernetes
           container = nil
           cgroup = nil
           container = sandbox.create_container(spec: input, id: container_id)
-          qos = normalize_qos(sandbox.config)
+          qos = sandbox.cgroup&.qos || normalize_qos(sandbox.config)
           limits = container_cgroup_limits(input, qos: qos, pod: sandbox.config)
           cgroup = create_container_cgroup(sandbox, container, qos, limits)
           plan, plan_digest = security_plan_for(container_security_context(input))
@@ -199,14 +286,11 @@ module Rubernetes
           # The memory ceiling is applied once the workload has replaced the
           # bootstrap; see #apply_deferred_memory_limits.
           initial_limits = defer_bootstrap_limits(container_resource_id(sandbox, container), limits)
-          # The leaf drops the sandbox prefix the container id repeats: the
-          # Pod directory above it already names the sandbox (and the Pod
-          # UID), and a leaf that matched the same UID search made the Pod
-          # cgroup ambiguous to anyone looking it up by UID.
-          leaf = container.id.delete_prefix("#{sandbox.id}.")
+          leaf = sandbox.cgroup_container_id(container.id)
           @cgroup.create(qos: qos, pod_id: sandbox.id,
                          container_id: leaf, identity: "cgroup:#{sandbox.id}:#{leaf}",
-                         limits: (initial_limits.empty? ? nil : initial_limits))
+                         limits: (initial_limits.empty? ? nil : initial_limits),
+                         **sandbox_cgroup_path_options(sandbox))
         end
 
         def claim_container_cgroup(sandbox, container, limits, plan_digest)
@@ -254,12 +338,15 @@ module Rubernetes
         end
 
         def stop_container_process(sandbox, container, request, timeout:, release_process:)
-          @process_supervisor.stop(container.process, timeout: timeout, resource_id: "process:#{sandbox.id}:#{container.id}")
+          _, signal = effective_stop_signal(container.spec)
+          result = @process_supervisor.stop(container.process, timeout: timeout, signal: signal,
+                                                               resource_id: "process:#{sandbox.id}:#{container.id}")
           oom_reason = detect_oom(sandbox, container)
           @cgroup.kill(container.cgroup) if container.cgroup
           process_hash = container.process.to_h
           @process_supervisor.close(container.process)
-          stopped = sandbox.update_container(container, state: :stopped)
+          process = container.process.with(state: :stopped, exit_status: result.exit_status, term_signal: result.term_signal)
+          stopped = sandbox.update_container(container, state: :stopped, process: process)
           operation = @ledger.operation(sandbox.id)
           release_process_resource(operation, sandbox, stopped, process_hash) if release_process
           complete_native_request(request, state: "Completed",
@@ -274,7 +361,7 @@ module Rubernetes
         # Gives back everything a container holds, in the reverse of the
         # order it was acquired; any step that fails leaves the rest claimed
         # for the retry.
-        def release_container(sandbox, container, request)
+        def release_container(sandbox, container, request, preserve_logs:)
           stop_container(container, request_id: "#{request}:stop") if container.state == :running
           process_hash = container.process.to_h
           @process_supervisor.close(container.process) if container.process
@@ -290,6 +377,7 @@ module Rubernetes
           end
           operation = @ledger.operation(sandbox.id)
           release_container_resource(operation, sandbox, container, process_hash)
+          remove_container_logs(sandbox.id, [container.id]) unless preserve_logs
           sandbox.remove_container(container)
         end
 
@@ -314,6 +402,7 @@ module Rubernetes
           operation = @ledger.operation(sandbox.id)
           claim(operation, kind: "workspace", id: identifier, identity: workspace.identity, metadata: workspace_metadata(workspace))
           @filesystem.activate(workspace, namespace: sandbox.namespace) if sandbox.namespace
+          claim(operation, kind: "workspace", id: identifier, identity: workspace.identity, metadata: workspace_metadata(workspace))
           workspace
         end
 
