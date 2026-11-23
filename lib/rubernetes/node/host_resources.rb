@@ -15,12 +15,13 @@ module Rubernetes
 
       module_function
 
-      def capacity(pod_root: nil, max_pods: DEFAULT_MAX_PODS, meminfo: "/proc/meminfo", hugepages_root: "/sys/kernel/mm/hugepages")
+      def capacity(pod_root: nil, max_pods: DEFAULT_MAX_PODS, pods_per_core: 0, meminfo: "/proc/meminfo", hugepages_root: "/sys/kernel/mm/hugepages")
+        cores = Etc.nprocessors
         result = {
-          "cpu" => Etc.nprocessors.to_s,
+          "cpu" => cores.to_s,
           # cadvisor MemoryCapacity in bytes, as a BinarySI quantity.
           "memory" => binary_quantity(memory_kib(meminfo) * 1024),
-          "pods" => Integer(max_pods).to_s
+          "pods" => pod_capacity(cores, Integer(max_pods), pods_per_core).to_s
         }
         bytes = ephemeral_storage_bytes(pod_root)
         result["ephemeral-storage"] = binary_quantity(bytes) if bytes
@@ -31,6 +32,12 @@ module Rubernetes
           pools.each { |name, quantity| result[name] = quantity }
         end
         result
+      end
+
+      def pod_capacity(cores, max_pods, pods_per_core)
+        return max_pods unless cores.positive? && pods_per_core.positive?
+
+        [cores * pods_per_core, max_pods].min
       end
 
       # cadvisor machine.HugePages: every page size under
@@ -103,7 +110,10 @@ module Rubernetes
       end
 
       def ephemeral_storage_bytes(pod_root)
-        path = pod_root && File.directory?(pod_root) ? pod_root : "/var/lib"
+        # The Pod directory may be created after the Node registers. Use the
+        # filesystem that will hold it, including a dedicated runtime mount.
+        path = File.expand_path(pod_root || "/var/lib")
+        path = File.dirname(path) until File.directory?(path)
         require_relative "../platform/linux/statfs"
         return nil unless Rubernetes::Platform::Linux::Statfs.supported?
 
