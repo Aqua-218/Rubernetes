@@ -179,7 +179,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
       uid = review["request"]["uid"]
       case config["url"]
       when "https://mutate.example/"
-        patch = [{"op" => "add", "path" => "/metadata/annotations", "value" => {"mutated" => "yes"}}]
+        patch = [{"op" => "replace", "path" => "/metadata/finalizers", "value" => ["example.test/cleanup"]},
+                 {"op" => "add", "path" => "/metadata/annotations", "value" => {"mutated" => "yes"}}]
         [200,
          {"apiVersion" => review["apiVersion"], "kind" => "AdmissionReview",
           "response" => {"uid" => uid, "allowed" => true, "patchType" => "JSONPatch", "patch" => [JSON.generate(patch)].pack("m0"),
@@ -215,6 +216,7 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     mutating.admit(attrs)
 
     assert_equal "yes", attrs.object.dig("metadata", "annotations", "mutated")
+    assert_equal ["example.test/cleanup"], attrs.object.dig("metadata", "finalizers")
     assert_equal ["be careful"], attrs.warnings, "kube-apiserver surfaces webhook warnings verbatim"
     validating.validate(attrs)
 
@@ -231,7 +233,7 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     # sideEffects Unknown webhook must not be called at all.
     assert_raises(A::Rejected) { validating.validate(dry) }
     assert(calls.any? { |url, _, _| url == "https://deny.example/" })
-    assert calls.none? { |url, _, _| url == "https://broken.example/" }, "sideEffects Unknown webhooks are skipped on dry-run"
+    refute(calls.any? { |url, _, _| url == "https://broken.example/" })
     @context.put("validatingwebhookconfigurations", nil, "fail",
                  {"metadata" => {"name" => "fail"},
                   "webhooks" => [{"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule],
@@ -245,5 +247,38 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     mutating.admit(update)
 
     assert_empty calls, "rules scoped to CREATE do not match UPDATE"
+  end
+
+  def test_dry_run_checks_legacy_webhook_side_effects_after_matching
+    reviews = []
+    client = Object.new
+    client.define_singleton_method(:call) do |_config, review, timeout_seconds:|
+      request = review.fetch("request")
+      reviews << request
+      [200, {"response" => {"uid" => request.fetch("uid"), "allowed" => true}}]
+    end
+    rule = {"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}
+    {"MutatingAdmissionWebhook" => ["mutatingwebhookconfigurations", :admit, "Some"],
+     "ValidatingAdmissionWebhook" => ["validatingwebhookconfigurations", :validate, "Unknown"]}.each do |name, (resource, method, effects)|
+      hook = {"name" => "legacy.example", "clientConfig" => {"url" => "https://legacy.example/"}, "rules" => [rule],
+              "sideEffects" => effects, "admissionReviewVersions" => ["v1"], "failurePolicy" => "Ignore",
+              "matchConditions" => [{"name" => "large", "expression" => "object.spec.replicas > 3"}]}
+      @context.put(resource, nil, "legacy", {"metadata" => {"name" => "legacy"}, "webhooks" => [hook]}, group: "admissionregistration.k8s.io")
+      webhook = A::Registry.factories.fetch(name).call(@context, {"client" => client})
+      webhook.public_send(method, attributes("CREATE", object: deployment(replicas: 2), dry_run: true))
+
+      assert_empty reviews
+      error = assert_raises(A::Rejected) do
+        webhook.public_send(method, attributes("CREATE", object: deployment(replicas: 5), dry_run: true))
+      end
+      assert_equal [400, "BadRequest", 'admission webhook "legacy.example" does not support dry run'], [error.code, error.reason, error.message]
+      assert_empty reviews
+
+      hook["sideEffects"] = "NoneOnDryRun"
+      webhook.public_send(method, attributes("CREATE", object: deployment(replicas: 5), dry_run: true))
+
+      assert_equal true, reviews.shift.fetch("dryRun")
+      assert_empty reviews
+    end
   end
 end
