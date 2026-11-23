@@ -28,7 +28,9 @@ Podの削除、scale、rollout restartといった書き込み操作もできま
 
 ### 時系列ストア
 
-取得したサンプルは`lib/tsdb`のストアに保存します。構造はPrometheusと同じです。チャンクはGorilla方式で圧縮し、write-ahead logを持ち、2時間ごとにブロックへまとめます。古いデータは保持期間に従って削除します。ラベルのインデックスにはSQLiteを使っています。
+スクレイパーは長さ付きのPrometheus protobuf形式を優先し、対応していないエクスポーターからはテキストで取得します。指数バケットのネイティブヒストグラムはprotobufで、従来形式のヒストグラムは両方の形式で取得できます。`DASHBOARD_CONVERT_CLASSIC_HISTOGRAMS_TO_NHCB=1`を設定すると、従来形式をカスタムバケットのネイティブヒストグラムに変換できます。`DASHBOARD_ALWAYS_SCRAPE_CLASSIC_HISTOGRAMS=0`を設定すると、ネイティブヒストグラムが得られた系列について、従来形式のサンプルを省きます。protobufスキーマはPrometheusの[client_model v0.6.2](https://github.com/prometheus/client_model/tree/v0.6.2)を使用します。
+
+取得したサンプルは`lib/tsdb`に保存します。数値サンプルのチャンクはGorilla方式で圧縮します。write-ahead logと2時間ごとのブロックには、ネイティブヒストグラムも保存します。古いデータは保持期間に従って削除します。ラベルのインデックスにはSQLiteを使っています。
 
 ### PromQL
 
@@ -40,10 +42,16 @@ Podの削除、scale、rollout restartといった書き込み操作もできま
 - 集約と関数
 - `on`、`ignoring`、`group_left`、`group_right`によるベクトルマッチ
 - 集合演算
+- ネイティブヒストグラムに対する`histogram_avg`、`histogram_count`、`histogram_sum`、`histogram_stddev`、`histogram_stdvar`
+- ネイティブと従来形式のヒストグラムに対する`histogram_quantile`、`histogram_fraction`
+
+たとえば、`histogram_avg(rate(http_request_duration_seconds[5m]))`はネイティブカウンターヒストグラムから直近5分間の観測値の平均を返します。
 
 ### ルールとアラート
 
 `config/rules.yml`にrecordingルールとalertingルールを書きます。形式はPrometheusのルールファイルと同じです。アラートはpending、firing、resolvedの順に遷移し、`ALERTS`系列を生成します。Alertmanager形式のwebhookに通知することもできます。
+
+ルールのラベルと注釈のテンプレートでは、`$labels`、`$value`、`$externalLabels`、`$externalURL`を参照できます。パイプライン、変数、`if`、`with`、`range`、`break`、`continue`、`define`、`template`、`block`と、`query`、`first`、`value`、`humanizeDuration`、`graphLink`などの関数に対応しています。テンプレート内のクエリは、ルールと同じ時刻で評価されます。
 
 ### HTTP API
 
@@ -111,6 +119,8 @@ curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 | `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | ブロック、WAL、ラベルインデックスの保存先 |
 | `DASHBOARD_SCRAPE_INTERVAL` | `15` | メトリクスを取得する間隔。単位は秒 |
 | `DASHBOARD_SCRAPE_TIMEOUT` | `10` | 取得のタイムアウト。単位は秒 |
+| `DASHBOARD_CONVERT_CLASSIC_HISTOGRAMS_TO_NHCB` | `0` | `1`で従来形式をカスタムバケットに変換 |
+| `DASHBOARD_ALWAYS_SCRAPE_CLASSIC_HISTOGRAMS` | `1` | `0`でネイティブ形式と重複する従来形式のサンプルを省く |
 | `DASHBOARD_EVALUATION_INTERVAL` | 取得間隔と同じ | ルールを評価する間隔 |
 | `DASHBOARD_RETENTION` | `15d` | 保持期間 |
 | `DASHBOARD_BLOCK_RANGE` | `2h` | ブロックの長さ |
@@ -124,7 +134,7 @@ PodとServiceのメトリクスは、PodのIPに直接接続して取得しま�
 ## 開発
 
 ```sh
-bin/rails test                     # 79テスト。PromQLエンジン、TSDB、scraper、ルール、API、ページ
+bin/rails test                     # PromQLエンジン、TSDB、scraper、ルール、API、ページ
 bin/rails console
 ```
 
