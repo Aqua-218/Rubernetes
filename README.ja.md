@@ -15,7 +15,7 @@ Kubernetes本体との関係は次の3点です。
 | 項目 | 内容 |
 |---|---|
 | 互換対象 | Kubernetes v1.36.2 |
-| 公式Conformance | 459件中459件合格（2026-09-30、IPv4プロファイル） |
+| 公式Conformance | v1.36.2 の対象446件中446件合格（2026-11-18 UTC、IPv4 native プロファイル） |
 | 対象環境 | Linux x86_64、cgroup v2、root権限、Ruby 3.4.11 |
 | 規模 | `lib/`と`ext/`のRubyとCが約22万行、テストが約10万行 |
 | ライセンス | Apache-2.0 |
@@ -67,7 +67,7 @@ kubeletの役割を担います。Podの同期、probe、eviction、ノードの
 
 コンテナランタイムは3種類から選べます。
 
-- native: clone3、cgroup v2、namespaceを直接使います。OCIイメージの取得と検証もRubyで行います。
+- native: clone3、cgroup v2、namespaceを直接使います。OCIイメージの取得と検証もRubyで行います。Zstandard圧縮のレイヤー展開にはホストの`libzstd.so.1`を使います。
 - microvm: jailer付きのFirecrackerでPodを動かします。rootfsはdm-verityで検証し、vsock経由のsupervisorが中で動きます。
 - CRI: 外部のCRIランタイムにつなぎます。明示的に有効にしたときだけ使われます。
 
@@ -79,7 +79,19 @@ Service、EndpointSlice、NodePort、session affinity、traffic policyを処理�
 
 ### rubectl
 
-`get`、`create`、`apply`、`patch`、`delete`、`watch`、`raw`が使えます。スキーマから生成したRubyのManifest DSLも読み込めます。本物の`kubectl`を使ってもかまいません。
+`get`、`create`、`apply`、`patch`、`delete`、`watch`、`logs`、`raw`が使えます。スキーマから生成したRubyのManifest DSLも読み込めます。本物の`kubectl`を使ってもかまいません。
+
+`rubectl logs web-0 -n production -c app --tail 100 -f` でコンテナのログを追従できます。`-p` で前回のコンテナ、`--timestamps` でログのタイムスタンプを表示します。取得範囲は `--since 10m` または `--since-time 2026-11-20T10:00:00Z` で指定できます。`-c` を省略すると、Pod の `kubectl.kubernetes.io/default-container` アノテーションか、最初のコンテナを選びます。接続には現在の kubeconfig を使い、`pods` と `pods/log` の `get` 権限が必要です。
+
+`rubectl disk web-0 -n production` は、Pod の一時ストレージ使用量、コンテナごとの書き込み層とログ、ボリュームの使用量を表示します。合計は kubelet が報告した値です。内訳の行には合計に含まれる値もあります。RAM と PVC は区別して表示し、種類を判定できないボリュームは不明と表示します。
+
+`emptyDir` に正の `sizeLimit` を指定した場合は、その上限を使用量の横にバイト単位で表示します。JSON のフィールド名は `sizeLimitBytes` です。使用量がまだ未計測でも、指定した上限を確認できます。
+
+`-o json` を付けると、`ephemeralStorageUsedBytes`、`containers`、`volumes` にバイト数を出力します。未計測の値は JSON では `null`、テキストでは `unknown` と表示します。`status` は計測あり（`sampled`）、未配置（`notScheduled`）、Pod UID なし（`missingUID`）、同じ UID の計測なし（`noSample`）のいずれかです。現在の kubeconfig を使い、Pod とノードの `nodes/proxy` サブリソースへの `get` 権限が必要です。
+
+`rubectl disk -n production` は、名前空間内の Pod を一時ストレージ使用量の多い順に表示します。未計測の Pod は末尾に並びます。クラスタ全体で容量を使っている Pod を探すには `rubectl disk -A` を使います。`--node worker-1` で 1 ノードに絞れます。一覧では Pod の `list` 権限を使い、対象ノードごとの集計を 1 回ずつ取得します。`-o json` では、`pods` に Pod の識別情報、ノード名、状態、使用量の合計（バイト）を順に出力します。
+
+`rubectl disk node/worker-1` は、ノードのルート、ランタイムのイメージ、コンテナの各ファイルシステムについて、使用量、空き容量、総容量をバイト単位で表示します。複数の項目が同じファイルシステムを指すことがあるため、計測値は項目ごとに表示します。指定ノードの集計を 1 回取得し、`nodes/proxy` への `get` 権限が必要です。`-o json` では、`filesystems` 内の `fs`、`imageFs`、`containerFs` にそれぞれ `usedBytes`、`availableBytes`、`capacityBytes` を出力します。未計測の値は JSON では `null`、テキストでは `unknown` と表示します。
 
 ### apps/dashboard
 
@@ -147,7 +159,7 @@ Conformanceの実行に使う`tools/conformance/cluster.rb`も同じコード（
 
 リリース成果物から常設のクラスタを作る手順は[deploy/cluster/README.md](deploy/cluster/README.md)にあります。systemdユニット、PKI、アップグレード、バックアップとリストアを扱っています。
 
-各デーモンは`--config`で渡したYAMLファイル1つだけを読み、環境変数は読みません。`--check-config`を付けると設定を検証できます。既定値は`config/defaults/`にバージョンごとに置いてあります。
+各デーモンは `--config` で指定した YAML を起動時に読みます。設定値を環境変数で上書きすることはありません。ノードエージェントには `--kubelet-config` で対応する Kubernetes v1beta1 の設定を追加できます。`--check-config` は起動時と同じ入力を検証します。既定値は `config/defaults/` にあります。 [ノードの設定ファイル](spec/node/node-agent.md)
 
 ### ダッシュボードとメトリクス
 
@@ -201,6 +213,27 @@ kubectl run web --image=nginx
 
 フィルタが返した理由は、`kubectl describe pod`のスケジューリング失敗のメッセージにそのまま出ます。ファイルを直して`apply`し直すと、次のPodから新しい版が使われます。構文エラーのあるファイルは、行番号を付けて手元で拒否されます。
 
+配置ルールを編集したら、適用する前に手元で試せます。たとえば次のコマンドは、指定した Pod に対してファイル内の Ruby の `filter` と `score` を実行します。各ノードの加点、除外理由、該当ブロックのファイルと行番号が表示されます。
+
+```sh
+rubectl extension preview examples/extensions/team_rules.rb default/crunch
+```
+
+同じ条件で繰り返し試すには、Pod と Node を一度保存します。以降はクラスタへの接続も拡張のインストールも不要です。
+
+```sh
+kubectl get pods,nodes -A -o json > cluster.json
+rubectl extension preview examples/extensions/team_rules.rb default/crunch cluster.json
+```
+
+編集前のファイルを `before.rb` に保存しておけば、採否・除外理由・採点の変化をノードごとに比較できます。合計点が同じでも、内訳が変われば、どの Ruby ブロックの点数や重みが変わったかを行番号付きで表示します。
+
+```sh
+rubectl extension diff before.rb examples/extensions/team_rules.rb default/crunch cluster.json
+```
+
+プレビューは指定ファイルの配置ルールだけを評価します。稼働中の Pod も未配置の状態として扱い、その Pod 自身を各ノードの使用量から除きます。Ruby ファイルは手元のユーザー権限で実行するため、自分が信頼するファイルを指定してください。
+
 `rubectl extension list`で、各コンポーネントの読み込み結果と、ブロックが例外を出した回数を確認できます。Extensionは`kubectl get extensions.rubernetes.io`でも見えます。
 
 Extensionのコードは、スケジューラ、APIサーバ、コントローラマネージャのプロセスの中で、その権限で動きます。隔離はしません。Extensionを書ける利用者はcluster-adminと同等に扱ってください。既定では無効で、`--extensions`を付けたクラスタ、または設定に`extensions: {enabled: true}`を書いたコンポーネントだけが読み込みます。
@@ -249,17 +282,131 @@ sudo ruby -Ilib exe/rubectl trace scheduler "Rubernetes::Scheduler::Framework#sc
 
 ```ruby
 # web.rb
-deployment "web" do
+settings = config_map("web-config") { data LOG_LEVEL: "info" }
+
+web = deployment "web" do
+  rollout_on settings
   replicas 3
 
   container "nginx", image: "nginx:1.27" do
-    port 80
+    port 80, name: "http"
     cpu request: "100m", limit: "500m"
-    env from: configmap("web-config")
-    readiness_probe http_get: {path: "/", port: 80}, period_seconds: 5
+    ephemeral_storage request: "32Mi", limit: "128Mi"
+    env from: settings
+    env_field "POD_IP", "status.podIP"
+    env_resource "CPU_MILLICORES", "requests.cpu", divisor: "1m"
+    http_probe :readiness, port: :http, period_seconds: 5
+  end
+end
+
+frontend = expose web, ports: {http: 80}
+ingress_for frontend, host: "web.example.test", port: :http, class_name: "nginx"
+```
+
+`check` に渡した Ruby のブロックは、そのファイルの宣言がそろってから、クラスタに接続する前に実行されます。たとえば本番環境の Deployment にチーム名を必須にできます。条件が偽なら `render`、`plan`、`apply` は宣言行と理由を表示して終了します。
+
+```ruby
+check "本番の Deployment に team ラベルが必要" do |resources|
+  resources.select { |r| r["kind"] == "Deployment" && r.dig("metadata", "namespace") == "prod" }
+           .all? { |r| !r.dig("metadata", "labels", "team").to_s.empty? }
+end
+```
+
+`http_probe` の `port: :http` は、同じコンテナに宣言した TCP ポートを指します。名前を間違えると `rubectl render` が Ruby の行番号と使える名前を表示します。ポートを後の行に宣言しても解決できます。
+
+Pod のラベルは `env_field "TEAM", label: "example.com/team"`、注釈は `env_field "REVISION", annotation: "example.com/revision"` で環境変数として渡せます。値はコンテナの起動時に決まります。
+
+`env_resource "CPU_MILLICORES", "requests.cpu", divisor: "1m"` では、このコンテナの CPU 要求をミリコア単位で環境変数に設定します。`container: "worker"` を追加すると、同じ Pod の通常コンテナ、init コンテナ、サイドカーを参照できます。後から宣言したコンテナも参照できます。`divisor` を省略すると Kubernetes の既定値 `1` が使われます。
+
+仮想ホストで応答するアプリは `http_probe :readiness, port: :http, path: "/ready", headers: {Host: "catalog.example.test"}` と書けます。接続先は Pod のまま、指定した Host で確認します。同名のヘッダーを複数送る場合は値を配列で渡せます。
+
+データベースの起動待ちには `tcp_probe :startup, port: :sql`、gRPC のサービスには `grpc_probe :readiness, port: 9000, service: "catalog"` を使えます。コンテナ内でコマンドを実行する場合は `exec_probe :liveness, command: ["pg_isready", "-q"]` のように引数を配列で渡します。
+
+`settings` のデータを変えて再適用すると、Deployment が新しい環境変数を持つ Pod に順次置き換えます。ConfigMap のラベルだけを編集した場合は稼働中の Pod を維持します。`env from: settings` には Ruby の宣言をそのまま渡せます。
+
+コンテナ内で `mount settings, at: "/etc/app"` と書くと、ConfigMap をファイルとして読み取れます。Pod のボリュームと読み取り専用マウントを生成し、複数のコンテナで同じボリュームを共有できます。Secret も同じ書き方で参照できます。`mount "cfg", from: settings, at: "/etc/app"` ではボリューム名を指定できます。PersistentVolumeClaim の宣言も同じように渡せます。`mount uploads, at: "/data"` で書き込み、読み取り専用のコンテナには `read_only: true` を付けます。ブロックモードの PVC には `device disk, at: "/dev/data"` を使います。
+
+複数の設定を同じディレクトリに置くには `mount "cfg", from: [defaults, overrides], at: "/etc/app"` と書きます。同名のファイルには配列の後ろの内容が反映されます。
+
+StatefulSet では `data = volume_claim_template "data" do ... end` でレプリカごとの PVC を宣言できます。ブロックに `access_modes ["ReadWriteOnce"]` や `resources { requests storage: "10Gi" }` を書き、初期化コンテナやアプリで `mount data, at: "/data"` と宣言を参照できます。`volume_mode "Block"` を指定した場合は `device data, at: "/dev/data"` を使います。
+
+`empty_dir` の戻り値を Ruby の変数に入れると、初期化コンテナとアプリで同じボリュームを共有できます。既定はディスクで、`medium: :memory` で tmpfs を選べます。`size_limit:` はボリューム単位の上限です。
+
+```ruby
+pod "report" do
+  restart_policy "Never"
+  cache = empty_dir "cache", medium: :memory, size_limit: "32Mi"
+  init_container("prepare", image: "busybox:1.36") do
+    mount cache, at: "/out"
+    command ["sh", "-c", "echo ready > /out/status"]
+  end
+  container("reader", image: "busybox:1.36") do
+    mount cache, at: "/input", read_only: true
+    command ["cat", "/input/status"]
   end
 end
 ```
+
+`in_namespace "preview" do ... end` で環境ごとの宣言をまとめられます。ブロック内の名前空間スコープのリソースには `preview` が補われ、各宣言の `namespace:` で上書きできます。ネストしたブロックを抜けると、外側の名前空間に戻ります。Namespace や ClusterRole など、クラスタスコープのリソースに名前空間は補われません。
+
+```ruby
+in_namespace "preview" do
+  account = service_account "web"
+  registry = secret "registry" do
+    type "kubernetes.io/dockerconfigjson"
+    string_data ".dockerconfigjson" => ENV.fetch("DOCKER_CONFIG_JSON")
+  end
+
+  deployment "web" do
+    use_service_account account
+    image_pull_secrets registry
+    container "app", image: "registry.example.test/web:1"
+  end
+end
+```
+
+このファイルを rubectl で評価するときは `--env DOCKER_CONFIG_JSON` を付けます。ヘルパーは Pod、Deployment、Job、CronJob などの PodSpec に `serviceAccountName` と `imagePullSecrets` を設定します。宣言した参照先はワークロードと同じ名前空間に置きます。PodSpec に `image_pull_secrets [{name: "existing"}]` で一覧を指定している場合、Secret 名の重複を除いて追記します。クラスタにすでにある Secret は `image_pull_secrets secret("existing")` で参照できます。
+
+`expose web, ports: {http: 80}` は、Deployment の名前空間とセレクタを引き継ぎ、コンテナの名前付きポート `http` を公開する Service を生成します。`prefer: :same_zone` または `prefer: :same_node` を加えると、Service の `trafficDistribution` で同じゾーンまたはノードのエンドポイントを優先します。ポート名や優先設定を書き間違えると、`render` と `apply` はクラスタへの送信前に Ruby の行番号と指定できる名前を表示します。
+
+`ingress_for` は、`service` や `expose` で宣言した Service と同じ名前・名前空間に `networking.k8s.io/v1` の Ingress を生成します。Service のポートが TCP の1つだけなら `port:` を省略できます。複数ある場合は、`:http` や `80` のように TCP の Service ポートを名前または番号で指定します。既定は `path: "/"` と `path_type: :prefix` です。完全一致には `path_type: :exact`、IngressClass の選択には `class_name:` を使います。通信の処理はクラスタの Ingress コントローラーが行います。
+
+`sidecar("proxy", image: "proxy:1") { port 8443, name: "https" }` は Kubernetes の再起動可能なサイドカーを宣言します。後続の初期化コンテナより先にプロキシが起動し、`expose web, ports: {https: 443}` からそのポートを参照できます。
+
+ワークロードのブロックに `spread_across "topology.kubernetes.io/zone"` と書くと、ゾーン間の Pod 数の差を最大 1 に抑えます。後から書いた `matchExpressions` も含め、ワークロードのセレクターをそのまま使います。均等配置が難しいときも起動を優先するなら `when_unsatisfiable: :schedule_anyway` を指定します。
+
+`autoscale web, replicas: 2..8, cpu: 70` と書くと、同じ名前空間に HorizontalPodAutoscaler を生成します。CPU 使用率がリクエストの 70% になるように、2〜8 レプリカの範囲で調整します。HPA に台数を任せるときは Deployment の `replicas` を省き、コンテナに CPU リクエストを設定します。稼働中の調整にはリソースメトリクス API が必要です。
+
+プロキシのサイドカーを持つ Deployment で、アプリの負荷を基準に台数を変えたいときは、`autoscale web, replicas: 2..8, cpu: 70, container: :api` と書けます。CPU やメモリの使用率を指定コンテナだけで計算します。
+
+RBS 対応エディタに gem の `sig/` を読み込むと、宣言やヘルパーのメソッド名を補完し、キーワード引数と型を参照できます。`:api` のようにマニフェスト内で宣言した名前は評価時に解決されます。コンテナ名を書き間違えると Ruby の行番号と指定できる名前を表示します。
+
+Ruby マニフェストのトップレベルと `in_namespace` のブロックでは、`self` は `Rubernetes::Manifest::Builder` です。`resource` のブロックでは `Rubernetes::Manifest::ObjectBuilder` になります。Steep では Ruby のブロック内でレシーバーの型を指定します。この例の `tap` では、マニフェストのレシーバーをそのまま使えます。
+
+```ruby
+tap do
+  # @type self: Rubernetes::Manifest::Builder
+  web = deployment :web, namespace: :preview do
+    container :api, image: "nginx:1.27" do
+      port 80, name: "http"
+      cpu request: "100m"
+    end
+  end
+
+  frontend = expose web, ports: {http: 80}
+  ingress_for frontend, host: "web.example.test", port: :http
+  autoscale web, replicas: 2..8, cpu: 70, container: :api
+  disruption_budget web, max_unavailable: "25%"
+end
+```
+
+インストール済みの gem は `rbs -r rubernetes method Rubernetes::Manifest::Builder autoscale`、リポジトリでは `bundle exec rbs -I sig method Rubernetes::Manifest::Builder autoscale` でシグネチャを確認できます。
+
+`rubectl plan -f web.rb --allow-code` は現在のクラスタで各宣言を server-side apply の dry-run にかけ、作成・更新・変更なしを表示します。たとえば `rollout_on` の対象データを編集すると、ConfigMap のキーと Deployment の Pod テンプレートが更新対象に出ます。出力には変更されるフィールドのパスだけが並ぶので、Secret の値を表示せずに確認できます。 `-o text` を付けると、`web.rb:8  UPDATE Deployment/prod/web` のように宣言のファイルと行を示し、その下に変更フィールドを並べます。
+
+`plan` や `apply` で API が Ruby マニフェストのリソースを拒否すると、rubectl は種類・名前と宣言元の相対パス・行番号を表示し、Secret の値を伏せた API エラーを続けて出力します。
+
+別の field manager が所有する ConfigMap のキーを変更すると、競合の詳細に所有者とフィールド名が出ます。`rubectl plan -f app.rb --allow-code -o text --field-manager ruby-two --force` で所有権を引き継いだ場合の差分を確認できます。変更は同じ field manager と `--force` を指定して `apply` した時点で反映されます。
 
 ```sh
 ruby -Ilib exe/rubectl render -f web.rb --allow-code -o yaml | kubectl apply -f -
@@ -272,6 +419,25 @@ web.rb:9: containers.nginx.readinessProbe.httpGet: HTTPGetAction has no field "p
 ```
 
 繰り返し、条件分岐、共通部分のメソッド化には、Rubyをそのまま使います。ファイルは、ネットワークとクラスタの資格情報を持たない別プロセスで評価されます。例は[examples/manifests/](examples/manifests/README.ja.md)に、仕様は[spec/ruby/manifest-dsl.md](spec/ruby/manifest-dsl.md)にあります。
+
+### CronJob の起動予定を確認する
+
+CronJob を適用する前に起動予定を確認できます。次の宣言を `nightly.rb` に保存します。
+
+```ruby
+cron_job "nightly", namespace: "default" do
+  schedule "30 1 * * *"
+  time_zone "America/New_York"
+  container("report", image: "busybox:1.36") { command ["echo", "ready"] }
+end
+```
+
+```sh
+rubectl cron -f nightly.rb --allow-code --from 2026-11-01T04:45:00Z --count 2
+rubectl apply -f nightly.rb --allow-code
+```
+
+`cron` はクラスタに接続せず、指定した RFC3339 時刻より後の予定を CronJob ごとに既定で5件表示します。この例は夏時間の終了により、同じ日の `01:30:00-04:00` と `01:30:00-05:00` を表示します。表示には宣言した `time_zone` を使い、省略時は UTC です。`@every` は `--from` を起点に計算します。Job の作成時には、コントローラーが一時停止、同時実行ポリシー、開始期限も確認します。
 
 ## リポジトリ構成
 
@@ -302,7 +468,8 @@ rake test                        # 直列実行。約1時間。証拠ゲート�
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
 rake lint                        # RuboCop。160桁、ダブルクォート
 rake lint:fix                    # 安全な自動修正だけを適用。実行後はテストを回す
-rake rbs:validate                # 手書きのRBSを検証
+rake rbs:generate                # スキーマ更新後に Manifest のリソース宣言の型を再生成
+rake rbs:validate                # 実際の DSL と型宣言の一致を確認し、RBS を検証
 ```
 
 コードを変更するときは次の決まりを守ってください。
@@ -387,7 +554,13 @@ Linux x86_64だけに対応しています。arm64は検証していません。
 
 ### ネットワーク
 
-Podネットワークの既定は内蔵のbridgeデータパスです。エージェントの設定で`network.plugin: cni`を指定すると、代わりにCNIプラグインを実行します。この構成はConformanceでは検証していません。IPv6専用クラスタにNAT64はありません。クラウドプロバイダとの連携もありません。そのためLoadBalancer Serviceは、外部から設定しない限りpendingのままです。
+Podネットワークの既定は内蔵のbridgeです。エージェントの設定で`network.plugin: cni`を指定するとCNIプラグインを実行できます。Conformanceでは内蔵のbridgeを使っています。
+
+IPv6専用クラスタでは、`rubectl cluster up --ip-family ipv6 --nat64-prefix CIDR`で既存のNAT64ゲートウェイを利用できます。クラスタを起動する前に、そのプレフィックス宛てのIPv6通信がゲートウェイに届くようにノードの経路を設定します。詳細は[IPv6専用Podからの送信](spec/node/network.md#sec-5-9-9)を参照してください。
+
+Ruby では `expose web, ports: {http: 80}, type: :load_balancer, load_balancer_class: "rubernetes.io/routed", allocate_node_ports: false` と書くと、NodePort を消費せずに Service を公開できます。ベアメタルでは、`rubectl cluster up --load-balancer-pool CIDR` と `rubernetes.io/routed` クラスで、ルーティング済みのIPプールからLoadBalancer Serviceを公開できます。クラウド環境ではプロバイダが提供する外部Cloud Controller Managerを利用できます。設定手順は[LoadBalancer Services](deploy/cluster/README.md#loadbalancer-services)を参照してください。
+
+外部Cloud Controller Managerを使わないローカルクラスタでは、`rubectl cluster up --load-balancer-pool CIDR --default-routed-load-balancer` で、`spec.loadBalancerClass` を省略するチャートにもアドレスを割り当てられます。すでにプールを設定済みのクラスタでは、停止中に `config/controller-manager.yml` のコントローラ設定に `default_routed_load_balancer: true` を追加し、`rubectl cluster start` で再起動できます。
 
 ### 規模
 
@@ -395,11 +568,11 @@ Podネットワークの既定は内蔵のbridgeデータパスです。エー�
 
 ### メトリクス
 
-各コンポーネントの`/metrics`は、cadvisorとkube-proxyの分を含めてupstreamと同じメトリクス名を出力します。ただしapiserverの27件とkubeletの2件は値を出しません。Goランタイムの内部や、Rubernetesに対応する機能がないものを表すメトリクスだからです。この29件はHELPに「未実装」と書いて登録だけしてあり、upstream向けのダッシュボードをそのまま読み込めます。
+各コンポーネントの `/metrics` は、cAdvisor や kube-proxy を含む upstream のメトリクス名を公開します。etcd のリースや Windows HostProcess コンテナなど、該当する計測対象がない系列では、サンプルを出さない理由を HELP に記載します。コンポーネントごとの一覧は [metrics.rb](lib/rubernetes/observability/metrics.rb) にあります。
 
 ### Alpha API
 
-upstreamと同じく、`--runtime-config`で有効にしたときだけ提供します。alphaのfeature gateの多くには実装がありません。
+Alpha の API バージョンは `--runtime-config` で有効にし、必要に応じて対応する feature gate も有効にします。Kubernetes v1.36.2 のコーパスで Alpha に分類される44件について、対象の挙動、実装やテストへのリンク、特定のカーネル・ランタイム・デバイスでの確認が残る項目をまとめています。[Alpha feature gate の対応表](spec/verification/alpha-feature-gates.md)
 
 ### 証拠バンドル
 
