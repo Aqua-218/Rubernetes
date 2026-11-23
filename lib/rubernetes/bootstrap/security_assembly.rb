@@ -7,6 +7,7 @@ require "openssl"
 require "yaml"
 
 require_relative "../security"
+require_relative "../security/admission/static_manifest_source"
 require_relative "../extension/admission_plugin"
 
 module Rubernetes
@@ -19,21 +20,20 @@ module Rubernetes
     class SecurityAssembly
       CORPUS_ROOT = File.expand_path("../../../schema/kubernetes/v1.36.2-defaults", __dir__)
       BOOTSTRAP_ROOT = File.join(CORPUS_ROOT, "bootstrap")
-
-      attr_reader :pipeline, :tls_options, :service_account_issuer, :feature_gates, :bootstrap_objects
       # What kube-apiserver publishes in kube-system/extension-apiserver-authentication
       # (ClusterAuthenticationTrust): the client CA and the request-header
       # (front-proxy) settings extension API servers authenticate with.
       attr_reader :authentication_info
 
       def initialize(config:, store:, key_for:, logger: nil, clock: -> { Time.now.utc }, resource_resolver: nil, service_resolver: nil,
-                     scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil, extensions: false)
+                     scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil, extensions: false, namespace_creator: nil)
         @defaulter = defaulter
         @extensions = extensions
         @apiserver_id = apiserver_id || Socket.gethostname
         @reload_controllers = []
         @service_resolver = service_resolver
         @scope_resolver = scope_resolver
+        @namespace_creator = namespace_creator
         @type_resolver = type_resolver
         @config = config || {}
         @store = store
@@ -54,6 +54,7 @@ module Rubernetes
       attr_reader :external_jwt_signer
       # The node authorizer graph's feeder (started by the service once the store serves).
       attr_reader :node_graph_populator
+      attr_reader :pipeline, :tls_options, :service_account_issuer, :feature_gates, :bootstrap_objects, :flow_control_configuration
 
       def self.default_feature_gates
         document = JSON.parse(File.read(File.join(CORPUS_ROOT, "features.json")))
@@ -64,15 +65,87 @@ module Rubernetes
         self.class.default_feature_gates
       end
 
-      def self.bootstrap_documents
-        %w[clusterroles clusterrolebindings roles rolebindings flowschemas prioritylevelconfigurations
-           namespaces].each_with_object({}) do |name, documents|
+      def self.bootstrap_documents(feature_gates: {})
+        documents = %w[clusterroles clusterrolebindings roles rolebindings flowschemas prioritylevelconfigurations
+                       namespaces].each_with_object({}) do |name, result|
           path = File.join(BOOTSTRAP_ROOT, "#{name}.json")
           next unless File.file?(path)
 
-          documents[name] = JSON.parse(File.read(path)).fetch("items", [])
+          result[name] = JSON.parse(File.read(path)).fetch("items", [])
         end
+        install_controller_role_documents(documents, feature_gates)
+        documents
       end
+
+      POD_GROUP_READ_RULE = {"verbs" => %w[get list watch], "apiGroups" => ["scheduling.k8s.io"], "resources" => ["podgroups"]}.freeze
+      POD_GROUP_STATUS_RULE = {"verbs" => %w[patch update], "apiGroups" => ["scheduling.k8s.io"], "resources" => ["podgroups/status"]}.freeze
+      JOB_WORKLOAD_RULE = {"verbs" => %w[create get list watch], "apiGroups" => ["scheduling.k8s.io"], "resources" => %w[podgroups workloads]}.freeze
+      WORKLOAD_CLAIM_RULES = [
+        POD_GROUP_READ_RULE, POD_GROUP_STATUS_RULE
+      ].freeze
+
+      def self.feature_gate_role_rules(gates)
+        additions = {}
+        if gates["GenericWorkload"] == true
+          additions["system:kube-scheduler"] = [POD_GROUP_READ_RULE, POD_GROUP_STATUS_RULE]
+          additions["system:aggregate-to-view"] = [POD_GROUP_READ_RULE.merge("resources" => %w[podgroups podgroups/status workloads])]
+          edit_rule = POD_GROUP_READ_RULE.merge("verbs" => %w[create delete deletecollection patch update], "resources" => %w[podgroups workloads])
+          additions["system:aggregate-to-edit"] = [edit_rule]
+        end
+        additions["system:controller:job-controller"] = [JOB_WORKLOAD_RULE] if gates["WorkloadWithJob"] == true
+        if gates["DRAWorkloadResourceClaims"] == true && gates.fetch("DynamicResourceAllocation", true) == true
+          additions["system:controller:resource-claim-controller"] = WORKLOAD_CLAIM_RULES
+        end
+        additions
+      end
+
+      def self.install_controller_role_documents(documents, gates)
+        roles = documents.fetch("clusterroles", [])
+        feature_gate_role_rules(gates).each do |name, rules|
+          role = roles.find { |item| item.dig("metadata", "name") == name }
+          role&.fetch("rules")&.concat(rules)
+        end
+
+        # plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy.go
+        if gates["GenericWorkload"] == true
+          rules = [
+            POD_GROUP_READ_RULE.merge("verbs" => %w[get list update watch]),
+            {"verbs" => %w[get list watch], "apiGroups" => [""], "resources" => ["pods"]}
+          ]
+          add_controller_role(documents, "podgroup-protection-controller", rules)
+        end
+        if gates["StorageVersionAPI"] == true && gates.fetch("APIServerIdentity", true) == true
+          add_controller_role(documents, "storage-version-garbage-collector", [
+                                {"verbs" => %w[get list watch], "apiGroups" => ["coordination.k8s.io"], "resources" => ["leases"]},
+                                {"verbs" => %w[delete get list patch update watch], "apiGroups" => ["internal.apiserver.k8s.io"],
+                                 "resources" => ["storageversions"]},
+                                {"verbs" => %w[get patch update], "apiGroups" => ["internal.apiserver.k8s.io"], "resources" => ["storageversions/status"]}
+                              ])
+        end
+        return unless gates["DRAResourcePoolStatus"] == true && gates.fetch("DynamicResourceAllocation", true) == true
+
+        rules = [
+          {"verbs" => %w[delete get list watch], "apiGroups" => ["resource.k8s.io"], "resources" => ["resourcepoolstatusrequests"]},
+          {"verbs" => %w[patch update], "apiGroups" => ["resource.k8s.io"], "resources" => ["resourcepoolstatusrequests/status"]},
+          {"verbs" => %w[get list watch], "apiGroups" => ["resource.k8s.io"], "resources" => ["resourceslices"]},
+          {"verbs" => %w[get list watch], "apiGroups" => ["resource.k8s.io"], "resources" => ["resourceclaims"]},
+          {"verbs" => %w[create patch update], "apiGroups" => ["", "events.k8s.io"], "resources" => ["events"]}
+        ]
+        add_controller_role(documents, "resourcepoolstatusrequest-controller", rules)
+      end
+
+      def self.add_controller_role(documents, controller, rules)
+        role_name = "system:controller:#{controller}"
+        metadata = {"name" => role_name, "labels" => {"kubernetes.io/bootstrapping" => "rbac-defaults"},
+                    "annotations" => {"rbac.authorization.kubernetes.io/autoupdate" => "true"}}
+        documents.fetch("clusterroles", []) << {"metadata" => metadata, "rules" => rules}
+        documents.fetch("clusterrolebindings", []) << {
+          "metadata" => metadata,
+          "subjects" => [{"kind" => "ServiceAccount", "namespace" => "kube-system", "name" => controller}],
+          "roleRef" => {"apiGroup" => "rbac.authorization.k8s.io", "kind" => "ClusterRole", "name" => role_name}
+        }
+      end
+      private_class_method :install_controller_role_documents, :add_controller_role
 
       private
 
@@ -96,21 +169,8 @@ module Rubernetes
         authenticators = []
         client_cas = []
         @authentication_info = {client_ca: [], request_header: nil}
-        if authn["request_header"]
-          rh = authn["request_header"]
-          ca = load_certificates(rh.fetch("ca_file"))
-          client_cas.concat(ca)
-          @authentication_info[:request_header] = {
-            ca: ca, allowed_names: Array(rh["allowed_names"]).map(&:to_s),
-            username_headers: Array(rh["username_headers"] || ["X-Remote-User"]), uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]),
-            group_headers: Array(rh["group_headers"] || ["X-Remote-Group"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"])
-          }
-          authenticators << Security::Authentication::RequestHeader.new(
-            ca_certificates: ca, allowed_names: Array(rh["allowed_names"]),
-            username_headers: Array(rh["username_headers"] || ["X-Remote-User"]), group_headers: Array(rh["group_headers"] || ["X-Remote-Group"]),
-            uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"]),
-            clock: @clock
-          )
+        if (request_header = authn["request_header"])
+          authenticators << build_request_header_authenticator(request_header, client_cas)
         end
         if authn["client_ca_file"]
           ca = load_certificates(authn["client_ca_file"])
@@ -127,36 +187,8 @@ module Rubernetes
           })
         }
         authenticators << cache_token.call(Security::Authentication::StaticTokenFile.load(authn["token_file"])) if authn["token_file"]
-        if authn["service_account"]
-          sa = authn["service_account"]
-          external_signer = nil
-          max_expiration = sa["max_expiration_seconds"]
-          if sa["signing_endpoint"]
-            external_signer = Security::Authentication::ExternalJWTSigner.new(socket: sa["signing_endpoint"], issuer: sa.fetch("issuer"),
-                                                                              allow_signing_with_non_oidc_keys: sa["allow_signing_with_non_oidc_keys"] == true,
-                                                                              clock: @clock, logger: @logger)
-            external_signer.start!
-            @external_jwt_signer = external_signer
-            signer_max = external_signer.max_token_expiration_seconds
-            max_expiration = [max_expiration, signer_max.positive? ? signer_max : nil].compact.min
-            signing_key = nil
-            verification = []
-          else
-            signing_key = OpenSSL::PKey.read(File.binread(sa.fetch("signing_key_file")))
-            verification = Array(sa["key_files"]).map { |path| OpenSSL::PKey.read(File.binread(path)) }
-          end
-          audiences = Array(sa["api_audiences"]).empty? ? [sa.fetch("issuer")] : Array(sa["api_audiences"])
-          lookup = Security::Authentication::ServiceAccount::Lookup.new(
-            service_account: ->(namespace, name) { read_object("serviceaccounts", namespace, name) },
-            pod: ->(namespace, name) { read_object("pods", namespace, name) },
-            secret: ->(namespace, name) { read_object("secrets", namespace, name) },
-            node: ->(_namespace, name) { read_object("nodes", nil, name) }
-          )
-          @service_account_issuer = Security::Authentication::ServiceAccount.new(
-            issuer: sa.fetch("issuer"), signing_key: signing_key, verification_keys: verification.empty? ? nil : verification,
-            api_audiences: audiences, lookup: lookup, clock: @clock, max_expiration_seconds: max_expiration, external_signer: external_signer,
-            secret_writer: ->(namespace, name, labels) { merge_labels("secrets", namespace, name, labels) }
-          )
+        if (service_account = authn["service_account"])
+          @service_account_issuer = build_service_account_issuer(service_account)
           authenticators << cache_token.call(@service_account_issuer)
         end
         if authn["bootstrap_tokens"] == true
@@ -217,6 +249,64 @@ module Rubernetes
           )
         end
         union
+      end
+
+      def build_service_account_issuer(settings)
+        account = Security::Authentication::ServiceAccount
+        max_expiration = settings.fetch("max_expiration_seconds", 0)
+        max_extended_expiration = account::EXPIRATION_EXTENSION_SECONDS
+        issuer = settings.fetch("issuer")
+        audiences = Array(settings["api_audiences"])
+        audiences = [issuer] if audiences.empty?
+
+        if settings["signing_endpoint"]
+          signer = Security::Authentication::ExternalJWTSigner.new(socket: settings.fetch("signing_endpoint"), issuer: issuer,
+                                                                   allow_signing_with_non_oidc_keys: settings["allow_signing_with_non_oidc_keys"] == true,
+                                                                   clock: @clock, logger: @logger)
+          signer_maximum = signer.max_token_expiration_seconds
+          if signer_maximum < account::MIN_EXPIRATION_SECONDS
+            raise Security::Authentication::ExternalJWTSigner::Error,
+                  "max token life supported by external-jwt-signer (#{signer_maximum}s) is less than acceptable (min #{account::MIN_EXPIRATION_SECONDS}s)"
+          end
+          if max_expiration > signer_maximum
+            raise Security::Authentication::ExternalJWTSigner::Error,
+                  "service-account-max-token-expiration cannot be set longer than the token expiration supported by service-account-signing-endpoint"
+          end
+          max_expiration = signer_maximum if max_expiration.zero?
+          max_extended_expiration = [max_extended_expiration, signer_maximum].min
+          @external_jwt_signer = signer.start!
+        else
+          signing_key = OpenSSL::PKey.read(File.binread(settings.fetch("signing_key_file")))
+          verification_keys = Array(settings["key_files"]).map { |path| OpenSSL::PKey.read(File.binread(path)) }
+        end
+
+        lookup = account::Lookup.new(
+          service_account: ->(namespace, name) { read_object("serviceaccounts", namespace, name) },
+          pod: ->(namespace, name) { read_object("pods", namespace, name) },
+          secret: ->(namespace, name) { read_object("secrets", namespace, name) },
+          node: ->(_namespace, name) { read_object("nodes", nil, name) }
+        )
+        account.new(issuer: issuer, signing_key: signing_key, verification_keys: verification_keys,
+                    api_audiences: audiences, lookup: lookup, clock: @clock, max_expiration_seconds: max_expiration,
+                    extend_expiration: settings.fetch("extend_expiration", true), max_extended_expiration_seconds: max_extended_expiration,
+                    external_signer: signer, secret_writer: ->(namespace, name, labels) { merge_labels("secrets", namespace, name, labels) })
+      end
+
+      def build_request_header_authenticator(rh, client_cas)
+        ca = load_certificates(rh.fetch("ca_file"))
+        client_cas.concat(ca)
+        @authentication_info[:request_header] = {
+          ca: ca, allowed_names: Array(rh["allowed_names"]).map(&:to_s),
+          username_headers: Array(rh["username_headers"] || ["X-Remote-User"]), uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]),
+          group_headers: Array(rh["group_headers"] || ["X-Remote-Group"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"])
+        }
+        Security::Authentication::RequestHeader.new(
+          ca_certificates: ca, allowed_names: Array(rh["allowed_names"]),
+          username_headers: Array(rh["username_headers"] || ["X-Remote-User"]), group_headers: Array(rh["group_headers"] || ["X-Remote-Group"]),
+          uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"]),
+          peer_proxy: @feature_gates.fetch("UnknownVersionInteroperabilityProxy", true) && @feature_gates.fetch("APIServerIdentity", true),
+          clock: @clock
+        )
       end
 
       def service_account_issuers(authn)
@@ -459,12 +549,16 @@ module Rubernetes
         return nil if apf.is_a?(Hash) && apf["enabled"] == false
 
         documents = self.class.bootstrap_documents
-        Security::FlowControl::Controller.new(
+        controller = Security::FlowControl::Controller.new(
           flow_schemas: documents.fetch("flowschemas", []), priority_level_configurations: documents.fetch("prioritylevelconfigurations", []),
           read_seats: (apf || {}).fetch("read_seats", Security::FlowControl::Controller::DEFAULT_READ_SEATS),
           mutating_seats: (apf || {}).fetch("mutating_seats", Security::FlowControl::Controller::DEFAULT_MUTATING_SEATS),
           object_stats: store_object_stats
         )
+        @flow_control_configuration = Security::FlowControl::ConfigurationReconciler.new(
+          controller: controller, store: @store, key_for: @key_for, clock: @clock, logger: @logger
+        )
+        controller
       end
 
       def build_admission(admission)
@@ -473,6 +567,7 @@ module Rubernetes
         context = Security::Admission::Context.new(store: @store, key_for: @key_for, clock: @clock, feature_gates: @feature_gates,
                                                    authorizer: @pipeline_authorizer, resource_resolver: @resource_resolver,
                                                    scope_resolver: @scope_resolver, type_resolver: @type_resolver, defaulter: @defaulter,
+                                                   namespace_creator: @namespace_creator,
                                                    cel: Security::CEL::Evaluator.new(library: Security::CEL::Library.new(authorizer: @pipeline_authorizer)))
         config = (admission&.fetch("config", nil) || {}).dup
         if @service_resolver
@@ -480,14 +575,35 @@ module Rubernetes
             config[plugin] = (config[plugin] || {}).merge("service_resolver" => @service_resolver)
           end
         end
-        chain = Security::Admission::Registry.default_chain(context: context, enable: Array(admission&.fetch("enable", nil)),
-                                                            disable: Array(admission&.fetch("disable", nil)),
+        enable = Array(admission&.fetch("enable", nil))
+        disable = Array(admission&.fetch("disable", nil))
+        configure_admission_manifests(config, enable, disable)
+        chain = Security::Admission::Registry.default_chain(context: context, enable: enable, disable: disable,
                                                             config: config, feature_gates: @feature_gates)
         return chain unless @extensions
 
         # Not one of upstream's plugins, so not in the pinned order: after all
         # of them.
         Security::Admission::Chain.new(plugins: chain.plugins + [Extension::AdmissionPlugin.new(context: context, logger: @logger)])
+      end
+
+      def configure_admission_manifests(config, enable, disable)
+        source_class = Security::Admission::StaticManifestSource
+        enabled = (Security::Admission::Registry.default_on(feature_gates: @feature_gates) + enable) - disable
+        source_class::PLUGINS.each_key do |plugin|
+          next unless enabled.include?(plugin)
+
+          options = config[plugin] || {}
+          raise Security::ConfigurationError, "#{plugin} admission configuration must be a mapping" unless options.is_a?(Hash)
+
+          path = options.fetch("staticManifestsDir", "")
+          next if path == ""
+
+          source = source_class.new(plugin: plugin, path: path, feature_enabled: @feature_gates[source_class::GATE] == true,
+                                    apiserver_id: @apiserver_id, logger: @logger, clock: @clock)
+          @reload_controllers << source
+          config[plugin] = options.merge("manifest_source" => source)
+        end
       end
 
       # ------------------------------------------------------------ helpers
