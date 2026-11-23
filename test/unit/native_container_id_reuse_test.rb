@@ -48,4 +48,46 @@ class NativeContainerIdReuseTest < Minitest::Test
 
     assert_equal("chosen", box.create_container(spec: {"name" => "app"}, id: "chosen").id)
   end
+
+  def test_kubelet_leaf_uses_the_reported_id_and_recovers_legacy_containers
+    pod_uid = "1a111111-1111-4111-8111-111111111111"
+    box, layout = kubelet_sandbox(pod_uid)
+    legacy_id = "#{box.id}.container-8"
+    legacy_leaf = container_path(layout, box, legacy_id)
+    box.restore_container_sequence([legacy_id])
+
+    id = box.next_container_id
+
+    assert id.end_with?("-container-9")
+    refute_includes id, pod_uid
+    assert_equal id, File.basename(container_path(layout, box, id))
+    assert_equal "rbn-aaa000000001-container-8", File.basename(legacy_leaf)
+
+    restarted, = kubelet_sandbox(pod_uid)
+    restarted.restore_container_sequence([legacy_id, id])
+
+    assert_equal legacy_leaf, container_path(layout, restarted, legacy_id)
+    assert restarted.next_container_id.end_with?("-container-10")
+  end
+
+  def test_kubelet_ids_do_not_collide_between_pods_with_the_same_generation
+    first, = kubelet_sandbox("1a111111-1111-4111-8111-111111111111")
+    second, = kubelet_sandbox("2b222222-2222-4222-8222-222222222222")
+
+    refute_equal first.next_container_id, second.next_container_id
+  end
+
+  private
+
+  def kubelet_sandbox(uid)
+    layout = Rubernetes::Platform::Linux::KubeletCgroupLayout.new("/dev/test-cgroups")
+    box = Sandbox.new(id: "pod#{uid}-aaa000000001", identity: "identity-#{uid}", config: {})
+    path = layout.path(qos: "guaranteed", pod_id: box.id, container_id: "sandbox", pod_uid: uid, sandbox: nil)
+    box.set_resources(cgroup: layout.handle(path))
+    [box, layout]
+  end
+
+  def container_path(layout, box, id)
+    layout.path(qos: "guaranteed", pod_id: box.id, container_id: box.cgroup_container_id(id), pod_uid: nil, sandbox: box.cgroup)
+  end
 end
