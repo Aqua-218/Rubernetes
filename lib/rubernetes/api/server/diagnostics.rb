@@ -7,6 +7,8 @@ module Rubernetes
       # /metrics and /metrics/slis, /statusz and /flagz, and the legacy
       # componentstatuses resource.
       module Diagnostics
+        attr_accessor :startup_health
+
         private
 
         COMPONENT_STATUS_SERVERS = [
@@ -74,15 +76,16 @@ module Rubernetes
 
         def zpage_response(page, request)
           accept = request.header("accept")
+          cbor = feature_gate_enabled?("CBORServingAndStorage")
           status, headers, body = if page == :statusz
                                     git = @version_info.fetch("gitVersion", "").to_s.delete_prefix("v")
                                     Observability::ZPages.statusz(
                                       component: "kube-apiserver", start_time: (@process_start ||= Observability::ZPages.process_start_time),
                                       binary_version: git, emulation_version: git.split(".").first(2).join("."), paths: STATUSZ_PATHS,
-                                      accept: accept
+                                      accept: accept, cbor: cbor
                                     )
                                   else
-                                    Observability::ZPages.flagz(component: "kube-apiserver", flags: @component_flags || {}, accept: accept)
+                                    Observability::ZPages.flagz(component: "kube-apiserver", flags: @component_flags || {}, accept: accept, cbor: cbor)
                                   end
           Response.new(status: status, headers: headers.merge("cache-control" => "no-cache, private"), body: body)
         end
@@ -110,27 +113,51 @@ module Rubernetes
           @health_slis || HEALTH_SLIS_MUTEX.synchronize { @health_slis ||= Observability::HealthcheckSLIs.new }
         end
 
-        # The checks the root health handlers run: the handler itself (ping),
-        # and on /readyz the datastore (etcd-readiness).
-        def observe_health_checks(path, ready)
-          type = Observability::HealthcheckSLIs.type_for(path)
-          return unless type
+        HEALTH_HEADERS = {"content-type" => "text/plain; charset=utf-8", "cache-control" => "no-cache, private",
+                          "x-content-type-options" => "nosniff"}.freeze
 
-          health_slis.observe("ping", type, true)
-          health_slis.observe("etcd-readiness", type, ready) if type == "readyz"
+        def health_response(request, path)
+          _, type, check = path.split("/", 3)
+          checks = current_health_checks(type)
+          return individual_health_check(check, checks) unless check.nil? || check.empty?
+
+          excluded = request.query_values("exclude").uniq.sort
+          failures = []
+          lines = checks.map do |name, passed|
+            next "[+]#{name} excluded: ok" if excluded.include?(name)
+
+            health_slis.observe(name, type, passed)
+            next "[+]#{name} ok" if passed
+
+            failures << name
+            "[-]#{name} failed: reason withheld"
+          end
+          unknown = excluded - checks.keys
+          lines << "warn: some health checks cannot be excluded: no matches for #{unknown.map(&:inspect).join(",")}" unless unknown.empty?
+          return Response.new(status: 500, headers: HEALTH_HEADERS, body: "#{lines.join("\n")}\n#{type} check failed\n") unless failures.empty?
+
+          body = request.query.key?("verbose") ? "#{lines.join("\n")}\n#{type} check passed\n" : "ok"
+          Response.new(status: 200, headers: HEALTH_HEADERS, body: body)
         end
 
-        def health_response(path)
-          observe_health_checks(path, path != "/readyz" || ready?)
-          if path == "/readyz" && !ready?
-            return Response.new(status: 500, headers: {"content-type" => "text/plain; charset=utf-8",
-                                                       "cache-control" => "no-cache, private",
-                                                       "x-content-type-options" => "nosniff"}, body: "not ready")
+        def current_health_checks(type)
+          datastore = basic_datastore_ready?
+          checks = {"ping" => true, "log" => @startup_health.nil? || @startup_health.log_healthy?, "etcd" => datastore}
+          if @startup_health
+            checks.merge!(@startup_health.checks(readyz: type == "readyz"))
+            checks["poststarthook/storage-readiness"] = datastore if feature_gate_enabled?("WatchCacheInitializationPostStartHook")
           end
+          checks["etcd-readiness"] = datastore && storage_version_registered? if type == "readyz"
+          checks["storage-versions"] = storage_version_registered? if type == "healthz" && storage_version_reporting?
+          checks
+        end
 
-          Response.new(status: 200, headers: {"content-type" => "text/plain; charset=utf-8",
-                                              "cache-control" => "no-cache, private",
-                                              "x-content-type-options" => "nosniff"}, body: "ok")
+        def individual_health_check(name, checks)
+          return Response.new(status: 404, headers: HEALTH_HEADERS, body: "404 page not found\n") unless checks.key?(name)
+          return Response.new(status: 200, headers: HEALTH_HEADERS, body: "ok") if checks.fetch(name)
+
+          reason = name.start_with?("poststarthook/") ? "not finished" : "#{name} is not ready"
+          Response.new(status: 500, headers: HEALTH_HEADERS, body: "internal server error: #{reason}\n")
         end
       end
     end
