@@ -59,6 +59,21 @@ class ResourceClaimControllerTest < Minitest::Test
      "spec" => {"devices" => {"requests" => []}}, "status" => status}
   end
 
+  def test_a_pod_in_another_namespace_cannot_release_a_generated_claim
+    owner = pod
+    claim = {"apiVersion" => "resource.k8s.io/v1", "kind" => "ResourceClaim",
+             "metadata" => {"name" => "generated", "namespace" => "ns",
+                            "ownerReferences" => [Controller::Support.owner_reference(owner)]}}
+    other = pod
+    other.fetch("metadata").merge!("namespace" => "other", "uid" => "different")
+
+    assert_empty controller.plan(claim, pods: [other, owner]).operations
+    replacement = pod
+    replacement["metadata"]["uid"] = "replacement"
+
+    assert_equal [:delete], controller.plan(claim, pods: [other, replacement]).operations.map(&:action)
+  end
+
   def test_a_claim_is_created_from_the_template_and_recorded_in_the_pod_status
     result = controller.plan(pod, claims: [], templates: [template])
     create, status = result.operations
@@ -75,6 +90,16 @@ class ResourceClaimControllerTest < Minitest::Test
     assert_equal template.dig("spec", "spec"), created["spec"]
     assert_equal :status_update, status.action
     assert_equal({"resourceClaimStatuses" => [{"name" => "gpu", "resourceClaimName" => created.dig("metadata", "name")}]}, status.patch)
+  end
+
+  def test_registered_controller_uses_the_identity_that_selects_pod_status_apply
+    definition = Controller::AdvancedMiscControllerFactory.definition("resourceclaim-controller")
+    registered = Controller::DefinitionController.new(definition, store: nil)
+
+    result = registered.plan(pod, claims: [], templates: [template])
+
+    assert_equal "resourceclaim-controller", result.controller
+    assert_equal %i[create status_update], result.operations.map(&:action)
   end
 
   def test_nothing_to_do_once_the_claim_exists_and_is_recorded
