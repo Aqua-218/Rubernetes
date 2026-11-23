@@ -66,6 +66,7 @@ module NodeAgentFakes
     def records = {}
     def admitted_pods(**) = []
     def pods_on_node = []
+    def image_roots_in_use = []
     def running_pod_uids = []
     def container_states(_uid) = []
 
