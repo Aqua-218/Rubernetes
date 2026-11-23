@@ -1,9 +1,16 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "json"
 
+require_relative "../schema/kubernetes_validator/formats"
 require_relative "schema"
 require_relative "workload"
+require_relative "expose"
+require_relative "ingress_for"
+require_relative "autoscale"
+require_relative "disruption_budget"
 
 module Rubernetes
   module Manifest
@@ -11,11 +18,18 @@ module Rubernetes
     # method (`deployment`, `config_map`, ...), generated from the schema
     # registry; inside its block every field of the kind is one too.
     class Builder
+      include Expose
+      include IngressFor
+      include Autoscale
+      include DisruptionBudget
+
       RESERVED_METHODS = (
         BasicObject.instance_methods + Object.instance_methods + Kernel.instance_methods +
-        %i[resource result object schema_definition append_resource]
+        %i[resource result declaration_lines object schema_definition append_resource expose ingress_for autoscale disruption_budget in_namespace check]
       ).map(&:to_s).uniq.freeze
       OBJECT_META = "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+      NAMESPACE_UNSET = Object.new.freeze
+      private_constant :NAMESPACE_UNSET
 
       attr_reader :result
 
@@ -31,11 +45,30 @@ module Rubernetes
       # message names the line of the manifest and what was meant, in one
       # line -- what the isolated worker can hand back.
       def evaluate(source, filename)
+        previous_source = @source_name
+        previous_checks = @manifest_checks
+        previous_resources = result.dup
+        previous_lines = @declaration_lines.dup
+        @source_name = filename
+        @manifest_checks = []
         instance_eval(source, filename, 1)
+        verify_manifest_checks unless @manifest_checks.empty?
+        completed = true
         result
+      rescue SyntaxError => error
+        require "prism"
+        detail = Prism.parse(source).errors.first
+        raise Error, "#{File.basename(filename)}:#{detail&.location&.start_line || 1}: #{detail&.message || error.message.lines.first.to_s.strip}"
       rescue Error, NameError, ArgumentError, TypeError, KeyError => error
         line = error.backtrace&.filter_map { |frame| frame[/\A#{Regexp.escape(filename)}:(\d+)/, 1] }&.first
         raise Error, "#{File.basename(filename)}#{":#{line}" if line}: #{describe(error)}"
+      ensure
+        unless completed
+          result.replace(previous_resources)
+          @declaration_lines = previous_lines
+        end
+        @source_name = previous_source
+        @manifest_checks = previous_checks
       end
 
       def initialize(registry:, definitions:)
@@ -43,10 +76,37 @@ module Rubernetes
         @schema = Schema.new(definitions)
         @types = registry.fetch("types")
         @result = []
+        @declaration_lines = {}.compare_by_identity
         extend(build_resource_methods)
       end
 
-      def resource(api_version:, kind:, name:, namespace: nil, **metadata, &block)
+      # Lines follow the returned objects if a manifest changes their order.
+      def declaration_lines = result.map { |object| @declaration_lines[object] }
+
+      # Defer whole-manifest checks so declarations can appear in any order.
+      def check(description, &predicate)
+        raise Error, "check needs a non-empty description and a block" unless description.is_a?(String) && !description.strip.empty? && predicate
+        raise Error, "check must be declared while evaluating a manifest" unless @manifest_checks
+
+        @manifest_checks << [description, declaration_line, predicate]
+        nil
+      end
+
+      def in_namespace(name)
+        previous_namespace = @manifest_namespace
+        raise Error, "in_namespace requires a block" unless block_given?
+
+        name = String(name)
+        messages = Rubernetes::Schema::KubernetesValidator.dns1123_label_messages(name)
+        raise Error, "invalid namespace #{name.inspect}: #{messages.join(", ")}" unless messages.empty?
+
+        @manifest_namespace = name.dup.freeze
+        yield
+      ensure
+        @manifest_namespace = previous_namespace
+      end
+
+      def resource(api_version:, kind:, name:, namespace: NAMESPACE_UNSET, **metadata, &block)
         group, version = split_api_version(api_version)
         type = @types.find do |entry|
           entry.fetch("gvks").any? do |gvk|
@@ -55,6 +115,7 @@ module Rubernetes
         end
         raise Error, "unknown GVK #{api_version}/#{kind}" unless type
 
+        namespace = manifest_namespace_for(group, version, kind) if namespace.equal?(NAMESPACE_UNSET)
         object = {"apiVersion" => api_version, "kind" => kind,
                   "metadata" => @schema.object(OBJECT_META, metadata, "metadata").merge("name" => String(name))}
         object.fetch("metadata")["namespace"] = String(namespace) if namespace
@@ -63,10 +124,37 @@ module Rubernetes
         context.instance_exec(&block) if block
         context.finish
         @result << deep_freeze(object)
+        @declaration_lines[object] = declaration_line if @source_name
         object
       end
 
       private
+
+      def verify_manifest_checks
+        resources = result.dup.freeze
+        @manifest_checks.freeze.each do |description, line, predicate|
+          location = ["#{@source_name}:#{line}"]
+          begin
+            passed = predicate.call(resources)
+          rescue StandardError => error
+            # Exception messages may contain resource data, including Secret values.
+            raise Error, "check #{description.inspect} raised #{error.class}", location
+          end
+          raise Error, "check failed: #{description}", location unless passed
+        end
+        raise Error, "a manifest check changed the resource list" unless resources == result
+      end
+
+      def manifest_namespace_for(group, version, kind)
+        return unless @manifest_namespace
+
+        namespaced = [group, version, kind, "Namespaced"]
+        @manifest_namespace if @registry.fetch("resources", []).any? { |entry| entry.values_at("group", "version", "kind", "scope") == namespaced }
+      end
+
+      def declaration_line
+        caller_locations.find { |location| location.path == @source_name }&.lineno
+      end
 
       # A method that does not exist is a field that does not exist: say
       # which type was being written and which of its fields is nearest.
@@ -104,8 +192,8 @@ module Rubernetes
         validate_method_name!(method_name)
         return if methods.method_defined?(method_name.to_sym, false)
 
-        methods.define_method(method_name) do |name, namespace: nil, **metadata, &block|
-          resource(api_version: api_version, kind: kind, name: name, namespace: namespace, **metadata, &block)
+        methods.define_method(method_name) do |name, **metadata, &block|
+          resource(api_version: api_version, kind: kind, name: name, **metadata, &block)
         end
       end
 
@@ -133,18 +221,7 @@ module Rubernetes
         api_version.include?("/") ? api_version.split("/", 2) : ["", api_version]
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
     end
 
     # The receiver inside a resource's block, and inside the block of any
