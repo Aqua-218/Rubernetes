@@ -39,7 +39,6 @@ module Rubernetes
         threshold = terminated_pod_gc_threshold if threshold.nil?
         threshold = DEFAULT_TERMINATED_POD_GC_THRESHOLD if threshold.nil?
         threshold = Integer(threshold)
-        raise ArgumentError, "terminated pod GC threshold must be non-negative" if threshold.negative?
 
         operations = []
         handled = {}
