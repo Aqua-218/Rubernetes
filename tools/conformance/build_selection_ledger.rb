@@ -15,6 +15,10 @@ require "json"
 require "optparse"
 require "time"
 
+require_relative "k3_internal_contract_index"
+require_relative "k3_local_volume_contract_index"
+require_relative "k3_csi_contract_index"
+
 module Conformance
   module SelectionLedger
     ROOT = File.expand_path("../..", __dir__)
@@ -38,21 +42,20 @@ module Conformance
     PLATFORM_TAGS = ["[WindowsOnly]", "[Feature:WindowsHostProcessContainers]",
                      "[Feature:Windows]", "[sig-windows]"].freeze
 
-    # Tests that assert Kubernetes' own process paths, Go-internal metrics or
-    # direct etcd manipulation rather than externally observable behaviour.
-    INTERNAL_MARKERS = [
-      "kubelet-serving", "[Feature:ComponentSLIs]", "componentstatuses",
-      "kube-apiserver", "kube-controller-manager", "kube-scheduler",
-      "etcd", "Kubelet Metrics", "apiserver metrics", "scheduler metrics",
-      "controller-manager metrics", "/metrics", "static pod", "kubelet config",
-      "GoRoutine", "golang", "pprof"
+    # These tests require a particular process or deployment layout. The
+    # neighboring public APIs and node proxy endpoints remain required.
+    INTERNAL_FILES = {
+      "test/e2e/apimachinery/apiserver_identity.go" => "restarts kube-apiserver by SSH on a GCE control-plane host",
+      "test/e2e/apimachinery/etcd_failure.go" => "disrupts an etcd process or its transport by SSH on a control-plane host",
+      "test/e2e/node/kubelet_perf.go" => "profiles the kubelet and runtime system containers by their upstream names"
+    }.freeze
+    COMPONENT_METRICS = [
+      "should grab all metrics from a Scheduler.",
+      "should grab all metrics from a ControllerManager."
     ].freeze
-    INTERNAL_FILES = %w[
-      test/e2e/instrumentation/monitoring
-      test/e2e/apimachinery/etcd
-      test/e2e/node/kubelet_
-      test/e2e/invariants
-    ].freeze
+    GCE_PROXY_MIGRATION = "test/e2e/cloud/gcp/network/kube_proxy_migration.go"
+    GCE_PD_CSI = "[Driver: pd.csi.storage.gke.io]"
+    GCE_LOCAL_SSD = "[Driver: local] [LocalVolumeType: gce-localssd-scsi-fs]"
 
     module_function
 
@@ -98,21 +101,24 @@ module Conformance
 
     def classify(spec)
       name = spec_name(spec)
-      file = (spec["LeafNodeLocation"] || {})["FileName"].to_s.sub(%r{\A.*/kubernetes-v1\.36\.2/}, "")
+      file = (spec["LeafNodeLocation"] || {})["FileName"].to_s
+        .sub(%r{\A(?:.*/kubernetes-v1\.36\.2/|k8s\.io/kubernetes/)}, "")
       labels = (Array(spec["ContainerHierarchyLabels"]).flatten + Array(spec["LeafNodeLabels"])).compact.uniq
-      classification, reason, external, replacement =
+      classification, reason, external =
         if PLATFORM_TAGS.any? { |tag| name.include?(tag) } || labels.any? { |label| label.to_s.downcase.include?("windows") }
-          ["platform-inapplicable", "asserts a non-Linux platform only", false, nil]
+          ["platform-inapplicable", "asserts a non-Linux platform only", false]
+        elsif file == GCE_PROXY_MIGRATION
+          ["provider-private", "requires GCE upgrades that switch kube-proxy static Pods and DaemonSets", true]
+        elsif (provider = storage_provider_reason(file, name))
+          ["provider-private", provider, true]
         elsif PROVIDER_TAGS.any? { |tag| name.include?(tag) }
-          ["provider-private", "requires a specific cloud account, vendor hardware or provider-private API",
-           true, "test/conformance/kubernetes/m4_csi_cluster"]
-        elsif INTERNAL_FILES.any? { |prefix| file.start_with?(prefix) } ||
-              INTERNAL_MARKERS.any? { |marker| name.include?(marker) }
-          ["implementation-internal", "asserts Kubernetes process paths, Go-internal metrics or direct etcd state",
-           true, "test/conformance/kubernetes/m5_raft_cluster"]
+          ["provider-private", "requires a specific cloud account, vendor hardware or provider-private API", true]
+        elsif (internal = internal_reason(file, spec["LeafNodeText"]))
+          ["implementation-internal", internal, true]
         else
-          ["required", "exercises a public Linux cluster API or externally observable behaviour", false, nil]
+          ["required", "exercises a public Linux cluster API or externally observable behaviour", false]
         end
+      replacement_index, replacement_case = replacement_for(classification, name, file)
       {
         "id" => name,
         "file" => file,
@@ -120,9 +126,41 @@ module Conformance
         "classification" => classification,
         "reason" => reason,
         "external_contract" => external,
-        "replacement_test" => replacement,
+        "replacement_test" => replacement_case && replacement_index::RUNNER,
         "reviewer" => "tools/conformance/build_selection_ledger.rb"
-      }
+      }.tap { |entry| entry["replacement_case"] = replacement_case if replacement_case }
+    end
+
+    def replacement_for(classification, name, file)
+      case classification
+      when "implementation-internal"
+        [K3InternalContractIndex, K3InternalContractIndex::CASES[name]]
+      when "provider-private"
+        [K3LocalVolumeContractIndex, K3CSIContractIndex].each do |index|
+          replacement = index.case_for(name, file)
+          return [index, replacement] if replacement
+        end
+        nil
+      end
+    end
+
+    def storage_provider_reason(file, name)
+      return unless file.start_with?("test/e2e/storage/testsuites/")
+
+      # drivers/csi.go SkipUnsupportedTest only accepts gce and PrepareTest
+      # deploys the GCE PD CSI driver with provider credentials.
+      return "requires the GCE provider and its Persistent Disk CSI driver credentials" if name.include?(GCE_PD_CSI)
+
+      # drivers/in_tree.go PrepareTest checks for actual local SSDs mounted
+      # under /mnt/disks/by-uuid/google-local-ssds-scsi-fs.
+      "requires a mounted Google local SCSI SSD filesystem on the node" if name.include?(GCE_LOCAL_SSD)
+    end
+
+    def internal_reason(file, leaf)
+      return INTERNAL_FILES.fetch(file) if INTERNAL_FILES.key?(file)
+      return unless file == "test/e2e/instrumentation/monitoring/metrics_grabber.go" && COMPONENT_METRICS.include?(leaf)
+
+      "locates and proxies metrics from an upstream-named control-plane Pod"
     end
   end
 end
