@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../support/object_tree"
+
 require "json"
 require "time"
 require_relative "updater"
@@ -81,13 +83,7 @@ module Rubernetes
           set
         end
 
-        def deep_dup(value)
-          case value
-          when Hash then value.each_with_object({}) { |(key, item), out| out[key] = deep_dup(item) }
-          when Array then value.map { |item| deep_dup(item) }
-          else value
-          end
-        end
+        def deep_dup(value) = ObjectTree.copy(value)
 
         # DecodeManagedFields.
         def decode(entries)
@@ -391,7 +387,9 @@ module Rubernetes
           # Nobody owns metadata.managedFields (stripMeta), so leaving it out
           # of both sides changes nothing but the cost of the comparison.
           new_typed = typed(without_managed_fields(new_object))
-          live_typed = typed(without_managed_fields(live))
+          # The imported Go zero object already reflects omitempty. Its nulls
+          # are present fields (for example the required Pod containers list).
+          live_typed = typed(without_managed_fields(live), typed: !live.equal?(@zero_object))
           _, fields = @updater.update(live_typed, new_typed, @api_version, managed.fields, manager)
           Managed.new(fields, managed.times)
         end
