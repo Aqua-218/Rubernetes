@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../../http_probe_headers"
+require_relative "../probe_endpoint"
+
 module Rubernetes
   module Node
     class Lifecycle
@@ -13,16 +16,16 @@ module Rubernetes
           return if handler.nil?
 
           event(record, "postStart", name: entry[:name])
-          execute_hook(entry[:id], handler, record: record)
+          execute_hook(entry[:id], handler, ports: Helpers.key(entry[:spec], "ports", []), record: record)
         end
 
         # executePreStopHook runs within the grace period: a hook still running
         # when it ends is abandoned and the container killed.
-        def run_pre_stop_hooks(_pod, record, budget: nil)
+        def run_pre_stop_hooks(_pod, record, budget: nil, entries: record[:containers])
           return if budget && !budget.positive?
 
           deadline = budget && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + budget)
-          record[:containers].reverse_each do |entry|
+          entries.reverse_each do |entry|
             handler = Helpers.key(Helpers.key(entry[:spec], "lifecycle", {}), "preStop", nil)
             next if handler.nil? || !entry[:started]
 
@@ -30,8 +33,7 @@ module Rubernetes
             break unless remaining.positive?
 
             event(record, "preStop", name: entry[:name])
-            execute_hook(entry[:id], handler, timeout: deadline ? remaining : HOOK_TIMEOUT_SECONDS, record: record,
-                                              grace_bounded: !deadline.nil?)
+            execute_hook(entry[:id], handler, ports: Helpers.key(entry[:spec], "ports", []), timeout: remaining, record: record, grace_bounded: !deadline.nil?)
           end
         end
 
@@ -71,7 +73,7 @@ module Rubernetes
           drain&.join(1)
         end
 
-        def execute_hook(container_id, handler, timeout: HOOK_TIMEOUT_SECONDS, record: nil, grace_bounded: false)
+        def execute_hook(container_id, handler, ports: [], timeout: HOOK_TIMEOUT_SECONDS, record: nil, grace_bounded: false)
           definition = Helpers.string_keys(handler)
           if (exec = Helpers.key(definition, "exec", nil))
             command = Array(Helpers.key(exec, "command", []))
@@ -89,7 +91,8 @@ module Rubernetes
             # preStop hook calls another Pod over the network, and under load one
             # second is not enough to reach it -- and a hook that "fails" on a
             # timeout is a hook the workload never received.
-            http_hook(container_id, Helpers.string_keys(http), [timeout, HOOK_TIMEOUT_SECONDS].min, record)
+            action = http.merge("host" => ProbeEndpoint.host(http, record_pod_ip(record)), "port" => ProbeEndpoint.port(http["port"], ports))
+            http_hook(container_id, action, [timeout, HOOK_TIMEOUT_SECONDS].min, record)
           elsif (tcp = Helpers.key(definition, "tcpSocket", nil))
             raise LifecycleError, "runtime does not implement lifecycle TCP hook" unless runtime_supports?(:tcp_socket)
 
@@ -114,6 +117,10 @@ module Rubernetes
         HTTP_RESPONSE_TO_HTTPS = /server gave HTTP response to HTTPS client|wrong version number|packet length too long|record layer failure/i
 
         def http_hook(container_id, http, timeout, record)
+          headers = Array(http["httpHeaders"])
+          unless headers.any? { |item| Helpers.key(item, "name", "").to_s.casecmp?("User-Agent") }
+            http = http.merge("httpHeaders" => headers + [{"name" => "User-Agent", "value" => HTTPProbeHeaders::LIFECYCLE_AGENT}])
+          end
           invoke(@runtime, :http_get, container_id, http, timeout: timeout)
         rescue StandardError => error
           raise unless Helpers.key(http, "scheme", "").to_s.casecmp("HTTPS").zero? && error.message.match?(HTTP_RESPONSE_TO_HTTPS)
