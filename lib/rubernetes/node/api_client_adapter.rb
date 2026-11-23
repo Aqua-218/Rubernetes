@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 # Kubernetes REST adapter used by the node agent.  The node layer deliberately
 # speaks a small list/watch/apply/report contract; this class owns the concrete
 # Kubernetes resource paths and keeps subresource writes explicit.
@@ -8,6 +10,7 @@ require "json"
 require "uri"
 
 require_relative "../client/kubernetes_client"
+require_relative "status"
 
 module Rubernetes
   module Node
@@ -23,14 +26,15 @@ module Rubernetes
       # user agent ("kubelet").
       DEFAULT_FIELD_MANAGER = "kubelet"
 
-      attr_reader :client, :node_name, :lease_namespace, :field_manager
+      attr_reader :client, :node_name, :lease_namespace, :field_manager, :event_client
 
       # Whether this adapter created the Node object (kubelet's
       # RecordRegisteredNewNode); finding it already there does not count.
       def node_created? = @state_mutex.synchronize { @state[:created] == true }
 
       def initialize(client:, node_name:, lease_namespace: LEASE_NAMESPACE,
-                     field_manager: DEFAULT_FIELD_MANAGER)
+                     field_manager: DEFAULT_FIELD_MANAGER, external_cloud_provider: false, feature_gates: {},
+                     heartbeat_client: client, event_client: client)
         raise ArgumentError, "client is required" unless client
 
         @node_name = validate_path_segment(node_name, "node_name")
@@ -39,6 +43,10 @@ module Rubernetes
         raise ArgumentError, "field_manager must not be empty" if @field_manager.empty?
 
         @client = client
+        @heartbeat_client = heartbeat_client
+        @event_client = event_client
+        @external_cloud_provider = external_cloud_provider
+        @kubelet_condition_types = Status.kubelet_condition_types(feature_gates)
         # Whether the Node is known to exist and the latest Lease written
         # (the lease controller's latestLease), shared by the agent's
         # threads.
@@ -81,6 +89,10 @@ module Rubernetes
         stringify_keys(response_body(response))
       end
 
+      def group_version_resources(api_version)
+        stringify_keys(response_body(@client.get("/apis/#{api_version}")))
+      end
+
       # Returns an Enumerator when the client supports streaming watches.  A
       # bounded parsed watch is used for small injected clients that only expose
       # KubernetesClient#watch.
@@ -101,7 +113,7 @@ module Rubernetes
       # closing the underlying client is the ownership boundary that reaches a
       # closeable streaming response in that case.
       def close
-        @client.close if @client.respond_to?(:close)
+        [@client, @heartbeat_client, @event_client].uniq.each { |client| client.close if client.respond_to?(:close) }
         self
       end
 
@@ -109,10 +121,14 @@ module Rubernetes
       # created once; when it exists (409, or on every later report) its
       # labels, annotations and status go to the status subresource as a
       # patch (nodeutil.PatchNodeStatus), which leaves spec to its owners.
-      def register_node(node)
+      def register_node(node, create: true)
         object = normalize_object(node, expected_kind: "Node")
         name = metadata_name(object)
+        return patch_node(name, object) unless create
+
+        patch_client = @heartbeat_client
         unless @state_mutex.synchronize { @state[:node] }
+          patch_client = @client
           begin
             created = @client.create(object, api_version: POD_API_VERSION)
             @state_mutex.synchronize do
@@ -126,7 +142,7 @@ module Rubernetes
             @state_mutex.synchronize { @state[:node] = true }
           end
         end
-        patch_node(name, object)
+        patch_node(name, object, client: patch_client)
       rescue Client::APIError => error
         # The Node was deleted under us: register it again next time.
         @state_mutex.synchronize { @state[:node] = false } if error.status.to_i == 404
@@ -135,15 +151,17 @@ module Rubernetes
 
       alias apply_node register_node
 
-      def patch_node(name, object)
+      def patch_node(name, object, client: @heartbeat_client)
         body = {}
         metadata = (object["metadata"] || {}).slice("labels", "annotations")
         body["metadata"] = metadata unless metadata.empty?
         body["status"] = deep_copy(object["status"]) if object["status"]
+        # After registration the external CCM owns the node address list.
+        body["status"].delete("addresses") if @external_cloud_provider && body["status"]
         return nil if body.empty?
 
         path = "/api/#{POD_API_VERSION}/#{NODE_RESOURCE}/#{escape_path(name)}/status"
-        stringify_keys(response_body(@client.patch(path, body, type: :merge)))
+        stringify_keys(response_body(client.patch(path, body, type: :merge)))
       end
 
       # A merge patch of the Node's status subresource; nil values remove keys.
@@ -165,12 +183,17 @@ module Rubernetes
         begin
           attempts += 1
           latest = @state_mutex.synchronize { @state[:lease] } || read_lease(path)
-          written = if latest.nil?
-                      @client.create(object, namespace: namespace, api_version: LEASE_API_VERSION)
+          renewed = if latest
+                      latest.merge("spec" => (latest["spec"] || {}).merge(object["spec"] || {}),
+                                   "metadata" => latest.fetch("metadata").except("managedFields"))
                     else
-                      renewed = latest.merge("spec" => (latest["spec"] || {}).merge(object["spec"] || {}),
-                                             "metadata" => (latest["metadata"] || {}).except("managedFields"))
-                      @client.update(renewed, namespace: namespace, path: path)
+                      object
+                    end
+          renewed = with_node_lease_owner(renewed, name)
+          written = if latest
+                      @heartbeat_client.update(renewed, namespace: namespace, path: path)
+                    else
+                      @heartbeat_client.create(renewed, namespace: namespace, api_version: LEASE_API_VERSION)
                     end
           written = stringify_keys(response_body(written))
           @state_mutex.synchronize { @state[:lease] = written }
@@ -186,8 +209,21 @@ module Rubernetes
       alias apply_lease renew_lease
       alias update_lease renew_lease
 
+      # kubelet SetNodeOwnerFunc also repairs existing unowned leases.
+      def with_node_lease_owner(lease, name)
+        metadata = lease.fetch("metadata")
+        return lease unless Array(metadata["ownerReferences"]).empty?
+
+        node_path = "/api/#{POD_API_VERSION}/#{NODE_RESOURCE}/#{escape_path(name)}"
+        node = stringify_keys(response_body(@heartbeat_client.get(node_path)))
+        uid = node.fetch("metadata").fetch("uid")
+        owner = {"apiVersion" => POD_API_VERSION, "kind" => "Node", "name" => name, "uid" => uid}
+        lease.merge("metadata" => metadata.merge("ownerReferences" => [owner]))
+      end
+      private :with_node_lease_owner
+
       def read_lease(path)
-        stringify_keys(response_body(@client.get(path)))
+        stringify_keys(response_body(@heartbeat_client.get(path)))
       rescue Client::APIError => error
         raise unless error.status.to_i == 404
 
@@ -202,15 +238,20 @@ module Rubernetes
         status_object = normalize_mapping(status, "Pod status")
         namespace = metadata_value(object, "namespace", "default")
         name = metadata_name(object)
-        path = "/api/#{POD_API_VERSION}/namespaces/#{escape_path(namespace)}/#{POD_RESOURCE}/#{escape_path(name)}/status"
+        pod_path = "/api/#{POD_API_VERSION}/namespaces/#{escape_path(namespace)}/#{POD_RESOURCE}/#{escape_path(name)}"
+        path = "#{pod_path}/status"
         body = {"status" => deep_copy(status_object)}
         # The report names the Pod's UID so it cannot land on a later Pod of
         # the same name (kubelet's status manager checks the UID the same
-        # way); the API server answers a mismatch with 409.
+        # way); the API server rejects changes to this immutable field.
         uid = metadata_value(object, "uid", nil)
         body["metadata"] = {"uid" => uid.to_s} unless uid.nil? || uid.to_s.empty?
         if @client.respond_to?(:patch)
-          @client.patch(path, body, type: :merge)
+          if status_object.key?("conditions")
+            patch_pod_status_conditions(pod_path, object, body, uid)
+          else
+            @client.patch(path, body, type: :merge)
+          end
         elsif @client.respond_to?(:apply)
           @client.apply(
             {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => namespace, **(body["metadata"] || {})},
@@ -227,6 +268,58 @@ module Rubernetes
       alias report_status report
       alias apply_pod_status report
       alias status report
+
+      # A merge patch replaces the conditions array. Compose it from a Pod
+      # snapshot, and guard the write with the snapshot's resourceVersion.
+      # A status update raced by another writer gets a fresh snapshot.
+      def patch_pod_status_conditions(pod_path, pod, body, uid)
+        current = pod if pod["status"].is_a?(Hash) && !metadata_value(pod, "resourceVersion", "").empty?
+        attempts = 0
+        begin
+          attempts += 1
+          current ||= normalize_object(@client.get(pod_path), expected_kind: "Pod")
+          current_uid = metadata_value(current, "uid", nil)
+          return if uid && !uid.empty? && current_uid != uid
+
+          uid = current_uid
+          version = metadata_value(current, "resourceVersion", "")
+          raise ArgumentError, "Pod status snapshot is missing resourceVersion" if version.empty?
+
+          status = body.fetch("status")
+          conditions = merge_pod_status_conditions(pod, current, status)
+          patch = {"metadata" => {"uid" => uid, "resourceVersion" => version}.compact,
+                   "status" => status.merge("conditions" => conditions)}
+          @client.patch("#{pod_path}/status", patch, type: :merge)
+        rescue Client::APIError => error
+          raise unless error.status.to_i == 409 && attempts < 3
+
+          current = nil
+          retry
+        end
+      end
+      private :patch_pod_status_conditions
+
+      def merge_pod_status_conditions(pod, current, status)
+        external = Status.conditions_by_type(current.dig("status", "conditions"))
+          .reject { |type, _| @kubelet_condition_types.include?(type) }
+        reported = Status.conditions_by_type(status.fetch("conditions"))
+        managed = reported.select { |type, _| @kubelet_condition_types.include?(type) }
+        tail = %w[PodResizePending PodResizeInProgress].filter_map { |type| managed.delete(type) }
+
+        disruption = reported["DisruptionTarget"]
+        previous_disruption = Status.conditions_by_type(pod.dig("status", "conditions"))["DisruptionTarget"]
+        terminal = %w[Succeeded Failed]
+        # DisruptionTarget is shared. The lifecycle produces its own value
+        # only after containers have stopped on a forced terminal transition.
+        if disruption&.fetch("reason", nil) == "TerminationByKubelet" && disruption != previous_disruption &&
+           terminal.include?(status["phase"]) && !terminal.include?(current.dig("status", "phase"))
+          external.delete("DisruptionTarget")
+          tail << disruption
+        end
+
+        managed.values + external.values + tail
+      end
+      private :merge_pod_status_conditions
 
       # The final delete of a Pod the API server marked for deletion.  The
       # kubelet owns this step: the API server sets a deletionTimestamp and
@@ -358,16 +451,7 @@ module Rubernetes
         end
       end
 
-      def deep_copy(value)
-        case value
-        when Hash
-          value.to_h { |key, child| [key, deep_copy(child)] }
-        when Array
-          value.map { |child| deep_copy(child) }
-        else
-          value
-        end
-      end
+      def deep_copy(value) = ObjectTree.copy(value)
     end
 
     KubernetesAPIAdapter = APIClientAdapter unless const_defined?(:KubernetesAPIAdapter, false)
