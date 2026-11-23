@@ -12,6 +12,21 @@
     "sha256": "cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641",
     "test_count": 446
   },
+  "node_conformance": {
+    "label": "NodeConformance",
+    "inventories": {
+      "apparmor_disabled": {
+        "registered": 1197,
+        "selected": 477,
+        "selection_sha256": "aa379507fa0da4e333b3c4d9a16d2fcc10b71fe9416b08929d8f1bb3a8c5880f"
+      },
+      "apparmor_enabled": {
+        "registered": 1201,
+        "selected": 481,
+        "selection_sha256": "ad2a6e5e75fa766e78d3fc4ea8773dec0363112f4a30a2882ef1aa7b44c76a79"
+      }
+    }
+  },
   "conformance_image": {
     "reference": "registry.k8s.io/conformance:v1.36.2",
     "index_digest": "sha256:e86cfc45351bd6937c4744477a204130af2c822682b79465490d1cd2d1f7c246",
