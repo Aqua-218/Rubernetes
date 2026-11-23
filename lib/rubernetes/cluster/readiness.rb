@@ -40,6 +40,21 @@ module Rubernetes
         client&.close
       end
 
+      def pod_cidrs_published?(kubeconfig, assignments)
+        client = api_client(kubeconfig)
+        nodes = JSON.parse(client.raw("GET", "/api/v1/nodes").body).fetch("items", []).to_h do |node|
+          [node.dig("metadata", "name"), node["spec"]]
+        end
+        assignments.all? do |name, ranges|
+          spec = nodes[name]
+          spec && spec["podCIDR"] == ranges.first && spec["podCIDRs"] == ranges
+        end
+      rescue Client::Error, SystemCallError, OpenSSL::SSL::SSLError, JSON::ParserError
+        false
+      ensure
+        client&.close
+      end
+
       def await!(what)
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + ready_timeout
         until yield
