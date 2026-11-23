@@ -119,15 +119,19 @@ class APIUpdateHotPathTest < Minitest::Test
   # ---- no-op update detection -------------------------------------------------
 
   def test_noop_update_ignores_sub_second_times_and_leaves_the_request_alone
-    server = API::Server.new(registry: API::Registry.new, store: API::MemoryStore.new)
+    registry = API::Registry.new
+    server = API::Server.new(registry: registry, store: API::MemoryStore.new)
+    resource = registry.find_gvr(group: "", version: "v1", resource: "pods")
     stored = codec.truncate_times(pod).merge("metadata" => codec.truncate_times(pod)["metadata"].merge("resourceVersion" => "5"))
     submitted = pod.merge("metadata" => pod["metadata"].merge("resourceVersion" => "4"))
     snapshot = Marshal.load(Marshal.dump(submitted))
 
-    assert server.send(:noop_update?, submitted, stored)
+    normalized = server.send(:normalize_update_times, resource, submitted)
+
+    assert server.send(:noop_update?, normalized, stored)
     assert_equal snapshot, submitted
     changed = submitted.merge("spec" => submitted["spec"].merge("activeDeadlineSeconds" => 5))
 
-    refute server.send(:noop_update?, changed, stored)
+    refute server.send(:noop_update?, server.send(:normalize_update_times, resource, changed), stored)
   end
 end
