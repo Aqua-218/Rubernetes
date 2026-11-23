@@ -11,9 +11,13 @@ class NodeRestartExitRaceTest < Minitest::Test
   Node = Rubernetes::Node
 
   class Runtime
-    attr_accessor :on_start
+    attr_accessor :on_start, :on_status
 
-    def initialize = @sequence = 0
+    def initialize
+      @sequence = 0
+      @stopped = {}
+    end
+
     def run_sandbox(_pod, runtime_class: nil) = "sandbox-1"
     def create_container(_sandbox, _spec) = "container-#{@sequence += 1}"
 
@@ -22,10 +26,14 @@ class NodeRestartExitRaceTest < Minitest::Test
       true
     end
 
-    def stop_container(_id, timeout: nil) = true
+    def stop_container(id, timeout: nil) = @stopped[id] = true
     def remove_container(_id) = true
     def remove_sandbox(_id) = true
     def wait_container(_id) = {"state" => "terminated", "exitCode" => 0}
+
+    def container_status(id)
+      on_status&.call(id) || (@stopped[id] ? {"state" => "stopped", "exitCode" => 0} : {"state" => "running"})
+    end
   end
 
   def pod
@@ -53,5 +61,24 @@ class NodeRestartExitRaceTest < Minitest::Test
 
     assert_equal 1, status.fetch("restartCount")
     assert status.fetch("state").key?("terminated"), status.inspect
+  end
+
+  def test_relist_result_for_retired_container_does_not_restart_its_replacement
+    runtime = Runtime.new
+    lifecycle = Node::Lifecycle.new(runtime: runtime)
+    lifecycle.start(pod)
+    record = lifecycle.record(pod)
+    entry = record.fetch(:containers).first
+    runtime.on_status = lambda do |_id|
+      runtime.on_status = nil
+      lifecycle.replace_container_image(pod, record, entry, entry.fetch(:spec))
+      {"state" => "stopped", "exitCode" => 137}
+    end
+
+    lifecycle.observe_exits(record, pod)
+
+    assert_equal "container-2", entry.fetch(:id)
+    assert_equal 1, entry.fetch(:status).fetch("restartCount")
+    assert_equal "running", entry.fetch(:status).fetch("state")
   end
 end
