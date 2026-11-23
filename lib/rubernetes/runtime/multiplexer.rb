@@ -30,21 +30,75 @@ module Rubernetes
         @backends.fetch(handler.to_s) { raise ArgumentError, "runtime class handler #{handler.inspect} is not provided by this node" }
       end
 
+      def runtime_features
+        feature = supporting_user_namespace_handler
+        feature ? backend_for(feature).runtime_features : {}
+      end
+
       def run_sandbox(config, runtime_class: nil, **)
-        handler = runtime_class || config["runtime_class"] || config[:runtime_class] || @default
+        handler = handler_for(config, runtime_class: runtime_class)
         backend = backend_for(handler)
+        if host_network_user_namespace?(config) && !user_namespace_host_network_backend?(backend)
+          raise ArgumentError, "runtime class handler #{handler.inspect} does not support user namespaces with host networking"
+        end
+
         id = backend.run_sandbox(config, runtime_class: handler, **)
         key = id.respond_to?(:id) ? id.id : id.to_s
         @mutex.synchronize { @sandbox_owner[key] = backend }
         id
       end
 
-      def create_container(sandbox, spec, **)
+      def handler_for(config, runtime_class: nil)
+        runtime_class || config["runtime_class"] || config[:runtime_class] || handler_for_pod(config)
+      end
+
+      private def handler_for_pod(pod)
+        host_network_user_namespace?(pod) ? supporting_user_namespace_handler || @default : @default
+      end
+
+      private def host_network_user_namespace?(pod)
+        spec = pod["spec"] || pod[:spec] || {}
+        (spec["hostUsers"] == false || spec[:hostUsers] == false) && (spec["hostNetwork"] == true || spec[:hostNetwork] == true)
+      end
+
+      private def supporting_user_namespace_handler
+        return unless defined?(CRI::Backend)
+
+        @backends.find do |_handler, backend|
+          user_namespace_host_network_backend?(backend)
+        end&.first
+      end
+
+      private def user_namespace_host_network_backend?(backend)
+        defined?(CRI::Backend) && backend.is_a?(CRI::Backend) && backend.runtime_features[CRI::UserNamespaces::RUNTIME_FEATURE] == true
+      end
+
+      def create_container(sandbox, spec, runtime_class_name: nil, **options)
         backend = owner_of_sandbox(sandbox)
-        container = backend.create_container(sandbox, spec, **)
+        options[:runtime_class_name] = runtime_class_name if runtime_class_name && defined?(CRI::Backend) && backend.is_a?(CRI::Backend)
+        container = backend.create_container(sandbox, spec, **options)
         key = container.respond_to?(:id) ? container.id : container.to_s
         @mutex.synchronize { @container_owner[key] = backend }
         container
+      end
+
+      def retire_container(container, **)
+        backend = owner_of_container(container)
+        return remove_container(container) unless backend.respond_to?(:retire_container)
+
+        result = backend.retire_container(container, **)
+        @mutex.synchronize { @container_owner.delete(container_key(container)) }
+        result
+      end
+
+      def logs(container, sandbox_id: nil, archived_log_path: nil, **options)
+        backend = sandbox_id ? owner_of_sandbox(sandbox_id) : owner_of_container(container)
+        native = defined?(Native) && backend.is_a?(Native)
+        cri = defined?(CRI::Backend) && backend.is_a?(CRI::Backend)
+        options[:sandbox_id] = sandbox_id if sandbox_id && native
+        options[:archived_log_path] = archived_log_path if archived_log_path && cri
+        options = options.except(:request_id, :identity) if native || cri
+        backend.logs(container, **options)
       end
 
       %i[stop_sandbox remove_sandbox network_sandbox_context].each do |name|
@@ -56,7 +110,13 @@ module Rubernetes
         end
       end
 
-      %i[start_container stop_container remove_container container_status exec attach logs stats wait_container port_forward http_get
+      def remove_pod_logs(pod)
+        return unless defined?(CRI::Backend)
+
+        @backends.values.grep(CRI::Backend).uniq.each { |backend| backend.remove_pod_logs(pod) }
+      end
+
+      %i[start_container stop_container remove_container container_status exec attach stats wait_container port_forward http_get
          tcp_socket].each do |name|
         define_method(name) do |container, *arguments, **options, &block|
           backend = owner_of_container(container)
@@ -66,23 +126,20 @@ module Rubernetes
         end
       end
 
-      # In-place resize goes to the backend that owns the sandbox/container; a
-      # backend without the capability reports it as unsupported (nil).
-      %i[update_pod_resources pod_cgroup_readback pod_usage].each do |name|
+      # Optional sandbox operations go to its owner.
+      %i[update_pod_resources pod_cgroup_readback pod_usage sandbox_network_ips
+         sandbox_container_id_prefix sandbox_container_ids sandbox_state].each do |name|
         define_method(name) do |sandbox, *arguments, **options|
           backend = owner_of_sandbox(sandbox)
           backend.respond_to?(name) ? backend.public_send(name, sandbox, *arguments, **options) : nil
         end
       end
 
-      def update_container_resources(container, *, **)
-        backend = owner_of_container(container)
-        backend.respond_to?(:update_container_resources) ? backend.update_container_resources(container, *, **) : nil
-      end
-
-      def update_container_cpuset(container, cpus)
-        backend = owner_of_container(container)
-        backend.respond_to?(:update_container_cpuset) ? backend.update_container_cpuset(container, cpus) : nil
+      %i[update_container_resources update_container_cpuset container_stop_signal].each do |name|
+        define_method(name) do |container, *arguments, **options|
+          backend = owner_of_container(container)
+          backend.public_send(name, container, *arguments, **options) if backend.respond_to?(name)
+        end
       end
 
       # A backend that streams through its own server (a CRI runtime)
@@ -111,6 +168,10 @@ module Rubernetes
         @backends.transform_values { |backend| backend.respond_to?(:recover) ? backend.recover(**) : nil }
       end
 
+      def start_log_rotation = cri_log_managers.each(&:start)
+
+      def stop_log_rotation = cri_log_managers.each(&:stop)
+
       def profile
         backend_for(@default).profile
       end
@@ -127,6 +188,12 @@ module Rubernetes
       end
 
       private
+
+      def cri_log_managers
+        return [] unless defined?(CRI::Backend)
+
+        @backends.values.grep(CRI::Backend).filter_map(&:log_manager).uniq
+      end
 
       def sandbox_key(value)
         value.respond_to?(:id) ? value.id.to_s : value.to_s
