@@ -255,7 +255,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     adoption_update = adoption.updates.find { |operation| operation.reason == "replicaset pod adoption" }
 
     refute_nil adoption_update
-    assert_equal "rs-current", adoption_update.object.dig("metadata", "ownerReferences", 0, "uid")
+    assert_equal "rs-current", adoption_update.patch.dig("metadata", "ownerReferences", 0, "uid")
     assert_empty adoption.creates
 
     foreign_owner = deployment_value("other", uid: "foreign")
