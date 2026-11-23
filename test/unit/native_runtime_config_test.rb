@@ -47,4 +47,24 @@ class NativeRuntimeConfigTest < Minitest::Test
 
     assert_match(/unknown/, error.message)
   end
+
+  def test_seccomp_argument_operands_must_fit_unsigned_64_bits
+    arguments = {index: 0, op: "SCMP_CMP_LT", value: -1, value_two: 0}
+
+    assert_raises(Linux::Seccomp::ProfileError) { Linux::Seccomp::Arg.new(**arguments) }
+    assert_raises(Linux::Seccomp::ProfileError) do
+      Linux::Seccomp::Arg.from({"index" => 0, "op" => "SCMP_CMP_MASKED_EQ", "valueTwo" => 1 << 64})
+    end
+    assert_operator Linux::Seccomp::Arg.new(**arguments, value: Linux::Seccomp::U64_MAX), :match?, 0
+  end
+
+  def test_the_native_runtime_refuses_to_create_a_user_namespace_with_host_networking
+    namespace = Rubernetes::Runtime::Native::Namespace.new(profile: :host_integration)
+    error = assert_raises(Rubernetes::Runtime::Native::Namespace::Unsupported) do
+      namespace.create(id: "unsupported", spec: {"spec" => {"hostUsers" => false, "hostNetwork" => true}})
+    end
+
+    assert_match(/user namespaces with host networking/, error.message)
+    assert_empty namespace.adapter.calls
+  end
 end
