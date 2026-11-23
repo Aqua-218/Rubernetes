@@ -36,10 +36,12 @@ require_relative "server/request_metrics"
 require_relative "server/admission_glue"
 require_relative "server/write_options"
 require_relative "server/schema_application"
+require_relative "server/csi_driver_strategy"
 require_relative "server/object_helpers"
 # The verbs on a stored resource:
 require_relative "server/read_handlers"
 require_relative "server/create_handler"
+require_relative "server/update_identity"
 require_relative "server/update_handler"
 require_relative "server/subresource_updates"
 require_relative "server/patch_handler"
@@ -48,10 +50,12 @@ require_relative "server/garbage_collection"
 # Subresources and resources served by a handler rather than storage:
 require_relative "server/scale_subresource"
 require_relative "server/review_endpoints"
+require_relative "server/token_request"
 require_relative "server/pod_binding_eviction"
 require_relative "server/proxy_subresource"
 # The server describing itself, and the APIs added at run time:
 require_relative "server/discovery"
+require_relative "server/storage_versions"
 require_relative "server/openapi_documents"
 require_relative "server/diagnostics"
 require_relative "server/dynamic_apis"
@@ -77,7 +81,9 @@ module Rubernetes
       include SchemaApplication
       include ObjectHelpers
       include ReadHandlers
+      include CSIDriverStrategy
       include CreateHandler
+      include UpdateIdentity
       include UpdateHandler
       include SubresourceUpdates
       include PatchHandler
@@ -85,9 +91,11 @@ module Rubernetes
       include GarbageCollection
       include ScaleSubresource
       include ReviewEndpoints
+      include TokenRequest
       include PodBindingAndEviction
       include ProxySubresource
       include Discovery
+      include StorageVersions
       include OpenAPIDocuments
       include Diagnostics
       include DynamicAPIs
@@ -112,16 +120,23 @@ module Rubernetes
       # making the live REST/discovery surface follow the upstream defaults
       # (Discovery holds the rules that apply these gates).
       DEFAULT_FEATURE_GATES = {
+        "AllowUnsafeMalformedObjectDeletion" => false,
+        "CBORServingAndStorage" => false,
+        "APIServerIdentity" => true,
+        "UnknownVersionInteroperabilityProxy" => true,
         "MutatingAdmissionPolicy" => true,
         "ClusterTrustBundle" => false,
         "PodCertificateRequest" => false,
+        "HostnameOverride" => true,
+        "ContainerStopSignals" => false,
         "CoordinatedLeaderElection" => false,
         "MultiCIDRServiceAllocator" => true,
         "DynamicResourceAllocation" => true,
         "GenericWorkload" => false,
         "VolumeAttributesClass" => true,
         "StorageVersionMigrator" => false,
-        "StorageVersionAPI" => false
+        "StorageVersionAPI" => false,
+        "StorageVersionHash" => true
       }.freeze
 
       DEFAULT_API_AUDIENCES = %w[https://kubernetes.default.svc].freeze
@@ -174,8 +189,9 @@ module Rubernetes
                      system_namespaces: nil, api_audiences: nil,
                      component_health_checker: nil, defer_system_namespaces: false, security: nil,
                      service_account_issuer: nil, crd_manager: nil, aggregator: nil, runtime_config: {},
-                     service_allocator: nil, service_cidrs: nil, node_port_range: nil, metrics: nil, logger: nil)
-        @metrics = metrics.nil? ? Observability::Metrics.new(feature_gates: stringify_keys(feature_gates)) : metrics
+                     service_allocator: nil, service_cidrs: nil, node_port_range: nil, metrics: nil, logger: nil,
+                     peer_proxy: nil)
+        configure_features(feature_gates, metrics, peer_proxy)
         # Slow-request and request-trace lines go here; without a logger the
         # API server's request.slow warning could never fire.
         @logger = logger
@@ -197,11 +213,7 @@ module Rubernetes
         # `ready` may be a boolean or a callable evaluated per request so a
         # durable datastore can gate /readyz on quorum availability.
         @ready = ready.respond_to?(:call) ? ready : !!ready
-        @feature_gates = DEFAULT_FEATURE_GATES.merge(stringify_keys(feature_gates)).freeze
-        # --runtime-config: which group/versions are served.  Beta and alpha
-        # API versions are off by default in kube-apiserver even when their
-        # feature gate is on; "api/all" or "<group>/<version>" turns them on.
-        @runtime_config = stringify_keys(runtime_config || {}).freeze
+        configure_runtime(runtime_config)
         # NamespaceLifecycle admission and the system namespaces it relies on
         # are enabled together: the rubernetes-apiserver process and the
         # evidence probes turn them on; a bare Server used as a library
@@ -214,6 +226,8 @@ module Rubernetes
         # extensions of the core; when present they are kept in sync from the
         # commit paths of their configuration resources.
         @crd_manager = crd_manager
+        @crd_finalizers_lock = Mutex.new
+        @crd_finalizers = {}
         @aggregator = aggregator
         @api_audiences = (api_audiences.nil? || Array(api_audiences).empty? ? DEFAULT_API_AUDIENCES : Array(api_audiences)).map(&:to_s).freeze
         @component_health_checker = component_health_checker
@@ -224,6 +238,25 @@ module Rubernetes
         # the service then calls ensure_system_namespaces! itself once the
         # datastore is available.
         ensure_system_namespaces! if @namespace_lifecycle && !defer_system_namespaces
+      end
+
+      # --runtime-config selects served group versions independently of feature
+      # gates. Register the write barrier against that resource set.
+      private def configure_runtime(runtime_config)
+        @runtime_config = stringify_keys(runtime_config || {}).freeze
+        initialize_storage_version_barrier
+      end
+
+      private def configure_features(feature_gates, metrics, peer_proxy)
+        gates = stringify_keys(feature_gates)
+        raise ArgumentError, "DeclarativeValidation is locked to true in Kubernetes v1.36.2" if gates["DeclarativeValidation"] == false
+        raise ArgumentError, "StorageVersionAPI requires APIServerIdentity" if gates["StorageVersionAPI"] == true && gates["APIServerIdentity"] == false
+
+        @feature_gates = DEFAULT_FEATURE_GATES.merge(gates).freeze
+        @metrics = metrics.nil? ? Observability::Metrics.new(feature_gates: gates) : metrics
+        register_sharded_watch_metrics if feature_gate_enabled?(ShardSelector::GATE)
+        @peer_proxy = peer_proxy if feature_gate_enabled?("UnknownVersionInteroperabilityProxy") && feature_gate_enabled?("APIServerIdentity")
+        @peer_proxy.metrics = @metrics if @peer_proxy
       end
 
       # kube-apiserver's system namespaces controller creates these at start.
@@ -255,7 +288,15 @@ module Rubernetes
       end
 
       def ready?
+        basic_datastore_ready? && storage_version_registered?
+      end
+
+      private def basic_datastore_ready?
         @ready.respond_to?(:call) ? @ready.call == true : @ready
+      end
+
+      def local_group_versions
+        enabled_resources.reject(&:custom?).map { |resource| [resource.group, resource.version] }.uniq
       end
 
       # Every answered request is counted -- the ones that end in a raised
@@ -390,7 +431,8 @@ module Rubernetes
       def subresource_bridge_for(given, node_resolver, authorizer, trusted_subresources)
         return nil if given == false
 
-        given || SubresourceBridge.new(node_resolver: node_resolver, authorizer: authorizer, trusted_mode: trusted_subresources)
+        given || SubresourceBridge.new(node_resolver: node_resolver, authorizer: authorizer, trusted_mode: trusted_subresources,
+                                       split_log_streams: feature_gate_enabled?("PodLogsQuerySplitStreams"))
       end
 
       # The one place this class swallows an error.  It is for work whose
@@ -417,7 +459,9 @@ module Rubernetes
           next if result.key?(key)
 
           gvr = resource.storage_gvr
-          result[key] = [counts.fetch("registry/#{gvr}", 0), sizes.fetch("registry/#{gvr}", 0)]
+          versions = ([gvr.version] + resource.storage_key_versions).uniq
+          prefixes = versions.map { |version| "registry/#{GVR.new(group: gvr.group, version: version, resource: gvr.resource)}" }
+          result[key] = [prefixes.sum { |prefix| counts.fetch(prefix, 0) }, prefixes.sum { |prefix| sizes.fetch(prefix, 0) }]
         end.map { |(group, name), (count, bytes)| [group, name, count, bytes] }
       end
 
@@ -485,8 +529,8 @@ module Rubernetes
 
       # TokenReview: the identity behind a bearer token, nil when no
       # authenticator knows it (an authenticator that raises does not).
-      def authenticate_token(token)
-        identity = identity_resolver_authenticate(token)
+      def authenticate_token(token, audiences = @api_audiences)
+        identity = identity_resolver_authenticate(token, audiences)
         return identity if identity
 
         # The ServiceAccount authenticator lives in the security pipeline, not
@@ -494,17 +538,17 @@ module Rubernetes
         authenticator = @security&.authenticator
         return nil unless authenticator.respond_to?(:authenticate_token)
 
-        best_effort { authenticator.authenticate_token(token, @api_audiences) }
+        best_effort { authenticator.authenticate_token(token, audiences) }
       end
 
-      def identity_resolver_authenticate(token)
+      def identity_resolver_authenticate(token, audiences)
         return nil unless @identity_resolver.respond_to?(:authenticate_token)
 
         best_effort do
           if @identity_resolver.method(:authenticate_token).arity == 1
             @identity_resolver.authenticate_token(token)
           else
-            @identity_resolver.authenticate_token(token, @api_audiences)
+            @identity_resolver.authenticate_token(token, audiences)
           end
         end
       end
