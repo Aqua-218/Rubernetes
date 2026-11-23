@@ -95,4 +95,33 @@ class NodePodWorkerCoalescingTest < Minitest::Test
   ensure
     worker&.stop(join: false)
   end
+
+  def test_a_replacement_with_the_same_worker_key_waits_for_deletion
+    started = Queue.new
+    release = Queue.new
+    seen = []
+    pool = Rubernetes::Node::PodWorkerPool.new(reconcile: lambda { |object, action: nil, request_id: nil|
+      if seen.empty?
+        started << true
+        release.pop
+      end
+      seen << [action, object.dig("metadata", "uid")]
+    })
+    old = pod
+    replacement = pod
+    replacement.fetch("metadata")["uid"] = "replacement"
+    key = "static:ns/p"
+    pool.enqueue(old, action: "ADDED", worker_key: key)
+    started.pop
+    pool.enqueue(old, action: "SYNC", worker_key: key)
+    pool.enqueue(old, action: "DELETED", worker_key: key)
+    pool.enqueue(replacement, action: "ADDED", worker_key: key)
+    release << true
+
+    assert pool.drain(timeout: 2)
+    assert_equal [%w[ADDED u], %w[DELETED u], %w[ADDED replacement]], seen
+  ensure
+    release << true
+    pool&.stop(drain: false)
+  end
 end
