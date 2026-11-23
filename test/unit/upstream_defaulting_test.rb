@@ -19,6 +19,46 @@ class UpstreamDefaultingTest < Minitest::Test
               "metadata" => {"name" => "p", "namespace" => "default"}, "spec" => spec)
   end
 
+  def test_mirror_pod_defaults_preserve_service_account_admission
+    definition = "io.k8s.api.core.v1.Pod"
+    mirror = {"metadata" => {"name" => "mirror", "annotations" => {"kubernetes.io/config.mirror" => "hash"}},
+              "spec" => {"containers" => [{"name" => "app", "image" => "busybox"}]}}
+
+    defaults = defaulted(definition, mirror).fetch("spec")
+
+    refute defaults.key?("serviceAccountName")
+    refute defaults.key?("serviceAccount")
+
+    mirror.fetch("spec")["serviceAccount"] = "user-owned"
+
+    assert_equal "user-owned", defaulted(definition, mirror).dig("spec", "serviceAccountName")
+    assert_equal "default", pod(mirror.fetch("spec").except("serviceAccount")).dig("spec", "serviceAccountName")
+  end
+
+  def test_pod_update_does_not_reassign_service_account_admission_defaults
+    definition = Rubernetes::Generated.definition_for("io.k8s.api.core.v1.Pod")
+    body = {"kind" => "Pod", "spec" => {"containers" => [{"name" => "c", "image" => "fixture"}]}}
+    updated = definition.defaulting.apply_hash(body, kubernetes_admission_defaults: :update)
+
+    refute updated.fetch("spec").key?("serviceAccountName")
+    assert_equal "Always", updated.dig("spec", "restartPolicy")
+  end
+
+  def test_both_pod_service_account_fields_follow_the_current_name
+    containers = [{"name" => "app", "image" => "busybox"}]
+    specified = pod("containers" => containers, "serviceAccountName" => "current", "serviceAccount" => "old")
+    deprecated = pod("containers" => containers, "serviceAccount" => "legacy")
+    fields = %w[serviceAccountName serviceAccount]
+
+    assert_equal %w[current current], specified.fetch("spec").values_at(*fields)
+    assert_equal %w[legacy legacy], deprecated.fetch("spec").values_at(*fields)
+
+    template = defaulted("io.k8s.api.core.v1.PodTemplateSpec",
+                         "spec" => {"containers" => containers, "serviceAccountName" => "workload"})
+
+    assert_equal %w[workload workload], template.fetch("spec").values_at(*fields)
+  end
+
   # SetDefaults_Volume: ptr.AllPtrFieldsNil(&obj.VolumeSource) => EmptyDir{}.
   def test_volume_without_a_source_defaults_to_empty_dir
     volumes = pod("containers" => [{"name" => "c", "image" => "busybox"}],
