@@ -49,6 +49,40 @@ module Rubernetes
 
         private
 
+        def kernel_boot_id
+          return @kernel_boot_id if defined?(@kernel_boot_id)
+
+          @kernel_boot_id = File.read("/proc/sys/kernel/random/boot_id").strip
+        rescue SystemCallError
+          @kernel_boot_id = nil
+        end
+
+        def preserve_sandbox_volume?(record)
+          record[:restarting_after_sandbox_loss] && record[:volume] && record[:volume_boot_id] &&
+            record[:volume_boot_id] == kernel_boot_id && !record.dig(:cleanup_completed, "volume")
+        end
+
+        # Replacing the sandbox must not discard a Pod's emptyDir. The original
+        # mount must still belong to this Pod in the live kernel mount ledger.
+        def verify_preserved_volumes(pod, record)
+          return unless @pod_volumes && @volume.is_a?(Volume::Manager)
+
+          observations = @volume.mount_adapter.list_mounts
+          verified = @volume.mount_ledger.reconcile(observations).fetch("owned")
+          paths = verified.to_h { |entry| [[entry["volumeId"], entry["target"]], entry["owner"]] }
+          record[:volume].fetch("mounts").each_value do |mount|
+            if mount["direct"] == true
+              live_path = @volume.direct_path(mount.fetch("id"), pod: pod)
+              raise LifecycleError, "volume #{mount.fetch("id")} no longer has its recorded source" unless live_path == mount["path"]
+            else
+              targets = [mount.fetch("path")] + mount.fetch("subPaths", {}).values.map { |entry| entry.fetch("target") }
+              unless targets.all? { |target| paths[[mount.fetch("id"), target]] == "pod:#{record[:uid]}" }
+                raise LifecycleError, "volume #{mount.fetch("id")} no longer has its recorded Pod mounts"
+              end
+            end
+          end
+        end
+
         def release_stale_volumes(existing)
           return unless @pod_volumes
 
@@ -91,10 +125,10 @@ module Rubernetes
 
           timeout = @volumes_reported_in_use_timeout || VOLUME_REPORTED_IN_USE_TIMEOUT_SECONDS
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-          # The Pod's claim-backed volume names, for the kubelet's message.
+          # The Pod's attachable volume names, for the kubelet's message.
           volume_names = Array(Helpers.key(Helpers.key(pod, "spec", {}), "volumes", [])).filter_map do |volume|
             name = Helpers.key(volume, "name", "").to_s
-            name if Helpers.key(volume, "persistentVolumeClaim", nil) || Helpers.key(volume, "ephemeral", nil)
+            name if %w[persistentVolumeClaim ephemeral iscsi fc].any? { |kind| Helpers.key(volume, kind, nil) }
           end
           @mutex.synchronize do
             loop do
@@ -122,15 +156,45 @@ module Rubernetes
                                                  images: record[:volume_images] || {})
             rescue PodVolumes::MissingDependency, PodVolumes::Unsupported, PodVolumes::SELinuxConflict => error
               record[:reason] = "FailedMount"
-              raise LifecycleError, "MountVolume.SetUp failed: #{error.message}"
+              volume = " for volume #{error.volume_name.inspect}" unless error.volume_name.to_s.empty?
+              raise LifecycleError, "MountVolume.SetUp failed#{volume}: #{error.message}"
             end
             record[:resources] << {"kind" => "volume", "id" => Array(handle["ids"]).join(",")} unless Array(handle["ids"]).empty?
+            warn_local_fs_group_conflicts(record, handle["mounts"] || {})
             return handle
           end
 
           handle = @volume&.prepare(pod)
           record[:resources] << {"kind" => "volume", "id" => handle.to_s} unless handle.nil?
           handle
+        end
+
+        def prepare_ephemeral_volumes(pod, record)
+          return unless @pod_volumes && record[:volume].is_a?(Hash)
+
+          note_attachable_volumes(pod, record)
+          wait_for_volumes_reported_in_use(pod, record)
+          handle = @pod_volumes.prepare_newly_used(
+            pod, record[:volume],
+            token: "prepare-ephemeral-#{record[:uid]}", pod_ip: pod_ips(record).first, host_ip: @host_ip, images: record[:volume_images] || {}
+          )
+          return if handle.equal?(record[:volume])
+
+          warn_local_fs_group_conflicts(record, handle.fetch("mounts").except(*record[:volume].fetch("mounts").keys))
+          record[:volume] = handle
+          mark_dirty(record)
+          persist_state!
+        end
+
+        def warn_local_fs_group_conflicts(record, mounts)
+          mounts.each do |name, mount|
+            conflict = mount["localFsGroupConflict"]
+            next unless conflict
+
+            message = "The requested fsGroup is #{conflict.fetch("requested")}, but the volume #{name} has GID #{conflict.fetch("current")}. " \
+                      "The volume may not be shareable."
+            event(record, "volume.already_mounted", message: message)
+          end
         end
 
         # kubelet's periodic sync also revisits the Pod's volumes: projected
