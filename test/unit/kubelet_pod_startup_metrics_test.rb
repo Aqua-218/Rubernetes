@@ -91,9 +91,9 @@ class KubeletPodStartupMetricsTest < Minitest::Test
     @metrics.pod_status_synced({}, nil, 0.0304)
     text = @metrics.render(records)
 
-    assert_includes text, %(kubelet_working_pods{config="desired",lifecycle="sync",static="false"} 1)
+    assert_includes text, %(kubelet_working_pods{config="desired",lifecycle="sync",static=""} 1)
     assert_includes text, %(kubelet_working_pods{config="desired",lifecycle="terminating",static="true"} 1)
-    assert_includes text, %(kubelet_working_pods{config="desired",lifecycle="terminated",static="false"} 1)
+    assert_includes text, %(kubelet_working_pods{config="desired",lifecycle="terminated",static=""} 1)
     assert_includes text, %(kubelet_working_pods{config="runtime_only",lifecycle="sync",static="unknown"} 0)
     assert_equal(15, text.lines.count { |line| line.start_with?("kubelet_working_pods{") })
     assert_includes text, "kubelet_managed_ephemeral_containers 1"
