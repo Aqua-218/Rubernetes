@@ -13,6 +13,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "time"
+require_relative "m0_source_inventory"
 
 require_relative "m1_gate"
 
@@ -132,8 +133,8 @@ module M2Gate
     "ledger" => "m2-ledger-probe",
     "kernel" => "m2-kernel-probe"
   }.freeze
-  SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
-  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
+  SOURCE_EXCLUDED_ROOTS = M0SourceInventory::EXCLUDED_ROOTS
+  SOURCE_EXCLUDED_PATTERNS = M0SourceInventory::EXCLUDED_PATTERNS
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   M0_GATE = File.join(__dir__, "m0_gate.rb").freeze
   M1_GATE = File.join(__dir__, "m1_gate.rb").freeze
@@ -256,6 +257,7 @@ module M2Gate
 
       validate_manifest_shape(manifest, errors)
       artifacts = validate_entries(manifest.fetch("artifacts", []), directory, errors, "artifact")
+      MilestoneReportOutput.validate(manifest["commands"], artifacts, errors)
       subjects = validate_entries(manifest.fetch("subjects", []), directory, errors, "subject")
       artifact_index = index_artifacts(artifacts, errors)
 
@@ -1805,6 +1807,7 @@ module M2Gate
           errors << "#{entry_label} measurement must come from production Native L3 Node Agent SIGKILL"
         end
         validate_native_sigkill_kernel_evidence(entry, entry_label, errors)
+        validate_sigkill_handoff(entry, entry_label, errors) if entry.key?("precommit")
         native_agent = entry["native_agent"]
         if native_agent.is_a?(Hash)
           errors << "#{entry_label} Native Node Agent must be ready after restart" unless native_agent["ready"] == true
@@ -1859,6 +1862,36 @@ module M2Gate
       end
       errors << "#{label} SIGKILL effect points must bind four distinct durable crash checkpoints" unless
         checkpoints.length == REQUIRED_EFFECT_POINTS.length && checkpoints.uniq.length == REQUIRED_EFFECT_POINTS.length
+    end
+
+    def validate_sigkill_handoff(entry, label, errors)
+      adopted = entry["adopted_running_workload"]
+      actual = entry["actual_workload"]
+      unless adopted.is_a?(Hash) && actual.is_a?(Hash) && adopted["state"] == "Running" &&
+             adopted.values_at("pid", "start_time") == actual.values_at("pid", "start_time")
+        errors << "#{label} committed workload was not adopted with its original kernel identity"
+      end
+
+      precommit = entry["precommit"]
+      unless precommit.is_a?(Hash) && precommit["kill_observed"] == true && precommit["ready"] == true &&
+             positive_integer?(precommit["target_pid"]) && positive_integer?(precommit["restart_pid"]) &&
+             precommit["target_pid"] != precommit["restart_pid"] && precommit["target_start_time"].to_s.match?(/\A\d+\z/) &&
+             precommit["replayed_state"] == "Stopped" && precommit["dead_residual_count"] == 0 && precommit["inventory_after_recovery"] == []
+        errors << "#{label} precommit SIGKILL did not complete recovery with verified cleanup"
+        return
+      end
+
+      checkpoint = precommit["checkpoint"]
+      expected = entry["crash_checkpoint"]
+      inventory = precommit["inventory_at_kill"]
+      unless checkpoint.is_a?(Hash) && expected.is_a?(Hash) && checkpoint.values_at("effect_point", "actual_operation", "native_state") ==
+                                                               expected.values_at("effect_point", "actual_operation", "native_state") &&
+             checkpoint["workload_gate"] == "closed" && checkpoint["workload_process_count"] == 0 && inventory.is_a?(Array) &&
+             !inventory.empty? && checkpoint["kernel_inventory_sha256"] == canonical_document_digest(inventory) &&
+             valid_digest?(precommit["wal_before_sha256"]) && valid_digest?(precommit["wal_after_sha256"]) &&
+             precommit["wal_before_sha256"] != precommit["wal_after_sha256"]
+        errors << "#{label} precommit SIGKILL must bind the closed-gate crash to its actual kernel inventory and WAL replay"
+      end
     end
 
     def validate_native_sigkill_kernel_evidence(entry, label, errors)
@@ -2219,8 +2252,7 @@ module M2Gate
     def excluded_source_path?(path)
       return false unless path.is_a?(String)
 
-      SOURCE_EXCLUDED_ROOTS.include?(path.split("/", 2).first) ||
-        SOURCE_EXCLUDED_PATTERNS.any? { |pattern| pattern.match?(path) }
+      M0SourceInventory.excluded?(path)
     end
   end
 end
