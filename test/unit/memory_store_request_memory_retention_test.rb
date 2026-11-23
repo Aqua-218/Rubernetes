@@ -18,7 +18,7 @@ class MemoryStoreRequestMemoryRetentionTest < Minitest::Test
 
   def test_replay_memory_is_dropped_by_the_full_compaction
     now = Time.at(1_000_000)
-    store = Store.new(history_seconds: 60.0, clock: -> { now })
+    store = Store.new(history_retention_policy: "compatibility", history_seconds: 60.0, clock: -> { now })
     first = store.create("registry/things/ns/a", object("a"), request_uid: "req-a")
 
     assert_same first, store.create("registry/things/ns/a", object("a"), request_uid: "req-a"), "a retry replays"
@@ -35,7 +35,7 @@ class MemoryStoreRequestMemoryRetentionTest < Minitest::Test
   end
 
   def test_a_per_key_compaction_keeps_replay_memory
-    store = Store.new(history_revisions: 2, history_seconds: nil)
+    store = Store.new(history_retention_policy: "compatibility", history_revisions: 2, history_seconds: nil)
     store.create("registry/things/ns/a", object("a"), request_uid: "req-a")
     5.times do |index|
       store.guaranteed_update("registry/things/ns/a", request_uid: "upd-#{index}") do |current|
