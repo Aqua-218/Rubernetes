@@ -18,6 +18,23 @@ class ProtobufCapitalisedFieldsTest < Minitest::Test
     codec.decode(codec.encode(object))
   end
 
+  def test_deployment_list_encodes_ascii_quantities_as_protobuf_strings
+    resources = {
+      "limits" => {"cpu" => 1, "memory" => "1000Mi".b.freeze},
+      "requests" => {"cpu" => "100m".encode(Encoding::US_ASCII).freeze, "memory" => "100Mi"}
+    }
+    deployment = {
+      "apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {"name" => "operator"},
+      "spec" => {"template" => {"spec" => {"containers" => [{"name" => "operator", "resources" => resources}]}}}
+    }
+    list = {"apiVersion" => "apps/v1", "kind" => "DeploymentList", "items" => [deployment]}
+
+    observed = roundtrip(list).dig("items", 0, "spec", "template", "spec", "containers", 0, "resources")
+
+    assert_equal({"cpu" => "1", "memory" => "1000Mi"}, observed.fetch("limits"))
+    assert_equal({"cpu" => "100m", "memory" => "100Mi"}, observed.fetch("requests"))
+  end
+
   def test_validation_expression_survives_a_protobuf_roundtrip
     policy = {
       "apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "ValidatingAdmissionPolicy",
