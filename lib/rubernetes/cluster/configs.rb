@@ -4,6 +4,8 @@ module Rubernetes
   module Cluster
     # One configuration file per process.
     module Configs
+      POD_BRIDGE_PREFIXES = {"ipv4" => 24, "ipv6" => 64}.freeze
+
       # Every socket stays open until all ports are drawn: closing each one at
       # once let the kernel hand the same ephemeral port out twice, and an
       # apiserver's HTTP listener then collided with its own raft address
@@ -46,6 +48,13 @@ module Rubernetes
         {"tls" => {"cert_file" => serving.fetch(:cert), "key_file" => serving.fetch(:key), "client_ca_file" => pki.fetch(:ca)},
          "authentication" => {"anonymous" => false, "webhook" => true},
          "authorization" => {"mode" => "Webhook"}}
+      end
+
+      def cluster_kubelet_listener(pki, id, index)
+        security = kubelet_streaming_security(pki, id)
+        addresses = security.empty? ? ["127.0.0.1"] : node_advertise_addresses(index)
+        {"host" => addresses.first, "additional_hosts" => addresses.drop(1), "port" => isolated_worker_networks? ? 10_250 : free_port,
+         "advertise_address" => addresses.first}.merge(security)
       end
 
       # voters: who may vote when this node starts with an empty log.  A
@@ -91,12 +100,12 @@ module Rubernetes
                                         "signing_key_file" => pki.fetch(:sa_key),
                                         "key_files" => [pki.fetch(:sa_pub)],
                                         "api_audiences" => ["https://kubernetes.default.svc.cluster.local"]},
-                  "anonymous" => {"enabled" => false}
+                  "anonymous" => api_anonymous_authentication
                 },
                 "authorization" => {"modes" => %w[Node RBAC]}
               },
               "datastore" => {
-                "type" => "raft", "node_id" => id, "cluster_id" => cluster_id,
+                "type" => @datastore, "node_id" => id, "cluster_id" => cluster_id,
                 "data_dir" => File.join(root, "data", id), "pki_dir" => File.join(root, "raft-pki", id),
                 "listen_address" => "127.0.0.1", "listen_port" => ports.fetch(:raft).fetch(id),
                 "voters" => voters, "peers" => peers
@@ -105,6 +114,12 @@ module Rubernetes
           }
         }
         write_config("apiserver-#{id}", document)
+      end
+
+      def api_anonymous_authentication
+        return {"enabled" => false} unless tls_bootstrap?
+
+        {"enabled" => true, "conditions" => [{"path" => BootstrapDiscovery::PUBLIC_PATH}]}
       end
 
       # kube-scheduler's --secure-port equivalent (upstream 10259): /healthz,
@@ -147,16 +162,18 @@ module Rubernetes
       def selected_controllers(kubeconfig)
         served = served_kinds(kubeconfig)
         Rubernetes::Controller::BuiltinControllerCorpus::ENTRIES.reject do |entry|
-          entry.cloud_provider || (!served.include?(entry.kind) && !CONTROLLER_ONLY_KINDS.include?(entry.kind))
+          external = entry.cloud_provider && !(entry.name == "service-lb-controller" && @load_balancer_pool)
+          external || (!served.include?(entry.kind) && !CONTROLLER_ONLY_KINDS.include?(entry.kind))
         end.map(&:name)
       end
 
       def served_kinds(kubeconfig)
         client = api_client(kubeconfig)
         groups = JSON.parse(client.raw("GET", "/apis").body).fetch("groups", [])
-        paths = groups.filter_map do |group|
-          version = group.dig("preferredVersion", "groupVersion") || group["versions"]&.first&.dig("groupVersion")
-          "/apis/#{version}" if version
+        # A served nonpreferred version can introduce additional kinds, for
+        # example PodGroup in scheduling.k8s.io/v1alpha2 alongside PriorityClass in v1.
+        paths = groups.flat_map do |group|
+          group.fetch("versions").map { |version| "/apis/#{version.fetch("groupVersion")}" }
         end
         kinds = (paths << "/api/v1").flat_map do |path|
           JSON.parse(client.raw("GET", path).body).fetch("resources", [])
@@ -191,18 +208,45 @@ module Rubernetes
                                      "lease_duration_seconds" => 15, "renew_deadline_seconds" => 10,
                                      "retry_period_seconds" => 2}
                        }.merge(service_account_credentials ? {"use_service_account_credentials" => true} : {},
-                               extensions_section, storage_section)}
+                               extensions_section, storage_section,
+                               routed_load_balancer_section, node_ipam_section)}
                      })
       end
 
-      def write_agent_config(id, index, kubeconfig, dns_kubeconfig: nil, pki: {}, bootstrap: nil)
+      def node_ipam_section
+        return {} unless @allocate_node_cidrs
+
+        {"node_ipam" => {"allocate_node_cidrs" => true, "assignments" => node_ipam_assignments}}
+      end
+
+      def node_ipam_assignments
+        worker_ids.each_with_index.to_h do |id, index|
+          ranges = families.map do |family|
+            prefix = POD_BRIDGE_PREFIXES.fetch(family)
+            "#{IPAddr.new(pod_cidr(index, family)).mask(prefix)}/#{prefix}"
+          end
+          [id, ranges]
+        end
+      end
+
+      def routed_load_balancer_section
+        return {} unless @load_balancer_pool
+
+        settings = {"load_balancer_pool" => @load_balancer_pool.cidrs}
+        settings["default_routed_load_balancer"] = true if @default_routed_load_balancer
+        settings
+      end
+
+      def write_agent_config(id, index, kubeconfig, dns_kubeconfig: nil, policy_kubeconfig: nil, pki: {}, bootstrap: nil)
+        dns = {"kubeconfig" => dns_kubeconfig, "nat64_prefix" => @nat64_prefix, "resolv_conf" => @dns_resolv_conf}.compact
         network = {"state_path" => File.join(root, "network", id, "state.json"),
                    "bridge_name" => "rbn#{index}", "policy_backend" => "nftables",
-                   "node_subnet_prefix" => 24}
+                   "node_subnet_prefix" => POD_BRIDGE_PREFIXES.fetch("ipv4")}
+        network["policy_kubeconfig"] = policy_kubeconfig if policy_kubeconfig
         network["ipv4_cidr"] = pod_cidr(index, "ipv4") if families.include?("ipv4")
         if families.include?("ipv6")
           network["ipv6_cidr"] = pod_cidr(index, "ipv6")
-          network["ipv6_node_prefix"] = 64
+          network["ipv6_node_prefix"] = POD_BRIDGE_PREFIXES.fetch("ipv6")
         end
 
         write_config("agent-#{id}", {
@@ -218,25 +262,11 @@ module Rubernetes
                          "lease" => {"namespace" => "kube-node-lease", "duration_seconds" => 40,
                                      "renew_fraction" => 0.25},
                          "privileged" => true,
-                         # Each agent needs its own streaming port on this host;
-                         # the API server proxies logs/exec to whatever the node
-                         # advertises.
-                         # Above 20000: the host runs its own k3s kubelet on 10250.
-                         # The node's InternalIP comes from this advertise
-                         # address, and a loopback node IP is not a node IP:
-                         # kubelet refuses one outright ("--node-ip cannot be a
-                         # loopback address", pkg/kubelet/kubelet.go).  Every
-                         # spec that dials a node by its InternalIP -- HostPort
-                         # above all -- reached its own loopback instead.  Each
-                         # worker's own bridge gateway is the address its Pods
-                         # and this host both reach it on.
-                         # The streaming endpoint trusts the API server's own
-                         # authorization and has no authorizer of its own, so it
-                         # stays on loopback; the API server learns where to dial
-                         # it from the node's streaming-address annotation, not
-                         # from its InternalIP.
-                         "streaming" => {"host" => "127.0.0.1", "port" => free_port,
-                                         "advertise_address" => "127.0.0.1"}.merge(kubelet_streaming_security(pki, id)),
+                         # Dedicated TLS/authenticated kubelets serve their Node
+                         # addresses. Admin-only test clusters use loopback for
+                         # the API server's authorized streaming relay.
+                         "streaming" => cluster_kubelet_listener(pki, id, index),
+                         "healthz_port" => isolated_worker_networks? ? 10_248 : free_port,
                          "addresses" => [*node_advertise_addresses(index).map do |address|
                            {"type" => "InternalIP", "address" => address}
                          end,
@@ -244,14 +274,10 @@ module Rubernetes
                          "network" => network,
                          "volume" => {"data_dir" => File.join(root, "runtime", id, "volumes"),
                                       "profile" => "native"}
-                       }.merge(dns_kubeconfig ? {"dns" => {"kubeconfig" => dns_kubeconfig}} : {}).merge(bootstrap || {})}
+                       }.merge(dns.empty? ? {} : {"dns" => dns}).merge(bootstrap || {})}
                      })
       end
 
-      # All "nodes" of this profile share one kernel, so exactly one proxy owns
-      # the host datapath (nftables table); the others run the same control
-      # loops without attaching, which is also what keeps them from fighting
-      # over the table.
       # The first address of this node's own Pod bridge (10.24N.0.1), which the
       # agent creates before its first Pod and which is reachable from the host
       # and from every Pod on the cluster.
@@ -280,18 +306,26 @@ module Rubernetes
         families.map { |family| SERVICE_CIDRS.fetch(family) }
       end
 
-      # kube-proxy's --metrics-bind-address / --healthz-bind-address (upstream
-      # 10249 / 10256), one loopback port here: /metrics, /healthz, /livez.
-      def write_proxy_config(id, index, kubeconfig, serving_port: free_port)
+      def write_proxy_config(id, index, kubeconfig, serving_port: nil)
         write_config("proxy-#{id}", {
                        "version" => 1, "logging" => {"level" => log_level("proxy")},
                        "processes" => {"rubernetes-proxy" => {
                          "kubeconfig" => kubeconfig, "node_name" => id,
-                         "backend" => "nftables", "attach" => index.zero?,
+                         "backend" => "nftables", "attach" => isolated_worker_networks? || index.zero?,
+                         "node_addresses" => (node_advertise_addresses(index) if isolated_worker_networks?),
                          "sync" => {"interval_seconds" => 0.5},
-                         "serving" => {"enabled" => true, "bind_address" => "127.0.0.1", "port" => serving_port}
-                       }}
+                         "serving" => proxy_serving_config(serving_port)
+                       }.compact}
                      })
+      end
+
+      def proxy_serving_config(port)
+        # Workers sharing a host namespace need independent listener ports.
+        return {"enabled" => true, "bind_address" => "127.0.0.1", "port" => port || free_port} unless isolated_worker_networks?
+
+        ipv6 = families.first == "ipv6"
+        {"enabled" => true, "bind_address" => ipv6 ? "::1" : "127.0.0.1", "port" => port || 10_249,
+         "healthz_bind_address" => ipv6 ? "::" : "0.0.0.0", "healthz_port" => 10_256}
       end
 
       # One per family, the primary first; the API server bootstraps the
