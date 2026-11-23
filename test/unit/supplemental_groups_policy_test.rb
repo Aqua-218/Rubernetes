@@ -37,4 +37,11 @@ class SupplementalGroupsPolicyTest < Minitest::Test
   def test_an_unknown_uid_adds_nothing
     assert_nil context({"runAsUser" => 4242})["supplementalGroups"]
   end
+
+  def test_a_numeric_user_uses_its_image_primary_group_unless_overridden
+    assert_equal 1000, context({"runAsUser" => 1000}, image_user: "root:0")["runAsGroup"]
+    assert_equal 1000, context({}, image_user: "1000")["runAsGroup"]
+    assert_equal 1234, context({"runAsUser" => 1000}, {"runAsGroup" => 1234})["runAsGroup"]
+    assert_nil context({"runAsUser" => 4242})["runAsGroup"]
+  end
 end
