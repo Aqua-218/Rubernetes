@@ -95,6 +95,25 @@ class EndpointSliceDualStackTest < Minitest::Test
     assert_equal(["IPv6"], deleted.map { |slice| slice["addressType"] })
   end
 
+  def test_terminating_pod_stays_serving_until_it_is_terminal
+    svc = service(families: %w[IPv4])
+    deleting = pod("deleting", DUAL_POD)
+    deleting["metadata"]["deletionTimestamp"] = "2026-11-18T00:00:00Z"
+    terminal = pod("terminal", ["10.240.0.3"])
+    terminal["status"]["phase"] = "Succeeded"
+    endpoint = slices(reconcile(svc, pods: [deleting, terminal])).first.fetch("endpoints")
+
+    assert_equal 1, endpoint.length
+    assert_equal "deleting", endpoint.first.dig("targetRef", "name")
+    assert_equal({"ready" => false, "serving" => true, "terminating" => true}, endpoint.first.fetch("conditions"))
+
+    svc["spec"]["publishNotReadyAddresses"] = true
+    deleting["status"]["conditions"].first["status"] = "False"
+    endpoint = slices(reconcile(svc, pods: [deleting])).first.fetch("endpoints").first
+
+    assert_equal({"ready" => true, "serving" => false, "terminating" => true}, endpoint.fetch("conditions"))
+  end
+
   # pkg/controller/endpoint/endpoints_controller.go: the legacy Endpoints
   # object carries the Pod IP of the Service's primary family.
   def test_legacy_endpoints_use_the_primary_family_pod_ip
