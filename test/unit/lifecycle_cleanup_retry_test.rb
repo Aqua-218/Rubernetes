@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "rubernetes/node"
+require "rubernetes/runtime/cri"
 
 # A Pod whose release failed sits in CleanupPending owning mounts and ledger
 # entries.  Nothing re-synced it once its API object was gone, so the entries
@@ -13,6 +14,30 @@ class LifecycleCleanupRetryTest < Minitest::Test
   class Runtime
     def remove_container(*) = true
     def remove_sandbox(*) = true
+  end
+
+  class DisconnectingRuntime < Runtime
+    attr_reader :calls
+    attr_accessor :unavailable
+
+    def initialize
+      @calls = []
+      @unavailable = true
+    end
+
+    def stop_container(id, timeout:)
+      @calls << [:stop, id, timeout]
+      return true unless @unavailable
+
+      raise Rubernetes::Runtime::CRI::Client::Error.new("socket disconnected", code: Rubernetes::Runtime::CRI::Client::UNAVAILABLE)
+    end
+
+    def container_status(_id) = {"state" => "exited", "exitCode" => 137}
+
+    def remove_container(id)
+      @calls << [:remove, id]
+      true
+    end
   end
 
   class Volume
@@ -68,5 +93,33 @@ class LifecycleCleanupRetryTest < Minitest::Test
 
     assert_empty lifecycle.retry_pending_cleanups(now: 0.0)
     assert_equal 0, volume.calls
+  end
+
+  def test_cri_unavailability_defers_termination_without_a_second_grace_wait
+    runtime = DisconnectingRuntime.new
+    volume = Volume.new(failures: 0)
+    sleeps = []
+    lifecycle = Node::Lifecycle.new(runtime: runtime, volume: volume, sleeper: ->(delay) { sleeps << delay })
+    pod = {"metadata" => {"name" => "p", "namespace" => "ns", "uid" => "pod-uid"},
+           "spec" => {"terminationGracePeriodSeconds" => 20, "containers" => [{"name" => "app"}]}}
+    record = lifecycle.send(:new_record, pod)
+    record[:state] = record[:phase] = "Running"
+    record[:volume] = {"mounts" => {}}
+    record[:containers] << {id: "c", name: "app", category: "app", started: true, spec: {}, status: {}}
+
+    outcome = lifecycle.terminate(pod, gone: true)
+
+    assert_equal "CleanupPending", outcome.state
+    assert_equal "Running", outcome.phase
+    assert_equal [[:stop, "c", 20]], runtime.calls
+    assert_empty sleeps
+    assert_equal 0, volume.calls
+
+    runtime.unavailable = false
+
+    assert_equal ["pod-uid"], lifecycle.retry_pending_cleanups(now: 1.0)
+    assert_equal [[:stop, "c", 20], [:stop, "c", 20], [:remove, "c"]], runtime.calls
+    assert_equal 1, volume.calls
+    assert_nil lifecycle.record("pod-uid")
   end
 end
