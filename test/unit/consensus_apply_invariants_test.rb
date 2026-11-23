@@ -75,6 +75,24 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     assert_equal 0, machine.violations
   end
 
+  def test_replayed_replacement_keeps_its_first_result_after_snapshot_restore
+    machine = C::KVStateMachine.new
+    create("pods/a", 1, machine)
+    command = {"type" => "update", "key" => "pods/a", "object" => {"spec" => {"replicas" => 2}},
+               "expected_resource_version" => "1", "client_precondition" => nil, "request_uid" => "scale"}
+    first = machine.apply(2, command)
+    update("pods/a", 3, machine, expected: "2")
+    restored = C::KVStateMachine.new.restore(machine.snapshot)
+
+    replay = restored.apply(4, command.merge("expected_resource_version" => "3"))
+
+    assert_equal true, first["ok"]
+    assert_equal first, replay
+    assert_equal "3", restored.store.get("pods/a").dig("metadata", "resourceVersion")
+    assert_equal 2, restored.effects["update"]
+    assert_equal 1, restored.checkpoint![:objects]
+  end
+
   def test_an_object_lost_behind_the_state_machine_is_reported_as_a_violation
     logger = CapturingLogger.new
     machine = C::KVStateMachine.new(logger: logger, checkpoint_interval: nil)
