@@ -1,0 +1,27 @@
+expose:
+  type: clusterIP
+  tls:
+    enabled: false
+externalURL: http://127.0.0.1:5444
+existingSecretAdminPassword: k6-harbor-admin
+jobservice:
+  # Jobservice fetches its initial configuration from Core at process start.
+  initContainers:
+    - name: wait-for-core
+      image: registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+      command: ["/bin/busybox", "timeout", "300", "/bin/sh", "-ec"]
+      args:
+        - until /bin/busybox wget -q -T 3 -O /dev/null http://harbor-core:80/api/v2.0/ping; do sleep 2; done
+persistence:
+  persistentVolumeClaim:
+    database:
+      existingClaim: k6-harbor-database
+    redis:
+      existingClaim: k6-harbor-redis
+    registry:
+      existingClaim: k6-harbor-registry
+    trivy:
+      existingClaim: k6-harbor-trivy
+    jobservice:
+      jobLog:
+        existingClaim: k6-harbor-jobservice
