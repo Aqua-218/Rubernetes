@@ -36,7 +36,7 @@ class ControllerAdoptionGuardTest < Minitest::Test
     adopting = controller.plan(rc, store: adapter, pods: [orphan])
 
     assert adopting.operations.any? { |op|
-      op.action == :update && op.reason.to_s.include?("adoption")
+      op.action == :strategic_patch && op.reason.to_s.include?("adoption")
     }, adopting.operations.map(&:reason).inspect
 
     adapter.live = rc(deleting: true)
