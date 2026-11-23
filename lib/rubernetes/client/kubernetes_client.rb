@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "json"
 require "psych"
 require "uri"
 
+require_relative "../api/version_priority"
 require_relative "errors"
 require_relative "http_client"
 require_relative "kubeconfig"
@@ -31,6 +34,7 @@ module Rubernetes
         "RoleBinding" => "rolebindings",
         "ClusterRole" => "clusterroles",
         "ClusterRoleBinding" => "clusterrolebindings",
+        "ClusterTrustBundle" => "clustertrustbundles",
         "PersistentVolume" => "persistentvolumes",
         "PersistentVolumeClaim" => "persistentvolumeclaims",
         "StorageClass" => "storageclasses",
@@ -48,14 +52,11 @@ module Rubernetes
         "ValidatingWebhookConfiguration" => "validatingwebhookconfigurations"
       }.freeze
 
-      # Last-resort scope table, used only when neither discovery nor a REST
-      # mapper can describe the resource.  A hand-written list silently gets a
-      # cluster-scoped resource wrong -- the request then goes to
-      # /namespaces/<ctx>/<plural> and 404s -- so the generated schema registry
-      # is the source of truth and this literal is only the fallback for a
-      # tree where that file is absent.
+      # When discovery and the REST mapper lack a descriptor, the schema
+      # registry gives the scope. If it is unavailable, this table keeps
+      # cluster-scoped requests out of the kubeconfig namespace.
       FALLBACK_CLUSTER_SCOPED_RESOURCES = %w[
-        namespaces nodes clusterroles clusterrolebindings persistentvolumes storageclasses
+        namespaces nodes clusterroles clusterrolebindings clustertrustbundles persistentvolumes storageclasses
         priorityclasses runtimeclasses mutatingwebhookconfigurations validatingwebhookconfigurations
       ].freeze
 
@@ -94,31 +95,7 @@ module Rubernetes
       DEFAULT_WATCH_MAX_EVENTS = 10_000
       WATCH_EVENT_TYPES = %w[ADDED MODIFIED DELETED BOOKMARK ERROR].freeze
       DEFAULT_WATCH_RECONNECTS = 8
-      PINNED_VERSION_PRIORITY = {
-        "admissionregistration.k8s.io" => %w[v1 v1beta1 v1alpha1],
-        "apps" => %w[v1],
-        "authentication.k8s.io" => %w[v1 v1beta1 v1alpha1],
-        "authorization.k8s.io" => %w[v1 v1beta1 v1alpha1],
-        "autoscaling" => %w[v2 v1],
-        "batch" => %w[v1 v1beta1],
-        "certificates.k8s.io" => %w[v1 v1beta1 v1alpha1],
-        "coordination.k8s.io" => %w[v1 v1beta1 v1alpha2],
-        "discovery.k8s.io" => %w[v1 v1beta1],
-        "events.k8s.io" => %w[v1 v1beta1],
-        "flowcontrol.apiserver.k8s.io" => %w[v1 v1beta3 v1beta2 v1beta1],
-        "networking.k8s.io" => %w[v1 v1beta1],
-        "node.k8s.io" => %w[v1 v1alpha1],
-        "policy" => %w[v1 v1beta1],
-        "rbac.authorization.k8s.io" => %w[v1 v1beta1],
-        "resource.k8s.io" => %w[v1 v1beta2 v1beta1 v1alpha3],
-        "scheduling.k8s.io" => %w[v1 v1alpha2],
-        "storage.k8s.io" => %w[v1 v1beta1],
-        "storagemigration.k8s.io" => %w[v1beta1],
-        "internal.apiserver.k8s.io" => %w[v1alpha1],
-        "apiregistration.k8s.io" => %w[v1 v1beta1],
-        "auditregistration.k8s.io" => %w[v1alpha1],
-        "metrics.k8s.io" => %w[v1beta1]
-      }.transform_values(&:freeze).freeze
+      PINNED_VERSION_PRIORITY = API::PINNED_VERSION_PRIORITY
 
       # A RESTMapper descriptor assembled from APIResourceList discovery.  The
       # descriptor deliberately retains discovery verbs and subresource scope
@@ -160,9 +137,10 @@ module Rubernetes
         end
       end
 
-      def self.from_kubeconfig(path: nil, context: nil, env: ENV, **)
+      def self.from_kubeconfig(path: nil, context: nil, env: ENV, exec_policy: nil, token: nil, client_certificate_store: nil, **)
         kubeconfig = Kubeconfig.load(path: path, env: env)
-        resolved_context = kubeconfig.resolve(name: context)
+        resolved_context = kubeconfig.resolve(name: context, preload_exec: false, exec_policy: exec_policy, env: env, token: token,
+                                              client_certificate_store: client_certificate_store)
         rest_client = HTTPClient.new(context: resolved_context, **)
         new(rest_client: rest_client, context: resolved_context)
       end
@@ -279,8 +257,7 @@ module Rubernetes
         decode_response(response)
       end
 
-      # Applies a manifest with Kubernetes server-side apply field ownership semantics.
-      def apply(manifest, namespace: nil, field_manager: "rubernetes", force: false, path: nil,
+      def apply(manifest, namespace: nil, field_manager: "rubernetes", force: false, dry_run: false, path: nil,
                 subresource: nil, return_response: false)
         resource = normalize_resource(manifest)
         name = resource.dig("metadata", "name")
@@ -290,6 +267,7 @@ module Rubernetes
                                                             subresource: subresource, operation: :patch)
         query = {"fieldManager" => field_manager}
         query["force"] = "true" if force
+        query["dryRun"] = "All" if dry_run
         response = raw(
           "PATCH",
           target_path,
@@ -1097,18 +1075,10 @@ module Rubernetes
         )
       end
 
-      def stringify_keys(value)
-        case value
-        when Hash
-          value.to_h { |key, child| [key.to_s, stringify_keys(child)] }
-        when Array
-          value.map { |child| stringify_keys(child) }
-        else
-          value
-        end
-      end
+      def stringify_keys(value) = ObjectTree.stringify_keys(value)
     end
 
     APIClient = KubernetesClient
   end
 end
+require_relative "pod_logs"
