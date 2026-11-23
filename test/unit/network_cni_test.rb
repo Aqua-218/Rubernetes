@@ -105,6 +105,15 @@ class NetworkCNITest < Minitest::Test
     assert_empty @calls, "a sandbox that is detached is done"
   end
 
+  def test_delete_after_namespace_loss_does_not_reuse_the_stored_proc_path
+    @cni.add(sandbox, pod)
+    @calls.clear
+
+    assert_equal "removed", @cni.delete("sb-1", namespace_gone: true).fetch("state")
+    assert_equal ["DEL portmap", "DEL bridge"], sequence
+    assert_equal(["", ""], @calls.map { |call| call[:environment].fetch("CNI_NETNS") })
+  end
+
   def test_a_chain_that_fails_half_way_is_undone_and_nothing_is_remembered
     @results["bridge"] = BRIDGE_RESULT
     @refusals[%w[portmap ADD]] = "iptables is missing"
@@ -129,10 +138,15 @@ class NetworkCNITest < Minitest::Test
   end
 
   def test_a_host_network_pod_is_not_attached
-    result = @cni.add(sandbox, pod(hostNetwork: true))
+    host_sandbox = {"sandbox_id" => "host-sb"}
+    host_pod = pod(hostNetwork: true)
+    result = @cni.add(host_sandbox, host_pod)
 
     assert_empty @calls
     assert_empty result.fetch("ips")
+    assert @cni.check(host_sandbox, host_pod)
+    assert_equal "removed", @cni.delete(host_sandbox, host_pod).fetch("state")
+    assert_empty @calls
   end
 
   def test_the_first_configuration_by_name_is_the_network_and_a_conf_is_a_list_of_one
