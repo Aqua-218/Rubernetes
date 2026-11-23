@@ -66,6 +66,22 @@ module Rubernetes
         @microvm_adapter.network_sandbox_context(sandbox_id)
       end
 
+      def container_status(id)
+        status = super
+        guest = status["backend"]
+        return status unless guest && guest["state"] == "stopped"
+
+        record_guest_exit(id)
+        status.merge(guest.slice("state", "exitCode", "terminated", "oom_killed", "message")).freeze
+      end
+
+      def wait_container(id, timeout: nil)
+        container_operation!(id)
+        result = @microvm_adapter.wait_container(id: id, timeout: timeout)
+        record_guest_exit(id) if result && result["state"] == "terminated"
+        result
+      end
+
       # Prepares the cached base snapshot the fast path restores from.
       def prepare_base!(request_id: nil)
         checkpoint_base(runtime_class: runtime_class, request_id: request_id)
@@ -79,6 +95,20 @@ module Rubernetes
       end
 
       def self.runtime_class_name = "microvm"
+
+      private
+
+      def record_guest_exit(id)
+        @mutex.synchronize do
+          operation = container_operation!(id)
+          return unless operation.state == "Running"
+
+          # The guest already reaped the process. Commit the host lifecycle
+          # transition so init containers and completed workloads can be removed.
+          @ledger.transition(operation_id: operation.id, to: "Stopping")
+          @ledger.transition(operation_id: operation.id, to: "Stopped")
+        end
+      end
     end
 
     # The restricted variant has no network device: the guest reaches the
