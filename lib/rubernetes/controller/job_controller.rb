@@ -3,6 +3,9 @@
 require "time"
 require_relative "support"
 require_relative "types"
+require_relative "builtins/job_scheduling"
+require_relative "builtins/job_pod_template"
+require_relative "builtins/job_pod_removal"
 
 module Rubernetes
   module Controller
@@ -14,6 +17,8 @@ module Rubernetes
       # in-memory backoff store; here the same information is recomputed from
       # the observed Pod finish times so a leader hand-over cannot lose it.
       class JobController < WorkloadController
+        include JobScheduling
+
         DESCRIPTOR = ResourceDescriptor.parse("Job")
         POD = WorkloadController::POD
         LABEL_PREFIX = "batch.kubernetes.io/"
@@ -50,7 +55,7 @@ module Rubernetes
         # actually be deleted -- without this the Pod stays Terminating and
         # its namespace never leaves Terminating either.
         def plan_orphans(key, store: nil)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           return nil unless adapter
 
           namespace, _, job_name = key.to_s.partition("/")
@@ -81,8 +86,8 @@ module Rubernetes
                               controller: name, key: key.to_s)
         end
 
-        def plan(job, store: nil, pods: nil, now: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+        def plan(job, store: nil, pods: nil, now: nil, feature_gates: {}, **_options)
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(job))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
@@ -106,8 +111,11 @@ module Rubernetes
           owned_pods -= release.fetch(:pods)
           adoption = adoption_operations(job, all_pods)
           owned_pods += adoption.fetch(:pods)
+          pod_group = job_scheduling(job, owned_pods, adapter) if feature_gates[JobScheduling::GATE] == true && gang_job?(job)
+          return pod_group if pod_group.is_a?(ReconcileResult)
+
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          instrument(job, Sync.new(self, job, owned_pods, now).run(release.fetch(:operations) + adoption.fetch(:operations)), started,
+          instrument(job, Sync.new(self, job, owned_pods, now, pod_group: pod_group).run(release.fetch(:operations) + adoption.fetch(:operations)), started,
                      completion_mode)
         end
 
@@ -218,7 +226,7 @@ module Rubernetes
         end
 
         def delete(job, pods: nil, store: nil, orphan: false)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(job))
           operations = orphan ? [] : owned(job, pods).map { |pod| operation_delete(pod, descriptor: POD, reason: "job deletion") }
           operations << operation_delete(job, descriptor: DESCRIPTOR, reason: "job deletion")
@@ -498,7 +506,12 @@ module Rubernetes
         end
 
         def intervals_to_s(intervals)
-          intervals.map { |first, last| first == last ? first.to_s : "#{first}-#{last}" }.join(",")
+          intervals.map do |first, last|
+            next first.to_s if first == last
+
+            separator = last == first + 1 ? "," : "-"
+            "#{first}#{separator}#{last}"
+          end.join(",")
         end
 
         def event(type, reason, message)
@@ -549,7 +562,7 @@ module Rubernetes
           selector = Support.value(Support.spec(job), "selector", nil)
           return {pods: [], operations: []} if selector.nil? || (selector.is_a?(Hash) && selector.empty?)
 
-          released = Array(owned_pods).reject { |pod| Support.selector_matches?(selector, pod) }
+          released = Array(owned_pods).reject(&Support.selector_predicate(selector))
           operations = released.filter_map do |pod|
             candidate = Support.deep_copy(pod)
             candidate["metadata"] ||= {}
@@ -574,10 +587,11 @@ module Rubernetes
           return {pods: [], operations: []} if selector.nil? || (selector.is_a?(Hash) && selector.empty?)
           return {pods: [], operations: []} if pod_deleting?(job)
 
+          matches = Support.selector_predicate(selector)
           adoptable = pods.select do |pod|
             Support.namespace(pod).to_s == Support.namespace(job).to_s &&
               !pod_deleting?(pod) &&
-              Support.selector_matches?(selector, pod) &&
+              matches.call(pod) &&
               Support.owner_references(pod).none? do |reference|
                 flag = Support.ref_value(reference, "controller", false)
                 flag == true || flag.to_s.casecmp("true").zero?
@@ -679,11 +693,15 @@ module Rubernetes
         # trackJobStatusAndRemoveFinalizers, but returns the write set instead
         # of issuing API calls.
         class Sync
-          def initialize(controller, job, pods, now)
+          include JobPodTemplate
+          include JobPodRemoval
+
+          def initialize(controller, job, pods, now, pod_group: nil)
             @c = controller
             @job = job
             @pods = pods
             @now = now
+            @pod_group = pod_group
             @operations = []
             @events = []
             @requeue_after = nil
@@ -776,10 +794,11 @@ module Rubernetes
               manage_called = false
               unless @c.pod_deleting?(job)
                 manage_called = true
-                active, deleted_pods = manage_job(active_pods, succeeded, succeeded_indexes, failed_indexes,
-                                                  delayed_deletion, terminating, completions)
-                terminating += deleted_pods.length
-                ready -= deleted_pods.count { |pod| @c.pod_ready?(pod) }
+                active, managed_deletions = manage_job(active_pods, succeeded, succeeded_indexes, failed_indexes,
+                                                       delayed_deletion, terminating, completions)
+                terminating += managed_deletions.length
+                ready -= managed_deletions.count { |pod| @c.pod_ready?(pod) }
+                delete_managed_pods(managed_deletions)
               end
               complete = if completions.nil?
                            succeeded.positive? && active.zero?
@@ -1073,6 +1092,11 @@ module Rubernetes
               index = indexes_to_add.empty? ? UNKNOWN_COMPLETION_INDEX : indexes_to_add.fetch(slot)
               candidate = @c.pod_for(job, name: nil, template_value: base_template)
               metadata = candidate["metadata"]
+              if @pod_group
+                candidate["spec"]["schedulingGroup"] = {"podGroupName" => Support.name(@pod_group)}
+                reference = Support.owner_reference(@pod_group, controller: false, block_owner_deletion: false)
+                (metadata["ownerReferences"] ||= []) << reference.except("controller", "blockOwnerDeletion")
+              end
               metadata.delete("name")
               metadata["generateName"] = "#{Support.name(job)}-"
               finalizers = Array(Support.value(Support.value(base_template, "metadata", {}), "finalizers", [])).dup
@@ -1095,34 +1119,6 @@ module Rubernetes
                                                             operation_key: "registry/v1/pods/#{Support.namespace(job)}/#{identity}")
               @events << @c.event("Normal", "SuccessfulCreate", "Created pod: #{Support.name(job)}-#{active + slot}-pending")
             end
-          end
-
-          def add_completion_index_env!(pod_template)
-            spec = pod_template["spec"] ||= {}
-            %w[initContainers containers].each do |key|
-              next unless spec[key].is_a?(Array)
-
-              spec[key].each do |container|
-                next unless container.is_a?(Hash)
-
-                env = Array(container["env"]).dup
-                next if env.any? { |variable| Support.value(variable, "name", "").to_s == COMPLETION_INDEX_ENV }
-
-                env << {"name" => COMPLETION_INDEX_ENV,
-                        "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.annotations['#{COMPLETION_INDEX_ANNOTATION}']"}}}
-                container["env"] = env
-              end
-            end
-          end
-
-          # names.MaxGeneratedNameLength = 63 - 5
-          def pod_generate_name_with_index(job_name, index)
-            suffix = "-#{index}-"
-            prefix = "#{job_name}#{suffix}"
-            max = 58
-            return prefix if prefix.length <= max
-
-            "#{prefix[0, max - suffix.length]}#{suffix}"
           end
 
           # pkg/controller/job/indexed_job_utils.go:360
@@ -1383,21 +1379,10 @@ module Rubernetes
                                           by: pods_to_remove_finalizer.length)
             end
             pods_to_remove_finalizer.each do |pod|
-              candidate = Support.deep_copy(pod)
-              candidate["metadata"] ||= {}
-              candidate["metadata"]["finalizers"] = Array(candidate["metadata"]["finalizers"]).reject do |value|
-                value == TRACKING_FINALIZER
-              end
-              @operations << @c.operation_update(pod, candidate, descriptor: POD, reason: "job tracking finalizer removal")
+              remove_tracking_finalizer(pod)
               uids_with_finalizer.delete(Support.uid(pod).to_s)
             end
-            # Pods removed by manageJob (excess or suspended) keep their
-            # finalizer, so their terminal state is still counted on a later
-            # sync; pods removed because the Job finished were released above.
-            deleted_pods.each do |pod|
-              @operations << @c.operation_delete(pod, descriptor: POD, reason: "job pod removal")
-              @events << @c.event("Normal", "SuccessfulDelete", "Deleted pod: #{Support.name(pod)}")
-            end
+            deleted_pods.each { |pod| delete_pod(pod) }
 
             clean_uncounted_without_finalizers!(status, uids_with_finalizer)
             job_finished = !reached_max_uncounted && enact_job_finished!(status, final_condition)
