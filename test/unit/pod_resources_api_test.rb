@@ -74,6 +74,25 @@ class PodResourcesAPITest < Minitest::Test
       assert_includes text, %(kubelet_pod_resources_endpoint_#{name}{server_api_version="v1"} #{count})
     end
   end
+
+  def test_list_and_get_omit_terminal_pods_with_a_running_sandbox
+    pod = {"metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u"},
+           "spec" => {"containers" => [{"name" => "app"}]}}
+    record = {state: "Running", phase: "Running", pod: pod}
+    agent = Node::Agent.allocate
+    agent.instance_variable_set(:@lifecycle, Struct.new(:records).new({"u" => record}))
+    server = Node::PodResources.new(directory: "/nonexistent", pods: agent.method(:running_pods_for_pod_resources))
+    listed = server.list.fetch("pod_resources").map { |entry| entry.fetch("name") }
+
+    assert_equal ["p"], listed
+    assert_equal "p", server.get("p", "ns").dig("pod_resources", "name")
+    %w[Succeeded Failed].each do |phase|
+      record[:phase] = phase
+
+      assert_empty server.list.fetch("pod_resources")
+      assert_raises(ArgumentError) { server.get("p", "ns") }
+    end
+  end
 end
 
 class DRAContainerClaimsTest < Minitest::Test
