@@ -100,6 +100,25 @@ class CRDStorageVersionMoveTest < Minitest::Test
     assert_equal(200, response.status, response.body.inspect)
   end
 
+  def storage_hashes
+    %w[v1 v2].map do |version|
+      response = call("GET", "/apis/example.com/#{version}")
+
+      assert_equal(200, response.status, response.body.inspect)
+      response.body.fetch("resources").find { |item| item.fetch("name") == "widgets" }.fetch("storageVersionHash")
+    end
+  end
+
+  def test_discovery_reports_the_storage_version_hash_across_served_versions
+    establish!(storage: "v1")
+
+    assert_equal(%w[gIwvi5rymmg= gIwvi5rymmg=], storage_hashes)
+
+    move_storage_to_v2!
+
+    assert_equal(%w[zRcoV5EeA3s= zRcoV5EeA3s=], storage_hashes)
+  end
+
   def test_an_object_survives_a_storage_version_move
     establish!(storage: "v1")
     create_widget("v1", "before")
