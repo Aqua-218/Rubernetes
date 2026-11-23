@@ -79,4 +79,49 @@ class PathSecurityStaleTargetTest < Minitest::Test
     assert_raises(Rubernetes::Volume::PathSecurityError) { @security.acquire_target!(target, directory: false, create: false) }
     assert File.directory?(target)
   end
+
+  def test_target_immediately_beneath_the_configured_root_has_a_parent_lease
+    target = File.join(@root, "target")
+    lease = @security.acquire_target!(target)
+
+    assert File.identical?(target, lease.dispatch_path)
+    assert File.identical?(@root, "/proc/self/fd/#{lease.parent_descriptor}")
+  ensure
+    lease&.close
+  end
+
+  def test_nested_mounts_require_each_boundary_to_be_registered
+    outer = File.join(@root, "kubelet")
+    inner = File.join(outer, "pods")
+    foreign = File.join(inner, "foreign")
+    FileUtils.mkdir_p(foreign)
+    supported = with_bind_mounts([outer, inner, foreign]) do
+      @security.allow_mount_boundary!(outer)
+      assert_raises(Rubernetes::Volume::PathSecurityError) { @security.acquire_target!(File.join(inner, "target")) }
+
+      @security.allow_mount_boundary!(inner)
+      lease = @security.acquire_target!(File.join(inner, "target"))
+
+      assert File.directory?(lease.dispatch_path)
+      assert_raises(Rubernetes::Volume::PathSecurityError) { @security.acquire_target!(File.join(foreign, "target")) }
+    ensure
+      lease&.close
+    end
+    skip "bind mount unavailable" unless supported
+  end
+
+  private
+
+  def with_bind_mounts(paths)
+    mounted = []
+    paths.each do |path|
+      return false unless system("mount", "--bind", path, path, err: File::NULL)
+
+      mounted << path
+    end
+    yield
+    true
+  ensure
+    mounted.reverse_each { |path| system("umount", path, err: File::NULL) }
+  end
 end
