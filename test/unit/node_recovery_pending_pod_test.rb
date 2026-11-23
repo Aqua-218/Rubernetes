@@ -148,6 +148,29 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     end
   end
 
+  def test_a_sandbox_marked_for_replacement_is_rebuilt_by_the_next_sync
+    calls = []
+    runtime = StoppedSandboxRuntime.new
+    runtime.sandbox_state = :ready
+    object = pod
+    Dir.mktmpdir do |directory|
+      lifecycle = lifecycle_at_boot("boot-one", runtime: runtime, volume: NodeLifecycleTest::Volume.new(calls),
+                                                state_store: File.join(directory, "state.json"))
+
+      assert_equal "Running", lifecycle.start(object).phase
+      refute lifecycle.replace_sandbox("no-such-sandbox", message: "unused")
+      assert lifecycle.replace_sandbox("sandbox-1", message: "network attachment could not be confirmed after restart")
+
+      assert_equal "Removed", lifecycle.reconcile(object).state
+      assert_includes runtime.calls, [:sandbox_remove, "sandbox-1"]
+
+      replacement = lifecycle.reconcile(object)
+
+      assert_equal "Running", replacement.phase
+      assert_equal 1, replacement.status.fetch("containerStatuses").first.fetch("restartCount")
+    end
+  end
+
   def test_sandbox_replacement_after_a_kernel_reboot_prepares_volumes_again
     calls = []
     runtime = StoppedSandboxRuntime.new
