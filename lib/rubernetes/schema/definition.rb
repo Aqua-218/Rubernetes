@@ -218,8 +218,57 @@ module Rubernetes
       end
     end
 
+    # Field options and inline object properties use the same grammar in a
+    # top-level definition and inside a nested field.
+    module FieldMap
+      OPTION_KEYS = %i[type items of properties required nullable default enum one_of minimum maximum
+                       min max exclusive_minimum exclusive_maximum pattern preserve_unknown_fields
+                       preserve_unknown ruby_name json_name].freeze
+
+      private
+
+      def normalize_fields(source, required_names = [])
+        fields = {}
+        source.each do |key, value|
+          name = key.to_s
+          fields[name] = build_field(name, value, required_names.include?(name))
+        end
+        fields
+      end
+
+      def build_field(name, value, required)
+        return value if value.is_a?(Field)
+        return Field.new(name, value, required: required) unless value.is_a?(Hash)
+
+        options = value.transform_keys(&:to_sym)
+        return Field.new(name, :object, properties: value, required: required) unless options.any? { |key, _| OPTION_KEYS.include?(key) }
+
+        options[:required] = true if required
+        Field.new(options.merge(name: name))
+      end
+
+      def copy_value(value)
+        case value
+        when Hash
+          value.each_with_object({}) { |(key, item), result| result[copy_value(key)] = copy_value(item) }
+        when Array
+          value.map { |item| copy_value(item) }
+        else
+          duplicate_value(value)
+        end
+      end
+
+      def duplicate_value(value)
+        value.dup
+      rescue TypeError
+        value
+      end
+    end
+
     # A field in a schema AST.
     class Field
+      include FieldMap
+
       TYPE_ALIASES = {
         string: :string,
         integer: :integer,
@@ -445,26 +494,7 @@ module Rubernetes
         source = keywords.fetch(:properties, {})
         raise ArgumentError, "field properties must be a Hash" unless source.respond_to?(:each_pair)
 
-        source.each_with_object({}) do |(key, value), result|
-          result[key.to_s] = if value.is_a?(Field)
-                               value
-                             elsif value.is_a?(Hash)
-                               options = value.transform_keys(&:to_sym)
-                               option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
-                                                min max exclusive_minimum exclusive_maximum pattern preserve_unknown_fields
-                                                preserve_unknown ruby_name json_name]
-                               if options.keys.any? { |option| option_keys.include?(option) }
-                                 options[:required] = true if required_names.include?(key.to_s)
-                                 Field.new(options.merge(name: key.to_s))
-                               elsif required_names.include?(key.to_s)
-                                 Field.new(key.to_s, :object, properties: value, required: true)
-                               else
-                                 Field.new(key.to_s, :object, properties: value)
-                               end
-                             else
-                               Field.new(key.to_s, value, required: required_names.include?(key.to_s))
-                             end
-        end
+        normalize_fields(source, required_names)
       end
 
       def normalize_enum(value)
@@ -479,27 +509,12 @@ module Rubernetes
 
         Regexp.new(value.to_s)
       end
-
-      def copy_value(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, item), result| result[copy_value(key)] = copy_value(item) }
-        when Array
-          value.map { |item| copy_value(item) }
-        else
-          duplicate_value(value)
-        end
-      end
-
-      def duplicate_value(value)
-        value.dup
-      rescue TypeError
-        value
-      end
     end
 
     # A complete schema definition, including its REST identifiers and fields.
     class Definition
+      include FieldMap
+
       attr_reader :name, :gvk, :gvr, :scope, :fields, :metadata,
                   :preserve_unknown_fields, :description
 
@@ -566,8 +581,7 @@ module Rubernetes
         raise ArgumentError, "schema contains duplicate JSON field names: #{duplicate_json_names.keys.sort.join(", ")}" unless duplicate_json_names.empty?
 
         @fields = DeepFreeze.call(field_map)
-        @known_keys = field_map.values.flat_map { |field| [field.name, field.json_name, field.ruby_name] }
-          .to_h { |key| [key, true] }.freeze
+        @field_aliases = index_field_aliases(field_map)
         @metadata = DeepFreeze.call(copy_value(keywords))
         freeze
       end
@@ -616,9 +630,14 @@ module Rubernetes
         fields[name.to_s]
       end
 
+      def field_for_input(key)
+        name = key.to_s
+        fields[name] || @field_aliases[name]
+      end
+
       # Whether +key+ names one of this definition's fields in any spelling.
       def known_key?(key)
-        @known_keys.key?(key)
+        @field_aliases.key?(key)
       end
 
       def field?(name)
@@ -630,13 +649,34 @@ module Rubernetes
       end
 
       def spec_definition
-        field = self.field("spec")
-        nested_definition_for(field)
+        nested_definition_for(field("spec"), include_items: true, include_empty: true)
       end
 
       def status_definition
-        field = self.field("status")
-        nested_definition_for(field)
+        nested_definition_for(field("status"), include_items: true, include_empty: true)
+      end
+
+      def nested_definition_for(field, include_items: false, include_empty: false)
+        return nil unless field
+        return field.type if field.type.is_a?(Definition)
+        return field.type.resolve if field.type.is_a?(Reference)
+
+        if include_items
+          return field.items if field.items.is_a?(Definition)
+          return field.items.resolve if field.items.is_a?(Reference)
+        end
+        return nil unless field.object? && (include_empty || !field.properties.empty?)
+
+        Definition.new(
+          name: "#{kind}#{field.name.capitalize}",
+          group: group,
+          version: version,
+          kind: "#{kind}#{field.name.capitalize}",
+          resource: "#{resource}-#{field.name}",
+          scope: scope,
+          fields: field.properties,
+          preserve_unknown_fields: field.preserve_unknown_fields
+        )
       end
 
       def value_class
@@ -690,6 +730,17 @@ module Rubernetes
 
       private
 
+      # Validators also recognize internal names. Value objects accept the map
+      # key first, then the first JSON or Ruby alias in declaration order.
+      def index_field_aliases(field_map)
+        aliases = field_map.each_value.to_h { |field| [field.name, nil] }
+        field_map.each_value do |field|
+          aliases[field.json_name] ||= field
+          aliases[field.ruby_name] ||= field
+        end
+        aliases.freeze
+      end
+
       def parse_api_version(value)
         parts = value.to_s.split("/", 2)
         parts.length == 1 ? ["", parts[0]] : parts
@@ -703,56 +754,9 @@ module Rubernetes
         raise ArgumentError, "schema scope must be :namespaced or :cluster"
       end
 
-      def normalize_fields(source, required_names = [])
-        normalize_fields_with_required(source, required_names)
-      end
-
-      def normalize_fields_with_required(source, required_names)
-        source.each_with_object({}) do |(key, value), result|
-          result[key.to_s] = if value.is_a?(Field)
-                               value
-                             elsif value.is_a?(Hash)
-                               options = value.transform_keys(&:to_sym)
-                               option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
-                                                min max exclusive_minimum exclusive_maximum pattern preserve_unknown_fields
-                                                preserve_unknown ruby_name json_name]
-                               if options.keys.any? { |option| option_keys.include?(option) }
-                                 options[:required] = true if required_names.include?(key.to_s)
-                                 Field.new(options.merge(name: key.to_s))
-                               elsif required_names.include?(key.to_s)
-                                 Field.new(key.to_s, :object, properties: value, required: true)
-                               else
-                                 Field.new(key.to_s, :object, properties: value)
-                               end
-                             else
-                               Field.new(key.to_s, value, required: required_names.include?(key.to_s))
-                             end
-        end
-      end
-
       def build_section_field(name, source)
         nested_fields = source.is_a?(Definition) ? source.fields : normalize_fields(source)
         Field.new(name, :object, properties: nested_fields)
-      end
-
-      def nested_definition_for(field)
-        return nil unless field
-        return field.type if field.type.is_a?(Definition)
-        return field.type.resolve if field.type.is_a?(Reference)
-        return field.items if field.items.is_a?(Definition)
-        return field.items.resolve if field.items.is_a?(Reference)
-        return nil unless field.object?
-
-        Definition.new(
-          name: "#{kind}#{field.name.capitalize}",
-          group: group,
-          version: version,
-          kind: "#{kind}#{field.name.capitalize}",
-          resource: "#{resource}-#{field.name}",
-          scope: scope,
-          fields: field.properties,
-          preserve_unknown_fields: field.preserve_unknown_fields
-        )
       end
 
       def pluralize(value)
@@ -760,23 +764,6 @@ module Rubernetes
         return "#{value[0..-2].downcase}ies" if value.end_with?("y") && value.length > 1
 
         "#{value.downcase}s"
-      end
-
-      def copy_value(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, item), result| result[copy_value(key)] = copy_value(item) }
-        when Array
-          value.map { |item| copy_value(item) }
-        else
-          duplicate_value(value)
-        end
-      end
-
-      def duplicate_value(value)
-        value.dup
-      rescue TypeError
-        value
       end
     end
 
