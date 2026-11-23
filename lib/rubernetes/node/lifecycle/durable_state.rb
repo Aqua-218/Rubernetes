@@ -37,42 +37,73 @@ module Rubernetes
           allowed = RUNTIME_STATES + %w[Failed Unknown]
           raise LifecycleError, "persisted lifecycle record has invalid state #{state.inspect}" unless allowed.include?(state)
 
-          containers = Array(Helpers.key(hash, "containers", [])).map do |entry|
-            item = Helpers.string_keys(entry || {})
-            {
-              id: String(Helpers.key(item, "id", "")),
-              name: String(Helpers.key(item, "name", "")),
-              spec: Helpers.immutable(Helpers.key(item, "spec", {})),
-              category: String(Helpers.key(item, "category", "app")),
-              started: !!Helpers.key(item, "started", false),
-              status: Helpers.string_keys(Helpers.key(item, "status", {}))
-            }
-          end
+          containers = Array(Helpers.key(hash, "containers", [])).map { |entry| restore_container_entry(entry) }
           {
             uid: uid,
             pod: Helpers.immutable(Helpers.key(hash, "pod", {})),
             request_id: Helpers.key(hash, "request_id", uid),
             state: state,
+            next_init_index: Helpers.key(hash, "next_init_index", nil),
+            sidecar_shutdown_pending: Helpers.key(hash, "sidecar_shutdown_pending", nil),
             phase: String(Helpers.key(hash, "phase", "Unknown")),
             status: Helpers.string_keys(Helpers.key(hash, "status", {})),
             volume: Helpers.key(hash, "volume", nil),
+            volume_boot_id: Helpers.key(hash, "volume_boot_id", nil),
             sandbox_id: Helpers.key(hash, "sandbox_id", nil),
             sandbox_context: Helpers.key(hash, "sandbox_context", nil),
+            pod_files: Helpers.key(hash, "pod_files", nil),
+            dns_config: Helpers.key(hash, "dns_config", nil),
             network: Helpers.key(hash, "network", nil),
+            runtime_pod_ips: Helpers.key(hash, "runtime_pod_ips", nil),
+            recover_init_status: state == "Running",
+            restarting_after_sandbox_loss: Helpers.key(hash, "restarting_after_sandbox_loss", nil),
             images: Array(Helpers.key(hash, "images", [])),
             image_by_container: Helpers.string_keys(Helpers.key(hash, "image_by_container", {})),
+            volume_images: Helpers.string_keys(Helpers.key(hash, "volume_images", {})),
+            volume_image_handles: Array(Helpers.key(hash, "volume_image_handles", [])),
             containers: containers,
             events: Array(Helpers.key(hash, "events", [])),
             resources: Array(Helpers.key(hash, "resources", [])),
             cleanup_errors: Array(Helpers.key(hash, "cleanup_errors", [])),
             cleanup_completed: Helpers.string_keys(Helpers.key(hash, "cleanup_completed", {})),
+            source_gone: Helpers.key(hash, "source_gone", false),
             error: Helpers.key(hash, "error", nil),
             started_at: Helpers.key(hash, "started_at", nil),
             reason: Helpers.key(hash, "reason", nil),
+            grace_override: Helpers.key(hash, "grace_override", nil),
+            pending_terminal_phase: Helpers.key(hash, "pending_terminal_phase", nil),
+            termination_message: Helpers.key(hash, "termination_message", nil),
+            disruption_condition: Helpers.key(hash, "disruption_condition", nil),
             # The attachable volumes reported in use for this Pod (volumesInUse
             # survives a restart, as the desired state does).
             attachable_volumes: Helpers.key(hash, "attachable_volumes", nil)
           }
+        end
+
+        def restore_container_entry(entry)
+          item = Helpers.string_keys(entry || {})
+          restored = {
+            id: String(Helpers.key(item, "id", "")),
+            name: String(Helpers.key(item, "name", "")),
+            spec: Helpers.immutable(Helpers.key(item, "spec", {})),
+            category: String(Helpers.key(item, "category", "app")),
+            started: !!Helpers.key(item, "started", false),
+            started_at: Helpers.key(item, "started_at", nil),
+            restart_pending: Helpers.key(item, "restart_pending", nil),
+            restart_attempt: Helpers.key(item, "restart_attempt", nil),
+            retired_id: Helpers.key(item, "retired_id", nil),
+            previous_id: Helpers.key(item, "previous_id", nil),
+            previous_log_path: Helpers.key(item, "previous_log_path", nil),
+            last_state: Helpers.string_keys(Helpers.key(item, "last_state", nil)),
+            stop_signal: Helpers.key(item, "stop_signal", nil),
+            status: Helpers.string_keys(Helpers.key(item, "status", {}))
+          }
+          status = restored.fetch(:status)
+          if restored[:category] == "init" && Helpers.key(status, "state") == "terminated"
+            exit_code = Helpers.key(status["terminated"], "exitCode", status["exitCode"])
+            restored[:status] = completed_init_status(restored, status) if exit_code == 0
+          end
+          restored
         end
 
         # A Pod that finished cleanup ("Removed") carries no recovery obligation:
@@ -88,7 +119,7 @@ module Rubernetes
           live = []
           removed = []
           @records.each_value do |record|
-            (record[:state].to_s == "Removed" ? removed : live) << record
+            (released_record?(record) ? removed : live) << record
           end
           (live + removed.last(PERSISTED_REMOVED_RECORDS)).map { |record| serializable_record(record) }
         end
@@ -103,7 +134,7 @@ module Rubernetes
           live = []
           removed = []
           @records.each_value do |record|
-            (record[:state].to_s == "Removed" ? removed : live) << record
+            (released_record?(record) ? removed : live) << record
           end
           cache = (@record_json_cache ||= {})
           dirty = (@dirty_records ||= {}.compare_by_identity)
@@ -137,6 +168,10 @@ module Rubernetes
         end
 
         FULL_CHECK_SECONDS = 2.0
+
+        def released_record?(record)
+          record[:state].to_s == "Removed" && !record[:restarting_after_sandbox_loss]
+        end
 
         def mark_dirty(record)
           (@dirty_records ||= {}.compare_by_identity)[record] = true if record.is_a?(Hash)
