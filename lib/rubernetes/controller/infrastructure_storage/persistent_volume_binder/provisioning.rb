@@ -56,7 +56,7 @@ module Rubernetes
           return provisioning_failed(context, "Failed to get target node: node #{node.dump} not found")
         end
 
-        path = File.join(HOST_PATH_BASE, SecureRandom.uuid)
+        path = File.join(context.fetch(:hostpath_root), SecureRandom.uuid)
         begin
           block = Support.value(Support.spec(claim), "volumeMode", nil) == "Block"
           raise ArgumentError, "#{HOST_PATH_PLUGIN} does not support block volume provisioning" if block
@@ -71,7 +71,7 @@ module Rubernetes
         # not leave its directory behind.
         create = operation_create(provisioned_host_path_volume(name, path, claim, storage_class), descriptor: PV,
                                                                                                   reason: "provision a hostPath volume")
-        context[:operations] << create&.observed { |succeeded, _error| @host_path_deleter.call(path) unless succeeded }
+        context[:operations] << create&.observed { |succeeded, _error| delete_host_path(path, context.fetch(:hostpath_root)) unless succeeded }
         event(context, "Normal", "ProvisioningSucceeded", "Successfully provisioned volume #{name} using #{HOST_PATH_PLUGIN}")
       end
 
@@ -92,6 +92,29 @@ module Rubernetes
       def provisioning_failed(context, message)
         event(context, "Warning", "ProvisioningFailed", message)
         nil
+      end
+
+      def delete_host_path(path, root)
+        return @host_path_deleter.call(path) if @host_path_deleter
+
+        expanded = File.expand_path(path, "/")
+        # Also reclaim volumes allocated under the built-in root by an older
+        # cluster configuration. Newly allocated paths are direct children.
+        allowed = if root == HOST_PATH_BASE
+                    expanded.start_with?("/tmp/")
+                  else
+                    [root, HOST_PATH_BASE].include?(File.dirname(expanded))
+                  end
+        unless path.start_with?("/") && allowed
+          detail = if root == HOST_PATH_BASE
+                     "host_path deleter only supports /tmp/.+ but received provided #{path}"
+                   else
+                     "hostPath deleter cannot remove #{path.inspect} outside its provisioner directory"
+                   end
+          raise ArgumentError, detail
+        end
+
+        FileUtils.rm_rf(expanded, secure: true)
       end
 
       # rescheduleProvisioning: the scheduler picks a node again.
