@@ -1,12 +1,17 @@
 # frozen_string_literal: true
 
 require "time"
+require_relative "object_copy"
 
 module Rubernetes
   module API
     # RFC 6902, RFC 7386 and strategic merge patches (server-side apply is
     # ManagedFields::FieldManager).
     module Patch
+      include ObjectCopy
+
+      module_function :deep_copy
+
       CONTENT_TYPES = {
         "application/json-patch+json" => :json,
         "application/merge-patch+json" => :merge,
@@ -20,7 +25,7 @@ module Rubernetes
       module_function
 
       def type_for(content_type)
-        CONTENT_TYPES[content_type.to_s.split(";", 2).first]
+        CONTENT_TYPES[content_type.to_s.split(";", 2).first.to_s.strip.downcase]
       end
 
       def apply(object, patch, type:, resource: nil)
@@ -54,7 +59,6 @@ module Rubernetes
           when "remove"
             result = pointer_remove(result, path)
           when "replace"
-            pointer_get(result, path)
             result = pointer_replace(result, path, value_for(operation, "value"))
           when "move"
             from = value_for(operation, "from")
@@ -86,19 +90,24 @@ module Rubernetes
         return deep_copy(patch) unless patch.is_a?(Hash)
 
         target = object.is_a?(Hash) ? deep_copy(object) : {}
+        merge_into(target, patch)
+      end
+
+      def merge_into(target, patch)
         patch.each do |raw_key, value|
           key = raw_key.to_s
           if value.nil?
             target.delete(key)
-            target.delete(raw_key) unless raw_key == key
           elsif value.is_a?(Hash)
-            target[key] = apply_merge_patch(target[key], value)
+            target[key] = {} unless target[key].is_a?(Hash)
+            merge_into(target[key], value)
           else
             target[key] = deep_copy(value)
           end
         end
         target
       end
+      private_class_method :merge_into
 
       def apply_strategic_merge(object, patch, resource: nil)
         raise Error, "strategic merge patch body must be an object" unless patch.is_a?(Hash)
@@ -125,7 +134,27 @@ module Rubernetes
 
         patch.each_with_object(base) do |(raw_key, patch_value), result|
           key = raw_key.to_s
-          next if key == "$patch" || key == "$retainKeys" || key.start_with?("$setElementOrder/")
+          next if %w[$patch $retainKeys].include?(key)
+
+          if key.start_with?("$setElementOrder/")
+            field = key.delete_prefix("$setElementOrder/")
+            if result.key?(field) && !patch.key?(field) && !patch.key?(field.to_sym)
+              current = result[field]
+              raise Error, "element order and its list must be arrays" unless current.is_a?(Array) && patch_value.is_a?(Array)
+
+              result[field] = order_merged_items(current, current, patch_value, merge_key_for(path + [field], merge_keys))
+            end
+            next
+          end
+
+          if key == "$deleteFromPrimitiveList/finalizers" && path.last == "metadata"
+            raise Error, "finalizer deletion directive must be an array" unless patch_value.is_a?(Array)
+
+            # client-go's two-way strategic patch removes finalizers through
+            # this directive, including the cloud controller's /status patch.
+            result["finalizers"] = result["finalizers"] - patch_value if result["finalizers"].is_a?(Array)
+            next
+          end
 
           if patch_value.nil?
             result.delete(key)
@@ -144,7 +173,12 @@ module Rubernetes
       end
 
       def strategic_merge_array(current, patch, path:, merge_keys:, order: nil)
+        if path.last(2) == %w[metadata finalizers] && current.is_a?(Array)
+          return order_merged_items(current | patch, current, order.is_a?(Array) ? order : patch, nil)
+        end
+
         merge_key = merge_key_for(path, merge_keys)
+        current = [] if current.nil? && path.last(2) == %w[metadata ownerReferences]
         return deep_copy(patch) if merge_key.nil? || !current.is_a?(Array)
 
         merged = merge_keyed_items(current, patch, path: path, merge_key: merge_key, merge_keys: merge_keys)
@@ -215,6 +249,7 @@ module Rubernetes
           pattern_path = pattern.to_s.gsub("[*]", "").split(".").reject(&:empty?)
           return key.to_s if pattern_path == normalized_path
         end
+        return "uid" if path.last(2) == %w[metadata ownerReferences]
         return "name" if %w[containers env].include?(path.last.to_s)
 
         nil
@@ -245,13 +280,17 @@ module Rubernetes
       def pointer_replace(document, pointer, value)
         return deep_copy(value) if pointer.to_s.empty?
 
-        parent, token = pointer_parent(document, pointer)
+        begin
+          parent, token = pointer_parent(document, pointer)
+        rescue Error
+          raise Error, "replace operation does not apply: doc is missing path: #{pointer}: missing value"
+        end
         if parent.is_a?(Array)
           index = array_index(token, parent.length)
           parent[index] = deep_copy(value)
         elsif parent.is_a?(Hash)
-          raise Error, "JSON Pointer path #{pointer.inspect} does not exist" unless parent.key?(token)
-
+          # kube-apiserver's json-patch v4 accepts a missing final map key.
+          # Longhorn uses this when its admission webhook sets finalizers.
           parent[token] = deep_copy(value)
         else
           raise Error, "JSON Pointer parent #{pointer.inspect} is not a container"
@@ -331,17 +370,6 @@ module Rubernetes
         return hash[key.to_sym] if hash.key?(key.to_sym)
 
         raise KeyError, "missing #{key}"
-      end
-
-      def deep_copy(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, item), copy| copy[key.to_s] = deep_copy(item) }
-        when Array
-          value.map { |item| deep_copy(item) }
-        else
-          value
-        end
       end
 
       def deep_equal?(left, right)
