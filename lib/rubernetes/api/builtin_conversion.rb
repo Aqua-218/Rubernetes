@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require_relative "hpa_conversion"
+require_relative "../dra/legacy_device_request"
 
 module Rubernetes
   module API
@@ -105,7 +108,6 @@ module Rubernetes
       # ResourceSliceSpec nodeName/allNodes are values rather than pointers.
       # v1beta2 and v1 share one shape.
       module ResourceV1beta1
-        MAIN_REQUEST_FIELDS = %w[deviceClassName selectors allocationMode count adminAccess tolerations capacity].freeze
         BASIC_FIELDS = %w[attributes capacity consumesCounters nodeName nodeSelector allNodes taints bindsToNode bindingConditions
                           bindingFailureConditions allowMultipleAllocations nodeAllocatableResourceMappings].freeze
 
@@ -156,11 +158,8 @@ module Rubernetes
         def request_up(request)
           return request unless request.is_a?(Hash)
 
-          main = MAIN_REQUEST_FIELDS.select { |field| request.key?(field) }
-          set = !request["deviceClassName"].to_s.empty? || !request["selectors"].nil? || !request["allocationMode"].to_s.empty? ||
-                request["count"].to_i != 0 || !request["adminAccess"].nil? || !request["tolerations"].nil? || !request["capacity"].nil?
-          out = request.reject { |key, _| main.include?(key) }
-          if set
+          out = request.except(*DRA::LegacyDeviceRequest::FIELDS)
+          if DRA::LegacyDeviceRequest.fields_set?(request)
             exactly = {}
             exactly["deviceClassName"] = request["deviceClassName"].to_s
             exactly["selectors"] = request["selectors"] unless request["selectors"].nil? || Array(request["selectors"]).empty?
@@ -230,13 +229,7 @@ module Rubernetes
         # Pointers keep false and ""; omitempty drops nil and empty lists or maps.
         def omitted?(value) = value.nil? || ((value.is_a?(Array) || value.is_a?(Hash)) && value.empty?)
 
-        def deep_copy(value)
-          case value
-          when Hash then value.to_h { |key, item| [key, deep_copy(item)] }
-          when Array then value.map { |item| deep_copy(item) }
-          else value
-          end
-        end
+        def deep_copy(value) = ObjectTree.copy(value)
       end
     end
   end
