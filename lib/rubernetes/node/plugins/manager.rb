@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require_relative "rpc"
 
 module Rubernetes
@@ -90,6 +91,7 @@ module Rubernetes
           @mutex.synchronize do
             return self if @thread&.alive?
 
+            FileUtils.mkdir_p(@directory, mode: 0o755)
             @stop = false
             @thread = Thread.new do
               until @mutex.synchronize { @stop }
