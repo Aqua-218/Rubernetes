@@ -183,16 +183,95 @@ module Prom
       assert_raises(Prom::Rules::Error) { rules("groups:\n- name: a\n  rules:\n  - alert: A\n    expr: up\n    for: soon\n") }
     end
 
-    test "templates: humanize functions and printf" do
-      r = rules("groups: []")
+    test "real alert evaluation expands label templates and conditional query annotations" do
+      up("a.example.test:80", 1)
+      up("b.example.test:80", 0)
+      r = rules(<<~YAML, external_labels: {"cluster" => "test", "instance" => "external"}, external_url: "https://dash.example/monitor")
+        groups:
+        - name: g
+          rules:
+          - alert: Example
+            expr: up == 1
+            labels:
+              node: '{{ $labels.instance | stripDomain | stripPort }}'
+            annotations:
+              summary: '{{ $labels.__name__ }} {{ $labels.node }}{{- if eq $value 1.0 }}: {{ query "up" | sortByLabel "instance" | first | label "instance" }}{{ else }} unavailable{{ end }}'
+              using_range: '{{ range $i, $s := query "up" | sortByLabel "instance" }}{{ $i }}={{ $s.Value }} {{ else }}none{{ end }}{{ with query "absent_metric" }}found{{ else }}none{{ end }}'
+              external: '{{ $externalLabels.cluster }} {{ $externalURL }} {{ pathPrefix }}'
+              link: '{{ "up == 1" | tableLink }}'
+              invalid: '{{ first (query "absent_metric") }}'
+      YAML
+      r.evaluate(@engine, @now)
+      alert = r.alerts.first
 
-      assert_equal "1.5k", r.send(:expand, "{{ humanize 1500 }}", {}, 0)
-      assert_equal "1.465Ki", r.send(:expand, "{{ humanize1024 1500 }}", {}, 0)
-      assert_equal "1h 1m 1s", r.send(:expand, "{{ humanizeDuration 3661 }}", {}, 0)
-      assert_equal "500ms", r.send(:expand, "{{ humanizeDuration 0.5 }}", {}, 0)
-      assert_equal "3.14", r.send(:expand, "{{ printf \"%.2f\" $value }}", {}, 3.14159)
-      assert_equal "Job J", r.send(:expand, "{{ title \"job j\" }}", {}, 0)
-      assert_equal "{{ nope }}", r.send(:expand, "{{ nope }}", {}, 0), "unknown templates are left visible"
+      assert_equal "a", alert.labels["node"]
+      assert_equal "up : a.example.test:80", alert.annotations["summary"]
+      assert_equal "0=1 1=0 none", alert.annotations["using_range"]
+      assert_equal "test https://dash.example/monitor /monitor", alert.annotations["external"]
+      assert_equal "/graph?g0.expr=up+%3D%3D+1&g0.tab=1", alert.annotations["link"]
+      assert_match(/error expanding template: first called on an empty vector/, alert.annotations["invalid"])
+      assert_equal "ok", r.rules.first.health
+      assert_equal "a.example.test:80", r.notifications.first["alerts"].first["labels"]["instance"]
+    end
+
+    test "duplicate template-derived labels fail the alert rule before any alert is activated" do
+      up("a", 1)
+      up("b", 1)
+      r = rules(<<~YAML)
+        groups:
+        - name: g
+          rules:
+          - alert: Collision
+            expr: up
+            labels:
+              instance: '{{ $labels.job }}'
+      YAML
+      r.evaluate(@engine, @now)
+
+      assert_empty r.alerts
+      assert_equal "err", r.rules.first.health
+      assert_match(/same labelset/, r.rules.first.last_error)
+    end
+
+    test "named templates use a fresh scope and loop control preserves preceding output" do
+      up("a", 1)
+      r = rules(<<~YAML)
+        groups:
+        - name: g
+          rules:
+          - alert: Loop
+            expr: up
+            annotations:
+              rendered: >-
+                {{define "row"}}{{.arg0}}={{.arg1}}{{end}}{{define "empty"}}[{{.}}]{{end}}
+                {{- $last := "initial" -}}
+                {{ range $i := 8 }}{{ if eq $i 1 }}{{continue}}{{end}}{{ if eq $i 5 }}stop{{break}}{{end}}
+                {{- $last = printf "%d" $i -}}{{ template "row" (args $i $last) }};{{end}}
+                {{$last}}{{template "empty"}} {{block "footer" .Labels}}{{.job}}{{end}}
+              scope: '{{ $local := "outer" }}{{define "isolated"}}{{$local}}{{end}}{{template "isolated" .}}'
+              bad_break: '{{if false}}{{break}}{{end}}'
+              recursion: '{{define "recursive"}}{{template "recursive" .}}{{end}}{{template "recursive" .}}'
+      YAML
+
+      r.evaluate(@engine, @now)
+      annotations = r.alerts.first.annotations
+
+      assert_equal "0=0;2=2;3=3;4=4;stop 4[<no value>] j", annotations["rendered"]
+      assert_match(/undefined template variable \$local/, annotations["scope"])
+      assert_match(/break outside range/, annotations["bad_break"])
+      assert_match(/template recursion limit exceeded/, annotations["recursion"])
+    end
+
+    test "templates: humanize functions and printf" do
+      template = AlertTemplate.new(labels: {}, value: 3.14159, external_labels: {}, external_url: nil, timestamp_ms: T0, engine: @engine)
+
+      assert_equal "1.5k", template.expand("{{ humanize 1500 }}")
+      assert_equal "1.465ki", template.expand("{{ humanize1024 1500 }}")
+      assert_equal "1h 1m 1s", template.expand("{{ humanizeDuration 3661 }}")
+      assert_equal "500ms", template.expand("{{ humanizeDuration 0.5 }}")
+      assert_equal "3.14", template.expand("{{ printf \"%.2f\" $value }}")
+      assert_equal "Job J", template.expand("{{ title \"job j\" }}")
+      assert_raises(AlertTemplate::Error) { template.expand("{{ nope }}") }
     end
   end
 end
