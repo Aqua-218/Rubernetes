@@ -8,12 +8,12 @@ module Rubernetes
 
       SUPPORTED_METRIC_TYPES = %w[ContainerResource External Object Pods Resource].freeze
 
-      def hpa_errors(root, operation = :create)
+      def hpa_errors(root, operation = :create, options = [])
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
         issues = []
-        hpa_replica_bound_errors(spec, issues)
+        hpa_replica_bound_errors(spec, issues, options)
         behavior = fetch(spec, "behavior")
         if behavior.is_a?(Hash)
           %w[scaleUp scaleDown].each do |direction|
@@ -41,9 +41,11 @@ module Rubernetes
         issues
       end
 
-      def hpa_replica_bound_errors(spec, issues)
+      def hpa_replica_bound_errors(spec, issues, options = [])
         max = fetch(spec, "maxReplicas")
         min = fetch(spec, "minReplicas")
+        minimum = options.include?("HPAScaleToZero") ? 0 : 1
+        issues << issue(%w[spec minReplicas], :invalid, "must be greater than or equal to #{minimum}") if min.is_a?(Integer) && min < minimum
         # SetDefaults_HorizontalPodAutoscaler supplies minReplicas=1 before
         # the REST strategy validates the object.
         min = 1 if min.nil?
@@ -186,7 +188,7 @@ module Rubernetes
         end
       end
 
-      private_class_method :negative_quantity?, :hpa_replica_bound_errors, :hpa_metric_type_errors
+      private_class_method :negative_quantity?, :hpa_metric_type_errors
     end
   end
 end
