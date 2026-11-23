@@ -3,7 +3,7 @@
 require "json"
 require "open3"
 require "rbconfig"
-require "tempfile"
+require "tmpdir"
 require "timeout"
 
 module Rubernetes
@@ -23,6 +23,8 @@ module Rubernetes
         @max_resources = Integer(max_resources)
       end
 
+      # Resources alone are returned. The optional block receives the matching
+      # declaration lines kept outside the Kubernetes object mappings.
       def compile(path, allow_code:, environment: [], env: ENV)
         raise Error, "Ruby manifests require --allow-code" unless allow_code
 
@@ -46,10 +48,19 @@ module Rubernetes
         raise Error, "manifest output exceeds #{@max_output} bytes" if length > @max_output
         raise Error, "manifest sandbox frame length mismatch" unless payload.bytesize == length
 
-        resources = JSON.parse(payload, max_nesting: 512)
+        compiled = JSON.parse(payload, max_nesting: 512)
+        raise Error, "manifest sandbox output must be an object" unless compiled.is_a?(Hash)
+
+        resources = compiled["resources"]
         raise Error, "manifest output must be an array" unless resources.is_a?(Array)
         raise Error, "manifest output exceeds #{@max_resources} resources" if resources.length > @max_resources
 
+        lines = compiled["declarationLines"]
+        unless lines.is_a?(Array) && lines.size == resources.size && lines.all? { |line| line.nil? || (line.is_a?(Integer) && line.positive?) }
+          raise Error, "manifest sandbox returned invalid declaration lines"
+        end
+
+        yield lines if block_given?
         resources
       rescue Timeout::Error
         raise Error, "manifest sandbox exceeded #{@timeout} seconds"
@@ -63,7 +74,7 @@ module Rubernetes
         entry = File.expand_path("sandbox_entry.rb", __dir__)
         worker = File.expand_path("worker.rb", __dir__)
         command = [
-          "/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--net", "--pid", "--fork",
+          "/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--net", "--pid", "--fork", "--kill-child",
           RbConfig.ruby, entry,
           "--manifest", manifest_path,
           "--registry", @registry_path,
@@ -75,11 +86,45 @@ module Rubernetes
           "--max-output", @max_output.to_s,
           "--max-resources", @max_resources.to_s
         ]
-        Timeout.timeout(@timeout) do
-          Open3.capture3(environment, *command, unsetenv_others: true, binmode: true)
+        Dir.mktmpdir("rubernetes-manifest-root-") do |root|
+          Open3.popen3(environment, *command, "--root", root, unsetenv_others: true, pgroup: true) do |input, output, errors, child|
+            input.close
+            Timeout.timeout(@timeout) { [*read_output(output, errors), child.value] }
+          rescue Timeout::Error, Error
+            # Stop the unshare process and its children before Open3 waits for
+            # them. The namespace dies with its init, including descendants.
+            begin
+              Process.kill("KILL", -child.pid)
+            rescue Errno::ESRCH
+              # The worker may already have delivered its final bytes and exited.
+            end
+            raise
+          end
         end
       rescue Errno::ENOENT => error
         raise Error.new("manifest sandbox requires Linux unshare: #{error.message}"), cause: error
+      end
+
+      def read_output(output, errors)
+        streams = [output, errors]
+        frame = +"".b
+        detail = +"".b
+        until streams.empty?
+          IO.select(streams).first.each do |stream|
+            chunk = stream.read_nonblock(16_384, exception: false)
+            if chunk.nil?
+              streams.delete(stream)
+            elsif chunk == :wait_readable
+              next
+            elsif stream == output
+              frame << chunk
+              raise Error, "manifest output exceeds #{@max_output} bytes" if frame.bytesize > @max_output + FRAME_BYTES
+            elsif detail.bytesize < 4096
+              detail << chunk.byteslice(0, 4096 - detail.bytesize)
+            end
+          end
+        end
+        [frame, detail]
       end
 
       def sanitize_error(error)
