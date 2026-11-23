@@ -169,10 +169,10 @@ module Rubernetes
         Array(spec["accessModes"]).map(&:to_s) == ["ReadWriteOncePod"]
       end
 
-      # plugin.SupportsSELinuxContextMount: a CSI driver that declares
-      # spec.seLinuxMount; the in-tree plugins this node has (hostPath, local,
-      # emptyDir, configMap, secret, downwardAPI, projected, image) do not.
+      # plugin.SupportsSELinuxContextMount: FC, iSCSI, or a CSI driver that
+      # declares spec.seLinuxMount.
       def plugin_supports_context_mount?(spec, csi_driver: nil)
+        return true if %w[iscsi fc].include?(spec["backend"])
         return false unless spec["csi"]
 
         driver = csi_driver.respond_to?(:call) ? csi_driver.call(spec.dig("csi", "driver").to_s) : csi_driver
@@ -198,7 +198,8 @@ module Rubernetes
       PLUGIN_NAMES = {
         "emptyDir" => "kubernetes.io/empty-dir", "hostPath" => "kubernetes.io/host-path", "configMap" => "kubernetes.io/configmap",
         "secret" => "kubernetes.io/secret", "downwardAPI" => "kubernetes.io/downward-api", "projected" => "kubernetes.io/projected",
-        "csi" => "kubernetes.io/csi", "local" => "kubernetes.io/local-volume", "image" => "kubernetes.io/image"
+        "csi" => "kubernetes.io/csi", "local" => "kubernetes.io/local-volume", "image" => "kubernetes.io/image",
+        "nfs" => "kubernetes.io/nfs", "iscsi" => "kubernetes.io/iscsi", "fc" => "kubernetes.io/fc"
       }.freeze
 
       # getVolumePluginNameWithDriver: the plugin name, with the CSI driver
@@ -290,7 +291,11 @@ module Rubernetes
         # inline volume belongs to its Pod.
         def unique_name(pod_uid, volume_name, spec)
           pv = spec["persistentVolume"]
-          pv ? "pv/#{pv}" : "pod/#{pod_uid}/#{volume_name}"
+          case spec["backend"]
+          when "iscsi" then ISCSIBackend.unique_name(spec)
+          when "fc" then FibreChannelBackend.unique_name(spec)
+          else pv ? "pv/#{pv}" : "pod/#{pod_uid}/#{volume_name}"
+          end
         end
 
         private
