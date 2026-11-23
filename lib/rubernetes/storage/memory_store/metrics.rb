@@ -19,11 +19,15 @@ module Rubernetes
         [parts[1].to_s, parts[3].to_s].freeze
       end
 
+      def live_object_count
+        @monitor.synchronize { @live_versions.size }
+      end
+
       # Stored objects per resource key space ("registry/<group/version>/<resource>"),
       # for apiserver_storage_objects.  Only the key list is taken under the
       # lock; it is counted outside, and only when /metrics asks.
       def object_counts
-        keys = @monitor.synchronize { @objects.filter_map { |key, object| key unless object.nil? } }
+        keys = @monitor.synchronize { @live_versions.keys }
         keys.each_with_object(Hash.new(0)) do |key, counts|
           parts = key.split("/", 5)
           width = parts[1].to_s.match?(/\Av\d/) ? 3 : 4
@@ -36,7 +40,7 @@ module Rubernetes
       # apiserver_resource_size_estimate_bytes: the stored objects' encoded
       # size per resource prefix (what etcd would hold for them).
       def object_sizes
-        entries = @monitor.synchronize { @objects.filter_map { |key, object| [key, object] unless object.nil? } }
+        entries = @monitor.synchronize { @live_versions.transform_values { |entries| entries.last.last } }
         entries.each_with_object(Hash.new(0)) do |(key, object), sizes|
           parts = key.split("/", 5)
           width = parts[1].to_s.match?(/\Av\d/) ? 3 : 4
@@ -53,15 +57,10 @@ module Rubernetes
       # The group and resource of a storage key, "registry/<group>/<version>/
       # <resource>/..." or "registry/<version>/<resource>/..." for the core
       # group (the version segment is "__stored__" for custom resources).
-      def group_resource(key)
-        cache = (@group_resources ||= {})
-        parts = key.to_s.delete_prefix("/").split("/", 5)
-        cache[parts.first(4)] ||= self.class.group_resource(key)
-      end
-
       def group_resource_labels(key)
-        group, resource = group_resource(key)
-        {"group" => group, "resource" => resource}
+        pair = self.class.group_resource(key)
+        @group_resources ||= {}
+        @group_resources[pair] ||= {"group" => pair.first, "resource" => pair.last}.freeze
       end
 
       # cacher.dispatchEvents / watchCache.processEvent: every committed event
@@ -84,6 +83,19 @@ module Rubernetes
       # resourceVersion).
       def record_init_events(prefix, count)
         @metrics.increment("apiserver_init_events_total", group_resource_labels(prefix), by: count)
+      end
+
+      def record_sharded_watch(watcher, change)
+        return unless @metrics && watcher.selector.shard
+
+        @metrics.increment("apiserver_watch_shards_total", group_resource_labels(watcher.prefix), by: change)
+      end
+
+      def shard_mismatch_metric(prefix, selector)
+        return unless @metrics && selector.shard
+
+        labels = group_resource_labels(prefix)
+        -> { @metrics.increment("apiserver_watch_filtered_events_total", labels) }
       end
     end
   end
