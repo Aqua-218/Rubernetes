@@ -21,6 +21,8 @@ class EnsureSecretPulledImagesTest < Minitest::Test
   # private registry refuses anonymous access.
   class Registry
     attr_reader :pulls, :checks
+    attr_writer :digest
+    attr_accessor :before_pull
 
     def initialize(private_image: true, allowed: %w[alice])
       @private = private_image
@@ -29,7 +31,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
       @checks = []
     end
 
-    def digest = Image::Digest.parse("sha256:#{"c" * 64}")
+    def digest = @digest || Image::Digest.parse("sha256:#{"c" * 64}")
     def config = {"architecture" => "amd64", "os" => "linux", "config" => {"Cmd" => ["/app"]}}
 
     def factory
@@ -39,9 +41,11 @@ class EnsureSecretPulledImagesTest < Minitest::Test
         puller = Object.new
         puller.define_singleton_method(:pull) do |reference, platform:, rootfs:, unpack:|
           registry.authorize!(user)
+          registry.before_pull&.call(reference)
           registry.pulls << user
           FileUtils.mkdir_p(rootfs)
-          Image::Image.new(reference: reference.with_digest(registry.digest), manifest: Struct.new(:digest).new(registry.digest),
+          digest = reference.digest || registry.digest
+          Image::Image.new(reference: reference.with_digest(digest), manifest: Struct.new(:digest).new(digest),
                            config: JSON.generate(registry.config), rootfs: rootfs, config_object: registry.config)
         end
         puller.define_singleton_method(:resolve_digest) do |_reference, platform:|
@@ -189,6 +193,67 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     assert_same first, images.resolve(IMAGE, pull_policy: "Always")
     assert_equal [nil, nil], registry.checks
     assert_equal [nil], registry.pulls, "an unchanged digest is not downloaded again"
+  end
+
+  def test_access_proof_updates_the_tag_and_preserves_credential_verification
+    registry = Registry.new(allowed: %w[alice carol])
+    images = resolver(registry)
+    first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
+    registry.digest = Image::Digest.parse("sha256:#{"d" * 64}")
+
+    second = images.resolve(IMAGE, credentials: {username: "carol"}, pull_secret: SECRET_B)
+
+    assert_equal registry.digest, second.digest
+    refute_equal first.rootfs, second.rootfs
+    assert_same second, images.resolve(IMAGE, credentials: {username: "carol"}, pull_secret: SECRET_B)
+    assert_raises(Image::RegistryError) { images.resolve(IMAGE) }
+    assert_same second, images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
+    assert_equal %w[alice carol], registry.pulls
+    assert_equal %w[carol alice], registry.checks
+  end
+
+  def test_pod_lifecycle_passes_the_pull_secret_to_the_resolver
+    registry = Registry.new
+    images = resolver(registry)
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: Object.new, image_resolver: images)
+    keyring = Rubernetes::Node::ImageCredentials.new
+    keyring.add_auth("registry.example", {"username" => "alice", "password" => "pw"}, source: SECRET_A.slice(:uid, :namespace, :name))
+    pod_image = lifecycle.send(:resolve_with_keyring, IMAGE, keyring)
+
+    assert_raises(Image::RegistryError) { lifecycle.send(:resolve_with_keyring, IMAGE, nil) }
+    assert_equal ["alice"], registry.pulls
+  ensure
+    images&.release(pod_image) if pod_image
+  end
+
+  def test_slow_pull_cannot_replace_the_tag_refreshed_by_a_newer_request
+    registry = Registry.new(private_image: false)
+    images = resolver(registry)
+    images.resolve(IMAGE)
+    previous = Image::Digest.parse("sha256:#{"d" * 64}")
+    registry.digest = previous
+    entered = Queue.new
+    finish = Queue.new
+    registry.before_pull = lambda do |reference|
+      if reference.digest == previous
+        entered << true
+        finish.pop
+      end
+    end
+    slower = Thread.new { images.resolve(IMAGE, pull_policy: "Always") }
+
+    assert entered.pop(timeout: 2)
+
+    registry.digest = Image::Digest.parse("sha256:#{"e" * 64}")
+    latest = images.resolve(IMAGE, pull_policy: "Always")
+    finish << true
+
+    assert_equal previous, slower.value.digest
+    assert_equal registry.digest, latest.digest
+    assert_same latest, images.resolve(IMAGE)
+  ensure
+    finish << true if slower&.alive?
+    slower&.join
   end
 
   def test_a_credential_provider_service_account_is_recorded_and_matched
