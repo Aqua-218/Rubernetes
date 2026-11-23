@@ -5,9 +5,11 @@ require "stringio"
 require "tempfile"
 require "zlib"
 
+require_relative "../support/secure_compare"
 require_relative "digest"
 require_relative "errors"
 require_relative "media_types"
+require_relative "verified_download"
 require_relative "../platform/linux/secure_rootfs"
 
 module Rubernetes
@@ -49,9 +51,9 @@ module Rubernetes
       end
     end
 
-    # Safe gzip/tar layer applier. Every archive is verified into a temporary
-    # compressed file before any rootfs pathname is changed; this prevents a
-    # digest failure from partially applying an untrusted stream.
+    # Applies compressed and plain tar layers. Every archive is verified into
+    # a temporary file before any rootfs pathname is changed, so a digest
+    # failure cannot partially apply an untrusted stream.
     class LayerExtractor
       TAR_BLOCK_BYTES = 512
       MAX_READ_BYTES = 1024 * 1024
@@ -102,34 +104,67 @@ module Rubernetes
         temporary.flush
         temporary.rewind
 
-        type = normalize_media_type(media_type, temporary)
-        raise UnsupportedMediaType, "zstd layer decompression is unavailable in Ruby stdlib" if MediaTypes.zstd_layer?(type)
-
-        gzip = if type.nil?
-                 temporary.rewind
-                 temporary.read(2) == "\x1f\x8b".b
-               else
-                 MediaTypes.gzip_layer?(type)
-               end
-        reader = gzip ? gzip_reader(temporary, type) : bounded_reader(temporary)
-        parse_tar(reader)
-        drain_trailing_archive(reader)
+        apply_verified(temporary, media_type)
         compressed_bytes
       rescue Zlib::Error, IOError => error
         raise LayerError.new("cannot read OCI layer: #{error.message}", cause: error), cause: error
       ensure
-        begin
-          reader.close if defined?(reader) && reader && reader.respond_to?(:close)
-        rescue IOError
-          # The primary extraction error is more useful than a close failure.
-        end
-        temporary.close! if defined?(temporary) && temporary
+        temporary&.close!
       end
       alias unpack extract
       alias apply extract
       alias extract_layer extract
 
+      # Consumes a VerifiedDownload handoff from the built-in registry
+      # transport without re-reading its bytes. Other sources use the
+      # defensive named-file path below, which verifies the descriptor again.
+      def extract_download(download, digest:, expected_size:, media_type:)
+        return extract_verified_download(download, digest: digest, expected_size: expected_size, media_type: media_type) if download.is_a?(VerifiedDownload)
+
+        temporary = download
+        File.open(temporary.path, File::RDONLY | File::NOFOLLOW) do |input|
+          raise LayerError, "downloaded layer file changed" unless File.identical?(input, temporary)
+
+          temporary.close!
+          return extract(input, digest: digest, expected_size: expected_size, media_type: media_type) unless input.stat.nlink.zero?
+
+          bytes = copy_and_verify_source(input, nil, Digest.parse(digest), expected_size)
+          input.rewind
+          apply_verified(input, media_type)
+          bytes
+        end
+      rescue Zlib::Error, IOError, ArgumentError, TypeError => error
+        raise LayerError.new("cannot read OCI layer: #{error.message}", cause: error), cause: error
+      end
+
       private
+
+      def extract_verified_download(download, digest:, expected_size:, media_type:)
+        expected_digest = Digest.parse(digest)
+        expected_bytes = Integer(expected_size)
+        unless download.digest == expected_digest && download.size == expected_bytes && download.stat.size == expected_bytes
+          raise DigestMismatch, "verified download does not match the requested descriptor"
+        end
+
+        apply_verified(download, media_type)
+        expected_bytes
+      rescue ArgumentError, TypeError => error
+        raise LayerError.new("verified download descriptor is invalid: #{error.message}", cause: error), cause: error
+      ensure
+        download.close!
+      end
+
+      def apply_verified(input, media_type)
+        reader = layer_reader(input, normalize_media_type(media_type))
+        parse_tar(reader)
+        drain_trailing_archive(reader)
+      ensure
+        begin
+          reader&.close
+        rescue IOError
+          # Preserve the extraction error if closing the reader also fails.
+        end
+      end
 
       def copy_and_verify_source(source, destination, expected, expected_size)
         input, close_input = open_source(source)
@@ -145,7 +180,7 @@ module Rubernetes
             raise LimitError, "compressed layer exceeds the configured byte limit" if compressed_bytes > limits.max_compressed_bytes
 
             digest.update(chunk)
-            destination.write(chunk)
+            destination&.write(chunk)
           end
         ensure
           input.close if close_input
@@ -174,7 +209,7 @@ module Rubernetes
         raise LayerError.new("cannot open OCI layer source: #{error.message}", cause: error), cause: error
       end
 
-      def normalize_media_type(media_type, _io)
+      def normalize_media_type(media_type)
         return nil if media_type.nil? || media_type.to_s.empty?
 
         type = media_type.to_s.split(";", 2).first.strip
@@ -183,11 +218,26 @@ module Rubernetes
         type
       end
 
-      def gzip_reader(io, _media_type)
+      def layer_reader(io, type)
+        return zstd_reader(io) if MediaTypes.zstd_layer?(type)
+
+        gzip = type.nil? ? io.read(2) == "\x1f\x8b".b : MediaTypes.gzip_layer?(type)
+        gzip ? gzip_reader(io) : bounded_reader(io)
+      end
+
+      def gzip_reader(io)
         io.rewind
         Zlib::GzipReader.new(io)
       rescue Zlib::Error => error
         raise LayerError.new("layer is not a valid gzip stream: #{error.message}", cause: error), cause: error
+      end
+
+      def zstd_reader(io)
+        require_relative "zstd_reader"
+
+        ZstdReader.new(io)
+      rescue Fiddle::DLError => error
+        raise UnsupportedMediaType.new("zstd layer decompression requires libzstd.so.1: #{error.message}", cause: error), cause: error
       end
 
       def bounded_reader(io)
@@ -440,17 +490,16 @@ module Rubernetes
       def safe_entry_path(raw, allow_root: false)
         bytes = raw.to_s.b
         raise SecurityError, "tar path contains NUL" if bytes.include?("\0")
-        if bytes.start_with?("/", "\\") || bytes.match?(%r{\A[A-Za-z]:[\\/]})
-          raise SecurityError,
-                "tar path is absolute"
-        end
+        raise SecurityError, "tar path is empty" if bytes.empty?
         raise SecurityError, "tar path exceeds the configured length limit" if bytes.bytesize > limits.max_path_bytes
 
-        components = bytes.split("/")
-        raise SecurityError, "tar path is empty" if components.empty? || components.all?(&:empty?)
+        # Image builders such as ko emit POSIX names rooted at the image's
+        # root. Pass only relative names to the descriptor-confined rootfs.
+        relative = bytes.sub(%r{\A/+}, "")
+        raise SecurityError, "tar path uses an absolute Windows path" if relative.start_with?("\\") || relative.match?(%r{\A[A-Za-z]:[\\/]})
 
         normalized = []
-        components.each do |component|
+        relative.split("/").each do |component|
           next if component.empty? || component == "."
           raise SecurityError, "tar path contains a parent traversal component" if component == ".."
 
@@ -694,13 +743,7 @@ module Rubernetes
         end
       end
 
-      def secure_compare(left, right)
-        return false unless left.bytesize == right.bytesize
-
-        result = 0
-        left.bytes.zip(right.bytes) { |a, b| result |= a ^ b }
-        result.zero?
-      end
+      def secure_compare(left, right) = SecureCompare.call(left, right)
     end
 
     Layer = LayerExtractor
