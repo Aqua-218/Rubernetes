@@ -4,18 +4,20 @@ require "json"
 require "psych"
 
 require_relative "errors"
+require_relative "resource_table"
 
 module Rubernetes
   module Client
     # Formats Kubernetes responses for human and machine consumption.
     class Output
-      FORMATS = %w[json yaml name].freeze
+      FORMATS = %w[json yaml name table wide].freeze
 
       def self.render(value, format: "json")
         new(format: format).render(value)
       end
 
-      def initialize(format: "json")
+      def initialize(format: "json", now: nil)
+        @now = now
         @format = format.to_s.downcase
         return if FORMATS.include?(@format)
 
@@ -30,6 +32,8 @@ module Rubernetes
           Psych.dump(value, line_width: -1)
         when "name"
           render_names(value)
+        when "table", "wide"
+          ResourceTable.new(wide: @format == "wide", now: @now || Time.now.utc).render(value)
         end
       rescue JSON::GeneratorError, Psych::Exception => error
         raise Error.new("cannot format response as #{@format}: #{error.message}", cause: error), cause: error
