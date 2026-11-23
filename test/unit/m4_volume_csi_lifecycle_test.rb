@@ -584,6 +584,112 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     end
   end
 
+  def test_kubernetes_csi_stage_can_be_unmounted_but_publish_must_have_kernel_readback
+    readback = KernelReadback.new
+    csi = EffectCSI.new(readback)
+    csi.define_singleton_method(:pod_context?) { true }
+    csi.stage_readback = false
+    csi.publish_readback = false
+    manager, id = strict_csi_manager(csi, readback, suffix: "empty-stage")
+    stage = manager.node.stage(id, File.join(@directory, "staging"), token: "stage", node: "node-a")
+
+    assert_equal false, stage.fetch("mounted")
+    assert_nil stage["mountId"]
+    assert_empty manager.mount_ledger.entries
+    assert_raises(Rubernetes::Volume::OperationUnknown) do
+      manager.node.publish(id, "pod", File.join(@directory, "target"), token: "publish", readonly: false, node: "node-a")
+    end
+  end
+
+  def test_kubernetes_csi_uses_one_node_stage_until_the_last_pod_reference_is_released
+    readback = KernelReadback.new
+    bridge = CSI.new
+    bridge.define_singleton_method(:node_capabilities) { ["STAGE_UNSTAGE_VOLUME"] }
+    api = Object.new
+    api.define_singleton_method(:get) { |*| {"spec" => {"attachRequired" => false}} }
+    csi = Rubernetes::Volume::KubernetesCSIAdapter.new(driver: "example.csi", bridge: bridge, api: api, node_name: "node-a")
+    options = {data_dir: @directory, csi: csi, adapter: readback, mount_adapter: readback, require_real_readback: true, fsync: true}
+    manager = Rubernetes::Volume::Manager.new(**options)
+    holders = %w[pod-a pod-b].map do |pod|
+      spec = {"name" => pod, "csi" => {"driver" => "example.csi", "volumeHandle" => "same-handle"}}
+      id = manager.create_volume(spec, token: "create-#{pod}")
+      manager.controller.publish(id, "node-a", token: "attach-#{pod}")
+      path = File.join(@directory, pod)
+      stage = manager.node.stage(id, path, token: "stage-#{pod}", node: "node-a")
+
+      assert_equal id, stage.fetch("volumeId")
+      [id, path, stage.fetch("target")]
+    end
+
+    assert_equal holders[0].last, holders[1].last
+    assert_equal(1, bridge.calls.count { |call| call.first == :stage })
+
+    restarted = Rubernetes::Volume::Manager.new(**options)
+    restarted.node.unstage(*holders[0].first(2), token: "unstage-a")
+
+    assert_equal(0, bridge.calls.count { |call| call.first == :unstage })
+    assert_path_exists holders[1].last
+    restarted.node.unstage(*holders[1].first(2), token: "unstage-b")
+
+    assert_equal(1, bridge.calls.count { |call| call.first == :unstage })
+    refute_path_exists holders[1].last
+  end
+
+  def test_skipped_kubernetes_csi_stage_can_be_removed_after_its_directory_disappears
+    readback = KernelReadback.new
+    bridge = CSI.new
+    bridge.define_singleton_method(:node_capabilities) { [] }
+    bridge.define_singleton_method(:unstage) { |*| raise "driver did not stage this volume" }
+    api = Object.new
+    api.define_singleton_method(:get) { |*| {"spec" => {"attachRequired" => false}} }
+    csi = Rubernetes::Volume::KubernetesCSIAdapter.new(driver: "example.csi", bridge: bridge, api: api, node_name: "node-a")
+    manager = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, adapter: readback, mount_adapter: readback,
+                                              require_real_readback: true, fsync: true)
+    id = manager.create_volume({"name" => "data", "csi" => {"driver" => "example.csi", "volumeHandle" => "no-stage"}}, token: "create")
+    manager.controller.publish(id, "node-a", token: "attach")
+    directory = File.join(@directory, "pod", "stages")
+    path = File.join(directory, "data")
+    FileUtils.mkdir_p(directory)
+    stage = manager.node.stage(id, path, token: "stage", node: "node-a")
+
+    assert stage.fetch("stageSkipped")
+
+    FileUtils.rm_r(directory)
+
+    assert manager.node.unstage(id, path, token: "unstage", node: "node-a")
+    assert_empty manager.fetch_record(id).stages
+  end
+
+  def test_read_write_once_pod_fences_distinct_records_for_the_same_csi_volume
+    readback = KernelReadback.new
+    bridge = EffectCSI.new(readback)
+    bridge.define_singleton_method(:node_capabilities) { ["STAGE_UNSTAGE_VOLUME"] }
+    api = Object.new
+    api.define_singleton_method(:get) { |*| {"spec" => {"attachRequired" => false, "fsGroupPolicy" => "File"}} }
+    csi = Rubernetes::Volume::KubernetesCSIAdapter.new(driver: "example.csi", bridge: bridge, api: api, node_name: "node-a")
+    manager = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, adapter: readback,
+                                              mount_adapter: readback, require_real_readback: true)
+    first, second = %w[pod-a pod-b].map do |pod|
+      spec = {"name" => pod, "accessModes" => ["ReadWriteOncePod"],
+              "csi" => {"driver" => "example.csi", "volumeHandle" => "same-handle"}}
+      id = manager.create_volume(spec, token: "create-#{pod}")
+      manager.controller.publish(id, "node-a", token: "attach-#{pod}")
+      manager.node.stage(id, File.join(@directory, "stage-#{pod}"), token: "stage-#{pod}", node: "node-a")
+      [id, pod, File.join(@directory, "publish-#{pod}")]
+    end
+
+    manager.node.publish(*first, readonly: false, token: "publish-a", node: "node-a")
+    assert_raises(Rubernetes::Volume::MultiAttachError) do
+      manager.node.publish(*second, readonly: false, token: "publish-b", node: "node-a")
+    end
+    assert_equal(1, bridge.mutations.count { |operation, _| operation == :publish })
+
+    manager.node.unpublish(*first, token: "unpublish-a")
+    manager.node.publish(*second, readonly: false, token: "publish-b", node: "node-a")
+
+    assert_equal(2, bridge.mutations.count { |operation, _| operation == :publish })
+  end
+
   def test_restart_reconciles_unobserved_csi_effect_to_retryable_known_state
     csi = CSI.new
     csi.define_singleton_method(:list_volumes) do
