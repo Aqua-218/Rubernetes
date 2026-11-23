@@ -21,6 +21,37 @@ class M3ControllerTest < Minitest::Test
     assert_same Controller.default_registry, Controller.default_registry.startup_validate!
   end
 
+  def test_store_write_errors_do_not_repeat_a_mutation_or_its_fence
+    writes = []
+    store = Object.new
+    store.define_singleton_method(:create) do |_key, value|
+      writes << value
+      raise ArgumentError, "unknown keyword in post-write callback"
+    end
+    adapter = Controller::StoreAdapter.new(store)
+    fences = 0
+
+    error = assert_raises(ArgumentError) { adapter.create(object("Pod", "p"), fence: -> { fences += 1 }) }
+
+    assert_equal "unknown keyword in post-write callback", error.message
+    assert_equal 1, writes.length
+    assert_equal 1, fences
+  end
+
+  def test_legacy_store_write_signatures
+    previous = object("Pod", "p")
+    previous["metadata"]["resourceVersion"] = "17"
+    changed = previous.merge("spec" => {"nodeName" => "node"})
+    store = Object.new
+    store.define_singleton_method(:get) { |_key| previous }
+    store.define_singleton_method(:update) { |_key, _pod, prec:| prec }
+    store.define_singleton_method(:delete) { |key| key }
+    adapter = Controller::StoreAdapter.new(store)
+
+    assert_equal "17", adapter.update(changed)
+    assert_equal "registry/v1/pods/default/p", adapter.delete(previous)
+  end
+
   def test_base_controller_is_abstract_and_cannot_be_used_as_a_reconciler
     assert_raises(Controller::MissingReconcileError) { Controller::BaseController.new }
   end
@@ -91,6 +122,28 @@ class M3ControllerTest < Minitest::Test
     assert_equal [1, 2, 4], result.batches.take(3).map(&:length)
     assert_equal [1, 2, 4, 1], adapter.batch_sizes
     assert_equal 7, adapter.list("Pod", namespace: "default").length
+  end
+
+  def test_replicaset_reports_failed_creates_before_retrying_and_clears_the_condition_at_target
+    controller = Controller::ReplicaSetController.new
+    resource = replica_set(replicas: 2)
+    child = pod("web-1", owners: [resource], labels: {"app" => "web"})
+    key = "default/web"
+    Controller::ApplyFailures.record(controller.name, key, RuntimeError.new("exceeded pod quota"))
+    plan = controller.plan(resource, pods: [child])
+
+    assert_equal :status_update, plan.batches.first.first.action
+    assert_equal "ReplicaFailure", plan.status.dig("conditions", 0, "type")
+    assert_equal "FailedCreate", plan.status.dig("conditions", 0, "reason")
+    assert_equal "exceeded pod quota", plan.status.dig("conditions", 0, "message")
+
+    resource["status"] = plan.status
+    scaled = controller.scale(resource, 1, pods: [child])
+
+    assert_nil scaled.status["conditions"]
+    assert_empty scaled.creates
+  ensure
+    Controller::ApplyFailures.clear(controller.name, key)
   end
 
   def test_registry_fails_closed_for_missing_builtin_and_unknown_gvk
@@ -198,11 +251,76 @@ class M3ControllerTest < Minitest::Test
 
   def test_statefulset_keeps_stable_ordinals_and_scales_down_highest_first
     set = stateful_set(replicas: 2)
-    pods = [0, 1, 2].map { |ordinal| pod("db-#{ordinal}", owners: [set], labels: {"controller.kubernetes.io/ordinal" => ordinal.to_s}) }
+    pods = [0, 1, 2].map { |ordinal| pod("db-#{ordinal}", owners: [set], labels: {"app" => "db"}) }
     result = Controller::StatefulSetController.new.plan(set, pods: pods)
 
     assert_equal(["db-2"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty result.creates
+  end
+
+  def test_ordered_statefulset_creates_claims_one_replica_at_a_time
+    set = stateful_set(replicas: 3)
+    set.fetch("spec")["volumeClaimTemplates"] = [{"metadata" => {"name" => "data"}}]
+    set.fetch("spec")["persistentVolumeClaimRetentionPolicy"] = {"whenDeleted" => "Delete"}
+    controller = Controller::StatefulSetController.new
+    initial = controller.plan(set, pods: [], pvcs: [])
+    claims = initial.creates.select { |operation| operation.resource.kind == "PersistentVolumeClaim" }
+    claim = claims.first.object
+
+    assert_equal(["data-db-0"], claims.map { |operation| operation.object.dig("metadata", "name") })
+    assert_nil claim.dig("metadata", "ownerReferences")
+
+    next_replica = controller.plan(set, pods: [pod("db-0", owners: [set], labels: {"app" => "db"})], pvcs: [claim])
+    created_names = next_replica.creates.map { |operation| operation.object.dig("metadata", "name") }
+    ownership = next_replica.updates.find { |operation| operation.resource.kind == "PersistentVolumeClaim" }
+
+    assert_includes created_names, "data-db-1"
+    refute_includes created_names, "data-db-2"
+    assert_equal set.dig("metadata", "uid"), ownership.object.dig("metadata", "ownerReferences", 0, "uid")
+  end
+
+  def test_statefulset_requeues_for_the_first_pod_to_become_available
+    set = stateful_set(replicas: 2)
+    set.fetch("spec")["minReadySeconds"] = 20
+    now = Time.utc(2026, 1, 1, 12, 0, 15)
+    pods = [17, 5].map.with_index do |elapsed, index|
+      pod("db-#{index}", owners: [set], labels: {"app" => "db"}).tap do |candidate|
+        candidate.fetch("status").fetch("conditions").first["lastTransitionTime"] = (now - elapsed).iso8601
+      end
+    end
+    controller = Controller::StatefulSetController.new
+    early = controller.plan(set, pods: pods, now: now)
+    later = controller.plan(set, pods: pods, now: now + 3)
+
+    assert_equal 0, early.status.fetch("availableReplicas")
+    assert_in_delta 3.0, early.requeue_after
+    assert_equal 1, later.status.fetch("availableReplicas")
+    assert_in_delta 12.0, later.requeue_after
+  end
+
+  def test_statefulset_claims_matching_orphans_and_releases_pods_after_a_label_change
+    set = stateful_set(replicas: 2)
+    orphan = pod("db-0", labels: {"app" => "db"})
+    changed = pod("db-1", owners: [set], labels: {"app" => "other"})
+    unrelated = pod("other-0", labels: {"app" => "db"})
+    result = Controller::StatefulSetController.new.plan(set, pods: [orphan, changed, unrelated])
+    owners = result.updates.select { |operation| operation.resource.kind == "Pod" }
+      .to_h { |operation| [operation.object.dig("metadata", "name"), operation.object.dig("metadata", "ownerReferences")] }
+
+    assert_equal({"db-0" => [Controller::Support.owner_reference(set)], "db-1" => []}, owners)
+  end
+
+  def test_statefulset_retention_respects_claims_owned_by_another_controller
+    set = stateful_set(replicas: 0)
+    set.fetch("spec")["volumeClaimTemplates"] = [{"metadata" => {"name" => "data"}}]
+    set.fetch("spec")["persistentVolumeClaimRetentionPolicy"] = {"whenScaled" => "Delete"}
+    outside = object("ConfigMap", "another-controller", uid: "other-uid")
+    claim = object("PersistentVolumeClaim", "data-db-0", uid: "data-uid", owners: [outside])
+    replica = pod("db-0", owners: [set], labels: {"app" => "db"})
+    planned = Controller::StatefulSetController.new.plan(set, pods: [replica], pvcs: [claim])
+
+    assert_equal(["db-0"], planned.deletes.map { |operation| Controller::Support.name(operation.object) })
+    refute(planned.updates.any? { |operation| operation.resource.kind == "PersistentVolumeClaim" })
   end
 
   def test_daemonset_assigns_one_pod_per_schedulable_matching_node
@@ -322,6 +440,7 @@ class M3ControllerTest < Minitest::Test
 
     assert_equal :acquired, second.step
     assert_equal "second", store.list("").items.first.dig("spec", "holderIdentity")
+    assert_equal 1, store.list("").items.first.dig("spec", "leaseTransitions")
   end
 
   # A leader whose renewal missed the renew deadline steps down but still
@@ -336,14 +455,15 @@ class M3ControllerTest < Minitest::Test
                                            lease_duration_seconds: 15, renew_deadline_seconds: 10, retry_period_seconds: 2)
 
     assert_equal :acquired, elector.step
-    transitions = store.list("").items.first.dig("spec", "leaderTransitions")
+    transitions = store.list("").items.first.dig("spec", "leaseTransitions")
     now += 11
 
     assert_equal :lost, elector.step
     refute_predicate elector, :leader?
     assert_equal :acquired, elector.step
     assert_predicate elector, :leader?
-    assert_equal transitions, store.list("").items.first.dig("spec", "leaderTransitions")
+    assert_equal 0, transitions
+    assert_equal transitions, store.list("").items.first.dig("spec", "leaseTransitions")
     # The elector touches the API once per retry period, so a step at the
     # same instant reports the cached decision; the renewal follows once the
     # retry period has passed.
