@@ -105,12 +105,7 @@ ensure
 end
 
 def source_input_identity
-  paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-    next false unless regular_source_file?(path)
-
-    relative = path.delete_prefix("#{ROOT}/")
-    !M0SourceInventory.excluded?(relative)
-  end.sort
+  paths = M0SourceInventory.source_files(ROOT) { |path| regular_source_file?(path) }
   content = paths.map do |path|
     "#{path.delete_prefix("#{ROOT}/")}\0#{Digest::SHA256.file(path).hexdigest}\n"
   end.join
