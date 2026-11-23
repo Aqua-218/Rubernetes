@@ -790,6 +790,7 @@ module Rubernetes
       end
 
       def delete_tmpfs_mount!(path, identity:)
+        identity = replaced_tmpfs_identity(path, identity)
         verify_mount_identity!(path, identity)
         target_lease = acquire_target_lease(path, directory: nil, create: false)
         begin
@@ -798,6 +799,26 @@ module Rubernetes
         ensure
           target_lease&.close
         end
+      end
+
+      # A tmpfs at this volume's own staging path whose mount id AND device
+      # both differ from the record is not the recorded mount: the recorded
+      # one is gone (the host rebooted, or this agent mounted a fresh tmpfs
+      # there after losing it) and nothing but this volume mounts at its
+      # private path.  The record then refused the deletion for ever and the
+      # Pod stayed Terminating (found on the demo VM after a reboot,
+      # 2026-11-23).  The tmpfs holds only this volume's own files, which are
+      # being deleted anyway, so the mount found there is the one removed.
+      def replaced_tmpfs_identity(path, identity)
+        recorded = identity.respond_to?(:to_h) ? identity.to_h.transform_keys(&:to_s) : nil
+        return identity unless recorded && recorded["bind"] != true && recorded["filesystem"].to_s == "tmpfs"
+
+        observed = mount_identity_at(path)
+        observed = observed.to_h.transform_keys(&:to_s) if observed.respond_to?(:to_h)
+        return identity unless observed && observed["filesystem"].to_s == "tmpfs"
+        return identity if observed["mountId"].to_s == recorded["mountId"].to_s || observed["deviceId"].to_s == recorded["deviceId"].to_s
+
+        recorded.merge(observed.slice("mountId", "deviceId", "root", "filesystemUuid", "source", "kernelSource"))
       end
 
       def target_directory?
