@@ -8,6 +8,7 @@ require "securerandom"
 require "uri"
 
 require_relative "core"
+require_relative "manifest_backed"
 require_relative "../../../api/managed_fields"
 
 module Rubernetes
@@ -144,13 +145,17 @@ module Rubernetes
           end
 
           def admission_request_document(attributes)
+            kind_group, kind_version, kind_name = attributes.gvk
+            kind = {"group" => kind_group, "version" => kind_version, "kind" => kind_name}
+            subresource = attributes.subresource unless attributes.subresource.empty?
             {
               "uid" => attributes.uid,
-              "kind" => {"group" => attributes.group, "version" => attributes.version, "kind" => attributes.kind},
+              "kind" => kind,
               "resource" => {"group" => attributes.group, "version" => attributes.version, "resource" => attributes.resource},
-              "subResource" => attributes.subresource.empty? ? nil : attributes.subresource,
-              "requestKind" => {"group" => attributes.group, "version" => attributes.version, "kind" => attributes.kind},
+              "subResource" => subresource,
+              "requestKind" => kind,
               "requestResource" => {"group" => attributes.group, "version" => attributes.version, "resource" => attributes.resource},
+              "requestSubResource" => subresource,
               "name" => attributes.name,
               "namespace" => attributes.namespace.empty? ? nil : attributes.namespace,
               "operation" => attributes.operation,
@@ -235,11 +240,7 @@ module Rubernetes
               if http.use_ssl?
                 http.verify_mode = OpenSSL::SSL::VERIFY_PEER
                 bundle = client_config["caBundle"]
-                if bundle
-                  store = OpenSSL::X509::Store.new
-                  OpenSSL::X509::Certificate.load(bundle.unpack1("m0")).each { |certificate| store.add_cert(certificate) }
-                  http.cert_store = store
-                end
+                http.cert_store = Security::Egress.kubernetes_cert_store(bundle) unless bundle.to_s.empty?
                 http.cert = @client_certificate if @client_certificate
                 http.key = @client_key if @client_key
               end
@@ -333,6 +334,7 @@ module Rubernetes
         class AdmissionWebhook < Plugin
           include Helpers
           include Matching
+          include ManifestBackedAdmission
 
           CONFIGURATION_GROUP = "admissionregistration.k8s.io"
           ADMISSION_REVIEW_VERSIONS = %w[v1 v1beta1].freeze
@@ -344,8 +346,7 @@ module Rubernetes
           end
 
           def handles?(attributes)
-            !(attributes.group == CONFIGURATION_GROUP && %w[mutatingwebhookconfigurations
-                                                            validatingwebhookconfigurations].include?(attributes.resource))
+            !admission_configuration?(attributes) || !@config["manifest_source"].nil?
           end
 
           def reinvokable?
@@ -354,17 +355,12 @@ module Rubernetes
 
           private
 
-          def configurations(resource)
-            @context.list(resource, nil, group: CONFIGURATION_GROUP)
-          end
-
           def applicable_hooks(configuration, attributes)
             Array(configuration["webhooks"]).select do |hook|
               match_policy = hook["matchPolicy"] || "Equivalent"
               next false unless Array(hook["rules"]).any? { |rule| rule_matches?(rule, attributes, match_policy: match_policy) }
               next false unless namespace_selector_matches?(hook["namespaceSelector"], attributes)
               next false unless object_selector_matches?(hook["objectSelector"], attributes)
-              next false if attributes.dry_run && !%w[None NoneOnDryRun].include?(hook["sideEffects"])
 
               match_conditions_pass?(hook["matchConditions"], attributes, failure_policy: hook["failurePolicy"] || "Fail",
                                                                           name: hook["name"])
@@ -405,9 +401,20 @@ module Rubernetes
             nil
           end
 
-          def call_hook(hook, attributes, _configuration_name)
+          def call_hook(hook, attributes)
             started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            effects = hook["sideEffects"]
+            if attributes.dry_run && effects && !%w[None NoneOnDryRun].include?(effects)
+              record_webhook(hook, attributes, started, code: 0, rejected: true, error_type: "apiserver_internal_error", rejection_code: 0)
+              raise Rejected.new("admission webhook #{hook["name"].inspect} does not support dry run", code: 400, reason: "BadRequest", plugin: name)
+            end
+            invoke_hook(hook, attributes, started)
+          end
+
+          def invoke_hook(hook, attributes, started)
             code = 0
+            raise Error, "Webhook SideEffects is nil" if attributes.dry_run && hook["sideEffects"].nil?
+
             version = review_version(hook)
             request = admission_request_document(attributes)
             review = {"apiVersion" => "admission.k8s.io/#{version}", "kind" => "AdmissionReview", "request" => request}
@@ -476,14 +483,12 @@ module Rubernetes
           def admit(attributes)
             state = attributes.reinvocation_value(name) || attributes.set_reinvocation_value(name, ReinvokeState.new)
             state.require_reinvoking_previously_invoked if attributes.reinvocation? && state.output_changed?(attributes.object)
-            configurations("mutatingwebhookconfigurations").sort_by do |configuration|
-              configuration.dig("metadata", "name").to_s
-            end.each do |configuration|
+            configurations("mutatingwebhookconfigurations", attributes).each do |configuration, source_prefix|
               configuration_name = configuration.dig("metadata", "name").to_s
               seen = Hash.new(0)
               uids = Array(configuration["webhooks"]).to_h do |hook|
                 hook_name = hook["name"].to_s
-                uid = "#{configuration_name}/#{hook_name}/#{seen[hook_name]}"
+                uid = "#{source_prefix}#{configuration_name}/#{hook_name}/#{seen[hook_name]}"
                 seen[hook_name] += 1
                 [hook, uid]
               end.compare_by_identity
@@ -493,7 +498,7 @@ module Rubernetes
                 # reinvocation pass, and only IfNeeded hooks run on it.
                 next if attributes.reinvocation? && !state.should_reinvoke?(uid)
 
-                response = call_hook(hook, attributes, configuration_name)
+                response = call_hook(hook, attributes)
                 changed = false
                 unless response.nil?
                   reject_from_response!(hook, response) unless response["allowed"] == true
@@ -521,9 +526,13 @@ module Rubernetes
               raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an unsupported patch type", code: 500,
                                                                                                              reason: "InternalError", plugin: name)
             end
-
             operations = JSON.parse(patch.unpack1("m0"))
-            attributes.object = API::Patch.apply(attributes.object, operations, type: :json, resource: nil)
+            return if operations == []
+
+            patched = API::Patch.apply(attributes.object, operations, type: :json, resource: nil)
+            attributes.object = attributes.decode_webhook_object(patched)
+          rescue API::Patch::Error => error
+            raise Rejected.new("Internal error occurred: #{error.message}", code: 500, reason: "InternalError", plugin: name)
           rescue JSON::ParserError, ArgumentError => error
             raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an invalid patch: #{error.message}", code: 500,
                                                                                                                     reason: "InternalError", plugin: name)
@@ -535,11 +544,9 @@ module Rubernetes
 
         class ValidatingAdmissionWebhook < AdmissionWebhook
           def validate(attributes)
-            configurations("validatingwebhookconfigurations").sort_by do |configuration|
-              configuration.dig("metadata", "name").to_s
-            end.each do |configuration|
+            configurations("validatingwebhookconfigurations", attributes).each do |configuration, _source_prefix|
               applicable_hooks(configuration, attributes).each do |hook|
-                response = call_hook(hook, attributes, configuration.dig("metadata", "name"))
+                response = call_hook(hook, attributes)
                 next if response.nil?
 
                 reject_from_response!(hook, response) unless response["allowed"] == true
@@ -556,11 +563,7 @@ module Rubernetes
         # messageExpression, auditAnnotations and validationActions.
         module PolicyCommon
           include Matching
-
-          def bindings_for(policy_name, binding_resource)
-            @context.list(binding_resource, nil,
-                          group: AdmissionWebhook::CONFIGURATION_GROUP).select { |binding| binding.dig("spec", "policyName") == policy_name }
-          end
+          include ManifestBackedAdmission
 
           def match_resources?(match, attributes)
             return true if match.nil?
@@ -635,12 +638,12 @@ module Rubernetes
 
           def validate(attributes)
             denials = []
-            @context.list("validatingadmissionpolicies", nil, group: AdmissionWebhook::CONFIGURATION_GROUP).each do |policy|
+            policy_bindings(attributes, "validatingadmissionpolicies", "validatingadmissionpolicybindings").each do |policy, bindings|
               policy_name = policy.dig("metadata", "name").to_s
               next unless match_resources?(policy.dig("spec", "matchConstraints"), attributes)
 
               collector = {}
-              bindings_for(policy_name, "validatingadmissionpolicybindings").each do |binding|
+              bindings.each do |binding|
                 next unless match_resources?(binding.dig("spec", "matchResources"), attributes)
 
                 params = begin
@@ -940,12 +943,10 @@ module Rubernetes
           def admit(attributes)
             errors = []
             invocations = []
-            policies = @context.list("mutatingadmissionpolicies", nil, group: AdmissionWebhook::CONFIGURATION_GROUP)
-            policies.sort_by { |policy| policy.dig("metadata", "name").to_s }.each do |policy|
-              policy_name = policy.dig("metadata", "name").to_s
+            policy_bindings(attributes, "mutatingadmissionpolicies", "mutatingadmissionpolicybindings").each do |policy, bindings|
               next unless match_resources?(policy.dig("spec", "matchConstraints"), attributes)
 
-              bindings_for(policy_name, "mutatingadmissionpolicybindings").each do |binding|
+              bindings.each do |binding|
                 next unless match_resources?(binding.dig("spec", "matchResources"), attributes)
 
                 begin
@@ -1046,8 +1047,7 @@ module Rubernetes
                 mutated = mutate(policy, mutation, attributes, param)
                 observe_mutation(policy, binding, "no_error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
                 attributes.object = if @context.respond_to?(:default_object)
-                                      @context.default_object(attributes.group, attributes.version,
-                                                              attributes.kind, mutated)
+                                      @context.default_object(*attributes.gvk, mutated)
                                     else
                                       mutated
                                     end
@@ -1160,7 +1160,7 @@ module Rubernetes
           # ApplyStructuredMergeDiff: the patch typed with the object's schema,
           # no atomic list, map or struct in it, merged into the live object.
           def apply_structured_merge(attributes, patch)
-            type = @context.respond_to?(:type_for) ? @context.type_for(attributes.group, attributes.version, attributes.kind) : nil
+            type = @context.respond_to?(:type_for) ? @context.type_for(*attributes.gvk) : nil
             model, type_ref = type || [MF::Schema::DEDUCED_MODEL, MF::Schema::DEDUCED_TYPE]
             patch_typed = MF::TypedValue.new(patch, model, type_ref, typed: false)
             errors = patch_typed.validate
