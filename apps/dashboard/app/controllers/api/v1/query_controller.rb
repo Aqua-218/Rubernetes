@@ -8,7 +8,7 @@ module Api
         expression = params.require(:query)
         time = parse_time(params[:time], default: engine.now_ms)
         result = engine.query(expression, time)
-        success(result.to_api)
+        success(result.to_api, warnings: result.warnings, infos: result.infos)
       end
 
       # GET|POST /api/v1/query_range?query=...&start=...&end=...&step=...
@@ -24,7 +24,7 @@ module Api
         raise Dashboard::Errors::BadRequest, "invalid parameter \"end\": end timestamp must not be before start time" if end_ms < start_ms
 
         result = engine.query_range(expression, start_ms, end_ms, step_ms)
-        success(result.to_api)
+        success(result.to_api, warnings: result.warnings, infos: result.infos)
       end
 
       # GET|POST /api/v1/series?match[]=...
