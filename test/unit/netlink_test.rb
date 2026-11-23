@@ -70,6 +70,19 @@ class NetlinkTest < Minitest::Test
     assert_match(/interrupted netlink dump/, error.message)
   end
 
+  def test_a_link_can_be_created_with_its_address
+    socket = CaptureSocket.new
+    netlink = Netlink.new(adapter: Netlink::SocketAdapter.new(socket_factory: -> { socket }), sequence: 0)
+
+    netlink.link_add(name: "rk-veth0", kind: "veth", peer: "rk-peer0", up: false, address: "02:aa:bb:cc:dd:ee")
+
+    _header, payload = split_message(socket.message)
+    attributes = Netlink::TLV.decode(payload.byteslice(16, payload.bytesize - 16))
+    address = attributes.find { |entry| entry.fetch("type") == Netlink::IFLA_ADDRESS }
+
+    assert_equal [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee], address.fetch("value").bytes
+  end
+
   def test_veth_encoder_uses_ifinfomsg_and_nested_peer_attributes
     socket = CaptureSocket.new
     netlink = Netlink.new(adapter: Netlink::SocketAdapter.new(socket_factory: -> { socket }), sequence: 0)
