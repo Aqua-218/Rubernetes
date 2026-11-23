@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 # Shared contracts for node subresources.  The node layer owns request
 # validation, authorization, request correlation, and byte-oriented streams;
 # runtime adapters own process and socket effects behind this boundary.
@@ -178,6 +180,9 @@ module Rubernetes
 
       attr_reader :request_id, :metadata
 
+      def self.readable?(endpoint) = endpoint.respond_to?(:read)
+      def self.writable?(endpoint) = endpoint.respond_to?(:write)
+
       def self.binary(value)
         raise TypeError, "stream chunks must be String values" unless value.is_a?(String)
 
@@ -204,7 +209,7 @@ module Rubernetes
         @mutex = Mutex.new
         @source_buffer = "".b
         @source_offset = 0
-        @source_enumerator = source.is_a?(String) || source.nil? || source.respond_to?(:read) ? nil : source.to_enum
+        @source_enumerator = source.is_a?(String) || source.nil? || Stream.readable?(source) ? nil : source.to_enum
         @read_closed = false
         @write_closed = false
         @eof = source.nil?
@@ -273,7 +278,7 @@ module Rubernetes
         bytes = self.class.binary(value)
         return 0 if bytes.empty?
 
-        raise IOError, "stream has no writable sink" unless @sink.respond_to?(:write)
+        raise IOError, "stream has no writable sink" unless Stream.writable?(@sink)
 
         offset = 0
         while offset < bytes.bytesize
@@ -379,7 +384,7 @@ module Rubernetes
         return read_from_string(length) if @source.is_a?(String)
         return nil if @source.nil?
 
-        if @source.respond_to?(:read)
+        if Stream.readable?(@source)
           if endpoint_accepts_timeout?(@source,
                                        :read) || (@source.respond_to?(:readpartial) && endpoint_accepts_timeout?(@source, :readpartial))
             read_io(@source, length, timeout: timeout)
@@ -489,18 +494,7 @@ module Rubernetes
         nil
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
     end
 
     # A stream with a readable output side and a writable input side.  Runtime
@@ -789,18 +783,7 @@ module Rubernetes
         raise InvalidRequest, "#{name} must be a non-negative number: #{error.message}"
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
     end
   end
 end
