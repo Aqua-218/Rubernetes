@@ -57,7 +57,7 @@ module Rubernetes
         @capacity_bytes = Types.parse_capacity(Types.key(hash, "capacityBytes", Types.key(capacity, "storage", Types.key(hash, "size"))))
         @access_modes = Types.normalize_access_modes(Types.key(hash, "accessModes", ["ReadWriteOnce"]))
         @reclaim_policy = Types.key(hash, "reclaimPolicy", Types.key(hash, "persistentVolumeReclaimPolicy", "Retain")).to_s
-        raise ValidationError, "unsupported PV reclaimPolicy #{@reclaim_policy.inspect}" unless %w[Delete Retain].include?(@reclaim_policy)
+        raise ValidationError, "unsupported PV reclaimPolicy #{@reclaim_policy.inspect}" unless %w[Delete Recycle Retain].include?(@reclaim_policy)
 
         @storage_class = Types.key(hash, "storageClassName", Types.key(hash, "storageClass", "")).to_s
         @volume_mode = Types.key(hash, "volumeMode", "Filesystem").to_s
