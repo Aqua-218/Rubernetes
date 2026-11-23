@@ -4,6 +4,8 @@ require_relative "runtime"
 require_relative "support"
 require_relative "types"
 require_relative "secondary_support"
+require_relative "horizontal_pod_autoscaler_status"
+require_relative "hpa_scale_discovery"
 require_relative "../schema"
 
 module Rubernetes
@@ -38,12 +40,10 @@ module Rubernetes
         # ResourceDescriptor::KNOWN is the production bootstrap's pinned
         # discovery snapshot.  A custom kind is accepted only when a real
         # schema registry supplied it above.
-        raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not discoverable" unless ResourceDescriptor::KNOWN.key?(kind)
+        known = ResourceDescriptor::KNOWN[kind]
+        raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not discoverable" unless known&.take(2) == [group, version]
 
-        descriptor = ResourceDescriptor.parse({"apiVersion" => api_version, "kind" => kind})
-        raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not served" unless descriptor.group == group && descriptor.version == version
-
-        descriptor
+        ResourceDescriptor.parse(kind)
       end
 
       alias resource_for resolve
@@ -144,17 +144,17 @@ module Rubernetes
       attr_reader :adapter
 
       def initialize(store: nil, adapter: nil)
-        @adapter = adapter || if store.is_a?(StoreAdapter)
-                                store
-                              elsif store
-                                StoreAdapter.new(store)
-                              end
+        @adapter = adapter || (store && StoreAdapter.wrap(store))
       end
 
       def get_scale(descriptor:, name:, namespace:)
         raise StoreError, "HPA scale client requires an API store" unless adapter
 
-        target = adapter.find(descriptor, name: name, namespace: namespace)
+        target = if adapter.is_a?(StoreAdapter)
+                   adapter.fetch_scale(descriptor, name: name, namespace: namespace)
+                 else
+                   adapter.find(descriptor, name: name, namespace: namespace)
+                 end
         raise StoreError, "scale target #{descriptor.identifier}/#{name} was not found" unless target
 
         snapshot_for(target, descriptor: descriptor)
@@ -410,7 +410,7 @@ module Rubernetes
         replicas = status_replicas
         ratio = usage.to_f / (target_average.to_f * replicas)
         replicas = (usage.to_f / target_average).ceil unless tolerances.within?(ratio)
-        [replicas, (usage.to_f / status_replicas).ceil, timestamp]
+        [replicas, average_metric_usage(usage, status_replicas), timestamp]
       end
 
       # GetExternalMetricReplicas.
@@ -438,10 +438,16 @@ module Rubernetes
         replicas = status_replicas
         ratio = usage.to_f / (target_per_pod.to_f * replicas)
         replicas = (usage.to_f / target_per_pod).ceil unless tolerances.within?(ratio)
-        [replicas, (usage.to_f / status_replicas).ceil, timestamp]
+        [replicas, average_metric_usage(usage, status_replicas), timestamp]
       end
 
       private
+
+      def average_metric_usage(usage, replicas)
+        # Converting a non-finite float64 to int64 in the pinned linux/amd64
+        # replica calculator yields MinInt64 for a workload with no Pods.
+        replicas.zero? ? -(2**63) : (usage.to_f / replicas).ceil
+      end
 
       def plain_metric_replicas(metrics, current, target_usage, tolerances, namespace, selector, resource)
         pods = pods_for(namespace, selector)
@@ -599,7 +605,7 @@ module Rubernetes
       end
 
       def pods_for(namespace, selector)
-        Array(@pods.call(namespace)).select { |pod| Support.selector_matches?(selector, pod) }
+        Array(@pods.call(namespace)).select(&Support.selector_predicate(selector))
       end
 
       def selector_string(selector) = Support.selector_string(selector)
@@ -609,13 +615,14 @@ module Rubernetes
     class HorizontalPodAutoscalerController < BaseController
       HPA = ResourceDescriptor.parse("HorizontalPodAutoscaler")
       POD = ResourceDescriptor.parse("Pod")
-      SYNC_PERIOD = 15.0
+      SYNC_PERIOD = HPASync::INTERVAL
       DOWNSCALE_STABILIZATION_WINDOW = 300
       TOLERANCE = 0.1
       SCALE_UP_LIMIT_FACTOR = 2.0
       SCALE_UP_LIMIT_MINIMUM = 4
 
       include SecondarySupport
+      include HorizontalPodAutoscalerStatus
 
       attr_reader :rest_mapper, :scale_client, :metrics_client
 
@@ -638,13 +645,14 @@ module Rubernetes
         super(store: store, **)
       end
 
-      def plan(hpa, store: nil, pods: nil, metrics_client: nil, scale_client: nil, **_options)
+      def plan(hpa, store: nil, pods: nil, metrics_client: nil, scale_client: nil, feature_gates: {}, **_options)
         adapter = adapter_for(store)
         key = "#{Support.namespace(hpa)}/#{Support.name(hpa)}"
-        context = {events: [], operations: [], hpa: Support.deep_copy(hpa)}
+        context = {events: [], operations: [], hpa: Support.deep_copy(hpa), scale_to_zero: feature_gates["HPAScaleToZero"] == true}
         context[:hpa]["status"] ||= {}
         client = scale_client || @scale_client || ScaleClient.new(adapter: adapter)
-        metrics = metrics_client || @metrics_client || MetricsClient.new(client: adapter.respond_to?(:client) ? adapter.client : nil)
+        context[:api_client] = adapter.client if adapter.respond_to?(:client)
+        metrics = metrics_client || @metrics_client || MetricsClient.new(client: context[:api_client])
         pods_source = if pods
                         ->(namespace) { Array(pods).select { |pod| Support.namespace(pod) == namespace } }
                       else
@@ -693,13 +701,19 @@ module Rubernetes
 
       private
 
+      def resolve_scale_descriptor(reference, api_client)
+        @rest_mapper.resolve(reference)
+      rescue UnknownGVKError
+        HPAScaleDiscovery.resolve(api_client, reference) || raise
+      end
+
       # reconcileAutoscaler.
       def reconcile(context, key, client, calculator, pods_source)
         hpa = context[:hpa]
         spec = Support.spec(hpa)
         reference = Support.value(spec, "scaleTargetRef", {}) || {}
         descriptor = begin
-          @rest_mapper.resolve(reference)
+          resolve_scale_descriptor(reference, context[:api_client])
         rescue UnknownGVKError, ArgumentError => error
           # An API version that does not parse is the spec's fault (errSpec).
           context[:monitor][:error] = error.is_a?(ArgumentError) ? "spec" : "internal"
@@ -722,12 +736,8 @@ module Rubernetes
         statuses = []
         needs_metrics = true
         if current.zero?
-          needs_metrics = false
-          desired = 0
-          rescale = false
-          set_condition(hpa, "ScalingActive", "False", "ScalingDisabled",
-                        "scaling is disabled since the replica count of the target is zero")
-          remove_condition(hpa, "ScaledToZero")
+          needs_metrics = compute_from_zero?(hpa, context[:scale_to_zero], min_replicas)
+          rescale = needs_metrics
         elsif current > max_replicas
           rescale_reason = "Current number of replicas above Spec.MaxReplicas"
           desired = max_replicas
@@ -759,18 +769,20 @@ module Rubernetes
                     else
                       normalize_with_behaviors(hpa, key, current, desired, min_replicas, max_replicas)
                     end
+          if current.zero? && desired < min_replicas
+            desired = min_replicas
+            rescale_reason = "Current number of replicas below Spec.MinReplicas" if rescale_reason.empty?
+          end
           rescale = desired != current
         end
 
         if rescale
-          update = operation_update(snapshot.target, client.build_update(snapshot, desired), descriptor: snapshot.descriptor,
-                                                                                             reason: "horizontal pod autoscaler rescale")
-          context[:operations] << update
+          context[:operations] << scale_operation(client, snapshot, desired)
           set_condition(hpa, "AbleToScale", "True", "SucceededRescale",
                         "the HPA controller was able to update the target scale to #{desired}")
           event(context, "Normal", "SuccessfulRescale", "New size: #{desired}; reason: #{rescale_reason}")
           store_scale_event(spec["behavior"], key, current, desired)
-          remove_condition(hpa, "ScaledToZero")
+          record_zero_condition(hpa, context[:scale_to_zero], desired, min_replicas)
           context[:monitor][:action] = desired > current ? "scale_up" : "scale_down"
         else
           desired = current
@@ -779,6 +791,12 @@ module Rubernetes
         # monitor.ObserveDesiredReplicas.
         ControllerMetrics.set("horizontal_pod_autoscaler_controller_desired_replicas", desired,
                               {"namespace" => Support.namespace(hpa).to_s, "hpa_name" => Support.name(hpa).to_s})
+      end
+
+      def scale_operation(client, snapshot, desired)
+        subresource = "scale" if Support.kind(snapshot.target) == "Scale"
+        operation_update(snapshot.target, client.build_update(snapshot, desired),
+                         descriptor: snapshot.descriptor, reason: "horizontal pod autoscaler rescale", subresource: subresource)
       end
 
       def failed_get_scale(context, message)
@@ -997,12 +1015,12 @@ module Rubernetes
 
       # validateAndParseSelector: Pods selected by more than one HPA.
       def ambiguous_selector(hpa, key, selector, pods_source)
-        @mutex.synchronize { @selectors[key] = [Support.namespace(hpa), selector] }
-        pods = Array(pods_source.call(Support.namespace(hpa))).select { |pod| Support.selector_matches?(selector, pod) }
-        others = @mutex.synchronize { @selectors.reject { |other, _| other == key }.to_a }
-        controlling = others.select do |_, (namespace, other_selector)|
-          namespace == Support.namespace(hpa) && pods.any? { |pod| Support.selector_matches?(other_selector, pod) }
-        end
+        namespace = Support.namespace(hpa)
+        matches = Support.selector_predicate(selector)
+        @mutex.synchronize { @selectors[key] = [namespace, matches] }
+        pods = Array(pods_source.call(namespace)).select(&matches)
+        others = @mutex.synchronize { @selectors.reject { |other, _| other == key } }
+        controlling = others.select { |_, (other_namespace, predicate)| other_namespace == namespace && pods.any?(&predicate) }
         return nil if controlling.empty?
 
         names = ([key] + controlling.map(&:first)).sort.map do |entry|
@@ -1195,40 +1213,6 @@ module Rubernetes
       end
 
       # setStatus.
-      def set_status(hpa, current, desired, statuses, rescale)
-        status = hpa["status"]
-        updated = {"currentReplicas" => current, "desiredReplicas" => desired}
-        updated["lastScaleTime"] = status["lastScaleTime"] if status["lastScaleTime"]
-        updated["lastScaleTime"] = @clock.call.utc.strftime("%Y-%m-%dT%H:%M:%SZ") if rescale
-        # CurrentMetrics: one entry per metric spec, empty for a metric that
-        # could not be computed.
-        updated["currentMetrics"] = statuses unless statuses.nil? || statuses.empty?
-        updated["conditions"] = status["conditions"] if status["conditions"]
-        observed = Support.value(Support.metadata(hpa), "generation", nil)
-        updated["observedGeneration"] = observed unless observed.nil?
-        hpa["status"] = updated
-      end
-
-      # setConditionInList.
-      def set_condition(hpa, type, status, reason, message)
-        conditions = (hpa["status"]["conditions"] ||= [])
-        existing = conditions.find { |condition| condition["type"] == type }
-        unless existing
-          existing = {"type" => type}
-          conditions << existing
-        end
-        existing["lastTransitionTime"] = @clock.call.utc.strftime("%Y-%m-%dT%H:%M:%SZ") if existing["status"] != status
-        existing["status"] = status
-        existing["reason"] = reason
-        existing["message"] = message
-        existing
-      end
-
-      def remove_condition(hpa, type)
-        conditions = hpa["status"]["conditions"]
-        conditions&.reject! { |condition| condition["type"] == type }
-      end
-
       def event(context, type, reason, message)
         context[:events] << {"type" => type, "reason" => reason, "message" => message}
       end
