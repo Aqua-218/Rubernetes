@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../taint_toleration"
+
 module Rubernetes
   module Controller
     # Evicts Pods after NoExecute tolerations expire. NodeController publishes
@@ -31,19 +33,20 @@ module Rubernetes
         super(**)
       end
 
-      def plan(node, store: nil, pods: nil, now: nil, **_options)
-        adapter = adapter_for_storage(store)
+      def plan(node, store: nil, pods: nil, now: nil, feature_gates: {}, **_options)
+        adapter = adapter_for(store)
         pods ||= list_storage_objects(adapter, POD, namespace: :all)
         timestamp = normalize_time(now || @clock.call)
+        comparisons = feature_gates[TaintToleration::GATE] == true
         taints = eviction_taints(node)
         remember_taints(node, taints, timestamp)
         operations = []
         events = []
         next_deadline = nil
         Array(pods).select { |pod| pod_on_node?(pod, node) }.each do |pod|
-          due_taint = taints.find { |taint| eviction_due?(pod, taint, timestamp, node) }
+          due_taint = taints.find { |taint| eviction_due?(pod, taint, timestamp, node, comparisons: comparisons) }
           unless due_taint
-            deadline = taints.filter_map { |taint| eviction_deadline(pod, taint, node) }.min
+            deadline = taints.filter_map { |taint| eviction_deadline(pod, taint, node, comparisons: comparisons) }.min
             next_deadline = [next_deadline, deadline].compact.min if deadline
             next
           end
@@ -132,13 +135,13 @@ module Rubernetes
         value.to_s.empty? ? key : "#{key}=#{value}"
       end
 
-      def eviction_due?(pod, taint, now, node = nil)
-        toleration_expired?(matching_tolerations(pod, taint), taint_added_at(taint, node), now)
+      def eviction_due?(pod, taint, now, node = nil, comparisons: false)
+        toleration_expired?(matching_tolerations(pod, taint, comparisons: comparisons), taint_added_at(taint, node), now)
       end
 
       # When a tolerating Pod's eviction falls due, or nil if it never does.
-      def eviction_deadline(pod, taint, node)
-        matching = matching_tolerations(pod, taint)
+      def eviction_deadline(pod, taint, node, comparisons: false)
+        matching = matching_tolerations(pod, taint, comparisons: comparisons)
         return nil if matching.empty? || tolerated_forever?(matching)
 
         seconds = longest_toleration_seconds(matching)
@@ -198,25 +201,10 @@ module Rubernetes
         end
       end
 
-      def matching_tolerations(pod, taint)
+      def matching_tolerations(pod, taint, comparisons: false)
         Array(Support.value(Support.spec(pod), "tolerations", [])).select do |toleration|
-          toleration_matches?(toleration, taint)
+          TaintToleration.matches?(toleration, taint, comparisons: comparisons)
         end
-      end
-
-      def toleration_matches?(toleration, taint)
-        effect = Support.value(toleration, "effect", "").to_s
-        taint_effect = Support.value(taint, "effect", "").to_s
-        return false unless effect.empty? || effect == taint_effect
-
-        key = Support.value(toleration, "key", "").to_s
-        taint_key_value = Support.value(taint, "key", "").to_s
-        operator = Support.value(toleration, "operator", "Equal").to_s
-        return true if operator == "Exists" && (key.empty? || key == taint_key_value)
-
-        return false unless operator == "Equal" && key == taint_key_value
-
-        Support.value(toleration, "value", "").to_s == Support.value(taint, "value", "").to_s
       end
     end
 
@@ -226,7 +214,7 @@ module Rubernetes
       DEVICE_TAINT_PREFIXES = %w[resource.kubernetes.io/ device.kubernetes.io/ dra.kubernetes.io/].freeze
 
       def plan(node, store: nil, pods: nil, device_taints: nil, now: nil, **_options)
-        adapter = adapter_for_storage(store)
+        adapter = adapter_for(store)
         pods ||= list_storage_objects(adapter, POD, namespace: :all)
         timestamp = normalize_time(now || @clock.call)
         taints = Array(device_taints || discovered_device_taints(node)).select do |taint|
@@ -303,7 +291,7 @@ module Rubernetes
         toleration_expired?(matching_tolerations(pod, taint), device_taint_added_at(taint, node), now)
       end
 
-      def device_toleration_matches?(toleration, taint) = toleration_matches?(toleration, taint)
+      def device_toleration_matches?(toleration, taint) = TaintToleration.matches?(toleration, taint)
     end
   end
 end
