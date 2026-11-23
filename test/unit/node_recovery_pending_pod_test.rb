@@ -17,7 +17,15 @@ class NodeRecoveryPendingPodTest < Minitest::Test
       raise StandardError, "unknown sandbox #{id}" if gone
 
       {"sandbox_id" => id,
-       "netns" => {"handle" => "namespace:#{id}", "path" => "/proc/4242/ns/net", "inode" => 4_026_531_842, "pid" => 4242}}
+       "netns" => {"handle" => "namespace:#{id}", "path" => "/proc/4242/ns/net", "inode" => 4_026_531_842,
+                   "pid" => 4242, "pidfd" => 31}}
+    end
+  end
+
+  class RecordingNetwork < NodeLifecycleTest::Network
+    def delete(sandbox, namespace_gone: false)
+      @calls << [:network_delete, sandbox, namespace_gone]
+      true
     end
   end
 
@@ -25,7 +33,7 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     calls = []
     runtime = GoneSandboxRuntime.new
     lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, volume: NodeLifecycleTest::Volume.new(calls),
-                                                network: NodeLifecycleTest::Network.new(calls))
+                                                network: RecordingNetwork.new(calls))
     object = pod
     lifecycle.start(object)
     runtime.gone = true
@@ -33,9 +41,8 @@ class NodeRecoveryPendingPodTest < Minitest::Test
 
     assert_equal "Removed", result.state, result.inspect
     assert_empty Array(result.cleanup_errors)
-    # The stored descriptor (from start) is what the teardown was given, so
-    # IPAM and bridge state are still released.
-    refute_empty calls.select { |call| Array(call).first == :network_delete }, calls.inspect
+    assert_equal([[:network_delete, "sandbox-1", true]],
+                 calls.select { |call| Array(call).first == :network_delete })
   end
 
   # After a host reboot every container of the stored records is gone.
@@ -78,6 +85,17 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     end
   end
 
+  class StoppedSandboxRuntime < NodeLifecycleTest::Runtime
+    attr_writer :sandbox_state
+
+    def run_sandbox(pod, **options)
+      super
+      "sandbox-#{@calls.count { |call| call.first == :sandbox }}"
+    end
+
+    def sandbox_state(_id) = @sandbox_state
+  end
+
   def test_a_restart_into_a_lost_sandbox_kills_the_pod
     calls = []
     runtime = GoneOnRestartRuntime.new
@@ -96,6 +114,91 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     refute_empty calls.select { |call| Array(call).first == :network_delete }, "the sandbox must be torn down"
   end
 
+  def test_replacement_of_a_stopped_cri_sandbox_keeps_the_pod_volume_and_restarts_init
+    calls = []
+    runtime = StoppedSandboxRuntime.new
+    volume = NodeLifecycleTest::Volume.new(calls)
+    object = pod
+    object["spec"]["initContainers"] = [{"name" => "setup", "image" => "example/init"}]
+    Dir.mktmpdir do |directory|
+      options = {runtime: runtime, volume: volume, state_store: File.join(directory, "state.json")}
+      original = lifecycle_at_boot("boot-one", **options)
+
+      assert_equal "Running", original.start(object).phase
+
+      runtime.sandbox_state = :stopped
+      stopped = original.reconcile(object)
+
+      assert_equal %w[Removed Pending], [stopped.state, stopped.phase]
+      assert_equal [:volume_prepare], calls
+
+      runtime.sandbox_state = :ready
+      recovered = lifecycle_at_boot("boot-one", **options)
+      replacement = recovered.reconcile(object)
+
+      assert_equal "Running", replacement.phase
+      assert_equal [:volume_prepare], calls
+      assert_includes runtime.calls, [:sandbox_remove, "sandbox-1"]
+      assert_equal 1, replacement.status.fetch("initContainerStatuses").first.fetch("restartCount")
+      assert_equal 1, replacement.status.fetch("containerStatuses").first.fetch("restartCount")
+
+      recovered.terminate(object)
+
+      assert_equal [:volume_prepare, [:volume_release, "volume-1"]], calls
+    end
+  end
+
+  def test_sandbox_replacement_after_a_kernel_reboot_prepares_volumes_again
+    calls = []
+    runtime = StoppedSandboxRuntime.new
+    volume = NodeLifecycleTest::Volume.new(calls)
+    object = pod
+    Dir.mktmpdir do |directory|
+      options = {runtime: runtime, volume: volume, state_store: File.join(directory, "state.json")}
+      lifecycle_at_boot("boot-one", **options).start(object)
+      runtime.sandbox_state = :stopped
+      recovered = lifecycle_at_boot("boot-two", **options)
+
+      assert_equal "Removed", recovered.reconcile(object).state
+      assert_equal [:volume_prepare, [:volume_release, "volume-1"]], calls
+
+      runtime.sandbox_state = :ready
+
+      assert_equal "Running", recovered.reconcile(object).phase
+      assert_equal [:volume_prepare, [:volume_release, "volume-1"], :volume_prepare], calls
+    end
+  end
+
+  def test_reconciliation_does_not_replace_a_sandbox_before_its_removal_finishes
+    runtime = StoppedSandboxRuntime.new
+    removing = Queue.new
+    release = Queue.new
+    runtime.define_singleton_method(:remove_sandbox) do |sandbox|
+      removing << sandbox
+      release.pop
+      super(sandbox)
+    end
+    object = pod
+    lifecycle = lifecycle_at_boot("boot-one", runtime: runtime)
+    lifecycle.start(object)
+    runtime.sandbox_state = :stopped
+    cleanup = Thread.new { lifecycle.reconcile(object) }
+
+    assert_equal "sandbox-1", removing.pop(timeout: 5)
+    assert_equal "Stopped", lifecycle.reconcile(object).state
+    assert_equal(1, runtime.calls.count { |call| call.first == :sandbox })
+
+    release << true
+    cleanup.value
+    runtime.sandbox_state = :ready
+
+    assert_equal "Running", lifecycle.reconcile(object).phase
+    assert_equal(2, runtime.calls.count { |call| call.first == :sandbox })
+  ensure
+    release&.close
+    cleanup&.join
+  end
+
   def test_a_pending_pod_cleanup_does_not_keep_the_agent_down
     service = Rubernetes::Bootstrap::AgentService.allocate
     report = {"ready" => true, "errors" => [], "blocked" => ["3229d668-uid"],
@@ -109,6 +212,12 @@ class NodeRecoveryPendingPodTest < Minitest::Test
   end
 
   private
+
+  def lifecycle_at_boot(boot, **)
+    lifecycle = Rubernetes::Node::Lifecycle.new(**)
+    lifecycle.define_singleton_method(:kernel_boot_id) { boot }
+    lifecycle
+  end
 
   def pod
     NodeLifecycleTest.new("x").send(:pod)
