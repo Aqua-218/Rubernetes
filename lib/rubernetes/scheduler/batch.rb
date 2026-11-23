@@ -66,7 +66,6 @@ module Rubernetes
         @batched_pods = 0
         @mutex = Mutex.new
         @metrics = nil
-        @flushed = false
       end
 
       def enabled? = @enabled
@@ -116,17 +115,11 @@ module Rubernetes
 
       # StoreScheduleResults.  +ranked+: the other feasible nodes, best first.
       # scheduler_batch_attempts_total counts a cycle that was given a hint
-      # ("hit": the hinted node won, "miss": another node did);
-      # scheduler_pod_scheduled_after_flush_total the first Pod scheduled
-      # after the cache was flushed.
+      # ("hit": the hinted node won, "miss": another node did).
       def store(signature, hinted, chosen, ranked, cycle)
         started = @clock.call
         @mutex.synchronize do
           @last_cycle = {cycle: cycle, chosen: chosen}
-          if @flushed
-            @flushed = false
-            @metrics&.scheduled_after_flush
-          end
           if hinted
             hit = hinted == chosen
             @metrics&.batch_attempt(hit ? "hit" : "miss")
@@ -148,7 +141,6 @@ module Rubernetes
           @last_cycle = nil
           @metrics&.batch_flushed("cycle_failed") if @state
           @state = nil
-          @flushed = true
           _ = cycle
         end
       end
@@ -161,7 +153,6 @@ module Rubernetes
       def drop_state(reason)
         @metrics&.batch_flushed(reason) if @state
         @state = nil
-        @flushed = true
         nil
       end
     end
