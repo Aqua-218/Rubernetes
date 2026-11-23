@@ -15,7 +15,7 @@ module Rubernetes
           # 5. pivot_root, then a regular umount of the old root tree with a
           #    mount-ID proof that nothing from it remains; 6. cwd and the
           #    executable are re-validated inside the new root by the caller.
-          def build_rootfs(rootfs, context:, cwd: nil, mounts: [])
+          def build_rootfs(rootfs, context:, cwd: nil, mounts: [], user_namespace: nil)
             path = File.expand_path(String(rootfs))
             raise EffectError, "workload rootfs must be absolute" unless path.start_with?("/")
             raise EffectError, "workload rootfs contains NUL" if path.include?("\0")
@@ -25,7 +25,7 @@ module Rubernetes
             # HostToContainer volume relies on, and nothing made here reaches
             # the host.  The container root itself is then made recursively
             # private (§5.8.7 step 1) so the workload's own mounts never leave.
-            @mount.make_slave(target: "/", recursive: true, resource_id: "workload:mount-propagation")
+            shared_old_root = isolate_workload_mounts(mounts)
             stat = File.stat(path)
             raise EffectError, "workload rootfs is not a directory" unless stat.directory?
 
@@ -51,10 +51,11 @@ module Rubernetes
             mount_proc(path)
             mount_sys(path, privileged: privileged)
             mount_dev(path, privileged: privileged)
-            apply_bind_mounts(path, mounts, context)
+            apply_bind_mounts(path, mounts, context, user_namespace)
             apply_masked_paths(path, context) unless privileged
             apply_readonly_paths(path, context) unless privileged
-            pivot_into(path, overlay: overlay, before: before, read_only: context.read_only_root_filesystem == true)
+            pivot_into(path, overlay: overlay, before: before, read_only: context.read_only_root_filesystem == true,
+                             shared_old_root: shared_old_root)
             target_cwd = cwd.nil? || String(cwd).empty? ? "/" : String(cwd)
             raise EffectError, "workload cwd must be absolute" unless target_cwd.start_with?("/")
             raise EffectError, "workload cwd contains NUL" if target_cwd.include?("\0")
@@ -64,6 +65,19 @@ module Rubernetes
           rescue SystemCallError => error
             raise EffectError, "workload rootfs construction failed: #{error.message}"
           end
+
+          def isolate_workload_mounts(mounts)
+            preserve = Array(mounts).filter_map { |spec| spec.fetch("source") if spec["sandbox_shared_volume"] == true }
+            resource_id = "workload:mount-propagation"
+            if preserve.empty?
+              @mount.make_slave(target: "/", recursive: true, resource_id: resource_id)
+              return false
+            end
+
+            @mount.make_slave_except(preserve, resource_id: resource_id)
+            true
+          end
+          private :isolate_workload_mounts
 
           private
 
@@ -185,7 +199,7 @@ module Rubernetes
             end
           end
 
-          def pivot_into(root, overlay:, before:, read_only:)
+          def pivot_into(root, overlay:, before:, read_only:, shared_old_root:)
             Dir.chdir(root)
             put_old = File.join(root, PIVOT_OLD)
             Dir.mkdir(put_old, 0o700)
@@ -194,8 +208,12 @@ module Rubernetes
             old_ids = before.reject { |entry| entry.mountpoint == root || entry.mountpoint.start_with?("#{root}/") }.map(&:id)
             @pivot.pivot_root(new_root: ".", put_old: PIVOT_OLD, resource_id: "workload:pivot_root")
             Dir.chdir("/")
-            @pivot.detach_tree("/#{PIVOT_OLD}", old_mount_ids: old_ids, resource_id: "workload:old-root")
-            Dir.rmdir("/#{PIVOT_OLD}")
+            old_root = "/#{PIVOT_OLD}"
+            # Detaching the inherited copies must not propagate an unmount
+            # to the live volume in the holder or to its new-root bind.
+            @mount.make_private(target: old_root, recursive: true, resource_id: "workload:old-root-propagation") if shared_old_root
+            @pivot.detach_tree(old_root, old_mount_ids: old_ids, resource_id: "workload:old-root")
+            Dir.rmdir(old_root)
             if read_only
               @mount.mount(source: nil, target: "/", filesystem: nil, flags: MS_BIND | MS_REMOUNT | MS_RDONLY,
                            resource_id: "workload:rootfs-readonly")
