@@ -11,9 +11,10 @@ module Api
 
       private
 
-      def success(data, warnings: [])
+      def success(data, warnings: [], infos: [])
         payload = {"status" => "success", "data" => data}
         payload["warnings"] = warnings unless warnings.empty?
+        payload["infos"] = infos unless infos.empty?
         render json: payload
       end
 
