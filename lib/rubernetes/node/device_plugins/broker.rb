@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../plugins/helper_process"
+
 require "json"
 require "rbconfig"
 require "timeout"
@@ -22,6 +24,8 @@ module Rubernetes
       #                    {"id":N,"ok":{...}} | {"id":N,"error":"...","code":C}
       #   agent -> helper  {"id":N,"endpoint","method","request"}
       class Broker
+        include Plugins::HelperProcess
+
         class Error < StandardError
           attr_reader :code
 
@@ -136,44 +140,15 @@ module Rubernetes
           @mutex.synchronize do
             return self if @pid
 
-            reader, @child_out = IO.pipe
-            child_in, @stdin = IO.pipe
-            @pid = Process.spawn(@ruby, "-e", HELPER, @directory, @lib, in: child_in, out: @child_out, err: File::NULL, pgroup: true)
-            child_in.close
-            @child_out.close
-            @reader = Thread.new { read_loop(reader, ready) }
+            @pending = {}
+            pending = @pending
+            spawn_helper(HELPER, @directory, @lib) { |reader| read_loop(reader, ready, pending) }
           end
           Timeout.timeout(wait) { ready.pop }
           self
         rescue Timeout::Error
           stop
           raise Error, "device plugin registration server did not start in #{wait} s"
-        end
-
-        def stop
-          pid = @mutex.synchronize do
-            value = @pid
-            @pid = nil
-            value
-          end
-          return self unless pid
-
-          begin
-            @stdin&.close
-          rescue StandardError
-            nil
-          end
-          begin
-            Process.kill(:TERM, pid)
-          rescue StandardError
-            nil
-          end
-          begin
-            Process.wait(pid)
-          rescue StandardError
-            nil
-          end
-          self
         end
 
         def running? = !@mutex.synchronize { @pid }.nil?
@@ -202,11 +177,11 @@ module Rubernetes
 
         private
 
-        def read_loop(reader, ready)
+        def read_loop(reader, ready, pending)
           while (line = reader.gets)
             message = JSON.parse(line)
             if message.key?("id")
-              queue = @mutex.synchronize { @pending[message["id"]] }
+              queue = @mutex.synchronize { pending[message["id"]] }
               queue&.push(message)
             elsif message["event"] == "serving"
               ready.push(true)
@@ -221,7 +196,7 @@ module Rubernetes
         rescue IOError, JSON::ParserError
           nil
         ensure
-          @mutex.synchronize { @pending.each_value { |queue| queue.push("error" => "device plugin broker exited") } }
+          @mutex.synchronize { pending.each_value { |queue| queue.push("error" => "device plugin broker exited") } }
         end
       end
     end
