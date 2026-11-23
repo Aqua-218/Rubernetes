@@ -8,6 +8,7 @@ module Rubernetes
       # eviction, image GC, shutdown watch, plugin registration).
       module RunLoop
         def start(lease_thread: false)
+          @oom_watcher&.start
           perform_recovery!
           unless registered?
             begin
@@ -46,12 +47,16 @@ module Rubernetes
             @lease_condition.broadcast
           end
           @mutex.synchronize { @node_status_condition.broadcast }
+          @stats_provider.stop_volume_stats if @stats_provider.is_a?(StatsProvider)
+          @static_pods&.stop
           @sync_loop.stop
           @wakeups.stop
           stop_managers
           [@relist_thread, @node_status_thread, @lease_thread].each do |thread|
             thread.join if thread && thread != Thread.current
           end
+          volume = @lifecycle.volume if @lifecycle.is_a?(Lifecycle)
+          volume.close if defined?(Volume::Manager) && volume.is_a?(Volume::Manager)
           set_ready(false, reason: "NodeStopping", message: reason.to_s, persist: false)
           self
         end
@@ -65,6 +70,7 @@ module Rubernetes
           register unless registered?
           renew_lease(now: now)
           @sync_loop.run_once(events: events, now: monotonic_value(now), resync: resync)
+          @stats_provider.sample_volume_stats if !wall_clock? && @stats_provider.is_a?(StatsProvider)
           self
         rescue StandardError => error
           set_ready(false, reason: "AgentLoopFailed", message: error.message)
@@ -83,9 +89,9 @@ module Rubernetes
         end
 
         def stop_managers
-          [@static_pods, @device_plugins, @pod_resources, @eviction_manager, @image_gc_manager, *@cri_image_gc_managers,
+          [@oom_watcher, @device_plugins, @pod_resources, @eviction_manager, @image_gc_manager, *@cri_image_gc_managers,
            @container_manager, @qos_cgroup_manager, @shutdown_manager, @plugin_manager, @dra_manager, @evented_pleg,
-           @pod_certificate_manager].each { |manager| manager&.stop }
+           @pod_certificate_manager, @pods_api].each { |manager| manager&.stop }
         end
 
         def start_sync_loop
@@ -93,6 +99,7 @@ module Rubernetes
 
           @sync_loop.start
           @static_pods&.start
+          @pods_api&.start
           [@pod_resources, @device_plugins].each do |server|
             server&.start
           rescue StandardError => error
@@ -111,6 +118,7 @@ module Rubernetes
         end
 
         def start_periodic_managers
+          @stats_provider.start_volume_stats(error_handler: @error_handler) if @stats_provider.is_a?(StatsProvider)
           # kubelet: evictionManager.Start(..., evictionMonitoringPeriod).
           @eviction_manager&.start
           # kubelet StartGarbageCollection: image GC every ImageGCPeriod.
