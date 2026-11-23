@@ -11,6 +11,7 @@ Gem::Specification.new do |spec|
   spec.homepage = "https://github.com/Aqua-218"
   spec.license = "Apache-2.0"
   spec.required_ruby_version = ">= 3.4.0"
+  defaults = "schema/kubernetes/v1.36.2-defaults"
   package_paths = [
     "config/**/*",
     "exe/*",
@@ -20,12 +21,19 @@ Gem::Specification.new do |spec|
     "generated/rbs/**/*",
     "generated/openapi/**/*",
     "generated/schema/**/*",
+    "schema/kubernetes/v1.36.2/protobuf/**/*.proto",
+    "#{defaults}/{admission-plugins,api-lifecycle,cel_declarations,cel_type_definitions,features,internal_pod_spec_layout,metrics,zero_objects}.json",
+    "#{defaults}/bootstrap/{clusterrolebindings,clusterroles,discovery-default,flowschemas,namespaces,prioritylevelconfigurations,rolebindings,roles}.json",
+    "third_party/locks/m7-microvm-artifacts.json",
     "lib/**/*.rb",
     "tools/milestones/m0_gate.rb",
+    "tools/milestones/m0_source_inventory.rb",
     "tools/milestones/m1_gate.rb",
+    "tools/milestones/m1_probe_support.rb",
     "tools/milestones/m2_*.rb",
     "tools/milestones/m3_*.rb",
     "tools/milestones/m4_*.rb",
+    "tools/milestones/report_output.rb",
     "sig/**/*.rbs",
     "README.md",
     "LICENSE",
@@ -53,5 +61,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "base64", "~> 0.2"
   spec.add_dependency "csv", "~> 3.3"
   spec.add_dependency "fiddle", "~> 1.1", ">= 1.1.0"
+  spec.add_dependency "rexml", "~> 3.4"
+  spec.add_dependency "tzinfo", "~> 2.0"
   spec.metadata["rubygems_mfa_required"] = "true"
 end
