@@ -12,6 +12,11 @@ module Rubernetes
     class Informer
       DEFAULT_RESYNC_PERIOD = 600.0
       EVENT_TYPES = %i[add update delete sync].freeze
+      INITIAL_RETRY_DELAY = 0.05
+      MAX_RETRY_DELAY = 5.0
+
+      Delivery = Struct.new(:object, :previous, :handlers, :next_handler)
+      private_constant :Delivery
 
       attr_reader :indexer, :queue, :reflector, :resync_period, :fifo
 
@@ -57,6 +62,8 @@ module Rubernetes
         @last_resync = @clock.call
         @last_error = nil
         @last_versions = {}
+        @retry_delays = {}
+        @failed_deliveries = {}
       end
 
       def on(event = nil, &handler)
@@ -121,6 +128,8 @@ module Rubernetes
         thread = @mutex.synchronize do
           @running = false
           @stopping = true
+          @retry_delays.clear
+          @failed_deliveries.clear
           @thread
         end
         @reflector.stop
@@ -155,10 +164,7 @@ module Rubernetes
       # queue.  Updating the timestamp after enqueueing prevents a failed
       # resync from pretending that the cache was refreshed.
       def resync!
-        @indexer.each { |object| @fifo.sync(object) }
-        drain_fifo
-        @mutex.synchronize { @last_resync = @clock.call }
-        self
+        resync_fifo
       end
 
       alias resync resync!
@@ -176,7 +182,7 @@ module Rubernetes
           return unless running?
 
           @reflector.list! if @reflector.resource_version.nil?
-          drain_fifo
+          drain_fifo(backoff: true)
         rescue StandardError => error
           report_error(error)
         end
@@ -194,8 +200,8 @@ module Rubernetes
         # wait still lets the resync deadline be checked regularly.
         while running?
           begin
-            drain_fifo(wait: FIFO_WAIT_SECONDS)
-            maybe_resync
+            drain_fifo(wait: FIFO_WAIT_SECONDS, backoff: true)
+            maybe_resync(backoff: true)
           rescue StandardError => error
             report_error(error)
           end
@@ -210,7 +216,7 @@ module Rubernetes
       # Returns how many keys were processed.  `wait` is how long the first
       # pop may block for the next delta; the rest of the batch is drained
       # without waiting.
-      def drain_fifo(wait: 0)
+      def drain_fifo(wait: 0, backoff: false)
         processed = 0
         first = true
         loop do
@@ -219,19 +225,44 @@ module Rubernetes
           break unless item
 
           key, deltas = item
-          begin
-            deltas.each { |delta| process_delta(delta) }
-          rescue StandardError
-            @fifo.requeue(key, deltas)
-            raise
-          else
-            observe_processing(key)
-            @fifo.done(key)
-            processed += 1
-          end
+          processed += 1 if deliver_key(key, deltas, backoff: backoff)
         end
         observe_queued_items
         processed
+      end
+
+      def deliver_key(key, deltas, backoff:)
+        previous_delay = @mutex.synchronize { @retry_delays.delete(key) }
+        deltas.each_with_index do |delta, index|
+          process_delta(delta)
+          previous_delay = nil
+        rescue StandardError => error
+          delay = backoff ? retry_delay(key, previous_delay) : 0
+          return false unless requeue_failed(key, deltas.drop(index), delay)
+          raise unless backoff
+
+          report_error(error)
+          return false
+        end
+        observe_processing(key)
+        @fifo.done(key)
+        true
+      end
+
+      def retry_delay(key, previous)
+        delay = previous ? [previous * 2, MAX_RETRY_DELAY].min : INITIAL_RETRY_DELAY
+        @mutex.synchronize { @retry_delays[key] = delay unless @stopping }
+        delay
+      end
+
+      def requeue_failed(key, deltas, delay)
+        @fifo.requeue(key, deltas, delay: delay)
+        true
+      rescue IOError
+        raise unless @fifo.shutdown?
+
+        @fifo.done(key)
+        false
       end
 
       # client-go's informer metrics (component-base legacyregistry):
@@ -284,22 +315,30 @@ module Rubernetes
       def process_delta(delta)
         return if stale_delta?(delta)
 
-        case delta.type
-        when :add, :sync
-          @indexer.upsert(delta.object)
-          notify(delta.type, delta.object, delta.old_object)
-        when :update
-          previous = delta.old_object || @indexer.get(delta.key)
-          @indexer.upsert(delta.object)
-          notify(:update, delta.object, previous)
-        when :delete
-          previous = @indexer.delete(delta.key) || delta.object
-          notify(:delete, previous, nil)
-        else
-          raise ArgumentError, "unknown delta type #{delta.type.inspect}"
+        pending, handlers = @mutex.synchronize do
+          existing = @failed_deliveries[delta.key]
+          [existing, existing ? nil : @handlers.fetch(delta.type).dup]
         end
-        remember_version(delta)
+        delivery = pending || prepare_delivery(delta, handlers)
+        notify(delta.type, delivery)
         @queue.add(delta.key)
+        remember_version(delta)
+        @mutex.synchronize { @failed_deliveries.delete(delta.key) } if pending
+      rescue StandardError
+        @mutex.synchronize { @failed_deliveries[delta.key] = delivery unless @stopping } if delivery
+        raise
+      end
+
+      def prepare_delivery(delta, handlers)
+        if delta.type == :delete
+          object = @indexer.delete(delta.key) || delta.object
+          return Delivery.new(object, nil, handlers, 0)
+        end
+
+        previous = delta.old_object
+        previous ||= @indexer.get(delta.key) if delta.type == :update
+        @indexer.upsert(delta.object)
+        Delivery.new(delta.object, previous, handlers, 0)
       end
 
       def stale_delta?(delta)
@@ -335,21 +374,22 @@ module Rubernetes
         end
       end
 
-      def notify(type, object, old_object)
-        handlers = @mutex.synchronize { @handlers.fetch(type == :sync ? :sync : type).dup }
+      def notify(type, delivery)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        handlers.each do |handler|
+        while delivery.next_handler < delivery.handlers.length
+          handler = delivery.handlers[delivery.next_handler]
           # A handler that takes a third parameter also learns the event type
           # (:add, :update, :delete, :sync); client-go hands controllers
           # separate Add/Update/Delete funcs, and some -- the quota
           # controller -- must act differently per type.
           if handler.arity == 3 || handler.arity < -2 || handler.parameters.length >= 3
-            handler.call(object, type == :update ? old_object : nil, type)
+            handler.call(delivery.object, type == :update ? delivery.previous : nil, type)
           elsif type == :update
-            handler.call(object, old_object)
+            handler.call(delivery.object, delivery.previous)
           else
-            handler.call(object)
+            handler.call(delivery.object)
           end
+          delivery.next_handler += 1
         end
       ensure
         if started
@@ -380,14 +420,21 @@ module Rubernetes
          handler_seconds: stats[:seconds].round(3), handler_max: stats[:max].round(3)}
       end
 
-      def maybe_resync
+      def maybe_resync(backoff: false)
         return if @resync_period.zero?
 
         now = @clock.call
         previous = @mutex.synchronize { @last_resync }
         return if now - previous < @resync_period
 
-        resync!
+        resync_fifo(backoff: backoff)
+      end
+
+      def resync_fifo(backoff: false)
+        @indexer.each { |object| @fifo.sync(object) }
+        drain_fifo(backoff: backoff)
+        @mutex.synchronize { @last_resync = @clock.call }
+        self
       end
 
       def report_error(error)
