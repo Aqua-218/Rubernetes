@@ -6,6 +6,16 @@ module Rubernetes
   module API
     # Transport-neutral request value passed to Handler#call.
     class Request
+      # Net::HTTP otherwise joins repeated values on one line, which changes
+      # the meaning of request-header authentication fields.
+      module RepeatedHeaderLines
+        def each_capitalized
+          return enum_for(__method__) unless block_given?
+
+          @header.each { |key, values| values.each { |value| yield capitalize(key), value } }
+        end
+      end
+
       attr_reader :method, :path, :headers, :query, :body, :identity, :client_certificate, :client_chain, :remote_address,
                   :request_id, :attributes
 
@@ -63,6 +73,10 @@ module Rubernetes
 
         value = header(name)
         value.nil? ? [] : [value]
+      end
+
+      def authentication_headers
+        @raw_headers || @headers
       end
 
       def content_type
