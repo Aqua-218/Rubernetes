@@ -376,7 +376,8 @@ class EBPFProgramTest < Minitest::Test
       "metadata" => {"name" => "public"},
       "spec" => {"type" => "LoadBalancer", "clusterIP" => "10.96.0.40",
                  "loadBalancerIP" => "192.0.2.40", "loadBalancerSourceRanges" => ["198.51.100.0/24"],
-                 "ports" => [{"port" => 80, "targetPort" => 8080}]}
+                 "ports" => [{"port" => 80, "targetPort" => 8080}]},
+      "status" => {"loadBalancer" => {"ingress" => [{"ip" => "192.0.2.40", "ipMode" => "VIP"}]}}
     )
     endpoint = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.40", port: 8080, protocol: "TCP")
     rule = Rubernetes::Proxy::RuleCompiler.new(node_addresses: ["192.0.2.1"]).compile(service, endpoints: [endpoint]).rules.find do |entry|
@@ -411,6 +412,19 @@ class EBPFProgramTest < Minitest::Test
     adapter_with_recorder.send(:sync_maps, maps, [rule])
 
     assert_equal(1, bpf.updates.count { |call| call.fetch(:resource_id).to_s.include?("source_range:update") })
+  end
+
+  def test_dual_stack_node_port_chooses_ready_or_terminating_for_each_family
+    proxy = Rubernetes::Proxy
+    service = proxy::Service.new(name: "dual", type: "NodePort", cluster_ips: ["10.96.0.41", "fd01::41"],
+                                 ports: [{"port" => 80, "nodePort" => 30_041}])
+    v4 = proxy::Endpoint.new(address: "10.1.0.41", port: 80, ready: true)
+    v6 = proxy::Endpoint.new(address: "fd02::41", port: 80, ready: false, terminating: true)
+    rule = proxy::RuleCompiler.new.compile(service, endpoints: [v4, v6]).rules.find { |item| item.kind == "NodePort" }
+    adapter = proxy::LinuxEBPFAdapter.new
+
+    assert_equal [v4], adapter.send(:backend_candidates, rule, family: 4)
+    assert_equal [v6], adapter.send(:backend_candidates, rule, family: 6), "omitted serving defaults to true"
   end
 
   def test_topology_hints_select_only_endpoints_advertising_the_local_zone
