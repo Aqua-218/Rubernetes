@@ -89,7 +89,36 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                    {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => account.dig("metadata", "uid")},
                     "spec" => {}})
 
-    assert_equal 201, ok.status, ok.body.inspect
+    assert_equal 201, ok.status
+    assert_equal account.dig("metadata", "uid"), ok.body.dig("metadata", "uid")
+    wrong_namespace = call.call("POST", path, {"metadata" => {"namespace" => "other"}})
+    wrong_name = call.call("POST", path, {"metadata" => {"name" => "other"}})
+
+    assert_equal 400, wrong_namespace.status
+    assert_equal 422, wrong_name.status
+    assert_equal "metadata.name", wrong_name.body.dig("details", "causes", 0, "field")
+    invalid_ref = call.call("POST", path, {"spec" => {"boundObjectRef" => {"kind" => "Pod", "apiVersion" => "v1"}}})
+    invalid_audiences = call.call("POST", path, {"spec" => {"audiences" => "fixture"}})
+
+    assert_equal 400, invalid_ref.status
+    assert_equal "Name parameter required.", invalid_ref.body["message"]
+    assert_equal 400, invalid_audiences.status
+    assert_includes invalid_audiences.body["message"], "TokenRequestSpec.spec.audiences of type []string"
+    reviews = []
+    plugin = A::Plugin.new("TokenAudience")
+    plugin.define_singleton_method(:validate) do |attrs|
+      reviews << [attrs.gvr, attrs.gvk, attrs.subresource, attrs.object.fetch("metadata").slice("namespace", "name", "uid")]
+      raise A::Rejected, "audience denied" if attrs.object.dig("spec", "audiences") == ["denied"]
+    end
+    chain = A::Chain.new(plugins: [plugin])
+    server.stub(:admission_chain, chain) do
+      denied = call.call("POST", path, {"spec" => {"audiences" => ["denied"]}})
+
+      assert_equal 403, denied.status
+      assert_equal "audience denied", denied.body.fetch("message")
+      assert_equal [[["", "v1", "serviceaccounts"], %w[authentication.k8s.io v1 TokenRequest], "token",
+                     account.fetch("metadata").slice("namespace", "name", "uid")]], reviews
+    end
     stale = call.call("POST", path,
                       {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => "stale"}, "spec" => {}})
 
