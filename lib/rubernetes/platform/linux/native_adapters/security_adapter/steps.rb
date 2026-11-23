@@ -11,9 +11,10 @@ module Rubernetes
           # operation is complete (R-1.6): the mount namespace stays owned by
           # the initial user namespace, so the workload cannot alter it even
           # with CAP_SYS_ADMIN inside the Pod's user namespace.
-          def join_user_namespace(descriptor)
+          def join_user_namespace(descriptor, context:, mapping:)
             return true unless descriptor
 
+            install_mapped_groups(context, mapping)
             @setns.setns(fd: descriptor, name: :user, resource_id: "workload:user")
             descriptor.close unless descriptor.closed?
             @user_namespace_joined = true
@@ -23,14 +24,36 @@ module Rubernetes
           private
 
           def apply_groups(context)
-            groups = Array(context.supplemental_groups)
-            groups << Integer(context.fs_group) if context.fs_group
-            return true if groups.empty?
-
-            Process.groups = groups.uniq
+            groups = configured_groups(context)
+            if @user_namespace_joined
+              raise EffectError, "mapped supplemental groups did not match the requested groups" unless Process.groups.sort == groups.sort
+            elsif !groups.empty?
+              Process.groups = groups
+            end
             true
           rescue SystemCallError => error
             raise EffectError, "supplemental group setup failed: #{error.message}"
+          end
+
+          # The Pod namespace denies setgroups. Install only the Pod's own
+          # mapped groups in the trusted launch child before joining it.
+          def install_mapped_groups(context, mapping)
+            raise EffectError, "missing user namespace GID mapping" unless mapping
+
+            base = Integer(mapping.fetch("gid_base"))
+            size = Integer(mapping.fetch("size"))
+            groups = configured_groups(context).map do |group|
+              raise EffectError, "supplemental group #{group} is outside the Pod's GID mapping" unless (0...size).cover?(group)
+
+              base + group
+            end
+            Process.groups = groups
+          rescue SystemCallError => error
+            raise EffectError, "mapped supplemental group setup failed: #{error.message}"
+          end
+
+          def configured_groups(context)
+            (Array(context.supplemental_groups) + [context.fs_group].compact).map { |group| Integer(group) }.uniq
           end
 
           # KEEPCAPS keeps the permitted set across a setuid so the capability
