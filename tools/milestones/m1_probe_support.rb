@@ -8,14 +8,9 @@ require "json"
 require "open3"
 require "rbconfig"
 require "time"
+require_relative "m0_source_inventory"
 
 ROOT = File.expand_path("../..", __dir__).freeze unless defined?(ROOT)
-# Generator runs use a root-level mktemp directory. Keep the exclusion anchored
-# to that exact name shape so an arbitrary similarly named source directory is
-# still part of the content-addressed input.
-unless defined?(SOURCE_EXCLUSIONS)
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
-end
 SHA256_PATTERN = /\A[0-9a-f]{64}\z/ unless defined?(SHA256_PATTERN)
 
 module M1ProbeSupport
@@ -32,12 +27,7 @@ module M1ProbeSupport
     root = File.expand_path(root)
     raise ProbeError, "source root is not a directory: #{root}" unless File.directory?(root)
 
-    Dir.glob(File.join(root, "**/*"), File::FNM_DOTMATCH).select do |path|
-      next false unless File.file?(path)
-
-      relative = path.delete_prefix("#{root}/")
-      !relative.match?(SOURCE_EXCLUSIONS)
-    end.sort
+    M0SourceInventory.source_files(root)
   rescue Errno::ENOENT, Errno::EACCES => error
     raise ProbeError, "cannot enumerate source input: #{error.message}"
   end
