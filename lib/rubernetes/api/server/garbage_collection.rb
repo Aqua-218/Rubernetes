@@ -12,67 +12,50 @@ module Rubernetes
 
         private
 
-        # kubectl's default is --cascade=background: dependents go too, unless
-        # propagationPolicy is Orphan (then their owner reference is stripped).
-        #
-        # Returns the owner as marking it left it, the resourceVersion its
-        # removal is pinned to, and whether it now waits for the garbage
-        # collector (a foreground deletion) instead of being removed.
-        def propagate_deletion(route, namespace, existing, expected, delete_options)
-          if garbage_collection_unsupported?(route.resource)
-            [existing, expected, false]
-          elsif orphan_deletion?(delete_options, route.resource)
-            orphan_before_deletion(route, namespace, existing, expected)
-          else
-            cascade_before_deletion(route, namespace, existing, expected, delete_options)
+        GC_FINALIZERS = %w[orphan foregroundDeletion].freeze
+
+        # Explicit options override the object's GC finalizers, which in turn
+        # override the strategy's default. Other controllers own their entries.
+        def with_gc_finalizers(resource, existing, options)
+          original = Array(metadata_value(existing, "finalizers"))
+          selected = gc_finalizer_for(resource, original, options)
+          updated = original - GC_FINALIZERS
+          updated << selected if selected
+          return existing if (original - updated).empty? && (updated - original).empty?
+
+          deep_copy(existing).tap { |object| object["metadata"]["finalizers"] = updated }
+        end
+
+        def gc_finalizer_for(resource, original, options)
+          return if garbage_collection_unsupported?(resource)
+
+          if options["propagationPolicy"].nil? && options["orphanDependents"].nil?
+            prior = original.find { |entry| GC_FINALIZERS.include?(entry) }
+            return prior if prior
+          end
+          return FOREGROUND_FINALIZER if foreground_deletion?(options)
+
+          "orphan" if orphan_deletion?(options, resource)
+        end
+
+        # The deletion marker is committed first so an owner cannot re-adopt
+        # dependents as they are released. The GC finishes the work on a later
+        # sweep, including dependents missed by this initial pass.
+        def process_gc_dependents(route, namespace, marked)
+          finalizers = Array(metadata_value(marked, "finalizers"))
+          if finalizers.include?("orphan")
+            orphan_dependents(route.resource, namespace, marked)
+          elsif finalizers.include?(FOREGROUND_FINALIZER)
+            cascade_delete_dependents(marked, owner_kind: route.resource.kind, blocking_only: true)
           end
         end
 
-        # Upstream marks the owner as being deleted (deletionTimestamp plus
-        # the orphan finalizer) BEFORE its dependents are released, so a
-        # controller that sees a released Pod matching its selector does a
-        # fresh read, finds its owner going away, and refuses to adopt it
-        # back.  Releasing the dependents of a still-live owner raced that
-        # guard: the ReplicationController re-adopted its own orphaned Pods,
-        # was deleted, and the garbage collector then removed every Pod it
-        # had just re-adopted -- "[sig-api-machinery] Garbage collector
-        # should orphan pods created by rc if delete options say so" kept 0
-        # of 100.  The resourceVersion precondition was already checked
-        # before, so the final delete no longer pins the version this mark
-        # moved.
-        def orphan_before_deletion(route, namespace, existing, expected)
-          existing = mark_owner_deleting(route, namespace, existing)
-          expected = repin_after_mark(expected, existing)
-          orphan_dependents(route.resource, namespace, existing)
-          [existing, expected, false]
-        end
+        def propagate_background_deletion(route, namespace, existing, expected)
+          return [existing, expected] unless CASCADE_OWNER_KINDS.include?(route.resource.kind.to_s)
 
-        # Same reason as the orphan branch: the owner is marked as being
-        # deleted before its dependents go, so its own controller stops
-        # replacing them.  Deleting the Pods of a still-live
-        # ReplicationController let it create new ones in the window before
-        # it was removed, and those outlived it -- "[sig-api-machinery]
-        # Garbage collector should keep the rc around until all its pods are
-        # deleted if the deleteOptions says so" found Pods left after the rc.
-        #
-        # Foreground (registry/generic/registry/store.go
-        # deletionFinalizersForGarbageCollection): the owner keeps the
-        # foregroundDeletion finalizer and stays readable until the garbage
-        # collector has seen every dependent gone, and only then is it
-        # removed.  Removing it right after the synchronous cascade let a
-        # creation batch its controller had already started land Pods after
-        # the cascade had listed them; "[sig-api-machinery] Garbage
-        # collector should keep the rc around until all its pods are deleted
-        # if the deleteOptions says so" found them outliving the rc.
-        def cascade_before_deletion(route, namespace, existing, expected, delete_options)
-          owner = CASCADE_OWNER_KINDS.include?(route.resource.kind.to_s)
-          foreground = foreground_deletion?(delete_options) && owner
-          if owner
-            existing = mark_owner_deleting(route, namespace, existing, finalizer: foreground ? FOREGROUND_FINALIZER : nil)
-            expected = repin_after_mark(expected, existing)
-          end
+          existing = mark_owner_deleting(route, namespace, existing, expected: expected)
           cascade_delete_dependents(existing, owner_kind: route.resource.kind)
-          [existing, expected, foreground && Array(metadata_value(existing, "finalizers")).include?(FOREGROUND_FINALIZER)]
+          [existing, repin_after_mark(expected, existing)]
         end
 
         # Finalizers only the owning controller ever removes.  Once the owner is
@@ -80,7 +63,7 @@ module Rubernetes
         # Terminating forever (the Job spec's "there are N pods left").
         OWNER_MANAGED_FINALIZERS = {"Job" => %w[batch.kubernetes.io/job-tracking]}.freeze
 
-        def cascade_delete_dependents(owner, visited: {}, owner_kind: nil)
+        def cascade_delete_dependents(owner, visited: {}, owner_kind: nil, blocking_only: false)
           uid = metadata_value(owner, "uid").to_s
           return if uid.empty? || visited[uid]
 
@@ -96,7 +79,7 @@ module Rubernetes
             listing = @store.list(resource: descriptor, namespace: descriptor.namespaced? ? namespace : nil, selectors: nil)
             listing.items.each do |item|
               references = Array(item.dig("metadata", "ownerReferences"))
-              next unless references.any? { |reference| reference["uid"].to_s == uid }
+              next unless references.any? { |reference| reference["uid"].to_s == uid && (!blocking_only || reference["blockOwnerDeletion"] == true) }
 
               # garbagecollector.go attemptToDeleteItem: a dependent that still
               # has an owner which is not going away is not deleted; only the
@@ -224,9 +207,7 @@ module Rubernetes
           uid = metadata_value(owner, "uid").to_s
           return if uid.empty?
 
-          ORPHAN_DEPENDENT_RESOURCES.each do |group, version, plural|
-            descriptor = @registry.find_gvr(group: group, version: version, resource: plural)
-            next if descriptor.nil?
+          orphan_resource_descriptors.each do |descriptor|
             next if resource.namespaced? && !descriptor.namespaced?
 
             listing = @store.list(resource: descriptor, namespace: resource.namespaced? ? namespace : nil, selectors: nil)
@@ -234,6 +215,14 @@ module Rubernetes
           rescue StandardError
             next
           end
+        end
+
+        def orphan_resource_descriptors
+          builtins = ORPHAN_DEPENDENT_RESOURCES.filter_map do |group, version, plural|
+            @registry.find_gvr(group: group, version: version, resource: plural)
+          end
+          custom = @registry.resources.select(&:custom?).group_by { |resource| [resource.group, resource.resource] }
+          builtins + custom.values.map { |versions| versions.find { |resource| resource.version == resource.storage_version } || versions.first }
         end
 
         # A dependent that could not be released keeps an owner reference to an
@@ -247,7 +236,7 @@ module Rubernetes
         ORPHAN_CONFLICT_ATTEMPTS = 5
 
         def orphan_one_dependent(descriptor, item, uid)
-          namespace = item.dig("metadata", "namespace")
+          namespace = descriptor.namespaced? ? item.dig("metadata", "namespace") : :cluster
           name = item.dig("metadata", "name")
           attempts = 0
           current = item
