@@ -927,7 +927,10 @@ module KubernetesCorpusImporter
 
     def write_sources(fetched_sources, manifest)
       fetched_sources.each do |source|
-        atomic_write(File.join(@corpus_root, source.relative_path), source.canonical_bytes)
+        # RubyGems preserves file modes. The public protobuf descriptors are
+        # runtime package data, including for a non-root API server.
+        mode = 0o644 if source.kind == "protobuf"
+        atomic_write(File.join(@corpus_root, source.relative_path), source.canonical_bytes, mode: mode)
       end
       atomic_write(File.join(@corpus_root, "sources.json"), canonical_json(manifest))
     end
@@ -1015,14 +1018,15 @@ module KubernetesCorpusImporter
       path
     end
 
-    def atomic_write(path, bytes)
+    def atomic_write(path, bytes, mode: nil)
       FileUtils.mkdir_p(File.dirname(path))
       raise Error, "refusing to overwrite symlink: #{path}" if File.symlink?(path)
-      return if File.file?(path) && File.binread(path) == bytes
+      return if File.file?(path) && (mode.nil? || (File.stat(path).mode & 0o777) == mode) && File.binread(path) == bytes
 
       temporary = Tempfile.new([".#{File.basename(path)}.", ".tmp"], File.dirname(path))
       temporary.binmode
       temporary.write(bytes)
+      temporary.chmod(mode) if mode
       temporary.flush
       temporary.fsync
       temporary.close
