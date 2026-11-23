@@ -26,24 +26,78 @@ module Rubernetes
       class MissingGVKError < Error; end
       class MissingGVRError < Error; end
 
+      module EntryFields
+        private
+
+        def required_string(payload, key, allow_empty: false)
+          value = payload.fetch(key)
+          unless value.is_a?(String) && (allow_empty || !value.empty?)
+            raise InvalidCatalogError, "#{entry_label} #{key} must be a #{allow_empty ? "String" : "non-empty String"}"
+          end
+
+          value.dup.freeze
+        rescue KeyError
+          raise InvalidCatalogError, "#{entry_label} is missing #{key}"
+        end
+
+        def string_set(value, key, duplicates: "values")
+          unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) && !item.empty? }
+            raise InvalidCatalogError, "#{entry_label} #{key} must be an array of non-empty Strings"
+          end
+          raise InvalidCatalogError, "#{entry_label} #{key} contains duplicate #{duplicates}" if value.uniq.length != value.length
+
+          value.map { |item| item.dup.freeze }.freeze
+        end
+      end
+      private_constant :EntryFields
+
+      module EndpointSchema
+        def schema
+          type
+        end
+
+        def openapi_schema
+          type&.openapi_schema
+        end
+
+        def fields
+          type ? type.fields : [].freeze
+        end
+
+        def patch_fields
+          type ? type.patch_fields : [].freeze
+        end
+
+        def field_set
+          fields
+        end
+
+        def patch_set
+          patch_fields
+        end
+      end
+      private_constant :EndpointSchema
+
       # Immutable generated type metadata indexed by every GVK it declares.
       class Type
+        include EntryFields
+
         attr_reader :schema_name, :ruby_constant, :fields, :required,
                     :gvks, :patch_fields, :openapi_schema, :metadata
 
         def initialize(payload:, openapi_schema:)
           @schema_name = required_string(payload, "schema")
           @ruby_constant = required_string(payload, "ruby_constant")
-          @fields = string_set(payload.fetch("fields", []), "fields")
-          @required = string_set(payload.fetch("required", []), "required")
-          @patch_fields = string_set(payload.fetch("patch_fields", @fields), "patch_fields")
+          @fields = string_set(payload.fetch("fields", []), "fields", duplicates: "fields")
+          @required = string_set(payload.fetch("required", []), "required", duplicates: "fields")
+          @patch_fields = string_set(payload.fetch("patch_fields", @fields), "patch_fields", duplicates: "fields")
           @gvks = normalize_gvks(payload.fetch("gvks") do
             raise InvalidCatalogError, "type is missing gvks"
           end)
-          @openapi_schema = Catalog.deep_freeze(Catalog.send(:deep_copy, openapi_schema))
-          @metadata = Catalog.deep_freeze(Catalog.send(:deep_copy, payload.reject do |key, _value|
+          @openapi_schema = Catalog.immutable_copy(openapi_schema)
+          @metadata = Catalog.immutable_copy(payload.reject do |key, _value|
             %w[schema ruby_constant fields required patch_fields gvks].include?(key.to_s)
-          end))
+          end)
           freeze
         end
 
@@ -88,25 +142,7 @@ module Rubernetes
 
         private
 
-        def required_string(payload, key)
-          value = payload.fetch(key)
-          raise InvalidCatalogError, "type #{key} must be a non-empty String" unless value.is_a?(String) && !value.empty?
-
-          value.dup.freeze
-        rescue KeyError
-          raise InvalidCatalogError, "type is missing #{key}"
-        end
-
-        def string_set(value, key)
-          unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) && !item.empty? }
-            raise InvalidCatalogError, "type #{key} must be an array of non-empty Strings"
-          end
-
-          values = value.map(&:dup)
-          raise InvalidCatalogError, "type #{key} contains duplicate fields" if values.uniq.length != values.length
-
-          values.map(&:freeze).freeze
-        end
+        def entry_label = "type"
 
         def normalize_gvks(value)
           raise InvalidCatalogError, "type gvks must be an array" unless value.is_a?(Array)
@@ -134,6 +170,9 @@ module Rubernetes
       # Immutable registration for every covered GVK. Some protocol-only
       # entries intentionally have no generated schema type.
       class GVKEntry
+        include EntryFields
+        include EndpointSchema
+
         attr_reader :gvk, :group, :version, :kind, :identifier, :schema_name,
                     :type, :metadata
 
@@ -154,9 +193,9 @@ module Rubernetes
 
           @schema_name = raw_schema&.dup&.freeze
           @type = type
-          @metadata = Catalog.deep_freeze(Catalog.send(:deep_copy, payload.reject do |key, _value|
+          @metadata = Catalog.immutable_copy(payload.reject do |key, _value|
             %w[group version kind identifier schema].include?(key.to_s)
-          end))
+          end)
           freeze
         end
 
@@ -178,36 +217,12 @@ module Rubernetes
           type.nil?
         end
 
-        def schema
-          type
-        end
-
         def name
           schema_name || identifier
         end
 
         def gvks
           [gvk].freeze
-        end
-
-        def openapi_schema
-          type&.openapi_schema
-        end
-
-        def fields
-          type ? type.fields : [].freeze
-        end
-
-        def patch_fields
-          type ? type.patch_fields : [].freeze
-        end
-
-        def field_set
-          fields
-        end
-
-        def patch_set
-          patch_fields
         end
 
         def ruby_constant
@@ -245,16 +260,7 @@ module Rubernetes
 
         private
 
-        def required_string(payload, key, allow_empty: false)
-          value = payload.fetch(key)
-          unless value.is_a?(String) && (allow_empty || !value.empty?)
-            qualifier = allow_empty ? "String" : "non-empty String"
-            raise InvalidCatalogError, "GVK #{key} must be a #{qualifier}"
-          end
-          value.dup.freeze
-        rescue KeyError
-          raise InvalidCatalogError, "GVK is missing #{key}"
-        end
+        def entry_label = "GVK"
 
         def source_identifier
           prefix = group.empty? ? "core" : group
@@ -265,6 +271,9 @@ module Rubernetes
       # Immutable entry for every served GVR, including subresources and
       # discovery-only endpoints that do not have a primary Resource record.
       class GVR
+        include EntryFields
+        include EndpointSchema
+
         attr_reader :gvr, :group, :version, :resource, :identifier, :kind,
                     :scope, :verbs, :primary_resource, :subresource_metadata,
                     :schema_name, :type, :metadata
@@ -282,15 +291,15 @@ module Rubernetes
 
           @identifier = (supplied_identifier || expected_identifier).dup.freeze
           @primary_resource = primary_resource
-          @subresource_metadata = (Catalog.deep_freeze(Catalog.send(:deep_copy, subresource_metadata)) if subresource_metadata)
+          @subresource_metadata = (Catalog.immutable_copy(subresource_metadata) if subresource_metadata)
           @kind = optional_string(subresource_metadata, "kind") || primary_resource&.kind
           @scope = primary_resource&.scope
           @verbs = normalize_verbs(subresource_metadata, primary_resource)
           @schema_name = primary_resource&.schema_name
           @type = primary_resource&.type
-          @metadata = Catalog.deep_freeze(Catalog.send(:deep_copy, payload.reject do |key, _value|
+          @metadata = Catalog.immutable_copy(payload.reject do |key, _value|
             %w[group version resource identifier].include?(key.to_s)
-          end))
+          end)
           freeze
         end
 
@@ -328,30 +337,6 @@ module Rubernetes
 
         def cluster_scoped?
           scope == :cluster
-        end
-
-        def fields
-          type ? type.fields : [].freeze
-        end
-
-        def patch_fields
-          type ? type.patch_fields : [].freeze
-        end
-
-        def field_set
-          fields
-        end
-
-        def patch_set
-          patch_fields
-        end
-
-        def schema
-          type
-        end
-
-        def openapi_schema
-          type&.openapi_schema
         end
 
         def merge_keys
@@ -416,16 +401,7 @@ module Rubernetes
 
         private
 
-        def required_string(payload, key, allow_empty: false)
-          value = payload.fetch(key)
-          unless value.is_a?(String) && (allow_empty || !value.empty?)
-            qualifier = allow_empty ? "String" : "non-empty String"
-            raise InvalidCatalogError, "GVR #{key} must be a #{qualifier}"
-          end
-          value.dup.freeze
-        rescue KeyError
-          raise InvalidCatalogError, "GVR is missing #{key}"
-        end
+        def entry_label = "GVR"
 
         def optional_string(payload, key)
           return nil unless payload
@@ -459,6 +435,9 @@ module Rubernetes
 
       # Immutable generated REST resource metadata indexed by every GVR.
       class Resource
+        include EntryFields
+        include EndpointSchema
+
         attr_reader :group, :version, :resource, :kind, :scope, :verbs,
                     :short_names, :categories, :singular, :list_kind,
                     :merge_keys, :patch_strategy, :field_paths,
@@ -476,7 +455,7 @@ module Rubernetes
           @categories = string_set(payload.fetch("categories", []), "categories")
           @singular = (payload["singular"] || payload["singular_name"] || payload["singularName"] || "").to_s.freeze
           @list_kind = (payload["list_kind"] || payload["listKind"] || "#{kind}List").to_s.freeze
-          @merge_keys = normalize_merge_keys(payload.fetch("merge_keys", payload.fetch("mergeKeys", {})))
+          @merge_keys = normalize_string_map(payload.fetch("merge_keys", payload.fetch("mergeKeys", {})), "merge_keys")
           raw_patch_strategy = payload["patch_strategy"] || payload["patchStrategy"]
           @patch_strategy = normalize_patch_strategy(raw_patch_strategy)
           @field_paths = string_set(payload.fetch("field_paths", payload.fetch("fieldPaths", [])), "field_paths")
@@ -486,11 +465,11 @@ module Rubernetes
           @subresources = normalize_subresources(payload.fetch("subresources", []))
           @type = type
           @schema_name = type.schema_name
-          @metadata = Catalog.deep_freeze(Catalog.send(:deep_copy, payload.reject do |key, _value|
+          @metadata = Catalog.immutable_copy(payload.reject do |key, _value|
             %w[group version resource kind scope verbs short_names shortNames categories singular singular_name
                singularName list_kind listKind merge_keys mergeKeys patch_strategy patchStrategy field_paths fieldPaths
                patch_strategies patchStrategies subresources schema].include?(key.to_s)
-          end))
+          end)
           freeze
         end
 
@@ -516,30 +495,6 @@ module Rubernetes
 
         def cluster_scoped?
           !namespaced?
-        end
-
-        def fields
-          type.fields
-        end
-
-        def patch_fields
-          type.patch_fields
-        end
-
-        def field_set
-          fields
-        end
-
-        def patch_set
-          patch_fields
-        end
-
-        def schema
-          type
-        end
-
-        def openapi_schema
-          type.openapi_schema
         end
 
         alias openapi openapi_schema
@@ -569,16 +524,7 @@ module Rubernetes
 
         private
 
-        def required_string(payload, key, allow_empty: false)
-          value = payload.fetch(key)
-          unless value.is_a?(String) && (allow_empty || !value.empty?)
-            raise InvalidCatalogError, "resource #{key} must be a #{allow_empty ? "String" : "non-empty String"}"
-          end
-
-          value.dup.freeze
-        rescue KeyError
-          raise InvalidCatalogError, "resource is missing #{key}"
-        end
+        def entry_label = "resource"
 
         def normalize_scope(value)
           normalized = value.to_s.downcase
@@ -586,30 +532,6 @@ module Rubernetes
           return :cluster if %w[cluster clusterscoped cluster_scoped].include?(normalized)
 
           raise InvalidCatalogError, "resource scope must be Namespaced or Cluster"
-        end
-
-        def string_set(value, key)
-          unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) && !item.empty? }
-            raise InvalidCatalogError, "resource #{key} must be an array of non-empty Strings"
-          end
-
-          values = value.map(&:dup)
-          raise InvalidCatalogError, "resource #{key} contains duplicate values" if values.uniq.length != values.length
-
-          values.map(&:freeze).freeze
-        end
-
-        def normalize_merge_keys(value)
-          raise InvalidCatalogError, "resource merge_keys must be an object" unless value.respond_to?(:each_pair)
-
-          normalized = value.each_with_object({}) do |(key, child), result|
-            unless key.is_a?(String) && !key.empty? && child.is_a?(String) && !child.empty?
-              raise InvalidCatalogError, "resource merge_keys must map non-empty Strings to non-empty Strings"
-            end
-
-            result[key.dup] = child.dup
-          end
-          Catalog.deep_freeze(normalized)
         end
 
         def normalize_patch_strategy(value)
@@ -635,7 +557,7 @@ module Rubernetes
         def normalize_subresources(value)
           raise InvalidCatalogError, "resource subresources must be an array of objects" unless value.is_a?(Array) && value.all?(Hash)
 
-          Catalog.deep_freeze(Catalog.send(:deep_copy, value))
+          Catalog.immutable_copy(value)
         end
       end
 
@@ -786,19 +708,19 @@ module Rubernetes
       end
 
       def type_index
-        @types_by_gvk.dup.freeze
+        @types_by_gvk
       end
 
       def gvk_index
-        @gvk_entries_by_gvk.dup.freeze
+        @gvk_entries_by_gvk
       end
 
       def resource_index
-        @resources_by_gvr.dup.freeze
+        @resources_by_gvr
       end
 
       def gvr_index
-        @served_gvrs_by_gvr.dup.freeze
+        @served_gvrs_by_gvr
       end
 
       def to_h
@@ -811,45 +733,28 @@ module Rubernetes
       end
 
       class << self
-        def deep_freeze(value, seen = {}.compare_by_identity)
-          return value if value.nil? || value.is_a?(Numeric) || value == true || value == false || value.is_a?(Symbol)
-          return value if seen.key?(value)
+        def deep_freeze(value, seen = nil) = DeepFreeze.call(value, seen)
 
-          seen[value] = true
-          case value
-          when Hash
-            value.each do |key, child|
-              deep_freeze(key, seen)
-              deep_freeze(child, seen)
-            end
-          when Array
-            value.each { |child| deep_freeze(child, seen) }
-          end
-          value.freeze
-        end
-
-        private
-
-        def deep_copy(value, seen = {}.compare_by_identity)
+        def immutable_copy(value, seen = {}.compare_by_identity)
           case value
           when Hash
             return seen.fetch(value) if seen.key?(value)
 
             copy = {}
             seen[value] = copy
-            value.each { |key, child| copy[deep_copy(key, seen)] = deep_copy(child, seen) }
-            copy
+            value.each { |key, child| copy[immutable_copy(key, seen)] = immutable_copy(child, seen) }
+            copy.freeze
           when Array
             return seen.fetch(value) if seen.key?(value)
 
             copy = []
             seen[value] = copy
-            value.each { |child| copy << deep_copy(child, seen) }
-            copy
+            value.each { |child| copy << immutable_copy(child, seen) }
+            copy.freeze
           when String
-            value.dup
+            value.dup.freeze
           else
-            value
+            value.freeze
           end
         end
       end
@@ -942,8 +847,6 @@ module Rubernetes
         raw_resources = registry.fetch("resources") { raise InvalidCatalogError, "registry is missing resources" }
         raise InvalidCatalogError, "registry types and resources must be arrays" unless raw_types.is_a?(Array) && raw_resources.is_a?(Array)
 
-        @raw_registry = self.class.deep_freeze(self.class.send(:deep_copy, registry))
-        @raw_openapi = self.class.deep_freeze(self.class.send(:deep_copy, openapi))
         @types_by_schema = {}
         @types_by_ruby_constant = {}
         @types_by_gvk = {}
@@ -985,7 +888,7 @@ module Rubernetes
           entry_type = type_for_resource(payload)
           entry = Resource.new(payload: payload, type: entry_type)
           @resources_by_gvr[resource_gvr] = entry
-          index_subresources(payload, entry)
+          index_subresources(entry)
         end
         @types = @types_by_schema.values.sort_by(&:schema_name).freeze
         @resources = @resources_by_gvr.values.sort_by { |entry| entry.gvr.to_s }.freeze
@@ -1057,13 +960,8 @@ module Rubernetes
         raise InvalidCatalogError, "invalid resource GVR: #{error.message}"
       end
 
-      def index_subresources(payload, primary_resource)
-        raw_subresources = payload.fetch("subresources", [])
-        raise InvalidCatalogError, "resource subresources must be an array" unless raw_subresources.is_a?(Array)
-
-        raw_subresources.each do |subresource|
-          raise InvalidCatalogError, "resource subresource entries must be JSON objects" unless subresource.is_a?(Hash)
-
+      def index_subresources(primary_resource)
+        primary_resource.subresources.each do |subresource|
           child = subresource["resource"]
           unless child.is_a?(String) && !child.empty? && !child.include?("/")
             raise InvalidCatalogError, "resource subresource must be a non-empty path component"
@@ -1079,7 +977,7 @@ module Rubernetes
 
           @subresources_by_gvr[key] = {
             "primary_resource" => primary_resource,
-            "metadata" => self.class.deep_freeze(self.class.send(:deep_copy, subresource))
+            "metadata" => subresource
           }.freeze
         end
       end
