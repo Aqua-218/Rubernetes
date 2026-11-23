@@ -82,6 +82,8 @@ seatの配分にはAPFの規則を適用する。
 
 watchは長時間の接続なので、実行中の数には含めない。
 
+`APIServingWithRoutine`を有効にすると、watchなどの長時間リクエストを準備するスレッドは、接続がレスポンスを配信し続けている間も準備完了後に終了する。
+
 <a id="sec-5-1-5"></a>
 ## 5.1.5 スキームとコーデック
 
@@ -101,6 +103,8 @@ watchは長時間の接続なので、実行中の数には含めない。
 4. `finalizers`が空になった時点で、実際に削除する。
 
 猶予期間`gracePeriodSeconds`の既定値は、Podでは30秒である。
+
+`ShardedListAndWatch`を有効にすると、LIST、WATCH、DELETE collectionで`shardSelector`を指定できる。`object.metadata.uid`または`object.metadata.namespace`を64ビットFNV-1aでハッシュし、`shardRange`の下限を含み上限を含まない範囲で選択する。組み込み型のLISTでは`metadata.shardInfo.selector`に適用したセレクタを返す。
 
 <a id="sec-5-1-7"></a>
 ## 5.1.7 admissionとAPI拡張
@@ -134,6 +138,12 @@ webhookのタイムアウトの既定値は10秒とする。APIが許す上限�
 
 dry-runの要求では、sideEffectsが`None`でも`NoneOnDryRun`でもないwebhookを呼び出さない。
 
+### ファイルから読み込むadmission設定
+
+`security.feature_gates.ManifestBasedAdmissionControlConfig`を有効にして、`security.admission.config.<プラグイン名>.staticManifestsDir`に絶対パスを指定する。対象は`MutatingAdmissionWebhook`、`ValidatingAdmissionWebhook`、`MutatingAdmissionPolicy`、`ValidatingAdmissionPolicy`である。
+
+マニフェストの名前には`.static.k8s.io`を付ける。webhookはHTTPS URLを指定し、policy bindingは同じディレクトリのpolicyを参照する。起動時に全体を検証し、変更内容が無効なら直前に読み込んだ設定で処理を続ける。ファイルの設定はAPIからの設定より先に評価され、admission設定リソースへの要求にはファイルの設定を適用する。
+
 ### conversion webhookとAPI aggregation
 
 CRDのconversion webhookと、API aggregationのプロキシは、mTLSで相手の身元を検証する。上限は次のとおりである。
@@ -145,6 +155,12 @@ CRDのconversion webhookと、API aggregationのプロキシは、mTLSで相手�
 | 接続 | 30秒 |
 
 aggregated APIのdiscovery、OpenAPI、healthは、組み込みのものと統合する。同じGVRが競合する場合は、起動時か登録のトランザクションの中で拒否する。
+
+### APIサーバー間のピア転送
+
+`UnknownVersionInteroperabilityProxy` は v1.36.2 で既定で有効になる。転送を有効にするには `rubernetes-apiserver.peer_ca_file` にピアのサーバー証明書を検証する CA を指定し、`tls`、`proxy_client`、`security.authentication.request_header` を設定する。各ピアのサーバー証明書には `kubernetes.default.svc` の DNS SAN を含める。ピア接続先を上書きするには `peer_advertise_ip` と `peer_advertise_port` を使う。
+
+同じデータストアを使う API サーバーのうち、認可済みのリソース要求を処理できるピアへ一度だけ転送する。転送先は内部のエンドポイント Lease と `kube-system` の API サーバー identity Lease から決まり、転送先でも利用者の認可を行う。`/apis` の `apidiscovery.k8s.io/v2` にはピアが提供する API が加わる。`Accept` の `profile=nopeer` を指定すると、その API サーバーの情報を取得できる。
 
 <a id="sec-5-1-8"></a>
 ## 5.1.8 監査と保存時暗号化
