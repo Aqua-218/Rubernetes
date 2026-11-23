@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "routed_load_balancer"
+
 module Rubernetes
   module Controller
     # Cloud provider Service controller. A service with loadBalancerClass is
     # owned by the matching external implementation and is ignored here.
     class ServiceLBController < BaseController
       include InfrastructureStorageSupport
+      include RoutedLoadBalancer
 
       SERVICE = ResourceDescriptor.parse("Service")
       NODE = ResourceDescriptor.parse("Node")
@@ -15,12 +18,20 @@ module Rubernetes
         super(**)
       end
 
-      def plan(service, store: nil, nodes: nil, provider: nil, cloud_provider: nil, cloud: nil, **_options)
+      def plan(service, store: nil, nodes: nil, provider: nil, cloud_provider: nil, cloud: nil, load_balancer_pool: nil,
+               default_routed_load_balancer: false, **_options)
+        if load_balancer_pool && (routed_service?(service, default_routed_load_balancer) || routed_finalizer?(service))
+          return plan_routed_load_balancer(service, adapter_for(store), load_balancer_pool, default_routed_load_balancer)
+        end
+
         return empty_result(service) unless cloud_owned?(service)
 
-        adapter = adapter_for_storage(store)
+        provider = provider_from(provider || cloud_provider || cloud)
+        return empty_result(service) if load_balancer_pool && !provider
+
+        adapter = adapter_for(store)
         nodes ||= list_storage_objects(adapter, NODE, namespace: :all)
-        result = call_provider(provider_from(provider || cloud_provider || cloud), %i[ensure_load_balancer ensureLoadBalancer create_load_balancer],
+        result = call_provider(provider, %i[ensure_load_balancer ensureLoadBalancer create_load_balancer],
                                positional: [service, Array(nodes)],
                                keywords: {service: service, nodes: Array(nodes)})
         candidate_status = Support.deep_copy(Support.status(service))
