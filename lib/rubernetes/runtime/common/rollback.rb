@@ -36,6 +36,9 @@ module Rubernetes
                    "error" => "#{error.class}: #{error.message}"}
           errors << entry
           @ledger.record_cleanup_error(operation_id, resource_key: entry.fetch("resource"), error: error)
+          # Earlier claims may support the failed resource. Leave them owned
+          # so a retry can finish the failed cleanup before touching them.
+          break
         end
 
         current = @ledger.operation(operation_id)
