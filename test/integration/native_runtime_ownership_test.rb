@@ -19,10 +19,9 @@ class NativeRuntimeOwnershipTest < Minitest::Test
   Linux = Rubernetes::Platform::Linux
   NativeAdapters = Linux::NativeAdapters
 
-  # Requirement: the parent must observe the actual workload PID, not the
-  # wrapper PID, and the workload must be in the cgroup before gate release.
-  # Mutation target: removing cgroup inheritance or reporting the wrapper PID.
-  def test_actual_workload_is_attached_to_the_real_cgroup_before_release
+  # The workload joins its leaf before running while the durable wrapper
+  # stays outside its limits and has its own process identity.
+  def test_actual_workload_joins_the_real_cgroup_without_its_wrapper
     cgroup = NativeAdapters::CgroupAdapter.new(root: "/sys/fs/cgroup")
 
     assert_predicate(cgroup, :available?)
@@ -41,25 +40,37 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       cgroup: cgroup,
       log_directory: Dir.mktmpdir("m2-owner-logs-")
     )
-    handle = supervisor.spawn(command: ["/bin/sh", "-c", "sleep 30"],
+    procs = cgroup.open_procs(cgroup_handle)
+    handle = supervisor.spawn(command: ["/bin/sh", "-c", "cat /proc/self/cgroup; sleep 30"],
                               security_plan: unconfined_plan,
-                              cgroup: cgroup_handle, id: "process-#{pod_id}")
+                              cgroup: cgroup_handle, cgroup_procs: procs, id: "process-#{pod_id}", oom_score_adj: 501)
+    procs.close
 
-    # The wrapper is the only process that exists before the gate.  Its cgroup
-    # membership is inherited by the final workload child.
-    cgroup.attach(cgroup_handle, pid: handle.pid)
+    population_path = File.join(cgroup_handle.path, "cgroup.procs")
+
+    assert_empty File.readlines(population_path)
     supervisor.release_gate(handle)
     observed = supervisor.handles.fetch(handle.id)
 
     refute_equal(observed.pid, observed.workload_pid)
     assert_operator(observed.workload_pid, :>, 0)
-    assert_includes(File.readlines(File.join(cgroup_handle.path, "cgroup.procs"), chomp: true).map(&:to_i), observed.workload_pid)
+    members = File.readlines(population_path, chomp: true).map(&:to_i)
+
+    assert_includes members, observed.workload_pid
+    refute_includes members, observed.pid
+    assert_equal "501", File.read("/proc/#{observed.workload_pid}/oom_score_adj").strip
+    refute_equal "501", File.read("/proc/#{observed.pid}/oom_score_adj").strip
+    expected_cgroup = "0::#{cgroup_handle.path.delete_prefix("/sys/fs/cgroup")}"
+    wait_until(timeout: 1.0) { supervisor.logs(handle).include?(expected_cgroup) }
+
+    assert_includes supervisor.logs(handle), expected_cgroup
     assert_operator(observed.workload_start_time.to_i, :>, 0)
     assert_match(/\Asha256:[0-9a-f]{64}\z/, observed.workload_executable_digest)
     assert_equal("clone3", observed.workload_creation_method)
     assert_equal(Linux::Clone3::CLONE_PIDFD,
                  observed.workload_clone_flags & Linux::Clone3::CLONE_PIDFD)
   ensure
+    procs&.close unless procs&.closed?
     begin
       supervisor&.stop(handle, timeout: 1.0)
     rescue StandardError
@@ -96,7 +107,9 @@ class NativeRuntimeOwnershipTest < Minitest::Test
           namespaces: [:pid].freeze, shared: [].freeze, host: [].freeze,
           user_mapping: nil, hostname: nil
         )
-        handle = low_level.create(plan: plan, id: "m2-holder-#{Process.pid}", identity: "namespace:m2-holder-#{Process.pid}")
+        handle = Thread.new do
+          low_level.create(plan: plan, id: "m2-holder-#{Process.pid}", identity: "namespace:m2-holder-#{Process.pid}")
+        end.value
         writer.write([
           handle.pid,
           handle.creation_method == "clone3" ? 1 : 0,
@@ -116,6 +129,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
                    clone_flags & Linux::Clone3::CLONE_PIDFD)
       assert_equal(Linux::Clone3::CLONE_NEWPID,
                    clone_flags & Linux::Clone3::CLONE_NEWPID)
+      assert_path_exists("/proc/#{holder_pid}/ns/pid", "the holder must survive retirement of its creator thread")
 
       Process.kill(Signal.list.fetch("KILL"), orchestrator_pid)
       Process.wait(orchestrator_pid)
@@ -176,6 +190,14 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       observed = first.resource_inventory
 
       second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
+      unreadable = observed.map do |resource|
+        next resource unless resource["kind"] == "workspace"
+
+        resource.merge("metadata" => resource.fetch("metadata").merge("live" => false, "unverifiable" => true))
+      end
+      assert_raises(Rubernetes::Runtime::RecoveryRequired) { second.recover(observer: -> { unreadable }) }
+      assert_equal("running", first.container_status(container).fetch("state"))
+
       report = second.recover(observer: -> { observed })
 
       assert_empty(report.to_h.fetch("errors"))
@@ -241,6 +263,78 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       adapter&.wait(pid: process.fetch(:pid), timeout: 1.0) if process
     rescue StandardError
       nil
+    end
+  end
+
+  def test_committed_wrapper_keeps_its_streams_and_exit_status_after_agent_sigkill
+    Dir.mktmpdir("native-wrapper-handoff-") do |directory|
+      marker = File.join(directory, "complete")
+      reader, writer = IO.pipe
+      agent = fork do
+        reader.close
+        # The test measures closure of the original OS descriptors.
+        # rubocop:disable Style/GlobalStdStream
+        STDOUT.reopen(writer)
+        STDERR.reopen(writer)
+        writer.close
+        supervisor = handoff_supervisor(directory)
+        workload = supervisor.spawn(id: "handoff", durable: true, security_plan: unconfined_plan,
+                                    command: ["/bin/sh", "-c", 'echo before; while [ ! -e "$1" ]; do sleep 0.02; done; echo after; exit 37', "sh", marker])
+        running = supervisor.release_gate(workload)
+        exit!(1) unless supervisor.commit(running)
+
+        STDOUT.puts(JSON.generate(running.to_h))
+        STDOUT.flush
+        # rubocop:enable Style/GlobalStdStream
+        Process.kill("KILL", Process.pid)
+      end
+      writer.close
+      payload = Timeout.timeout(5) { reader.read }
+      _, status = Process.waitpid2(agent)
+
+      assert_equal Signal.list.fetch("KILL"), status.termsig
+      identity = JSON.parse(payload)
+      restored = handoff_supervisor(directory)
+      handle = restored.adopt(metadata: identity)
+
+      assert_equal identity.fetch("workload_pid"), handle.workload_pid
+      File.write(marker, "complete")
+
+      assert_equal 37, restored.wait(handle, timeout: 5).exit_status
+      assert_equal "before\nafter\n", restored.logs(handle)
+    ensure
+      File.write(marker, "complete") if marker
+      reader&.close
+      writer&.close unless writer&.closed?
+      restored&.close(handle) if handle
+      Process.waitpid(agent, Process::WNOHANG) if agent && !status
+    end
+  end
+
+  def test_restart_retires_verified_mounted_workspaces_left_by_a_dead_sandbox
+    skip "native restart reconstruction requires root" unless Process.uid.zero?
+
+    with_retired_namespace do |sandbox, container, options|
+      fresh = Rubernetes::Runtime::Native.new(**options)
+      observer = Rubernetes::Runtime::Native::KernelObserver.new(ledger: fresh.ledger)
+      holder = sandbox.namespace.adapter_handle
+      initial = observer.list_resources
+
+      assert_equal %w[namespace workspace workspace], initial.map { |entry| entry["kind"] }.sort
+      assert(initial.all? { |entry| entry.dig("metadata", "live") == true })
+
+      mismatched = initial.map { |entry| entry["kind"] == "namespace" ? entry.merge("identity" => "wrong") : entry }
+      report = fresh.recover(observer: -> { mismatched }).to_h
+
+      refute_empty report.fetch("identity_mismatch")
+      assert_nil IO.for_fd(holder.pidfd, autoclose: false).wait_readable(0)
+
+      assert_empty fresh.recover(observer: observer).to_h.fetch("errors")
+      assert_equal "Stopped", fresh.ledger.operation(sandbox.id).state
+      assert_empty fresh.ledger.resources(owner: sandbox.identity)
+      assert IO.for_fd(holder.pidfd, autoclose: false).wait_readable(2)
+      refute_path_exists sandbox.workspace.root
+      refute_path_exists container.workspace.root
     end
   end
 
@@ -325,6 +419,40 @@ class NativeRuntimeOwnershipTest < Minitest::Test
   end
 
   private
+
+  def with_retired_namespace
+    Dir.mktmpdir("native-retired-namespace-") do |directory|
+      sandbox_root = File.join(directory, "sandboxes")
+      options = {profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup",
+                 journal_path: File.join(directory, "journal.wal"), log_root: File.join(directory, "logs"),
+                 security_context: {"allow_privilege_escalation" => false, "seccomp" => "RuntimeDefault"}}
+      adapters = NativeAdapters.for_profile(profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup")
+      runtime = Rubernetes::Runtime::Native.new(**options, adapters: adapters)
+      bytes = "retired-namespace-image"
+      sandbox_id = "native-retired-#{SecureRandom.hex(6)}"
+      sandbox_id = runtime.run_sandbox({"id" => sandbox_id, "image_bytes" => bytes, "image_digest" => "sha256:#{Digest::SHA256.hexdigest(bytes)}"})
+      sandbox = runtime.sandbox(sandbox_id)
+      lowerdir = File.join(directory, "rootfs")
+      Dir.mkdir(lowerdir)
+      container = runtime.create_container(sandbox, {"id" => "app", "rootfs_path" => lowerdir})
+      adapters.fetch(:cgroup_adapter).remove(container.cgroup, force: true)
+      adapters.fetch(:cgroup_adapter).remove(sandbox.cgroup, force: true)
+      runtime.ledger.resources(owner: sandbox.identity).select { |entry| entry[:kind] == "cgroup" }.each do |entry|
+        runtime.ledger.release(operation_id: sandbox.id, kind: "cgroup", id: entry[:id], identity: entry[:identity], force: true)
+      end
+      runtime.ledger.transition(operation_id: sandbox.id, to: "StateUnknown")
+      fresh_adapters = NativeAdapters.for_profile(profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup")
+      yield sandbox, container, options.merge(adapters: fresh_adapters)
+    ensure
+      adapters&.fetch(:namespace_adapter)&.destroy(handle: sandbox.namespace.adapter_handle, id: sandbox.id, identity: sandbox.namespace.identity) if sandbox
+    end
+  end
+
+  def handoff_supervisor(directory)
+    adapter = NativeAdapters::ProcessGateAdapter.new(namespace_adapter: Object.new,
+                                                     security: Linux::Security.new(adapter: NativeAdapters::SecurityAdapter.new))
+    Linux::ProcessSupervisor.new(process_adapter: adapter, pidfd_adapter: NativeAdapters::PidfdAdapter.new, log_directory: directory)
+  end
 
   def unconfined_plan
     context = Linux::Security::Context.from("seccomp" => "Unconfined")
