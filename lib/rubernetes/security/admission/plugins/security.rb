@@ -7,6 +7,8 @@ require_relative "../../../claim_quota_usage"
 require_relative "core"
 require_relative "../../../pod_quota_usage"
 require_relative "../../../pod_api_references"
+require_relative "../../../pvc_quota_usage"
+require_relative "../../../service_quota_usage"
 
 module Rubernetes
   module Security
@@ -519,10 +521,14 @@ module Rubernetes
 
           def validate(attributes)
             return unless %w[CREATE UPDATE].include?(attributes.operation) && attributes.object && !attributes.namespace.empty?
-            return unless attributes.subresource.empty?
 
-            delta = usage_delta(attributes)
-            return if delta.empty?
+            claim = resource?(attributes, "", "persistentvolumeclaims")
+            return unless attributes.subresource.empty? || pod_resize?(attributes) || (claim && attributes.subresource == "status")
+
+            prior = attributes.old_object if attributes.operation == "UPDATE"
+            pod_quantities = Rubernetes::PodQuotaUsage.quantities(attributes.object) if resource?(attributes, "", "pods")
+            delta = claim ? PVCQuotaUsage.delta(attributes.object, prior) : usage_delta(attributes, pod_quantities)
+            return if delta.empty? && !quota_scope_changed?(attributes, prior)
 
             MAX_CHARGE_ATTEMPTS.times do
               quotas = begin
@@ -542,11 +548,13 @@ module Rubernetes
               return if quotas.empty?
 
               charges = begin
-                quotas.filter_map { |quota| charge_for(quota, attributes, delta) }
+                quotas.filter_map { |quota| charge_for(quota, attributes, delta, pod_quantities) }
               rescue Rejected => rejected
                 trace_quota(attributes, delta, quotas, "rejected: #{rejected.message}")
                 raise
               end
+              return if attributes.dry_run
+
               committed = charges.empty? || commit_charges(charges, attributes.namespace)
               trace_quota(attributes, delta, quotas, committed ? "committed #{charges.map(&:last).inspect[0, 300]}" : "conflict")
               return if committed
@@ -589,9 +597,10 @@ module Rubernetes
           # yet refuses the request, a Pod quota'd on cpu/memory must request
           # them per container unless it sets pod-level resources, and every
           # exceeded resource is named in one message.
-          def charge_for(quota, attributes, delta)
+          def charge_for(quota, attributes, delta, pod_quantities)
             return nil unless scope_matches?(quota, attributes)
 
+            delta = charge_for_scope_transition(quota, attributes, delta)
             name = quota.dig("metadata", "name")
             hard = quota.dig("status", "hard") || {}
             return nil if hard.empty?
@@ -620,16 +629,25 @@ module Rubernetes
             requested.each do |resource, change|
               total = quantity(used.fetch(resource, "0")) + change
               exceeded << resource if total > quantity(hard[resource])
-              updated[resource] = Quantity.format(total)
+              format_source = pod_quantities&.fetch(resource, nil)
+              if format_source
+                current = Schema::Quantity.from_json(used.fetch(resource, "0"))
+                format_source = current unless current.zero?
+              end
+              updated[resource] = format_quota_charge(total, format_source)
             end
             unless exceeded.empty?
               pretty = ->(pairs) { exceeded.sort.map { |resource| "#{resource}=#{pairs.call(resource)}" }.join(",") }
               reject!("#{group_resource(attributes)} #{attributes.name.to_s.inspect} is forbidden: exceeded quota: #{name}, " \
-                      "requested: #{pretty.call(->(resource) { Quantity.format(requested[resource]) })}, " \
-                      "used: #{pretty.call(->(resource) { Quantity.format(quantity(used.fetch(resource, "0"))) })}, " \
+                      "requested: #{pretty.call(->(resource) { format_quota_charge(requested[resource], pod_quantities&.fetch(resource, nil)) })}, " \
+                      "used: #{pretty.call(->(resource) { used.fetch(resource, "0") })}, " \
                       "limited: #{pretty.call(->(resource) { hard[resource] })}")
             end
             updated == used ? nil : [quota, updated]
+          end
+
+          def format_quota_charge(value, source)
+            source ? Schema::Quantity.new(value, source.format).to_s : Quantity.format(value)
           end
 
           # All-or-nothing only as far as the store allows: a conflict on any
@@ -650,15 +668,39 @@ module Rubernetes
 
           private
 
-          def scope_matches?(quota, attributes)
-            scopes = Array(quota.dig("spec", "scopes"))
-            selector = quota.dig("spec", "scopeSelector")
-            return true if scopes.empty? && selector.nil?
-            return false unless resource?(attributes, "", "pods")
+          def quota_scope_changed?(attributes, old)
+            return false unless old
 
-            pod = attributes.object
-            scopes.all? { |scope| scope_applies?(scope, pod) } &&
-              Array(selector&.dig("matchExpressions")).all? { |expression| scope_expression_applies?(expression, pod) }
+            if resource?(attributes, "", "persistentvolumeclaims")
+              PVCQuotaUsage.volume_classes(attributes.object) != PVCQuotaUsage.volume_classes(old)
+            elsif resource?(attributes, "", "pods")
+              pod_quota_scopes(attributes.object) != pod_quota_scopes(old)
+            end
+          end
+
+          def pod_quota_scopes(pod)
+            [spec(pod)["activeDeadlineSeconds"].nil?, spec(pod)["priorityClassName"], best_effort?(pod), cross_namespace_affinity?(pod)]
+          end
+
+          def charge_for_scope_transition(quota, attributes, delta)
+            old = attributes.old_object
+            return delta if attributes.operation != "UPDATE" || old.nil? || scope_matches?(quota, attributes, object: old)
+            return PVCQuotaUsage.usage(attributes.object) if resource?(attributes, "", "persistentvolumeclaims")
+            return Rubernetes::PodQuotaUsage.usage(attributes.object) if resource?(attributes, "", "pods")
+
+            delta
+          end
+
+          def scope_matches?(quota, attributes, object: attributes.object)
+            scopes = Array(quota.dig("spec", "scopes"))
+            expressions = Array(quota.dig("spec", "scopeSelector", "matchExpressions"))
+            return true if scopes.empty? && expressions.empty?
+            return PVCQuotaUsage.matches?(object, scopes, expressions) if resource?(attributes, "", "persistentvolumeclaims")
+            return false unless resource?(attributes, "", "pods")
+            return false if PVCQuotaUsage.scopes_include_class?(scopes, expressions)
+
+            scopes.all? { |scope| scope_applies?(scope, object) } &&
+              expressions.all? { |expression| scope_expression_applies?(expression, object) }
           end
 
           def scope_applies?(scope, pod)
@@ -702,7 +744,7 @@ module Rubernetes
             end
           end
 
-          def usage_delta(attributes)
+          def usage_delta(attributes, pod_quantities)
             delta = Hash.new(0r)
             resource = attributes.resource
             if attributes.operation == "CREATE" && !resource?(attributes, "", "pods")
@@ -710,50 +752,28 @@ module Rubernetes
               delta["count/#{resource}"] += 1
               delta["count/#{resource}.#{attributes.group}"] += 1 unless attributes.group.empty?
             end
-            if resource?(attributes, "", "pods")
+            if pod_quantities
               # PodUsageFunc (count/pods and pods included); an update is
               # charged SubtractWithNonNegativeResult(new, old).
-              new_usage = Rubernetes::PodQuotaUsage.usage(attributes.object)
               old_usage = attributes.operation == "UPDATE" && attributes.old_object ? Rubernetes::PodQuotaUsage.usage(attributes.old_object) : {}
-              new_usage.each do |key, value|
-                change = value - old_usage.fetch(key, 0r)
+              pod_quantities.each do |key, value|
+                change = value.value - old_usage.fetch(key, 0r)
                 delta[key] += change if change.positive?
               end
-            elsif resource?(attributes, "", "persistentvolumeclaims") && attributes.operation == "CREATE"
-              storage = spec(attributes.object).dig("resources", "requests", "storage")
-              delta["requests.storage"] += quantity(storage) if storage
-              class_name = spec(attributes.object)["storageClassName"]
-              delta["#{class_name}.storageclass.storage.k8s.io/requests.storage"] += quantity(storage) if storage && class_name
-              delta["#{class_name}.storageclass.storage.k8s.io/persistentvolumeclaims"] += 1 if class_name
             elsif resource?(attributes, "resource.k8s.io", "resourceclaims") && attributes.operation == "CREATE"
               # The object count is charged above; the devices per class here.
               Rubernetes::ClaimQuotaUsage.usage(attributes.object).each do |name, count|
                 delta[name] += count unless name == Rubernetes::ClaimQuotaUsage::COUNT
               end
-            elsif resource?(attributes, "", "services") && attributes.operation == "CREATE"
-              # quota/v1/evaluator/core/services.go charges node ports by the
-              # number of SERVICE PORTS, not by the ports that already carry an
-              # allocated nodePort: "node port quota charging is based on
-              # service ports".  A client never sets nodePort -- the API server
-              # allocates it -- so counting allocated ones charged every new
-              # Service zero and the quota could never be exceeded.
-              delta["services.nodeports"] += service_node_ports(spec(attributes.object))
-              delta["services.loadbalancers"] += 1 if spec(attributes.object)["type"] == "LoadBalancer"
+            elsif resource?(attributes, "", "services")
+              old = attributes.old_object if attributes.operation == "UPDATE"
+              previous = ServiceQuotaUsage.usage(spec(old))
+              ServiceQuotaUsage.usage(spec(attributes.object)).each do |name, amount|
+                increase = amount - previous.fetch(name)
+                delta[name] += increase if increase.positive?
+              end
             end
             delta
-          end
-
-          # A LoadBalancer allocates a node port per service port unless it was
-          # asked not to (allocateLoadBalancerNodePorts), which is why the
-          # conformance quota spec expects a LoadBalancer to be refused once a
-          # NodePort Service has used the allowance up.
-          def service_node_ports(service_spec)
-            ports = Array(service_spec["ports"]).length
-            case service_spec["type"].to_s
-            when "NodePort" then ports
-            when "LoadBalancer" then service_spec["allocateLoadBalancerNodePorts"] == false ? 0 : ports
-            else 0
-            end
           end
         end
         Registry.register("ResourceQuota") { |context, config| ResourceQuota.new("ResourceQuota", context: context, config: config) }
