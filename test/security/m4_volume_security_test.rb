@@ -8,7 +8,7 @@ require "tmpdir"
 
 class M4VolumeSecurityTest < Minitest::Test
   class TargetRaceMount
-    attr_reader :mount_calls, :unmount_calls, :mountinfo
+    attr_reader :mount_calls, :unmount_calls, :mountinfo, :private_targets
     attr_accessor :race_target
 
     def initialize(outside:)
@@ -16,6 +16,7 @@ class M4VolumeSecurityTest < Minitest::Test
       @mountinfo = ""
       @mount_calls = []
       @unmount_calls = []
+      @private_targets = []
       @next_mount_id = 100
     end
 
@@ -39,6 +40,11 @@ class M4VolumeSecurityTest < Minitest::Test
     def unmount(**kwargs)
       @unmount_calls << kwargs
       @mountinfo = "" unless kwargs[:target].to_s.start_with?("/proc/self/fd/")
+      true
+    end
+
+    def make_private(target:, **)
+      @private_targets << File.realpath(target)
       true
     end
   end
@@ -251,6 +257,7 @@ class M4VolumeSecurityTest < Minitest::Test
     end
 
     assert_equal "Staged", manager.volume(id).state
+    assert_equal [stage], mount.private_targets
     assert_equal 1, mount.unmount_calls.length
     assert_match(%r{\A/proc/#{Process.pid}/fd/\d+\z}, mount.unmount_calls.fetch(0).fetch(:target))
     assert File.symlink?(target)
