@@ -7,28 +7,59 @@
 # after the spec's 2026-08-22 snapshot; the spec requires it to join the set
 # automatically on release, which this file does.
 #
-# Every binary is pinned by the checksum published next to it on dl.k8s.io and
-# is verified before use; a mismatch fails K6 rather than refreshing the pin.
+# The kubectl checksums and verified detached signatures come from dl.k8s.io.
+# K6 checks the binary checksum before use.
 schema_version: 1
 target_api_server: v1.36.2
-verified_at: "2026-09-07"
+verified_at: "2026-11-19"
 source: https://dl.k8s.io/release/
+kubectl_signatures:
+  certificate_identity_regexp: '^krel-(trust|staging)@k8s-releng-prod\.iam\.gserviceaccount\.com$'
+  certificate_oidc_issuer: https://accounts.google.com
 kubectl:
-  - version: v1.35.8
+  - version: v1.35.10
     skew: "-1"
-    path: build/tools/kubectl-v1.35.8
-    url: https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl
-    sha256: 874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+    path: build/tools/kubectl-v1.35.10
+    url: https://dl.k8s.io/release/v1.35.10/bin/linux/amd64/kubectl
+    sha256: c49a28f1f4efc4d475ed05f47f2ce8e563bf7bef69ed77fe1b924ea6d83b6327
+    signature_sha256: 179885d095298891dec4e2ec8ec0c8c958d902ddbc94fa3255dcd5f715807356
+    certificate_sha256: e7808027cc03ac2a62df94a6098f219b1be5f7c7396ec0f35f64f70c60b3cf34
     stable_channel: https://dl.k8s.io/release/stable-1.35.txt
   - version: v1.36.2
     skew: "0"
     path: build/tools/kubectl-v1.36.2
     url: https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
     sha256: 1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82
+    signature_sha256: d885813c825131461c1d6cacbd1c982e99cae6b1ff71f8f4cb46546fc4066839
+    certificate_sha256: 75282b57c1595740fd5fff9380a35d084d5801b3b4329362888f71e1eea54ad9
     stable_channel: https://dl.k8s.io/release/stable-1.36.txt
-  - version: v1.37.0
+  - version: v1.37.2
     skew: "+1"
-    path: build/tools/kubectl-v1.37.0
-    url: https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
-    sha256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f
+    path: build/tools/kubectl-v1.37.2
+    url: https://dl.k8s.io/release/v1.37.2/bin/linux/amd64/kubectl
+    sha256: c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
+    signature_sha256: 7ed9b9f7fc33d6cc791b6f43547530b148442126f8f17b5b3988b6f3d5044fc1
+    certificate_sha256: e2b60ab408930cc959e6a567f23eb009c48a89f0890060966972f4ed0872cbd0
     stable_channel: https://dl.k8s.io/release/stable-1.37.txt
+client_go:
+  - version: v0.35.10
+    sum: h1:HXF+042qTnXFFISMiuMHiM5yN2lVonVQQAkpIWxSGPk=
+    go_mod_sum: h1:TASOLvBmyLHu/8t/iiePW8YYCpOCKXORuwrRNV5Ciwk=
+  - version: v0.36.2
+    sum: h1:bfgxmFKc9CgqsgX4xKLAAdmTQlWee7Ob/HlDOrJ5TBI=
+    go_mod_sum: h1:1vgO4OAlfPnoLcb+Rze2GF5rAr14w8qjrYMoyXJzQj0=
+  - version: v0.37.2
+    sum: h1:sgFtyRZukGkOrsu+QgS7LYnbFFJ5ut3MchdBNduD//E=
+    go_mod_sum: h1:bo3LFC8YbCtKFPX21Yj8puMsoJLAv/+SvuOODma0s54=
+helm:
+  version: v4.2.4
+  path: build/tools/clients/helm
+  sha256: 92e191314f44aac173711bb0247c38c727f3ddf65ad16a01c0861d509a63a9e1
+  url: https://get.helm.sh/helm-v4.2.4-linux-amd64.tar.gz
+  archive_sha256: c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3
+kustomize:
+  version: v5.8.1
+  path: build/tools/clients/kustomize
+  sha256: f7b1605aa5143e0dcbd754a4d43c47ad7a560c540b1356b064d69fe236164494
+  url: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
+  archive_sha256: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
