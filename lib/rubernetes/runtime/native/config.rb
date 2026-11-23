@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../cpu_quota"
+
 # Native backend configuration is pure data.  In particular, selecting a host
 # or kernel-isolation profile is an explicit act; an incomplete host probe can
 # never silently downgrade to an in-process fake.
@@ -7,6 +9,7 @@
 require "digest"
 require "json"
 require "rbconfig"
+require_relative "../memory_qos"
 
 module Rubernetes
   module Runtime
@@ -23,7 +26,8 @@ module Rubernetes
                     :runtime_class, :architecture, :host_integration, :l3,
                     :security_context, :capabilities, :limits, :image, :network,
                     :namespace, :max_log_bytes, :max_log_files, :strict,
-                    :memory_qos, :pod_pids_limit, :userns_allocation_path, :seccomp_root
+                    :memory_qos, :memory_throttling_factor, :memory_reservation_policy, :single_process_oom_kill,
+                    :pod_pids_limit, :userns_allocation_path, :seccomp_root, :cpu_cfs_quota, :cpu_period
 
         def initialize(profile: :pure, sandbox_root: DEFAULT_SANDBOX_ROOT, cgroup_root: DEFAULT_CGROUP_ROOT,
                        log_root: DEFAULT_LOG_ROOT, journal_path: DEFAULT_JOURNAL_PATH,
@@ -31,7 +35,8 @@ module Rubernetes
                        l3: false, security_context: {}, capabilities: {}, limits: {}, image: {},
                        network: {}, namespace: {}, max_log_bytes: 10 * 1024 * 1024,
                        max_log_files: 5, strict: true, memory_qos: false, pod_pids_limit: nil,
-                       userns_allocation_path: nil, seccomp_root: nil, **extra)
+                       memory_throttling_factor: MemoryQoS::DEFAULT_THROTTLING_FACTOR, memory_reservation_policy: "None", single_process_oom_kill: nil,
+                       userns_allocation_path: nil, seccomp_root: nil, cpu_cfs_quota: true, cpu_period: CPUQuota::DEFAULT_PERIOD, **extra)
           @profile = normalize_profile(profile)
           @seccomp_root = seccomp_root.nil? ? nil : File.expand_path(String(seccomp_root)).freeze
           @sandbox_root = normalize_absolute_path(sandbox_root, "sandbox_root")
@@ -54,7 +59,12 @@ module Rubernetes
           # MemoryQoS mirrors the v1.36.2 feature gate (alpha, default off):
           # memory.min/low/high are written only when explicitly enabled.
           @memory_qos = memory_qos == true
+          @memory_throttling_factor = Float(memory_throttling_factor)
+          @memory_reservation_policy = String(memory_reservation_policy).freeze
+          @single_process_oom_kill = single_process_oom_kill
           @pod_pids_limit = pod_pids_limit.nil? ? nil : Integer(pod_pids_limit)
+          @cpu_cfs_quota = cpu_cfs_quota != false
+          @cpu_period = Integer(cpu_period)
           @userns_allocation_path = normalize_absolute_path(
             userns_allocation_path || File.join(File.dirname(@journal_path), "userns-allocations.json"), "userns_allocation_path"
           )
@@ -95,7 +105,12 @@ module Rubernetes
             "max_log_files" => max_log_files,
             "strict" => strict,
             "memory_qos" => memory_qos,
+            "memory_throttling_factor" => memory_throttling_factor,
+            "memory_reservation_policy" => memory_reservation_policy,
+            "single_process_oom_kill" => single_process_oom_kill,
             "pod_pids_limit" => pod_pids_limit,
+            "cpu_cfs_quota" => cpu_cfs_quota,
+            "cpu_period" => cpu_period,
             "userns_allocation_path" => userns_allocation_path,
             "seccomp_root" => seccomp_root
           }.merge(@extra)
@@ -127,6 +142,13 @@ module Rubernetes
           raise ConfigurationError, "max_log_bytes must be positive" unless max_log_bytes.positive?
           raise ConfigurationError, "max_log_files must be between 1 and 64" unless max_log_files.between?(1, 64)
           raise ConfigurationError, "pod_pids_limit must be positive" if pod_pids_limit && !pod_pids_limit.positive?
+          raise ConfigurationError, "cpu_period must be between 1000 and 1000000 microseconds" unless cpu_period.between?(1000, 1_000_000)
+          unless memory_throttling_factor.positive? && memory_throttling_factor <= 1
+            raise ConfigurationError, "memory_throttling_factor must be greater than zero and at most one"
+          end
+          unless MemoryQoS::RESERVATION_POLICIES.include?(memory_reservation_policy) && (memory_qos || memory_reservation_policy == "None")
+            raise ConfigurationError, "memory_reservation_policy must be None or TieredReservation (requires MemoryQoS)"
+          end
 
           validate_path_relationships!
           validate_limits!
@@ -136,7 +158,7 @@ module Rubernetes
         def self.symbolize_known(input)
           known = %i[profile sandbox_root cgroup_root log_root journal_path runtime_class architecture host_integration l3 security_context
                      capabilities limits image network namespace max_log_bytes max_log_files strict memory_qos pod_pids_limit userns_allocation_path
-                     seccomp_root]
+                     seccomp_root memory_throttling_factor memory_reservation_policy single_process_oom_kill cpu_cfs_quota cpu_period]
           input.each_with_object({}) do |(key, value), result|
             symbol = key.to_sym
             result[symbol] = value if known.include?(symbol)
