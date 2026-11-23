@@ -521,6 +521,8 @@ module Rubernetes
         link_attributes << attribute(IFLA_MTU, uint32(mtu, "MTU")) if mtu
         link_attributes << attribute(IFLA_MASTER, link_index(master, "master")) if master
         link_attributes << attribute(IFLA_NEW_IFINDEX, uint32(index, "link index")) if index
+        address = Support.fetch(attributes, "address", "mac", default: nil)
+        link_attributes << attribute(IFLA_ADDRESS, mac_binary(address)) if address
         if namespace_target && !(kind == "veth" && peer)
           link_attributes << attribute(IFLA_NET_NS_FD,
                                        uint32(namespace_fd_value(namespace_target),
