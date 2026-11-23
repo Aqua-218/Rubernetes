@@ -119,7 +119,9 @@ module Rubernetes
           end
 
           def mkdir_p(path)
-            FileUtils.mkdir_p(path)
+            # The leaf is the root of the workload's private cgroup2 mount.
+            # Non-root workloads need search permission to read their limits.
+            FileUtils.mkdir_p(path, mode: 0o755)
           end
 
           def delete(path)
@@ -134,10 +136,11 @@ module Rubernetes
           end
         end
 
-        def initialize(root: DEFAULT_ROOT, adapter: FileAdapter.new, hierarchy: HIERARCHY_PREFIX)
+        def initialize(root: DEFAULT_ROOT, adapter: FileAdapter.new, hierarchy: HIERARCHY_PREFIX, kubelet_layout: nil)
           @root = File.expand_path(String(root))
           @adapter = adapter
           @hierarchy = validate_component(hierarchy, "hierarchy")
+          @kubelet_layout = kubelet_layout
           freeze_root
         end
 
@@ -178,17 +181,46 @@ module Rubernetes
           File.join(qos_path, pod, container)
         end
 
+        def prepare_kubelet_hierarchy!
+          base = @kubelet_layout.base
+          @adapter.mkdir_p(base)
+          ensure_controllers!(base)
+          @kubelet_layout.tier_paths.each do |directory|
+            @adapter.mkdir_p(directory)
+            ensure_controllers!(directory)
+          end
+        end
+
         # Create `<qos>/<pod>/<container>` and apply limits in one ownership
         # unit.  Acquisition order: pod directory -> controller delegation ->
         # leaf directory -> pod limits -> leaf limits.  Any failure releases
         # what this call created in reverse order (R-1.3, §5.8.4) so a
         # rejected limit never leaves an unowned cgroup behind.
-        def create(qos:, pod_id:, container_id:, identity: nil, limits: nil, pod_limits: nil)
-          target = path(qos: qos, pod_id: pod_id, container_id: container_id)
+        def create(qos:, pod_id:, container_id:, identity: nil, limits: nil, pod_limits: nil, pod_uid: nil, sandbox: nil)
+          qos = normalize_qos(qos)
+          pod_id = validate_component(pod_id, "pod_id")
+          container_id = validate_component(container_id, "container_id")
+          target = creation_path(qos: qos, pod_id: pod_id, container_id: container_id, pod_uid: pod_uid, sandbox: sandbox)
+          recorded = @kubelet_layout&.handle(target)
+          raise InvalidPath, "canonical cgroup identity differs from its path" if recorded && identity && identity != recorded.identity
+
+          handle = recorded || Handle.new(path: target, qos: qos, pod_id: pod_id, container_id: container_id,
+                                          identity: String(identity || target).freeze)
+          with_kubelet_tier_lock(target, create: true) do
+            create_leaf(handle, limits, pod_limits)
+          end
+        rescue SystemCallError => error
+          raise Error, "failed to create cgroup #{target}: #{error.message}"
+        end
+
+        alias create_cgroup create
+
+        def create_leaf(handle, limits, pod_limits)
+          target = handle.path
           pod_path = File.dirname(target)
           created = []
           begin
-            [hierarchy_path(qos: qos), pod_path].each do |directory|
+            [File.dirname(pod_path), pod_path].each do |directory|
               next if @adapter.directory?(directory)
 
               @adapter.mkdir_p(directory)
@@ -199,13 +231,6 @@ module Rubernetes
               @adapter.mkdir_p(target)
               created << target
             end
-            handle = Handle.new(
-              path: target,
-              qos: normalize_qos(qos),
-              pod_id: validate_component(pod_id, "pod_id"),
-              container_id: validate_component(container_id, "container_id"),
-              identity: String(identity || target).freeze
-            )
             configure_path(pod_path, pod_limits) unless pod_limits.nil? || pod_limits.empty?
             configure(handle, limits) unless limits.nil? || limits.empty?
             handle
@@ -213,11 +238,8 @@ module Rubernetes
             rollback_created(created, error)
             raise
           end
-        rescue SystemCallError => error
-          raise Error, "failed to create cgroup #{target}: #{error.message}"
         end
-
-        alias create_cgroup create
+        private :create_leaf
 
         def configure(handle, limits)
           configure_path(handle_path(handle), limits)
@@ -402,7 +424,20 @@ module Rubernetes
 
         def remove(handle, force: false)
           target = handle_path(handle)
-          return true unless @adapter.directory?(target)
+          with_kubelet_tier_lock(target) { remove_leaf(target, force) }
+        rescue Errno::ENOENT
+          true
+        rescue SystemCallError => error
+          raise Error, "failed to remove cgroup #{target}: #{error.message}"
+        end
+
+        alias remove_cgroup remove
+
+        def remove_leaf(target, force)
+          unless @adapter.directory?(target)
+            remove_empty_pod_parent(target)
+            return true
+          end
 
           populated, current = cgroup_population(target)
           if !force && (Integer(populated).positive? || Integer(current).positive?) && @adapter.is_a?(FileAdapter)
@@ -421,13 +456,8 @@ module Rubernetes
           @adapter.delete(target)
           remove_empty_pod_parent(target)
           true
-        rescue Errno::ENOENT
-          true
-        rescue SystemCallError => error
-          raise Error, "failed to remove cgroup #{target}: #{error.message}"
         end
-
-        alias remove_cgroup remove
+        private :remove_leaf
 
         # Enumerates only cgroups below this adapter's configured hierarchy.
         # An injected scanner may provide a richer inventory for hosts where
@@ -438,9 +468,25 @@ module Rubernetes
           return Array(@adapter.list_cgroups(root: @root, hierarchy: @hierarchy)).freeze if @adapter.respond_to?(:list_cgroups)
           return [].freeze unless @adapter.is_a?(FileAdapter)
 
-          base = File.join(@root, @hierarchy)
-          return [].freeze unless File.directory?(base)
+          (legacy_handles + Array(@kubelet_layout&.handles)).freeze
+        rescue SystemCallError => error
+          raise Error, "failed to enumerate cgroup hierarchy under #{@root}: #{error.message}"
+        end
 
+        alias handles resources
+
+        def lookup(value)
+          path = value.respond_to?(:path) ? value.path : String(value)
+          handle = @kubelet_layout&.handle(path)
+          return handle if handle && @adapter.directory?(path)
+
+          resources.find { |entry| entry.path == path } || raise(Error, "unknown cgroup handle #{path}")
+        end
+
+        private
+
+        def legacy_handles
+          base = File.join(@root, @hierarchy)
           resources = []
           QOS_CLASSES.each do |qos|
             qos_path = File.join(base, qos)
@@ -462,19 +508,26 @@ module Rubernetes
               end
             end
           end
-          resources.freeze
-        rescue SystemCallError => error
-          raise Error, "failed to enumerate cgroup hierarchy #{@root}/#{@hierarchy}: #{error.message}"
+          resources
         end
 
-        alias handles resources
-
-        def lookup(value)
-          path = value.respond_to?(:path) ? value.path : String(value)
-          resources.find { |handle| handle.path == path } || raise(Error, "unknown cgroup handle #{path}")
+        def creation_path(qos:, pod_id:, container_id:, pod_uid:, sandbox:)
+          if @kubelet_layout
+            target = @kubelet_layout.path(qos: qos, pod_id: pod_id, container_id: container_id, pod_uid: pod_uid, sandbox: sandbox)
+            return target if target
+            return File.join(File.dirname(handle_path(sandbox)), container_id) if sandbox
+          end
+          path(qos: qos, pod_id: pod_id, container_id: container_id)
         end
 
-        private
+        # The last leaf can disappear as a replacement sandbox is creating its
+        # first leaf. Lock the stable tier inode across that create/remove path,
+        # including distinct agents sharing a single delegated hierarchy.
+        def with_kubelet_tier_lock(target, create: false, &)
+          return yield unless @adapter.is_a?(FileAdapter) && @kubelet_layout&.handle(target)
+
+          @kubelet_layout.lock_tier(target, create: create, &)
+        end
 
         def cgroup_population(target)
           populated = parse_key_values(read_file(File.join(target, "cgroup.events"))).fetch("populated", 0)
@@ -495,13 +548,13 @@ module Rubernetes
 
           pod_parent = File.dirname(target)
           qos_parent = File.dirname(pod_parent)
-          expected_qos_parent = hierarchy_path(qos: File.basename(qos_parent))
-          return unless qos_parent == expected_qos_parent
+          legacy_parents = QOS_CLASSES.map { |qos| hierarchy_path(qos: qos) }
+          return unless @kubelet_layout&.handle(target) || legacy_parents.include?(qos_parent)
           return unless @adapter.directory?(pod_parent)
           return unless Array(@adapter.child_directories(pod_parent)).empty?
 
           @adapter.delete(pod_parent)
-        rescue Errno::ENOENT
+        rescue Errno::ENOENT, Errno::ENOTEMPTY
           nil
         end
 
@@ -514,8 +567,13 @@ module Rubernetes
         # be enabled on a child only after it appears in the child's
         # cgroup.controllers, which the parent's delegation produces.
         def ensure_controllers!(leaf_parent)
-          base = File.join(@root, @hierarchy)
           target = File.expand_path(String(leaf_parent))
+          kubelet_base = @kubelet_layout&.base
+          base = if kubelet_base && (target == kubelet_base || target.start_with?("#{kubelet_base}/"))
+                   kubelet_base
+                 else
+                   File.join(@root, @hierarchy)
+                 end
           raise InvalidPath, "cgroup parent escapes configured hierarchy" unless target == base || target.start_with?(base + File::SEPARATOR)
 
           chain = [base]
@@ -605,7 +663,7 @@ module Rubernetes
           value = handle.respond_to?(:path) ? handle.path : handle
           target = File.expand_path(String(value))
           prefix = File.join(@root, @hierarchy) + File::SEPARATOR
-          raise InvalidPath, "cgroup path escapes configured hierarchy" unless target.start_with?(prefix)
+          raise InvalidPath, "cgroup path escapes configured hierarchy" unless target.start_with?(prefix) || @kubelet_layout&.handle(target)
 
           target
         end
