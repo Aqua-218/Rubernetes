@@ -59,6 +59,19 @@ class OpenAPIV3RefWrappingTest < Minitest::Test
     assert(@openapi.document_for("/openapi/v3/apis/example.com/v1").dig("components", "schemas").key?(META_REF.split("/").last))
   end
 
+  def test_ref_like_data_inside_a_default_is_never_a_schema_dependency
+    literal = {"$ref" => "#/components/schemas/io.k8s.api.core.v1.LimitRange", "edition" => "first"}
+    schema = {"properties" => {"default" => {"type" => "object", "default" => literal}}}
+    @openapi.publish(group: "books.example", version: "v1", document: {"components" => {"schemas" => {"Book" => schema}}})
+    v3 = @openapi.document_for("/openapi/v3/apis/books.example/v1").dig("components", "schemas")
+    v2 = @openapi.document_for("/openapi/v2").dig("definitions", "Book", "properties", "default")
+
+    assert_equal literal, v3.dig("Book", "properties", "default", "default")
+    refute v3.key?("io.k8s.api.core.v1.LimitRange")
+    assert_equal({"type" => "object"}, v2)
+    assert_equal literal, schema.dig("properties", "default", "default")
+  end
+
   def test_swagger_v2_keeps_the_sibling_form
     definition = @openapi.document_for("/openapi/v2").dig("definitions", "com.example.v1.Foo")
     metadata = definition.dig("properties", "metadata")
