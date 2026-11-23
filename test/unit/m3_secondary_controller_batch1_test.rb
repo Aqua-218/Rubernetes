@@ -47,6 +47,9 @@ class M3SecondaryControllerBatch1Test < Minitest::Test
     pod = pod("web-0", labels: {"app" => "web"}, ip: "10.0.0.1")
     adapter.create(service, descriptor: descriptor("Service"))
     adapter.create(pod, descriptor: descriptor("Pod"))
+    adapter.create({"apiVersion" => "v1", "kind" => "Node",
+                    "metadata" => {"name" => "node-a", "labels" => {"topology.kubernetes.io/zone" => "east"}}},
+                   descriptor: descriptor("Node"))
 
     controller = Controller::EndpointSliceController.new(store: store)
     first = controller.reconcile(service, store: store, apply: true)
@@ -56,6 +59,7 @@ class M3SecondaryControllerBatch1Test < Minitest::Test
 
     assert_equal [:create], first.operations.map(&:action)
     assert_equal ["10.0.0.1"], slice.dig("endpoints", 0, "addresses")
+    assert_equal "east", slice.dig("endpoints", 0, "zone")
     assert_equal "svc-1", slice.dig("metadata", "ownerReferences", 0, "uid")
     assert_empty second.operations
   end
@@ -182,6 +186,19 @@ class M3SecondaryControllerBatch1Test < Minitest::Test
     assert_equal [:create], first.operations.map(&:action)
     assert_equal "default", first.creates.fetch(0).object.dig("metadata", "name")
     assert_empty second.operations
+  end
+
+  def test_default_serviceaccount_uses_the_namespace_work_item
+    definition = Controller.default_registry.fetch("serviceaccount-controller")
+    namespace_watch = definition.watches.find { |watch| watch.resource.kind == "Namespace" }
+    account_watch = definition.watches.find { |watch| watch.resource.kind == "ServiceAccount" }
+    namespace = object("Namespace", "apps", uid: "ns-1", namespace: nil)
+    default = object("ServiceAccount", "default", uid: "sa-1", namespace: "apps")
+    named = object("ServiceAccount", "worker", uid: "sa-2", namespace: "apps")
+
+    assert account_watch.predicate.call(default)
+    refute account_watch.predicate.call(named)
+    assert_equal namespace_watch.queue_key.call(namespace), account_watch.queue_key.call(default)
   end
 
   # The HPA reads PodMetrics (metrics.k8s.io) for the target's Pods: two
