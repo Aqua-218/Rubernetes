@@ -46,4 +46,17 @@ class ProxyServicePortDefaultTest < Minitest::Test
 
     assert_equal(80, service.ports.first.target_port)
   end
+
+  def test_only_advertised_vip_mode_load_balancer_addresses_become_proxy_frontends
+    object = {"metadata" => {"name" => "web", "namespace" => "default"},
+              "spec" => {"type" => "LoadBalancer", "clusterIP" => "10.96.0.5", "loadBalancerIP" => "198.51.100.2",
+                         "ports" => [{"port" => 80}]}}
+
+    assert_empty Proxy::Service.new(object).load_balancer_ips
+
+    object["status"] = {"loadBalancer" => {"ingress" => [{"ip" => "198.51.100.3", "ipMode" => "Proxy"},
+                                                         {"ip" => "198.51.100.4"}, {"ip" => "198.51.100.5", "ipMode" => "VIP"}]}}
+
+    assert_equal %w[198.51.100.4 198.51.100.5], Proxy::Service.new(object).load_balancer_ips
+  end
 end
