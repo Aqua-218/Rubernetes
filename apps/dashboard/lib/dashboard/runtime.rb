@@ -93,7 +93,7 @@ module Dashboard
       memoize(:rules) do
         path = Config.rules_path
         if File.file?(path)
-          Prom::Rules.load_file(path, webhook_url: Config.alert_webhook_url, logger: @logger,
+          Prom::Rules.load_file(path, webhook_url: Config.alert_webhook_url, external_url: Config.external_url, logger: @logger,
                                       default_interval_ms: (Config.evaluation_interval_seconds * 1000).to_i)
         else
           Prom::Rules.new({"groups" => []}, webhook_url: Config.alert_webhook_url, logger: @logger)
@@ -105,7 +105,11 @@ module Dashboard
     end
 
     def scraper
-      memoize(:scraper) { Prom::Scraper.new(store, timeout_seconds: Config.scrape_timeout_seconds, logger: @logger) }
+      memoize(:scraper) do
+        Prom::Scraper.new(store, timeout_seconds: Config.scrape_timeout_seconds, logger: @logger,
+                                 convert_classic_histograms_to_nhcb: Config.convert_classic_histograms_to_nhcb?,
+                                 keep_classic_histograms: Config.keep_classic_histograms?)
+      end
     end
 
     def collector
