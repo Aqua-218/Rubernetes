@@ -42,6 +42,7 @@ module Rubernetes
         # transport. The original fingerprint still detects token misuse while
         # this redacted copy remains safe for disk and diagnostic collection.
         def operation_payload(payload)
+          payload = persisted_spec(payload) if payload.is_a?(Hash) && %w[projected secret].include?(Types.key(payload, "backend").to_s)
           sanitize_for_persistence(payload || {})
         end
 
@@ -64,7 +65,8 @@ module Rubernetes
         end
 
         def redact_secret_text(value)
-          @secret_redactions.each_with_object(value.to_s.dup) do |secret, text|
+          redactions = @csi_secret_mutex.synchronize { @secret_redactions }
+          redactions.each_with_object(value.to_s.dup) do |secret, text|
             text.gsub!(secret, "[REDACTED]") unless secret.empty?
           end
         end
@@ -88,13 +90,20 @@ module Rubernetes
         end
 
         def persisted_spec(spec)
+          backend = Types.key(spec, "backend", "").to_s
+          spec = compact_projected_pod(spec) if backend.casecmp?("projected")
           copy = Types.deep_copy(spec)
-          backend = Types.key(copy, "backend", "").to_s
           if backend.casecmp?("csi")
             had_secrets = Types.present?(Types.key(copy, "secrets"))
+            references = copy.delete("secretRefs")
             copy = sanitize_for_persistence(copy)
+            copy["secretRefs"] = references if references
             copy["csiSecrets"] = {"redacted" => true, "resolverRequiredAfterRestart" => true} if had_secrets
             return copy
+          end
+          if backend.casecmp?("projected")
+            copy.delete("tokenRotator")
+            copy.delete("podCertificateProvider")
           end
           secret = backend.casecmp?("secret") ||
                    (backend.casecmp?("projected") && secret_projection_present?(Types.key(copy, "sources", [])))
@@ -105,8 +114,31 @@ module Rubernetes
           copy
         end
 
+        COMPACT_PROJECTION_SOURCES = %w[configMap secret serviceAccountToken clusterTrustBundle].freeze
+
+        # Kubelet-resolved files already carry their data. Built-in credentials
+        # need the bound token identity and file ownership during recovery.
+        # Raw sources and injected providers can inspect other Pod fields.
+        def compact_projected_pod(spec)
+          pod = Types.key(spec, "pod")
+          return spec unless pod.is_a?(Hash) && Types.key(spec, "projector").nil?
+
+          sources = Array(Types.key(spec, "sources"))
+          return spec unless sources.all? { |source| source.is_a?(Hash) && (source.keys.map(&:to_s) - COMPACT_PROJECTION_SOURCES).empty? }
+
+          token = ProjectedBackend.service_account_token_source?(sources)
+          return spec if token && !@token_provider.instance_of?(ServiceAccountTokenProvider)
+
+          compact = spec.reject { |key, _| key.to_s == "pod" }
+          ownership = Types.key(spec, "credentialOwnership") || ProjectedBackend.credential_ownership(pod)
+          compact["credentialOwnership"] = ownership unless ownership.empty?
+          compact["pod"] = ServiceAccountTokenProvider.pod_context(pod) if token
+          compact
+        end
+        private :compact_projected_pod
+
         SECRET_PROJECTION_SOURCE_KEYS = %w[secret serviceAccountToken service_account_token].freeze
-        SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data token tokenRotator token_rotator
+        SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data files binaryFiles token tokenRotator token_rotator
                                             podCertificateProvider pod_certificate_provider].freeze
 
         def secret_projection_present?(value)
