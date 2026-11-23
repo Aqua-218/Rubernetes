@@ -1,0 +1,41 @@
+# Rook's pinned cluster-test example with one dedicated virtual disk.
+# https://github.com/rook/rook/blob/95a8e2a8b61cf7f8152213939f995c88a2e72ab6/deploy/examples/cluster-test.yaml
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: k6-rook
+spec:
+  dataDirHostPath: /var/lib/rook-k6
+  cephVersion:
+    image: quay.io/ceph/ceph:v20.2.4
+  mon:
+    count: 1
+    allowMultiplePerNode: true
+  mgr:
+    count: 1
+    allowMultiplePerNode: true
+  dashboard:
+    enabled: false
+  crashCollector:
+    disable: true
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes:
+      - name: worker-0
+        devices:
+          - name: vdb
+  cephConfig:
+    global:
+      osd_pool_default_size: "1"
+      mon_warn_on_pool_no_redundancy: "false"
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: k6-rook-pool
+spec:
+  failureDomain: osd
+  replicated:
+    size: 1
+    requireSafeReplicaSize: false
