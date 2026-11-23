@@ -8,9 +8,10 @@ require "rubernetes/api"
 
 class APICoreTest < Minitest::Test
   def setup
+    @store = Rubernetes::API::MemoryStore.new(uid_generator: -> { "fixed-uid" }, clock: -> { Time.utc(2026, 1, 1) })
     @server = Rubernetes::API::Server.new(
       registry: Rubernetes::API::Registry.new,
-      store: Rubernetes::API::MemoryStore.new(uid_generator: -> { "fixed-uid" }, clock: -> { Time.utc(2026, 1, 1) }),
+      store: @store,
       namespace_lifecycle: true
     )
     # NamespaceLifecycle admission: namespaced objects need their namespace.
@@ -27,6 +28,125 @@ class APICoreTest < Minitest::Test
     assert_equal("APIResourceList", resource_list.body.fetch("kind"))
     assert(resource_list.body.fetch("resources").any? { |resource| resource.fetch("name") == "configmaps" })
     assert_equal("ok", call("GET", "/readyz").body)
+  end
+
+  def test_validating_admission_receives_the_generated_object_uid
+    reviewed_uids = []
+    @server.define_singleton_method(:admit_validating) do |_request, _route, _operation, object, _old, _namespace|
+      reviewed_uids << object.dig("metadata", "uid")
+    end
+    response = call("POST", "/api/v1/namespaces/dev/configmaps",
+                    {"metadata" => {"name" => "settings", "uid" => "caller-supplied"}})
+
+    assert_equal(201, response.status)
+    assert_match(/\A[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\z/, reviewed_uids.fetch(0))
+    assert_equal([response.body.dig("metadata", "uid")], reviewed_uids)
+  end
+
+  def test_all_namespaces_collection_only_accepts_reads
+    path = "/api/v1/namespaces/dev/configmaps"
+    created = call("POST", path, {"metadata" => {"name" => "keep"}})
+
+    assert_equal 201, created.status
+    response = call("DELETE", "/api/v1/configmaps")
+
+    assert_equal 405, response.status
+    assert_equal "MethodNotAllowed", response.body["reason"]
+    assert_equal 200, call("GET", "#{path}/keep").status
+    assert_equal 404, call("GET", "/api/v1/configmaps/keep").status
+    assert_equal(["keep"], call("GET", "/api/v1/configmaps").body.fetch("items").map { |item| item.dig("metadata", "name") })
+  end
+
+  def test_write_namespace_is_scoped_to_the_url_before_any_mutation
+    path = "/api/v1/namespaces/dev/configmaps"
+    metadata = {"name" => "settings", "namespace" => "other"}
+
+    assert_equal 400, call("POST", path, {"metadata" => metadata}).status
+    assert_equal 404, call("GET", "#{path}/settings").status
+    created = call("POST", path, {"metadata" => {"name" => "settings"}})
+    patch = [{"op" => "replace", "path" => "/metadata/namespace", "value" => "other"}]
+    rejected = call("PATCH", "#{path}/settings", patch, headers: {"Content-Type" => "application/json-patch+json"})
+
+    assert_equal 400, rejected.status
+    assert_equal created.body.fetch("metadata"), call("GET", "#{path}/settings").body.fetch("metadata")
+    cluster = call("POST", "/api/v1/namespaces", {"metadata" => metadata})
+
+    assert_equal 201, cluster.status
+    refute cluster.body.fetch("metadata").key?("namespace")
+  end
+
+  def test_create_decodes_the_body_into_the_requested_builtin_kind
+    path = "/api/v1/namespaces/dev/configmaps"
+    wrong = call("POST", path, {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "wrong"}})
+
+    assert_equal 400, wrong.status
+    assert_equal 'Pod in version "v1" cannot be handled as a ConfigMap: converting (v1.Pod) to (core.ConfigMap): unknown conversion', wrong.body["message"]
+    unknown = call("POST", path, {"kind" => "Imaginary", "metadata" => {"name" => "wrong"}})
+
+    assert_equal 400, unknown.status
+    assert_includes unknown.body["message"], 'no kind "Imaginary" is registered for version "v1"'
+    assert_equal 404, call("GET", "#{path}/wrong").status
+    defaulted = call("POST", path, {"apiVersion" => "", "metadata" => {"name" => "defaulted"}})
+
+    assert_equal %w[v1 ConfigMap], defaulted.body.values_at("apiVersion", "kind")
+  end
+
+  def test_store_detaches_and_normalizes_each_committed_revision
+    key = "registry/v1/configmaps/dev/sample"
+    value = +"original"
+    input = {metadata: {name: "sample"}, data: {message: value}}
+    first = @store.create(key, input)
+    value.replace("updated")
+    second = @store.update(key, input)
+
+    assert_equal "original", first.dig("data", "message")
+    assert_equal "updated", second.dig("data", "message")
+    assert_equal({name: "sample"}, input[:metadata])
+    refute_predicate value, :frozen?
+    assert_predicate second.dig("data", "message"), :frozen?
+    assert_equal first.dig("metadata", "uid"), second.dig("metadata", "uid")
+  end
+
+  def test_empty_object_meta_finalizers_are_omitted_on_write_and_dry_run
+    collection = "/api/v1/namespaces/dev/configmaps"
+    member = "#{collection}/settings"
+    created = call("POST", collection, {"metadata" => {"name" => "settings", "finalizers" => []}})
+
+    assert_equal 201, created.status
+    refute created.body.fetch("metadata").key?("finalizers")
+
+    headers = {"Content-Type" => "application/merge-patch+json"}
+    held = call("PATCH", member, {"metadata" => {"finalizers" => ["example.test/hold"]}}, headers: headers)
+    empty = {"metadata" => {"finalizers" => []}}
+    preview = call("PATCH", member, empty, headers: headers, query: {"dryRun" => "All"})
+
+    assert_equal 200, preview.status
+    refute preview.body.fetch("metadata").key?("finalizers")
+    assert_equal ["example.test/hold"], call("GET", member).body.dig("metadata", "finalizers")
+
+    replacement = held.body.merge("metadata" => held.body.fetch("metadata").merge(empty.fetch("metadata")))
+    updated = call("PUT", member, replacement)
+
+    assert_equal 200, updated.status
+    refute updated.body.fetch("metadata").key?("finalizers")
+    refute call("GET", member).body.fetch("metadata").key?("finalizers")
+  end
+
+  def test_legacy_empty_finalizers_are_omitted_from_get_list_and_watch
+    @store.create("registry/v1/configmaps/dev/legacy",
+                  {"apiVersion" => "v1", "kind" => "ConfigMap",
+                   "metadata" => {"name" => "legacy", "namespace" => "dev", "finalizers" => []}})
+    collection = "/api/v1/namespaces/dev/configmaps"
+    watch = call("GET", collection, query: {"watch" => "true", "resourceVersion" => "0", "timeoutSeconds" => "1"})
+    line = watch.body.each_json_line.first
+
+    assert line.end_with?("\n")
+    [call("GET", "#{collection}/legacy").body, call("GET", collection).body.fetch("items").first, JSON.parse(line).fetch("object")].each do |object|
+      assert_equal "legacy", object.dig("metadata", "name")
+      refute object.fetch("metadata").key?("finalizers")
+    end
+  ensure
+    watch&.body&.close
   end
 
   def test_namespaced_crud_and_cluster_scoped_namespace_crud
@@ -96,6 +216,22 @@ class APICoreTest < Minitest::Test
     assert_equal("Conflict", conflict.body.fetch("reason"))
   end
 
+  def test_create_and_update_negotiate_request_media_before_writing
+    path = "/api/v1/namespaces/dev/configmaps"
+    manifest = {"metadata" => {"name" => "media"}}
+    unsupported = {"Content-Type" => "text/plain"}
+
+    assert_equal 415, call("POST", path, manifest, headers: unsupported).status
+    assert_equal 404, call("GET", "#{path}/media").status
+    created = call("POST", path, manifest, headers: {"Content-Type" => "application/json; charset=UTF-8"})
+
+    assert_equal 201, created.status
+    update = created.body.merge("data" => {"key" => "updated"})
+
+    assert_equal 415, call("PUT", "#{path}/media", update, headers: unsupported).status
+    assert_equal created.body, call("GET", "#{path}/media").body
+  end
+
   def test_finalizer_delays_physical_delete_and_watch_replays_changes
     call("POST", "/api/v1/namespaces/dev/configmaps", {
            "metadata" => {"name" => "protected", "finalizers" => ["example.test/cleanup"]}
@@ -108,7 +244,19 @@ class APICoreTest < Minitest::Test
     deleting = call("DELETE", "/api/v1/namespaces/dev/configmaps/protected")
 
     assert(deleting.body.dig("metadata", "deletionTimestamp"))
-    assert_equal(200, call("GET", "/api/v1/namespaces/dev/configmaps/protected").status)
+    current = call("GET", "/api/v1/namespaces/dev/configmaps/protected")
+
+    assert_equal(200, current.status)
+    replaced = call("PUT", "/api/v1/namespaces/dev/configmaps/protected",
+                    current.body.merge("metadata" => current.body.fetch("metadata").merge("finalizers" => %w[example.test/cleanup example.test/new])))
+    patched = call("PATCH", "/api/v1/namespaces/dev/configmaps/protected",
+                   [{"op" => "add", "path" => "/metadata/finalizers/-", "value" => "example.test/new"}],
+                   headers: {"Content-Type" => "application/json-patch+json"})
+    [replaced, patched].each do |response|
+      assert_equal(422, response.status)
+      assert_equal("FieldValueForbidden", response.body.dig("details", "causes", 0, "reason"))
+      assert_equal("metadata.finalizers", response.body.dig("details", "causes", 0, "field"))
+    end
     events = watch.body.to_a
 
     assert_equal(%w[ADDED MODIFIED], events.map(&:type))
@@ -117,7 +265,7 @@ class APICoreTest < Minitest::Test
                    [{"op" => "remove", "path" => "/metadata/finalizers/0"}],
                    headers: {"Content-Type" => "application/json-patch+json"})
 
-    assert_equal([], removed.body.dig("metadata", "finalizers"))
+    refute(removed.body.fetch("metadata").key?("finalizers"))
     # Removing the last finalizer from an object already marked for deletion
     # removes the OBJECT: registry/generic/registry/store.go
     # updateForGracefulDeletionAndFinalizers deletes immediately when "the
@@ -168,6 +316,39 @@ class APICoreTest < Minitest::Test
     assert_raises(Rubernetes::API::Patch::Error) do
       Rubernetes::API::Patch.apply_json_patch({"~2" => true}, [{"op" => "test", "path" => "/~2", "value" => true}])
     end
+  end
+
+  def test_memory_store_keeps_prior_revisions_detached_from_mutable_inputs
+    key = "registry/v1/configmaps/dev/revisions"
+    data = {items: [+"first"]}
+    first = @store.create(key, {data: data})
+    watch = @store.watch(resource_version: @store.resource_version)
+    data[:items].first.replace("second")
+    second = @store.update(key, {data: data})
+    @store.delete(key)
+    modified, deleted = watch.to_a
+
+    assert_equal ["first"], first.dig("data", "items")
+    assert_equal first, modified.old_object
+    assert_equal second, modified.object
+    assert_equal second, deleted.old_object
+    assert_raises(FrozenError) { second.dig("data", "items").first.replace("third") }
+  ensure
+    watch&.close
+  end
+
+  def test_nested_merge_patch_returns_independent_containers
+    original = {spec: {keep: ["a"], child: {drop: true}}, status: false}
+    patch = {spec: {child: {drop: nil}, added: [1]}, status: {ready: false}}
+    result = Rubernetes::API::Patch.apply(original, patch, type: :merge)
+
+    assert_equal({"spec" => {"keep" => ["a"], "child" => {}, "added" => [1]}, "status" => {"ready" => false}}, result)
+    result["spec"]["keep"].clear
+    result["spec"]["added"].clear
+
+    assert_equal ["a"], original.dig(:spec, :keep)
+    assert_equal [1], patch.dig(:spec, :added)
+    assert_equal true, original.dig(:spec, :child, :drop)
   end
 
   def test_merge_patch_replaces_arrays_deletes_nulls_and_rejects_scalar_resources
@@ -235,6 +416,68 @@ class APICoreTest < Minitest::Test
     assert_raises(Rubernetes::API::Patch::Error) do
       Rubernetes::API::Patch.apply_strategic_merge({"spec" => {}}, {"spec" => {"$patch" => "unknown"}})
     end
+  end
+
+  def test_strategic_owner_reference_patches_preserve_other_references_and_require_the_pod_uid
+    collection = "/api/v1/namespaces/dev/pods"
+    member = "#{collection}/owned"
+    headers = {"Content-Type" => "application/strategic-merge-patch+json"}
+    owner = {"apiVersion" => "v1", "kind" => "ReplicationController", "name" => "rc", "uid" => "rc-uid", "controller" => true}
+    other = {"apiVersion" => "v1", "kind" => "ConfigMap", "name" => "settings", "uid" => "config-uid"}
+    created = call("POST", collection, {"metadata" => {"name" => "owned", "ownerReferences" => [other]},
+                                        "spec" => {"containers" => [{"name" => "app", "image" => "busybox"}]}})
+
+    assert_equal 201, created.status
+
+    pod_uid = created.body.dig("metadata", "uid")
+    adopt = call("PATCH", member, {"metadata" => {"uid" => pod_uid, "ownerReferences" => [owner]}}, headers: headers)
+
+    assert_equal 200, adopt.status
+    assert_equal %w[config-uid rc-uid], adopt.body.dig("metadata", "ownerReferences").map { |reference| reference.fetch("uid") }.sort
+
+    delete_owner = [{"uid" => "rc-uid", "$patch" => "delete"}]
+    stale = call("PATCH", member, {"metadata" => {"uid" => "previous-pod", "ownerReferences" => delete_owner}}, headers: headers)
+
+    assert_equal 422, stale.status
+    assert_equal ["metadata.uid"], stale.body.dig("details", "causes").map { |cause| cause["field"] }.uniq
+
+    release = call("PATCH", member, {"metadata" => {"uid" => pod_uid, "ownerReferences" => delete_owner}}, headers: headers)
+
+    assert_equal 200, release.status
+    assert_equal [other], release.body.dig("metadata", "ownerReferences")
+    repeated = call("PATCH", member, {"metadata" => {"uid" => pod_uid, "ownerReferences" => delete_owner}}, headers: headers)
+
+    assert_equal [other], repeated.body.dig("metadata", "ownerReferences")
+  end
+
+  def test_non_string_uid_is_a_decoding_error_before_lookup
+    path = "/api/v1/namespaces/dev/configmaps/config"
+    object = {"metadata" => {"name" => "config", "uid" => false}}
+    response = call("PUT", path, object)
+
+    assert_equal 400, response.status
+    assert_includes response.body.fetch("message"), "cannot unmarshal bool into Go struct field ObjectMeta.metadata.uid of type types.UID"
+    assert_equal 400, call("POST", "/api/v1/namespaces/dev/configmaps", object).status
+  end
+
+  def test_stale_uid_cannot_replace_an_object_or_change_it_through_a_json_patch
+    path = "/api/v1/namespaces/dev/configmaps/config"
+    created = call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "config"}, "data" => {"value" => "old"}})
+    metadata = created.body.fetch("metadata")
+    stale = created.body.merge("metadata" => metadata.merge("uid" => "previous"), "data" => {"value" => "new"})
+    put = call("PUT", path, stale)
+    patch = call("PATCH", path, [{"op" => "replace", "path" => "/metadata/uid", "value" => "previous"},
+                                 {"op" => "replace", "path" => "/data/value", "value" => "new"}],
+                 headers: {"Content-Type" => "application/json-patch+json"})
+
+    assert_equal 409, put.status
+    assert_includes put.body["message"], "Key: /configmaps/dev/config, ResourceVersion: 0"
+    assert_equal 422, patch.status
+    assert_equal(["metadata.uid", "metadata.uid"], patch.body.dig("details", "causes").map { |cause| cause["field"] })
+    stored = call("GET", path).body
+
+    assert_equal metadata, stored["metadata"]
+    assert_equal "old", stored.dig("data", "value")
   end
 
   def test_server_side_apply_conflict_force_and_omitted_field_ownership
@@ -416,6 +659,23 @@ class APICoreTest < Minitest::Test
     assert_equal(404, missing.status)
   end
 
+  def test_patch_resource_version_zero_and_decimal_versions
+    path = "/api/v1/namespaces/dev/configmaps"
+    member = "#{path}/settings"
+    created = call("POST", path, {"metadata" => {"name" => "settings"}})
+    version = created.body.dig("metadata", "resourceVersion")
+    headers = {"Content-Type" => "application/merge-patch+json"}
+    apply = ->(rv, value) { call("PATCH", member, {"metadata" => {"resourceVersion" => rv}, "data" => {"mode" => value}}, headers: headers) }
+
+    assert_equal 200, apply.call("00#{version}", "first").status
+    assert_equal 200, apply.call("0", "second").status
+    denied = apply.call(version, "stale")
+
+    assert_equal 409, denied.status
+    assert_equal "configmaps", denied.body.dig("details", "kind")
+    assert_equal "second", call("GET", member).body.dig("data", "mode")
+  end
+
   # A status apply owns the status fields it sends.  When the next apply
   # stops sending one, that field must go: without it a StatefulSet whose
   # Pods stopped being ready keeps reporting its old readyReplicas forever,
@@ -499,7 +759,7 @@ class APICoreTest < Minitest::Test
     removed = call("PATCH", "/api/v1/namespaces/dev/pods/status-pod", [{"op" => "remove", "path" => "/metadata/finalizers/0"}],
                    headers: {"Content-Type" => "application/json-patch+json"})
 
-    assert_equal([], removed.body.dig("metadata", "finalizers"))
+    refute(removed.body.fetch("metadata").key?("finalizers"))
     # The last finalizer going is itself the delete; see above.
     assert_equal(404, call("GET", "/api/v1/namespaces/dev/pods/status-pod").status)
   end
@@ -547,7 +807,13 @@ class APICoreTest < Minitest::Test
     assert_equal("2.0", v2.body.fetch("swagger"))
     assert_equal(200, call("GET", "/openapi/v3").status)
     assert_equal(200, call("GET", "/openapi/v3/api/v1").status)
-    assert_equal(200, call("GET", "/openapi/v3/apis/apps/v1").status)
+    # This test's registry serves only core/v1.
+    hidden = call("GET", "/openapi/v3/apis/apps/v1")
+
+    assert_equal(404, hidden.status)
+    assert_equal("", hidden.body)
+    assert_nil(hidden.content_type)
+    assert_equal(200, call("GET", "/openapi/v3/api/%761").status)
     assert_equal(404, call("GET", "/openapi/v3/apis/apps/v9").status)
     assert_equal(404, call("GET", "/openapi/v3/../../openapi/v2").status)
     assert_equal(404, call("GET", "/openapi/v3/%2e%2e/%2e%2e/openapi/v2").status)
