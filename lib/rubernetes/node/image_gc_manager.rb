@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
-require "find"
-
 require_relative "../image/reference"
+require_relative "directory_usage"
 
 module Rubernetes
   module Node
@@ -31,10 +30,12 @@ module Rubernetes
       class Error < StandardError; end
 
       # +resolver+: #cached_images and #evict_cached_image (Image::Resolver).
+      # A CRI source can append an explicit in-use flag to each cache entry.
       # +fs_stats+: -> {"capacityBytes", "availableBytes"} of the image filesystem.
       # +pods+: -> the Pods whose containers are on the node.
       def initialize(resolver:, fs_stats:, pods:, high_threshold_percent: DEFAULT_HIGH_THRESHOLD_PERCENT,
                      low_threshold_percent: DEFAULT_LOW_THRESHOLD_PERCENT, min_age: DEFAULT_MIN_AGE, max_age: 0,
+                     used_roots: nil, reclaim_stages: nil,
                      recorder: nil, node_ref: nil, monotonic: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      sleeper: ->(seconds) { sleep(seconds) }, error_handler: nil, size_of: nil)
         high = Integer(high_threshold_percent)
@@ -46,6 +47,8 @@ module Rubernetes
         @resolver = resolver
         @fs_stats = fs_stats
         @pods = pods
+        @used_roots = used_roots
+        @reclaim_stages = reclaim_stages
         @high = high
         @low = low
         @min_age = Float(min_age)
@@ -55,7 +58,7 @@ module Rubernetes
         @monotonic = monotonic
         @sleeper = sleeper
         @error_handler = error_handler
-        @size_of = size_of || method(:directory_size)
+        @size_of = size_of || ->(path) { DirectoryUsage.measure(path).first }
         @records = {}
         @mutex = Mutex.new
         @began = @monotonic.call
@@ -145,17 +148,29 @@ module Rubernetes
       # used first, then earliest detected.
       def images_in_eviction_order(now)
         in_use = images_in_use
+        in_use_roots = @used_roots&.call&.to_set
+        @reclaim_stages&.call(in_use_roots || [])
         cached = @resolver.cached_images
+        used_keys = Set.new
         @mutex.synchronize do
           current = cached.map(&:first)
           @records.delete_if { |key, _| !current.include?(key) }
-          cached.each do |key, image, last_handed_out|
+          cached.each do |key, image, last_handed_out, used, aliases|
             record = (@records[key] ||= Record.new(now, nil, nil))
             record.last_used = [record.last_used, last_handed_out].compact.max
-            record.last_used = now if in_use.include?(reference_of(key))
+            # For the native cache, the current tag may point away from the
+            # rootfs a Pod actually mounted. The lifecycle supplies those roots.
+            if used.nil? && (aliases.nil? || in_use_roots.nil?)
+              used = in_use.include?(reference_of(key)) || Array(aliases).any? { |reference| in_use.include?(reference) }
+            end
+            used ||= in_use_roots&.include?(image.rootfs) if in_use_roots
+            if used
+              record.last_used = now
+              used_keys.add(key)
+            end
             record.size ||= image_size(image)
           end
-          @records.reject { |key, _| in_use.include?(reference_of(key)) }
+          @records.reject { |key, _| used_keys.include?(key) }
             .sort_by { |key, record| [record.last_used || -Float::INFINITY, record.first_detected, key] }
         end
       end
@@ -165,7 +180,12 @@ module Rubernetes
 
         deleted = []
         remaining = images.reject do |key, record|
-          next false unless free_time - (record.last_used || record.first_detected) > @max_age
+          # Kubernetes represents an image that has never been used with a
+          # zero lastUsed time.  It is therefore immediately eligible once
+          # the kubelet-wide max-age grace period has elapsed, even when the
+          # image first appears in a later detection pass.  firstDetected is
+          # only the minimum-age clock used by space pressure GC.
+          next false unless free_time - (record.last_used || -Float::INFINITY) > @max_age
 
           freed = free_image(key, free_time, "age")
           deleted << key if freed
@@ -213,6 +233,10 @@ module Rubernetes
               result << normalize_reference(image) if image
             end
           end
+          Array(spec["volumes"]).each do |volume|
+            reference = volume.dig("image", "reference")
+            result << normalize_reference(reference) if reference
+          end
         end
       end
 
@@ -232,16 +256,6 @@ module Rubernetes
         root.empty? ? 0 : @size_of.call(root)
       rescue StandardError
         0
-      end
-
-      def directory_size(path)
-        total = 0
-        Find.find(path) do |entry|
-          total += File.lstat(entry).blocks * 512
-        rescue SystemCallError
-          Find.prune
-        end
-        total
       end
 
       def event(type, reason, message)
