@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "../replica_failure_status"
+
 module Rubernetes
   module Controller
     module Builtins
       class ReplicaSetController < WorkloadController
         DESCRIPTOR = ResourceDescriptor.parse("ReplicaSet")
+
+        include ReplicaFailureStatus
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
@@ -19,15 +23,11 @@ module Rubernetes
         # collector should orphan pods created by rc if delete options say so"
         # kept 27 of 100).
         def adoption_allowed?(adapter, controller, descriptor)
-          return true unless AdapterCapability.live_reads?(adapter)
-
-          fresh = adapter.find_live(descriptor, name: Support.name(controller), namespace: Support.namespace(controller))
-          !fresh.nil? && Support.uid(fresh).to_s == Support.uid(controller).to_s &&
-            Support.value(Support.metadata(fresh), "deletionTimestamp", nil).nil?
+          Support.adoption_allowed?(adapter, controller, descriptor)
         end
 
         def plan(replica_set, store: nil, pods: nil, now: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(replica_set))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
@@ -39,7 +39,9 @@ module Rubernetes
           desired = replica_count(replica_set)
           scaling, creation_batches = manage_replicas(replica_set, all_pods, alive, desired, adapter, now)
           status = replica_status(replica_set, owned_pods, alive, now)
-          planned = result(replica_set, claimed.fetch(:operations) + scaling, status: status, batches: creation_batches)
+          reporting_failure = apply_replica_failure_condition(status, replica_set, alive.length - desired, now: now)
+          planned = result(replica_set, claimed.fetch(:operations) + scaling,
+                           status: status, batches: creation_batches, status_first: reporting_failure)
           with_requeue(planned, availability_requeue(replica_set, status, desired))
         end
 
@@ -51,7 +53,7 @@ module Rubernetes
         end
 
         def delete(replica_set, pods: nil, store: nil)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           pods ||= list_children(adapter, POD, Support.namespace(replica_set))
           operations = owned(replica_set, pods).map { |pod| operation_delete(pod, descriptor: POD, reason: "replicaset deletion") }
           operations << operation_delete(replica_set, descriptor: DESCRIPTOR, reason: "replicaset deletion")
@@ -59,24 +61,15 @@ module Rubernetes
         end
 
         def create_pods(replica_set, existing_pods, count)
-          existing_names = Array(existing_pods).map { |pod| Support.name(pod) }
+          prefix = Support.name(replica_set)
+          existing_names = Array(existing_pods).to_set { |pod| Support.name(pod) }
           template_value = Support.value(Support.spec(replica_set), "template", {})
           labels = selector_for(replica_set)
-          operations = []
-          Integer(count).times do
-            loop do
-              # GenerateName semantics (random suffix), as upstream: a counter
-              # collided with Pods that exist but are not owned by this set.
-              candidate_name = "#{Support.name(replica_set)}-#{Support.random_suffix}"
-              next if existing_names.include?(candidate_name)
-
-              pod = pod_for(replica_set, name: candidate_name, template_value: template_value, labels: labels)
-              operations << operation_create(pod, owner: replica_set, descriptor: POD, reason: "replicaset scale up")
-              existing_names << candidate_name
-              break
-            end
+          Array.new([0, Integer(count)].max) do
+            name = Support.unique_pod_name(prefix, existing_names)
+            pod = pod_for(replica_set, name: name, template_value: template_value, labels: labels)
+            operation_create(pod, owner: replica_set, descriptor: POD, reason: "replicaset scale up")
           end
-          operations
         end
 
         def selector_matches?(replica_set, pod)
@@ -89,10 +82,7 @@ module Rubernetes
         end
 
         def controlling_owner_reference?(pod)
-          Support.owner_references(pod).any? do |reference|
-            value = Support.ref_value(reference, "controller", false)
-            value == true || value.to_s.casecmp("true").zero?
-          end
+          !Support.controller_owner_reference(pod).nil?
         end
 
         def slow_start_batches(operations)
@@ -148,18 +138,19 @@ module Rubernetes
         # writes that record both.
         def claim_pods(replica_set, all_pods, adapter)
           owned_pods = owned(replica_set, all_pods).select { |pod| controlled_by?(pod, replica_set) }
-          adoptable = adoptable_pods(replica_set, all_pods)
+          matches = Support.selector_predicate(Support.value(Support.spec(replica_set), "selector", {}))
+          adoptable = adoptable_pods(replica_set, all_pods, matches)
           adoptable = [] unless adoptable.empty? || adoption_allowed?(adapter, replica_set, DESCRIPTOR)
           adoption_operations = adoptable.filter_map { |pod| adoption_operation(replica_set, pod) }
           owned_pods += adoptable
           # ClaimPods/ReleasePod: an owned Pod whose labels stopped matching
           # the selector is released (its controller reference removed) so
           # another owner may adopt it, and it no longer counts as a replica.
-          released = owned_pods.reject do |pod|
-            selector_matches?(replica_set, pod) || Support.value(Support.metadata(pod), "deletionTimestamp", nil)
+          retained, released = owned_pods.partition do |pod|
+            matches.call(pod) || Support.value(Support.metadata(pod), "deletionTimestamp", nil)
           end
           release_operations = released.map { |pod| release_operation(replica_set, pod) }
-          {owned: owned_pods - released, operations: adoption_operations + release_operations}
+          {owned: retained, operations: adoption_operations + release_operations}
         end
 
         def controlled_by?(pod, replica_set)
@@ -175,32 +166,22 @@ module Rubernetes
         # ReplicaSet adopts selector-matching Pods that have no controlling
         # owner. A Pod with another controller is never adopted, even when
         # its labels and generated name happen to collide with this set.
-        def adoptable_pods(replica_set, all_pods)
+        def adoptable_pods(replica_set, all_pods, matches)
           all_pods.select do |pod|
             next false unless namespace_matches?(replica_set, pod)
             next false if Support.value(Support.metadata(pod), "deletionTimestamp", nil)
-            next false unless selector_matches?(replica_set, pod)
+            next false unless matches.call(pod)
 
             !controlling_owner_reference?(pod)
           end
         end
 
         def adoption_operation(replica_set, pod)
-          candidate = Support.deep_copy(pod)
-          candidate["metadata"] ||= {}
-          references = Array(Support.value(candidate["metadata"], "ownerReferences", [])).map { |reference| Support.deep_copy(reference) }
-          references << Support.owner_reference(replica_set)
-          candidate["metadata"]["ownerReferences"] = references
-          operation_update(pod, candidate, descriptor: POD, reason: "replicaset pod adoption")
+          operation_owner_reference(pod, replica_set, descriptor: POD, reason: "replicaset pod adoption", adopt: true)
         end
 
         def release_operation(replica_set, pod)
-          candidate = Support.deep_copy(pod)
-          candidate["metadata"] ||= {}
-          candidate["metadata"]["ownerReferences"] = Array(Support.value(candidate["metadata"], "ownerReferences", [])).reject do |reference|
-            Support.ref_value(reference, "uid", nil).to_s == Support.uid(replica_set).to_s
-          end
-          operation_update(pod, candidate, descriptor: POD, reason: "replicaset pod release")
+          operation_owner_reference(pod, replica_set, descriptor: POD, reason: "replicaset pod release", adopt: false)
         end
 
         # Creates the missing replicas (at most 500 a pass, in slow-start
@@ -233,9 +214,11 @@ module Rubernetes
           min_ready_seconds = Support.integer(Support.value(Support.spec(replica_set), "minReadySeconds", 0), 0)
           status = Support.deep_copy(Support.status(replica_set))
           status["replicas"] = alive.length
+          required_labels = selector_for(replica_set)
           status["fullyLabeledReplicas"] = alive.count do |pod|
-            selector_for(replica_set).all? do |key, value|
-              Support.labels(pod)[key.to_s] == value.to_s
+            pod_labels = Support.labels(pod)
+            required_labels.all? do |key, value|
+              pod_labels[key.to_s] == value.to_s
             end
           end
           # Zero counters are written, not omitted: a status apply that leaves
