@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "base64"
 require "psych"
 require "uri"
@@ -11,8 +13,8 @@ module Rubernetes
   module Client
     # Safely parses kubeconfig files and resolves one context into transport credentials.
     #
-    # A user entry with `exec` runs that credential plugin (see ExecCredential); what the
-    # entry states itself (token, client certificate) wins over what the plugin returns.
+    # A user entry with `exec` supplies a live credential provider when the
+    # kubeconfig does not already specify a token or client certificate.
     class Kubeconfig
       MAX_BYTES = 1_048_576
       MAX_TOKEN_FILE_BYTES = 1_048_576
@@ -28,8 +30,10 @@ module Rubernetes
         :client_certificate_data,
         :client_key_file,
         :client_key_data,
+        :client_certificate_store,
         :bearer_token,
         :insecure_skip_tls_verify,
+        :exec_credential,
         keyword_init: true
       ) do
         # These aliases preserve the kubeconfig terminology used by callers and tests.
@@ -51,6 +55,18 @@ module Rubernetes
 
         def token
           bearer_token
+        end
+
+        def bearer_token
+          self[:bearer_token] || exec_credential&.credentials&.bearer_token
+        end
+
+        def client_certificate_data
+          self[:client_certificate_data] || exec_credential&.credentials&.client_certificate_data
+        end
+
+        def client_key_data
+          self[:client_key_data] || exec_credential&.credentials&.client_key_data
         end
 
         def to_h
@@ -134,7 +150,7 @@ module Rubernetes
       end
 
       # Resolves a named or current context into server and authentication material.
-      def resolve(name = nil, context: nil, **options)
+      def resolve(name = nil, context: nil, preload_exec: true, exec_policy: nil, env: ENV, token: nil, client_certificate_store: nil, **options)
         name = options.fetch(:name, name)
         context_name = (context || name || current_context).to_s
         raise ContextNotFoundError, "kubeconfig has no current-context; pass --context NAME" if context_name.empty?
@@ -145,6 +161,7 @@ module Rubernetes
         cluster = find_named("clusters", cluster_name).fetch("cluster")
         user_name = context["user"]
         user = user_name.nil? ? {} : find_named("users", user_name).fetch("user")
+        user = user.merge("token" => token) if token && token != ""
 
         server = required_server(cluster, cluster_name)
         namespace = context.fetch("namespace", DEFAULT_NAMESPACE)
@@ -157,8 +174,10 @@ module Rubernetes
           raise ConfigurationError,
                 "cluster #{cluster_name.inspect} cannot combine certificate authority data with insecure TLS verification"
         end
-        credentials = resolve_credentials(user, context_name, cluster)
+        credentials = resolve_static_credentials(user, context_name, client_certificate_store)
         certificate = resolve_certificate_material(cluster, credentials, context_name)
+        plugin = resolve_exec_credential(user, cluster, credentials, policy: exec_policy, env: env)
+        plugin&.credentials if preload_exec
 
         KubeContext.new(
           name: context_name,
@@ -170,8 +189,10 @@ module Rubernetes
           client_certificate_data: certificate[:client_certificate_data],
           client_key_file: certificate[:client_key_file],
           client_key_data: certificate[:client_key_data],
+          client_certificate_store: credentials[:client_certificate_store],
           bearer_token: credentials[:bearer_token],
-          insecure_skip_tls_verify: insecure_skip_tls_verify
+          insecure_skip_tls_verify: insecure_skip_tls_verify,
+          exec_credential: plugin
         ).freeze
       end
 
@@ -255,16 +276,7 @@ module Rubernetes
         merged
       end
 
-      def self.deep_dup(value)
-        case value
-        when Hash
-          value.to_h { |key, child| [key, deep_dup(child)] }
-        when Array
-          value.map { |child| deep_dup(child) }
-        else
-          value
-        end
-      end
+      def self.deep_dup(value) = ObjectTree.copy(value)
 
       def self.normalize_mapping(value, context)
         case value
@@ -379,21 +391,14 @@ module Rubernetes
         namespace
       end
 
-      def resolve_credentials(user, context_name, cluster)
-        static = resolve_static_credentials(user, context_name)
-        return static unless user.key?("exec")
+      def resolve_exec_credential(user, cluster, static, policy:, env:)
+        return unless user.key?("exec")
+        return if static.values.any?
 
-        plugin = ExecCredential.fetch(user["exec"], cluster: cluster, base_directory: base_directory)
-        validate_bearer_token(plugin.bearer_token, "exec plugin of context #{context_name.inspect}") if plugin.bearer_token
-        has_certificate = static[:client_certificate_file] || static[:client_certificate_data]
-        static.merge(
-          bearer_token: static[:bearer_token] || plugin.bearer_token,
-          client_certificate_data: has_certificate ? static[:client_certificate_data] : plugin.client_certificate_data,
-          client_key_data: has_certificate ? static[:client_key_data] : plugin.client_key_data
-        )
+        ExecCredential.provider(user["exec"], cluster: cluster, base_directory: base_directory, policy: policy, env: env)
       end
 
-      def resolve_static_credentials(user, context_name)
+      def resolve_static_credentials(user, context_name, client_certificate_store)
         if user.key?("auth-provider")
           raise UnsupportedCredentialError,
                 "context #{context_name.inspect} uses auth-provider credentials; configure a bearer token or client certificate"
@@ -409,6 +414,8 @@ module Rubernetes
                 "context #{context_name.inspect} uses basic-auth credentials; use a bearer token or client certificate"
         end
 
+        return {bearer_token: token, client_certificate_store: client_certificate_store} if managed_client_pair?(user, client_certificate_store)
+
         {
           bearer_token: token,
           client_certificate_file: resolve_path(user["client-certificate"], "client-certificate"),
@@ -416,6 +423,16 @@ module Rubernetes
           client_key_file: resolve_path(user["client-key"], "client-key"),
           client_key_data: decode_data(user["client-key-data"], "client-key-data")
         }
+      end
+
+      # Only the kubelet's own bootstrap pair can opt into the rotation store.
+      # Other kubeconfig credentials still go through the ordinary path checks.
+      def managed_client_pair?(user, store)
+        return false unless store
+
+        path = store.current_path
+        user["client-certificate"] == path && user["client-key"] == path &&
+          !user.key?("client-certificate-data") && !user.key?("client-key-data")
       end
 
       def resolve_certificate_material(cluster, credentials, context_name)
@@ -518,18 +535,7 @@ module Rubernetes
         end
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            key.freeze
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value, nested_keys: false)
     end
 
     KubeConfig = Kubeconfig
