@@ -6,6 +6,9 @@ require "uri"
 
 require_relative "../version"
 require_relative "../client"
+require_relative "kuberc"
+require_relative "manifest_input"
+require_relative "pod_logs"
 
 module Rubernetes
   module Rubectl
@@ -19,7 +22,7 @@ module Rubernetes
       EX_CONFIG = 78
       EX_INTERRUPTED = 130
 
-      COMMANDS = %w[get create apply render patch delete watch raw extension].freeze
+      COMMANDS = %w[get create apply plan render cron patch delete watch logs raw disk extension].freeze
       # Commands that talk to the processes of a cluster on this host, not to
       # its API.
       LOCAL_COMMANDS = %w[console why trace].freeze
@@ -90,7 +93,9 @@ module Rubernetes
         return run_console(arguments.first, arguments.drop(1)) if LOCAL_COMMANDS.include?(arguments.first)
 
         options = default_options
-        parser = option_parser(options)
+        command_probe = arguments.dup
+        option_parser(default_options).order!(command_probe)
+        parser = option_parser(options, logs: command_probe.first == "logs")
         parser.parse!(arguments)
 
         return print_help(parser) if options[:help]
@@ -100,6 +105,7 @@ module Rubernetes
         raise Client::UsageError, "a command is required; choose #{COMMANDS.join(", ")}" if command.nil?
         raise Client::UsageError, "unknown command #{command.inspect}; choose #{COMMANDS.join(", ")}" unless COMMANDS.include?(command)
 
+        options[:output] ||= command == "disk" ? "text" : "json" unless command == "logs"
         remember_option_secrets(options)
         validate_invocation!(command, arguments, options)
 
@@ -139,9 +145,11 @@ module Rubernetes
           help: false,
           version: false,
           kubeconfig: nil,
+          kuberc: nil,
           context: nil,
           namespace: nil,
-          output: "json",
+          node: nil,
+          output: nil,
           filenames: [],
           patch: nil,
           data: nil,
@@ -161,17 +169,22 @@ module Rubernetes
         }
       end
 
-      def option_parser(options)
+      def option_parser(options, logs: false)
         OptionParser.new do |parser|
           parser.banner = "Usage: rubectl [options] COMMAND [arguments]"
           parser.on("-h", "--help", "show this help") { options[:help] = true }
           parser.on("-v", "--version", "show version") { options[:version] = true }
           parser.on("--kubeconfig PATH", "load kubeconfig from PATH") { |value| options[:kubeconfig] = value }
+          parser.on("--kuberc PATH", "load the exec credential plugin policy from PATH") { |value| options[:kuberc] = value } unless Kuberc.disabled?(@env)
           parser.on("--context NAME", "select kubeconfig context") { |value| options[:context] = value }
           parser.on("-n", "--namespace NAME", "use namespace NAME") { |value| options[:namespace] = value }
-          parser.on("-o", "--output FORMAT", "output as json, yaml, or name") { |value| options[:output] = value }
-          parser.on("-f", "--filename PATH", "read a manifest file (repeatable)") { |value| options[:filenames] << value }
-          parser.on("-p", "--patch PATCH", "patch body or patch file") { |value| options[:patch] = value }
+          parser.on("-A", "--all-namespaces", "include every namespace in get, watch, and disk lists") { options[:all_namespaces] = true }
+          parser.on("--node NAME", "filter the disk report to Pods on one node") { |value| options[:node] = value }
+          parser.on("-o", "--output FORMAT", "output format (json, yaml, name, or text for plan and disk)") { |value| options[:output] = value }
+          parser.on("-f", "--filename PATH", "read a manifest file (repeatable)") { |value| options[:filenames] << value } unless logs
+          parser.on("--from RFC3339", "list CronJob times strictly after this instant") { |value| options[:cron_from] = value }
+          parser.on("--count COUNT", Integer, "number of future times per CronJob (default 5, maximum 100)") { |value| options[:cron_count] = value }
+          parser.on("-p", "--patch PATCH", "patch body or patch file") { |value| options[:patch] = value } unless logs
           parser.on("--data DATA", "raw request body or @FILE") { |value| options[:data] = value }
           parser.on("--type TYPE", "patch type: merge, json, strategic, or apply") { |value| options[:patch_type] = value }
           parser.on("--field-manager NAME", "server-side apply field manager") { |value| options[:field_manager] = value }
@@ -186,6 +199,7 @@ module Rubernetes
           parser.on("--env NAME", "allow one environment variable in an isolated Ruby manifest") { |value| options[:environment] << value }
           parser.on("--manifest-registry PATH", "use a generated manifest registry") { |value| options[:manifest_registry] = value }
           parser.on("--manifest-openapi PATH", "use generated manifest OpenAPI definitions") { |value| options[:manifest_openapi] = value }
+          PodLogs.add_options(parser, options) if logs
         end
       end
 
@@ -193,6 +207,10 @@ module Rubernetes
         @stdout.puts(parser)
         @stdout.puts
         @stdout.puts("Commands: #{COMMANDS.join(", ")}")
+        @stdout.puts("Pod logs: rubectl logs POD [-c CONTAINER] [-f] [-p] [--tail LINES] [--timestamps] [--since DURATION | --since-time RFC3339]")
+        @stdout.puts("CronJob schedule: rubectl cron -f FILE --from RFC3339 [--count COUNT] [--allow-code]")
+        @stdout.puts("Pod disk usage: rubectl disk [POD | --node NAME] [-n NAMESPACE | -A] [-o json]")
+        @stdout.puts("Node filesystem usage: rubectl disk node/NAME [-o json]")
         @stdout.puts("Local clusters: rubectl cluster --help")
         @stdout.puts("Extensions written in Ruby: rubectl extension")
         @stdout.puts("Inside the running components: rubectl console, rubectl why, rubectl trace")
@@ -229,30 +247,46 @@ module Rubernetes
 
       def dispatch(command, arguments, options)
         return run_extension(arguments, options) if command == "extension"
+        return run_cron(options) if command == "cron"
+
         # What `apply` would send, without a cluster: the manifests a file
         # declares, ready for any client (`| kubectl apply -f -`).
-        return read_resources(options[:filenames], options) if command == "render"
+        if command == "render"
+          resources = read_resources(options[:filenames], options)
+          return {"apiVersion" => "v1", "kind" => "List", "items" => resources} if resources.size > 1 && options[:output].casecmp?("json")
+
+          return resources
+        end
 
         client = build_client(options)
+        options = options.merge(namespace: :all) if options[:all_namespaces]
         case command
         when "raw"
           run_raw(client, arguments, options)
         when "get"
           run_get(client, arguments, options)
+        when "disk"
+          run_disk(client, arguments.first, options)
         when "create"
           run_create(client, arguments, options)
         when "apply"
           run_apply(client, arguments, options)
+        when "plan"
+          run_plan(client, options)
         when "patch"
           run_patch(client, arguments, options)
         when "delete"
           run_delete(client, arguments, options)
         when "watch"
           run_watch(client, arguments, options)
+        when "logs"
+          options.fetch(:log_request).write(client, stdout: @stdout, warning: ->(message) { @stderr.puts(redact_sensitive(message)) })
+          :no_output
         end
       end
 
       def build_client(options)
+        policy = Kuberc.load(path: options[:kuberc], env: @env, warn: ->(message) { @stderr.puts(redact_sensitive(message)) })
         client = if @client
                    @client
                  elsif @client_factory
@@ -273,7 +307,9 @@ module Rubernetes
                    Client::KubernetesClient.from_kubeconfig(
                      path: options[:kubeconfig],
                      context: options[:context],
-                     env: @env
+                     env: @env,
+                     exec_policy: policy,
+                     token: options[:token]
                    )
                  end
         remember_client_secrets(client)
@@ -302,6 +338,30 @@ module Rubernetes
         client.get(target, name, namespace: options[:namespace])
       end
 
+      def run_disk(client, name, options)
+        if name&.start_with?("node/")
+          require_relative "node_disk_usage"
+          report = NodeDiskUsage.fetch(client, name.delete_prefix("node/"))
+          return write_disk_report(NodeDiskUsage, report, options[:output])
+        end
+
+        require_relative "pod_disk_usage"
+
+        report = if name
+                   PodDiskUsage.fetch(client, name, namespace: options[:namespace])
+                 else
+                   PodDiskUsage.rank(client, **options.slice(:namespace, :node))
+                 end
+        write_disk_report(PodDiskUsage, report, options[:output])
+      end
+
+      def write_disk_report(usage, report, output)
+        return report if output.casecmp?("json")
+
+        @stdout.puts(redact_sensitive(usage.text(report)))
+        :no_output
+      end
+
       def run_create(client, arguments, options)
         raise Client::UsageError, "create accepts only -f/--filename" unless arguments.empty?
 
@@ -312,15 +372,38 @@ module Rubernetes
       def run_apply(client, arguments, options)
         raise Client::UsageError, "apply accepts only -f/--filename" unless arguments.empty?
 
-        resources = read_resources(options[:filenames], options)
-        resources.map do |resource|
-          client.apply(
-            resource,
-            namespace: options[:namespace],
-            field_manager: options[:field_manager],
-            force: options[:force]
-          )
+        read_manifest_inputs(options).map do |input|
+          input.request { |resource| client.apply(resource, **options.slice(:namespace, :field_manager, :force)) }
         end
+      end
+
+      def run_plan(client, options)
+        require_relative "manifest_plan"
+
+        text = options[:output].casecmp?("text")
+        reports = read_manifest_inputs(options).map do |input|
+          report = input.request { |manifest| ManifestPlan.for_resource(client, manifest, **options.slice(:namespace, :field_manager, :force)) }
+          text ? "#{input.source_location}  #{redact_sensitive(ManifestPlan.text(report))}" : report
+        end
+        return reports unless text
+
+        @stdout.puts(reports)
+        :no_output
+      end
+
+      def run_cron(options)
+        require_relative "cron_preview"
+
+        from = CronPreview.start_time(options[:cron_from])
+        count = options.fetch(:cron_count, CronPreview::DEFAULT_COUNT)
+        raise Client::UsageError, "--count must be between 1 and #{CronPreview::MAX_COUNT}" unless (1..CronPreview::MAX_COUNT).cover?(count)
+
+        jobs = read_manifest_inputs(options).filter_map do |input|
+          CronPreview.for_manifest(input, from: from, count: count, namespace: options[:namespace])
+        end
+        raise Client::ManifestError, "no batch/v1 CronJob found" if jobs.empty?
+
+        {"from" => options[:cron_from], "cronJobs" => jobs}
       end
 
       def run_patch(client, arguments, options)
@@ -405,7 +488,21 @@ module Rubernetes
           env: @env
         )
         filenames.flat_map do |filename|
-          filename == "-" ? reader.load_content(@stdin.read, filename: filename) : reader.load(filename)
+          lines = nil
+          resources = if filename == "-"
+                        reader.load_content(@stdin.read(reader.max_bytes + 1).to_s, filename: filename)
+                      else
+                        reader.load(filename) { |declarations| lines = declarations }
+                      end
+          next resources unless block_given?
+
+          resources.map.with_index { |resource, index| yield resource, filename, lines&.at(index) }
+        end
+      end
+
+      def read_manifest_inputs(options)
+        read_resources(options[:filenames], options) do |resource, filename, line|
+          ManifestInput.new(resource, filename, line)
         end
       end
 
@@ -519,18 +616,25 @@ module Rubernetes
       end
 
       def write_api_error(error)
+        input = error.input if error.is_a?(ManifestInput::Rejected)
+        declaration = input&.declaration
+        @stderr.puts("rubectl: #{declaration}") if declaration
+
         if error.status_object.is_a?(Hash)
-          @stderr.puts(redact_sensitive(JSON.generate(error.status_object)))
+          status = input ? input.redact_error(error.status_object) : error.status_object
+          @stderr.puts(redact_sensitive(JSON.generate(status)))
         elsif error.response
           body = response_body(error.response)
-          @stderr.puts(redact_sensitive(body.empty? ? error.message : body))
+          body = error.message if body.empty?
+          @stderr.puts(redact_sensitive(input ? input.redact_error(body) : body))
         else
           write_error(error)
         end
       end
 
       def write_error(error)
-        @stderr.puts("rubectl: #{redact_sensitive(error.message)}")
+        location = "#{error.input.source_location}: " if error.is_a?(ManifestInput::Invalid)
+        @stderr.puts("rubectl: #{location}#{redact_sensitive(error.message)}")
       end
 
       def remember_option_secrets(options)
@@ -539,12 +643,14 @@ module Rubernetes
         kubeconfig_paths = configured_kubeconfig.to_s.split(File::PATH_SEPARATOR)
         path_values = [
           *kubeconfig_paths,
+          options[:kuberc],
+          @env["KUBERC"] == "off" ? nil : @env["KUBERC"],
           options[:certificate_authority],
           options[:client_certificate],
           options[:client_key],
           options[:manifest_registry],
           options[:manifest_openapi],
-          *options[:filenames]
+          *options[:filenames].reject { |filename| filename == "-" }
         ]
         path_values << options[:data].delete_prefix("@") if options[:data]&.start_with?("@")
         path_values << options[:patch].delete_prefix("@") if options[:patch]&.start_with?("@")
@@ -601,12 +707,30 @@ module Rubernetes
       end
 
       def validate_invocation!(command, arguments, options)
+        raise Client::UsageError, "--node is only supported by disk" if options[:node] && command != "disk"
+        raise Client::UsageError, "--from and --count are only supported by cron" if (options[:cron_from] || options[:cron_count]) && command != "cron"
+
+        if options[:all_namespaces]
+          raise Client::UsageError, "--all-namespaces is supported by get, watch, and disk" unless %w[get watch disk].include?(command)
+          if (command == "disk" && arguments.any?) || (command == "get" && arguments.length > 1)
+            raise Client::UsageError, "--all-namespaces requires omitting the resource name"
+          end
+        end
+
         case command
         when "raw"
           raise Client::UsageError, "raw requires METHOD PATH" unless arguments.length == 2
         when "get"
           raise Client::UsageError, "get requires RESOURCE or PATH" unless (1..2).cover?(arguments.length)
-        when "create", "apply", "render"
+        when "disk"
+          raise Client::UsageError, "disk accepts at most one Pod name or node/NAME" if arguments.length > 1 || arguments.first == ""
+          raise Client::UsageError, "disk --node requires omitting the resource name" if options[:node] && !arguments.empty?
+          raise Client::UsageError, "disk output must be text or json" unless %w[text json].include?(options[:output].downcase)
+        when "create", "apply", "plan", "render", "cron"
+          if command == "plan" && !(Client::Output::FORMATS + ["text"]).include?(options[:output].downcase)
+            raise Client::UsageError, "plan output must be json, yaml, name, or text"
+          end
+          raise Client::UsageError, "cron output must be json or yaml" if command == "cron" && !%w[json yaml].include?(options[:output].downcase)
           raise Client::UsageError, "#{command} accepts only -f/--filename" unless arguments.empty?
           raise Client::UsageError, "-f/--filename is required" if options[:filenames].empty?
         when "patch"
@@ -616,6 +740,8 @@ module Rubernetes
           raise Client::UsageError, "delete requires RESOURCE or PATH" unless (1..2).cover?(arguments.length)
         when "watch"
           raise Client::UsageError, "watch requires RESOURCE or PATH" unless arguments.length == 1
+        when "logs"
+          options[:log_request] = PodLogs.new(arguments, options)
         end
       end
 
