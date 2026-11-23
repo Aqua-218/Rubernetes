@@ -4,14 +4,9 @@ module Rubernetes
   module Schema
     # pkg/apis/core/validation (v1.36.2) ValidateMatchLabelKeysAndMismatchLabelKeys
     # and ValidateMatchLabelKeysInTopologySpread, for Pods and pod templates.
-    # With MatchLabelKeysInPodAffinity and MatchLabelKeysInPodTopologySpread-
-    # SelectorMerge (on) the API server merges the keys into the selectors
-    # when a Pod is created (API::Server#merge_label_keys!, before
-    # validation, as the strategy's PrepareForCreate does), and a key named
-    # both in matchLabelKeys and in the selector is reported once the merged
-    # requirement meets the user's own.  A topology spread constraint of an
-    # updated Pod whose old spec only passes the legacy rule keeps the legacy
-    # rule (OldPodViolatesMatchLabelKeysValidation).
+    # The merged rule reports a key once the generated requirement meets
+    # a requirement supplied by the client. The legacy topology spread rule
+    # checks the unmerged selector instead.
     module KubernetesValidator
       module_function
 
@@ -21,7 +16,7 @@ module Rubernetes
         "PodTemplate" => %w[template], "CronJob" => %w[spec jobTemplate spec template]
       }.freeze
 
-      def label_keys_errors(root, kind, operation, old)
+      def label_keys_errors(root, kind)
         base = if kind == "Pod"
                  []
                elsif (template = POD_TEMPLATE_PATHS[kind])
@@ -32,11 +27,6 @@ module Rubernetes
         spec = dig_path(root, base + ["spec"])
         return [] unless spec.is_a?(Hash)
 
-        old_spec = old && operation == :update ? dig_path(old, base + ["spec"]) : nil
-        old_violates = old_spec.is_a?(Hash) && Array(fetch(old_spec, "topologySpreadConstraints")).any? do |constraint|
-          constraint.is_a?(Hash) && !preferred_label_key_errors([], fetch(constraint, "matchLabelKeys"), nil,
-                                                                fetch(constraint, "labelSelector")).empty?
-        end
         path = base + ["spec"]
         issues = []
         affinity = fetch(spec, "affinity")
@@ -60,16 +50,6 @@ module Rubernetes
                                                        fetch(term, "matchLabelKeys"), fetch(term, "mismatchLabelKeys"), fetch(term, "labelSelector")))
             end
           end
-        end
-        Array(fetch(spec, "topologySpreadConstraints")).each_with_index do |constraint, index|
-          next unless constraint.is_a?(Hash)
-
-          constraint_path = path + ["topologySpreadConstraints", index.to_s]
-          keys = fetch(constraint, "matchLabelKeys")
-          selector = fetch(constraint, "labelSelector")
-          issues.concat(old_violates ? legacy_spread_label_key_errors(constraint_path + ["matchLabelKeys"], keys,
-                                                                      selector) : preferred_label_key_errors(constraint_path, keys, nil,
-                                                                                                             selector))
         end
         issues
       end
