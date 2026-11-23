@@ -20,7 +20,7 @@ module Prom
   module Exposition
     class ParseError < StandardError; end
 
-    Family = Struct.new(:name, :type, :help, :samples, keyword_init: true)
+    Family = Struct.new(:name, :type, :help, :unit, :samples, keyword_init: true)
     Sample = Struct.new(:name, :labels, :value, :timestamp_ms, keyword_init: true) do
       # Base family name for histogram/summary component rows.
       def family_name
