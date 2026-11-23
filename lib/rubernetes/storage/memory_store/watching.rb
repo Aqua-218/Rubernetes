@@ -9,8 +9,8 @@ module Rubernetes
       # dropping the first mutation after a caller's resourceVersion.
       def watch(prefix = "", *positional, since: nil, resource_version: nil, label_selector: nil, field_selector: nil,
                 selector: nil, allow_bookmarks: false, allow_watch_bookmarks: nil,
-                bookmark_interval: @bookmark_interval, send_initial_events: false,
-                resource_version_match: nil, timeout_seconds: nil, **options)
+                bookmark_interval: @bookmark_interval, send_initial_events: nil,
+                resource_version_match: nil, timeout_seconds: nil, shard_selector: nil, **options)
         raise ArgumentError, "watch accepts at most one positional since revision" if positional.length > 1
         raise ArgumentError, "watch since revision was supplied twice" if !positional.empty? && !since.nil?
 
@@ -27,22 +27,17 @@ module Rubernetes
         raise ArgumentError, "unknown watch options: #{options.keys.join(", ")}" unless options.empty?
 
         normalized_prefix = String(prefix || "")
-        selector_object = build_selector(selector, label_selector, field_selector)
+        selector_object = build_selector(selector, label_selector, field_selector, shard: shard_selector)
         normalized_since = since.nil? || since == "" ? nil : parse_revision(since)
-        normalized_resource_version_match = normalize_resource_version_match(resource_version_match)
+        normalize_resource_version_match(resource_version_match)
 
-        # "Get State and Start at Any" (the resourceVersion semantics table): an
-        # unset or zero resourceVersion asks for the current state as synthetic
-        # ADDED events BEFORE the stream.  Starting at the current revision
-        # instead delivered nothing until the object next changed, so every
-        # client that watches after creating an object -- which is how most of
-        # the e2e "lifecycle" specs are written -- waited out its whole timeout
-        # and reported "failed to find ADDED event".
-        initial_state = send_initial_events || normalized_since.nil? || normalized_since.zero?
+        # Legacy watches with an unset or zero resourceVersion replay current
+        # state. An explicit sendInitialEvents value chooses whether the
+        # subscription should receive those synthetic ADDED events.
+        initial_state = send_initial_events.nil? ? (normalized_since.nil? || normalized_since.zero?) : send_initial_events
 
         @monitor.synchronize do
-          start_revision = watch_start_revision_locked(normalized_since, normalized_resource_version_match, initial_state)
-          @next_watcher_id += 1
+          start_revision = watch_start_revision_locked(normalized_since, initial_state)
           watcher = Watcher.new(
             prefix: normalized_prefix, selector: selector_object, allow_bookmarks: !!allow_bookmarks,
             bookmark_interval: bookmark_interval, max_events: max_events, max_bytes: max_bytes, clock: @clock,
@@ -50,6 +45,7 @@ module Rubernetes
             bookmark_callback: ->(bookmark_watcher) { enqueue_bookmark(bookmark_watcher) },
             bookmark_identity: bookmark_identity(resource),
             on_close: ->(closed_watcher) { unregister_watcher(closed_watcher) },
+            on_shard_mismatch: shard_mismatch_metric(normalized_prefix, selector_object),
             timeout_seconds: timeout_seconds
           )
           init_events = if initial_state
@@ -60,7 +56,7 @@ module Rubernetes
                           replay_history_locked(watcher, start_revision)
                         end
           record_init_events(normalized_prefix, init_events) if @metrics && init_events.positive?
-          @watchers[@next_watcher_id] = watcher unless watcher.closed?
+          register_watcher(watcher)
           watcher
         end
       end
@@ -74,7 +70,7 @@ module Rubernetes
       # Watcher#await_delivered.  Returns false if some watcher was not done.
       def await_watch_delivery(revision, timeout:)
         target = Integer(revision)
-        watchers = @monitor.synchronize { @watchers.values }
+        watchers = @monitor.synchronize { @watchers.keys }
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
         watchers.map { |watcher| watcher.await_delivered(target, deadline) }.all?
       rescue ArgumentError, TypeError
@@ -89,7 +85,8 @@ module Rubernetes
       # to relist and re-watch, exactly as a compacted etcd watch does.
       def expire_watchers!
         watchers = @monitor.synchronize do
-          current = @watchers.values
+          current = @watchers.keys
+          current.each { |watcher| record_sharded_watch(watcher, -1) }
           @watchers.clear
           current
         end
@@ -99,7 +96,7 @@ module Rubernetes
 
       def close
         @monitor.synchronize do
-          @watchers.values.each(&:close)
+          @watchers.keys.each(&:close)
           @watchers.clear
         end
         self
@@ -107,28 +104,23 @@ module Rubernetes
 
       private
 
-      def watch_start_revision_locked(since, resource_version_match, initial_state)
-        if resource_version_match == "NotOlderThan"
-          requested_revision = since.nil? ? @revision : since
-          if requested_revision > @revision
-            raise InvalidResourceVersion,
-                  "watch revision #{requested_revision} is ahead of current revision #{@revision}"
-          end
+      def register_watcher(watcher)
+        return if watcher.closed?
 
-          # A watch-list's initial state is served from the current
-          # snapshot even when the lower-bound RV has already compacted.
-          start_revision = @revision
-        elsif initial_state
-          start_revision = @revision
-        else
-          start_revision = since
-        end
-        ensure_snapshot_available!(start_revision)
-        if start_revision > @revision
+        @watchers[watcher] = true
+        record_sharded_watch(watcher, 1)
+      end
+
+      def watch_start_revision_locked(since, initial_state)
+        if since && since > @revision
           raise InvalidResourceVersion,
-                "watch revision #{start_revision} is ahead of current revision #{@revision}"
+                "watch revision #{since} is ahead of current revision #{@revision}"
         end
 
+        # The current snapshot is used only for initial events or an unset
+        # cursor. An explicit positive cursor replays retained events.
+        start_revision = initial_state || since.nil? || since.zero? ? @revision : since
+        ensure_snapshot_available!(start_revision)
         start_revision
       end
 
@@ -136,28 +128,12 @@ module Rubernetes
       # Returns how many it accepted.
       def replay_current_state_locked(watcher, initial_events_end)
         prefix = watcher.prefix
-        selector = watcher.selector
-        initial_keys = @objects.filter_map do |key, object|
-          next if object.nil?
-          next unless key.start_with?(prefix) && selector.matches?(object)
-
-          key
-        end.sort
         init_events = 0
-        initial_keys.each do |key|
-          object = @objects.fetch(key)
+        each_key_with_prefix_locked(prefix) do |key|
+          object = current_object(key)
+          next unless object
 
-          delivered = watcher.enqueue(
-            Mutation.new(
-              type: :added,
-              key: key,
-              revision: object_revision(object),
-              object: object,
-              old_object: nil,
-              timestamp: clock_value
-            )
-          )
-          init_events += 1 if delivered
+          init_events += 1 if watcher.enqueue_initial(key, object, object_revision(object))
           break if watcher.closed?
         end
         watcher.enqueue_bookmark(@revision, initial_events_end: true) if initial_events_end && !watcher.closed?
@@ -168,10 +144,8 @@ module Rubernetes
       # watcher accepted.
       def replay_history_locked(watcher, start_revision)
         init_events = 0
-        @history.each do |mutation|
-          next unless mutation.revision > start_revision
-
-          init_events += 1 if watcher.enqueue(mutation)
+        history_offset_after(start_revision).upto(@history.length - 1) do |index|
+          init_events += 1 if watcher.enqueue(@history[index])
           break if watcher.closed?
         end
         init_events
@@ -179,7 +153,7 @@ module Rubernetes
 
       def unregister_watcher(watcher)
         @monitor.synchronize do
-          @watchers.delete_if { |_id, candidate| candidate.equal?(watcher) }
+          record_sharded_watch(watcher, -1) if @watchers.delete(watcher)
         end
       end
 
@@ -188,7 +162,7 @@ module Rubernetes
           # Read and enqueue while holding the Store monitor so a bookmark can
           # never be placed behind a newer mutation with an older revision.
           watcher.enqueue_bookmark(@revision)
-          @watchers.delete_if { |_id, candidate| candidate.equal?(watcher) && candidate.closed? }
+          unregister_watcher(watcher) if watcher.closed?
         end
       end
 
