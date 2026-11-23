@@ -119,7 +119,8 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
 
     def stats(id, token: nil, path: nil)
       @calls << [:stats, id, path]
-      {"volumeId" => id, "capacityBytes" => 100, "availableBytes" => 70, "usedBytes" => 30, "inodes" => 9}
+      {"volumeId" => id, "capacityBytes" => 100, "availableBytes" => 70, "usedBytes" => 30, "inodes" => 9,
+       "volumeCondition" => {"abnormal" => true, "message" => "degraded"}}
     end
   end
 
@@ -405,6 +406,7 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
     args = {fs_group: 1000, fs_type: "ext4", access_modes: ["ReadWriteOnce"], ephemeral: false, readonly: false}
 
     assert_equal :kubelet, csi.fs_group_mode(**args)
+    assert_equal :kubelet, csi.fs_group_mode(**args, access_modes: ["ReadWriteOncePod"])
     assert_equal :none, csi.fs_group_mode(**args, fs_group: nil)
     assert_equal :none, csi.fs_group_mode(**args, fs_type: "")
     assert_equal :none, csi.fs_group_mode(**args, access_modes: ["ReadWriteMany"])
@@ -571,6 +573,13 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
       stats = manager.csi_volume_stats(id, target)
 
       assert_equal [100, 70, 30, 9], stats.values_at("capacityBytes", "availableBytes", "usedBytes", "inodes")
+      refute stats.key?("volumeCondition")
+      refute manager.csi_volume_stats(id, target, health: true).key?("volumeCondition")
+
+      @bridges["/a.sock"].capabilities = %w[GET_VOLUME_STATS VOLUME_CONDITION]
+      @registry.for_driver("hostpath.csi.k8s.io").instance_variable_set(:@node_capabilities, nil)
+
+      assert_equal({"abnormal" => true, "message" => "degraded"}, manager.csi_volume_stats(id, target, health: true)["volumeCondition"])
       call = @bridges["/a.sock"].calls.find { |entry| entry.first == :stats }
 
       assert_equal "h", call[1]
@@ -621,6 +630,31 @@ class KubeletInlineCSIVolumeTranslationTest < Minitest::Test
     assert_equal true, csi["ephemeral"]
     assert_equal({"size" => "1Mi"}, csi["volumeAttributes"])
     refute readonly
+  end
+end
+
+class KubeletCSIGlobalStagePathTest < Minitest::Test
+  def test_kubelet_filesystem_stage_hashes_the_driver_volume_handle
+    paths = Rubernetes::Volume::SharedCSIStages::KubeletPaths.new("/srv/worker")
+    handle = "projects/example/zones/test/disks/disk"
+    path = paths.stage_path("pd.csi.storage.gke.io", handle)
+    digest = Digest::SHA256.hexdigest(handle)
+
+    assert_equal "/srv/worker/plugins/kubernetes.io/csi/pd.csi.storage.gke.io/#{digest}/globalmount", path
+    assert paths.stage_path?(path)
+    refute paths.stage_path?(path.delete_prefix("/srv/worker/plugins/kubernetes.io/csi/"))
+    refute paths.stage_path?(path.sub("/srv/worker/", "/srv/other-worker/"))
+    assert_raises(Rubernetes::Volume::ValidationError) { paths.stage_path("../driver", handle) }
+  end
+
+  def test_raw_stage_uses_the_kubelet_volume_devices_directory
+    paths = Rubernetes::Volume::SharedCSIStages::KubeletPaths.new("/srv/worker")
+    handle = "projects/example/zones/test/disks/raw"
+    path = paths.stage_path("pd.csi.storage.gke.io", handle, block: true)
+
+    assert_equal "/srv/worker/plugins/kubernetes.io/csi/volumeDevices/staging/pd.csi.storage.gke.io/#{Digest::SHA256.hexdigest(handle)}", path
+    assert paths.stage_path?(path)
+    refute paths.stage_path?(path.sub("/staging/", "/publish/"))
   end
 end
 
