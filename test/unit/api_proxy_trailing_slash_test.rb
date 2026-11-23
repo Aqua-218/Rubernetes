@@ -16,6 +16,15 @@ class APIProxyTrailingSlashTest < Minitest::Test
 
   PROXY = "/api/v1/namespaces/default/pods/web/proxy"
 
+  class Forwarder
+    include Rubernetes::API::Server::ProxySubresource
+
+    public :proxy_response
+
+    def node_proxy_target(*) = {host: "127.0.0.1", port: 10_250, scheme: "https"}
+    def perform_proxy(_request, uri, prefix:, tls:) = uri.request_uri
+  end
+
   def test_the_client_spelling_of_the_path_survives_normalization
     assert_equal "#{PROXY}/", Request.new(path: "#{PROXY}/").raw_path
     assert_equal PROXY, Request.new(path: PROXY).raw_path
@@ -34,6 +43,17 @@ class APIProxyTrailingSlashTest < Minitest::Test
 
     assert_equal "#{PROXY}/", rebuilt.raw_path
     assert_equal PROXY, rebuilt.path
+  end
+
+  def test_backend_directory_and_file_paths_keep_their_spelling
+    node = "/api/v1/nodes/worker-0/proxy"
+    resource = Struct.new(:resource).new("nodes")
+    ["logs", "logs/", "logs/?a=1", "some/proxy"].each do |suffix|
+      request = Request.new(path: "#{node}/#{suffix}")
+      route = Rubernetes::API::Router::Route.new(name: "worker-0", resource: resource, subresource_path: request.path.delete_prefix("#{node}/"))
+
+      assert_equal "/#{suffix}", Forwarder.new.proxy_response(request, route)
+    end
   end
 
   # Only the bare proxy root redirects; a path below it is proxied as written.
