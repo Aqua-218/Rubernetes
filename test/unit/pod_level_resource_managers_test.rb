@@ -24,11 +24,29 @@ class PodLevelResourceManagersTest < Minitest::Test
     {num_cores: 16, num_sockets: 2, topology: nodes}
   end
 
-  def manager(dir, pod_level: true, memory: {})
+  def manager(dir, pod_level: true, memory: {}, options: {}, feature_gates: {})
     reserved = Rubernetes::Node::NodeAllocatable.quantities({"cpu" => "1", "memory" => "1Gi"})
-    Rubernetes::Node::ContainerManager.new(state_directory: dir, reservation: reserved, cpu: {"policy" => "static"}, memory: memory,
+    cpu = {"policy" => "static", "options" => options}
+    Rubernetes::Node::ContainerManager.new(state_directory: dir, reservation: reserved, cpu: cpu, memory: memory,
                                            topology: {"policy" => "best-effort", "scope" => "pod"}, machine: machine,
-                                           pod_level_resource_managers: pod_level)
+                                           pod_level_resource_managers: pod_level, feature_gates: feature_gates)
+  end
+
+  def test_static_policy_options_use_the_kubelet_alpha_and_beta_gates
+    Dir.mktmpdir do |dir|
+      alpha = {"distribute-cpus-across-cores" => "true"}
+      error = assert_raises(Rubernetes::Node::ContainerManager::Error) { manager(dir, options: alpha) }
+      assert_match(/Alpha-level Options not enabled/, error.message)
+      subject = manager(dir, options: alpha, feature_gates: {"CPUManagerPolicyAlphaOptions" => true})
+
+      assert subject.cpu_manager.policy.options.distribute_cpus_across_cores
+
+      beta = {"distribute-cpus-across-numa" => "true"}
+      error = assert_raises(Rubernetes::Node::ContainerManager::Error) do
+        manager(dir, options: beta, feature_gates: {"CPUManagerPolicyBetaOptions" => false})
+      end
+      assert_match(/Beta-level Options not enabled/, error.message)
+    end
   end
 
   def pod(uid, pod_cpu: "4", main_cpu: "2")
