@@ -1,5 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../container_stop_signals"
+require_relative "../cron_time_zone"
+require_relative "../priority_classes"
+require_relative "../schema/probe_timing"
+require_relative "../schema/kubernetes_validator/cron_jobs"
+
 module Rubernetes
   module API
     # ObjectMeta and core-kind validation with the field paths, reasons, and
@@ -54,6 +60,8 @@ module Rubernetes
         "RoleBinding" => :path_segment,
         "ClusterRole" => :path_segment,
         "ClusterRoleBinding" => :path_segment,
+        "ClusterTrustBundle" => :trust_bundle,
+        "APIService" => :path_segment,
         "IPAddress" => :ip_address
       }.freeze
       PATH_SEGMENT_NAME_MAY_NOT_BE = %w[. ..].freeze
@@ -61,7 +69,6 @@ module Rubernetes
       # Kinds whose objects are also label-selected and therefore carry the
       # 63-character label limit on their name (ValidateReplicaSetName et al.).
       LABEL_LENGTH_NAME_KINDS = %w[ReplicaSet ReplicationController StatefulSet Deployment DaemonSet Job].freeze
-      CRONJOB_NAME_MAX = 52
 
       RESTART_POLICIES = %w[Always OnFailure Never].freeze
       DNS_POLICIES = %w[ClusterFirstWithHostNet ClusterFirst Default None].freeze
@@ -73,12 +80,21 @@ module Rubernetes
       module_function
 
       # Returns the list of field.Error causes for +object+; empty when valid.
-      def validate(kind, object, old: nil, namespaced: true)
+      def validate(kind, object, old: nil, namespaced: true, custom: false)
         causes = []
         metadata = object["metadata"].is_a?(Hash) ? object["metadata"] : {}
-        validate_object_meta(kind, metadata, causes, namespaced: namespaced, old_metadata: old && old["metadata"])
+        signer = object.dig("spec", "signerName") if kind == "ClusterTrustBundle" && object["spec"].is_a?(Hash)
+        validate_object_meta(kind, metadata, causes, namespaced: namespaced, old_metadata: old && old["metadata"], signer: signer)
+        return causes if custom
+
         case kind
-        when "Pod" then validate_pod_spec(object["spec"], "spec", causes)
+        when "Pod"
+          validate_pod_spec(object["spec"], "spec", causes)
+          validate_pod_stop_signal_update(object["spec"], old && old["spec"], causes)
+        when "PodTemplate"
+          validate_container_stop_signals(object.dig("template", "spec"), "template.spec", causes)
+        when "ReplicationController"
+          validate_container_stop_signals(object.dig("spec", "template", "spec"), "spec.template.spec", causes)
         when "StatefulSet"
           # apps validation volumesToAddForTemplates: every volumeClaimTemplate is
           # a PVC volume of the same name for the template's mounts.
@@ -90,9 +106,55 @@ module Rubernetes
           validate_pod_template_spec(object.dig("spec", "template"), "spec.template", causes)
         when "CronJob"
           validate_pod_template_spec(object.dig("spec", "jobTemplate", "spec", "template"), "spec.jobTemplate.spec.template", causes)
+          validate_cron_time_zone(object.dig("spec", "timeZone"), old&.dig("spec", "timeZone"), causes)
+          name = metadata["name"]
+          name_error = Schema::KubernetesValidator.cronjob_name_error(name) if old.nil?
+          causes << invalid("metadata.name", name, name_error) if name_error
+        when "PriorityClass"
+          validate_priority_class(object, old, causes)
         end
         validate_immutability(kind, object, old, causes)
         causes
+      end
+
+      def validate_cron_time_zone(zone, previous, causes)
+        return if !zone.is_a?(String) || zone == previous
+
+        CronTimeZone.validation_errors(zone).each { |message| causes << invalid("spec.timeZone", zone, message) }
+      end
+
+      def validate_priority_class(object, old, causes)
+        policy = object["preemptionPolicy"]
+        value = object["value"]
+        if old
+          causes << Cause.new(reason: "FieldValueForbidden", field: "value", message: "Forbidden: may not be changed in an update.") if value != old["value"]
+          causes << invalid("preemptionPolicy", policy, "field is immutable") if policy != old["preemptionPolicy"]
+          return
+        end
+
+        name = object.dig("metadata", "name").to_s
+        if name.start_with?("system-")
+          expected = PriorityClasses::SYSTEM[name]&.first
+          detail = if expected.nil?
+                     "#{name} is not a known system priority class"
+                   elsif value != expected
+                     "value of #{name} PriorityClass must be #{expected}"
+                   elsif object["globalDefault"] == true
+                     "globalDefault of #{name} PriorityClass must be false"
+                   end
+          if detail
+            causes << Cause.new(reason: "FieldValueForbidden", field: "metadata.name",
+                                message: "Forbidden: priority class names with 'system-' prefix are reserved for system use only. error: #{detail}")
+          end
+        elsif value.is_a?(Integer) && value > PriorityClasses::MAX_USER_PRIORITY
+          causes << Cause.new(reason: "FieldValueForbidden", field: "value",
+                              message: "Forbidden: maximum allowed value of a user defined priority is #{PriorityClasses::MAX_USER_PRIORITY}")
+        end
+        if policy == ""
+          causes << required("preemptionPolicy")
+        elsif !policy.nil? && !%w[PreemptLowerPriority Never].include?(policy)
+          causes << unsupported("preemptionPolicy", policy, %w[PreemptLowerPriority Never])
+        end
       end
 
       # validation.go ValidateSecretUpdate / ValidateConfigMapUpdate: once
@@ -100,18 +162,7 @@ module Rubernetes
       # API server is what enforces it.  A Secret that keeps accepting writes
       # is not immutable at all.
       IMMUTABLE_KINDS = {"Secret" => %w[data stringData], "ConfigMap" => %w[data binaryData]}.freeze
-      # Fields frozen after creation regardless of any flag
-      # (ValidatePriorityClassUpdate: `value` is immutable).
-      ALWAYS_IMMUTABLE_FIELDS = {"PriorityClass" => %w[value]}.freeze
-
       def validate_immutability(kind, object, old, causes)
-        if old.is_a?(Hash)
-          Array(ALWAYS_IMMUTABLE_FIELDS[kind]).each do |field|
-            next if old[field] == object[field]
-
-            causes << invalid(field, object[field], "field is immutable")
-          end
-        end
         fields = IMMUTABLE_KINDS[kind]
         return if fields.nil? || !old.is_a?(Hash)
         return unless old["immutable"] == true
@@ -124,12 +175,16 @@ module Rubernetes
         end
       end
 
-      def validate_object_meta(kind, metadata, causes, namespaced:, old_metadata: nil)
+      def validate_object_meta(kind, metadata, causes, namespaced:, old_metadata: nil, signer: nil)
         name = metadata["name"]
         generate_name = metadata["generateName"]
-        name_errors(kind, name.to_s, prefix: false).each { |message| causes << invalid("metadata.name", name, message) } if !name.nil? && !name.to_s.empty?
+        if !name.nil? && !name.to_s.empty?
+          name_errors(kind, name.to_s, prefix: false, signer: signer).each do |message|
+            causes << invalid("metadata.name", name, message)
+          end
+        end
         if !generate_name.nil? && !generate_name.to_s.empty?
-          name_errors(kind, generate_name.to_s, prefix: true).each do |message|
+          name_errors(kind, generate_name.to_s, prefix: true, signer: signer).each do |message|
             causes << invalid("metadata.generateName", generate_name, message)
           end
         end
@@ -160,11 +215,23 @@ module Rubernetes
         end
         return unless old_metadata.is_a?(Hash)
 
+        validate_deleting_finalizers(metadata, old_metadata, causes)
         %w[name namespace uid creationTimestamp].each do |key|
           next if old_metadata[key].nil? || metadata[key].nil? || old_metadata[key].to_s == metadata[key].to_s
 
           causes << invalid("metadata.#{key}", metadata[key], "field is immutable")
         end
+      end
+
+      def validate_deleting_finalizers(metadata, old_metadata, causes)
+        return if old_metadata["deletionTimestamp"].nil?
+
+        added = (Array(metadata["finalizers"]) - Array(old_metadata["finalizers"])).uniq.sort_by(&:to_s)
+        return if added.empty?
+
+        names = added.map(&:inspect).join(", ")
+        causes << Cause.new(reason: "FieldValueForbidden", field: "metadata.finalizers",
+                            message: "Forbidden: no new finalizers can be added if the object is being deleted, found new finalizers []string{#{names}}")
       end
 
       # networking/validation ValidateIPAddressName: the name is the address
@@ -177,18 +244,31 @@ module Rubernetes
         ["must be a valid IP address"]
       end
 
-      def name_errors(kind, name, prefix:)
+      def name_errors(kind, name, prefix:, signer: nil)
         rule = NAME_RULES.fetch(kind, :dns1123_subdomain)
         errors = case rule
                  when :dns1123_label then label_errors(name, DNS1123_LABEL, DNS1123_LABEL_MESSAGE, DNS1123_LABEL_MAX, prefix: prefix)
                  when :dns1035_label then label_errors(name, DNS1035_LABEL, DNS1035_LABEL_MESSAGE, DNS1123_LABEL_MAX, prefix: prefix)
                  when :path_segment then path_segment_errors(name, prefix: prefix)
+                 when :trust_bundle then trust_bundle_name_errors(name, signer.to_s, prefix: prefix)
                  when :ip_address then ip_address_name_errors(name)
                  else label_errors(name, DNS1123_SUBDOMAIN, DNS1123_SUBDOMAIN_MESSAGE, DNS1123_SUBDOMAIN_MAX, prefix: prefix)
                  end
         errors << "must be no more than #{DNS1123_LABEL_MAX} characters" if LABEL_LENGTH_NAME_KINDS.include?(kind) && name.length > DNS1123_LABEL_MAX
-        errors << "must be no more than #{CRONJOB_NAME_MAX} characters" if kind == "CronJob" && name.length > CRONJOB_NAME_MAX
         errors.uniq
+      end
+
+      def trust_bundle_name_errors(name, signer, prefix:)
+        if signer.empty?
+          return ['ClusterTrustBundle without signer name must not have ":" in its name'] if name.include?(":")
+        else
+          required_prefix = "#{signer.tr("/", ":")}:"
+          return ["ClusterTrustBundle for signerName #{signer} must be named with prefix #{required_prefix}"] unless name.start_with?(required_prefix)
+
+          name = name.delete_prefix(required_prefix)
+        end
+        name = "#{name[0...-2]}a" if prefix && name.length > 1 && name.end_with?("-")
+        label_errors(name, DNS1123_SUBDOMAIN, DNS1123_SUBDOMAIN_MESSAGE, DNS1123_SUBDOMAIN_MAX)
       end
 
       # validation.IsDNS1123Subdomain and friends: a generateName prefix is
@@ -323,9 +403,16 @@ module Rubernetes
           return
         end
 
+        validate_container_stop_signals(spec, path, causes)
         validate_sysctls(spec["securityContext"], "#{path}.securityContext", causes)
         volumes = Array(spec["volumes"])
-        volume_names = extra_volume_names.to_h { |name| [name.to_s, true] }
+        unless extra_volume_names.empty?
+          # The StatefulSet controller replaces template volumes whose names
+          # match claims before creating the Pod (volumesToAddForTemplates).
+          claims = extra_volume_names.uniq.to_h { |name| [name, {"name" => name}] }
+          volumes = claims.values + volumes.reject { |volume| volume.is_a?(Hash) && claims.key?(volume["name"]) }
+        end
+        volume_names = {}
         volumes.each_with_index do |volume, index|
           next unless volume.is_a?(Hash)
 
@@ -364,6 +451,56 @@ module Rubernetes
            (!spec["activeDeadlineSeconds"].is_a?(Integer) || spec["activeDeadlineSeconds"] < 1)
           causes << invalid("#{path}.activeDeadlineSeconds", spec["activeDeadlineSeconds"], "must be between 1 and 2147483647, inclusive")
         end
+      end
+
+      def validate_container_stop_signals(spec, path, causes)
+        return unless spec.is_a?(Hash)
+
+        os = spec["os"].is_a?(Hash) ? spec["os"]["name"] : nil
+        supported = {"linux" => ContainerStopSignals::LINUX, "windows" => ContainerStopSignals::WINDOWS}[os]
+        ContainerStopSignals::CONTAINER_FIELDS.each do |field|
+          Array(spec[field]).each_with_index do |container, index|
+            next unless container.is_a?(Hash)
+
+            signal = ContainerStopSignals.custom_signal(container)
+            next if signal.nil?
+
+            field_path = "#{path}.#{field}[#{index}].lifecycle.stopSignal"
+            if field == "ephemeralContainers"
+              causes << Cause.new(reason: "FieldValueForbidden", field: "#{path}.#{field}[#{index}].lifecycle",
+                                  message: "Forbidden: cannot be set for an Ephemeral Container")
+            elsif os.to_s.empty?
+              causes << Cause.new(reason: "FieldValueForbidden", field: field_path,
+                                  message: "Forbidden: may not be set for containers with empty `spec.os.name`")
+            elsif supported.nil?
+              causes << unsupported("#{path}.os.name", os, %w[linux windows])
+              return nil
+            elsif !supported.include?(signal)
+              causes << unsupported(field_path, signal, supported)
+            end
+          end
+        end
+      end
+
+      def validate_pod_stop_signal_update(spec, old_spec, causes)
+        return unless spec.is_a?(Hash) && old_spec.is_a?(Hash)
+
+        %w[containers initContainers].each do |field|
+          before = pod_stop_signals(old_spec[field])
+          after = pod_stop_signals(spec[field])
+          next if before == after
+
+          causes << Cause.new(reason: "FieldValueForbidden", field: "spec",
+                              message: "Forbidden: pod updates may not change container lifecycle.stopSignal")
+          return nil
+        end
+      end
+
+      def pod_stop_signals(containers)
+        Array(containers).grep(Hash).filter_map do |container|
+          signal = ContainerStopSignals.custom_signal(container)
+          [container["name"], signal] unless signal.nil?
+        end.to_h
       end
 
       def validate_container(container, path, names, all_ports, volume_names, causes, init: false)
@@ -434,16 +571,27 @@ module Rubernetes
           end
           causes << required("#{mount_path}.mountPath") if mount["mountPath"].to_s.empty?
         end
-        validate_probe(container["livenessProbe"], "#{path}.livenessProbe", causes)
-        validate_probe(container["readinessProbe"], "#{path}.readinessProbe", causes)
-        validate_probe(container["startupProbe"], "#{path}.startupProbe", causes)
-        return unless init && container["lifecycle"].is_a?(Hash) && container["restartPolicy"] != "Always"
-
-        causes << Cause.new(reason: "FieldValueForbidden", field: "#{path}.lifecycle",
-                            message: "Forbidden: may not be set for init containers without restartPolicy=Always")
+        validate_container_probes(container, path, causes, init: init)
       end
 
-      def validate_probe(probe, path, causes)
+      def validate_container_probes(container, path, causes, init:)
+        allowed = !init || container["restartPolicy"] == "Always"
+        unless allowed
+          fields = ["lifecycle", *Schema::ProbeTiming::FIELDS]
+          fields.each do |field|
+            next unless container[field].is_a?(Hash)
+
+            causes << Cause.new(reason: "FieldValueForbidden", field: "#{path}.#{field}", message: "Forbidden: #{Schema::ProbeTiming::INIT_CONTAINER_DETAIL}")
+          end
+          return
+        end
+
+        Schema::ProbeTiming::FIELDS.each do |field|
+          validate_probe(container[field], "#{path}.#{field}", field, causes)
+        end
+      end
+
+      def validate_probe(probe, path, field, causes)
         return unless probe.is_a?(Hash)
 
         handlers = %w[exec httpGet tcpSocket grpc].count { |key| probe[key].is_a?(Hash) }
@@ -452,12 +600,15 @@ module Rubernetes
           causes << Cause.new(reason: "FieldValueForbidden", field: path,
                               message: "Forbidden: may not specify more than 1 handler type")
         end
-        %w[initialDelaySeconds timeoutSeconds periodSeconds successThreshold failureThreshold].each do |key|
+        # This path can be reached without a registered schema.
+        Schema::ProbeTiming::NONNEGATIVE_FIELDS.each do |key|
           value = probe[key]
-          next if value.nil?
+          next if value.nil? || value.is_a?(Integer)
 
-          minimum = %w[successThreshold failureThreshold periodSeconds timeoutSeconds].include?(key) ? 1 : 0
-          causes << invalid("#{path}.#{key}", value, "must be greater than or equal to #{minimum}") if !value.is_a?(Integer) || value < minimum
+          causes << invalid("#{path}.#{key}", value, "must be an integer")
+        end
+        Schema::ProbeTiming.errors(probe, [field]).each do |error|
+          causes << invalid("#{path}.#{error.path.last}", error.value, error.message)
         end
       end
 
