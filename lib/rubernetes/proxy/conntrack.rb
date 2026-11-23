@@ -74,7 +74,8 @@ module Rubernetes
 
     # Thread-safe conntrack and ClientIP affinity table.  Existing connections
     # keep their backend while it remains eligible; stale or removed backends
-    # are replaced deterministically on the next packet.
+    # are replaced deterministically on the next packet. Routing affinity has
+    # its own deadline and capacity, independent of individual connections.
     class ConntrackTable
       attr_reader :clock
 
@@ -86,6 +87,7 @@ module Rubernetes
         @mutex = Mutex.new
         @connections = {}
         @affinity = {}
+        @bound_affinity_keys = {}
       end
 
       def fetch(key, now: @clock.call)
@@ -120,17 +122,17 @@ module Rubernetes
             @connections[normalized] = touched
             return touched
           end
-          backend = affinity_backend_locked(service_key, source_ip, candidates, session_affinity, timeout_seconds, now)
+          backend = affinity_backend_locked(service_key, source_ip, candidates, session_affinity, now)
           backend ||= selector.call(candidates)
           raise NoRoute, "selector returned no backend for #{service_key}" if backend.nil?
 
+          remove_connection_locked(normalized) if existing
           ensure_capacity_locked
-          expiration = session_affinity.to_s == "ClientIP" ? now.to_f + timeout.to_f : nil
           connection = Connection.new(key: normalized, service_key: service_key.to_s, backend: backend,
-                                      created_at: now, last_seen: now, expires_at: expiration,
+                                      created_at: now, last_seen: now,
                                       affinity: session_affinity.to_s == "ClientIP", generation: generation)
           @connections[normalized] = connection
-          @affinity[[service_key.to_s, source_ip.to_s]] = connection if connection.affinity && source_ip
+          store_affinity_locked(service_key, source_ip, connection.touch(now: now, timeout: timeout)) if connection.affinity && source_ip
           connection
         end
       end
@@ -141,25 +143,22 @@ module Rubernetes
                generation: 0, now: @clock.call)
         normalized = normalize_key(key)
         @mutex.synchronize do
-          remove_affinity_for_locked(@connections[normalized]) if @connections.key?(normalized)
+          remove_expired_locked(now)
+          remove_connection_locked(normalized)
           ensure_capacity_locked
           connection = Connection.new(key: normalized, service_key: service_key.to_s, backend: backend,
                                       created_at: now, last_seen: now,
                                       expires_at: timeout_seconds ? now.to_f + timeout_seconds.to_f : nil,
                                       affinity: !!affinity, generation: generation)
           @connections[normalized] = connection
-          @affinity[[service_key.to_s, source_ip.to_s]] = connection if affinity && source_ip
+          store_affinity_locked(service_key, source_ip, connection, bound: true) if affinity && source_ip
           connection
         end
       end
 
       def delete(key)
         normalized = normalize_key(key)
-        @mutex.synchronize do
-          removed = @connections.delete(normalized)
-          remove_affinity_for_locked(removed) if removed
-          removed
-        end
+        @mutex.synchronize { remove_connection_locked(normalized) }
       end
 
       def remove_backend(backend_or_identity)
@@ -169,22 +168,22 @@ module Rubernetes
             next unless backend_identity(connection.backend) == identity
 
             @connections.delete(key)
-            remove_affinity_for_locked(connection)
-            connection
           end
+          discard_affinities_locked { |connection| backend_identity(connection.backend) == identity }
           removed.freeze
         end
       end
 
       def clear(service_key: nil)
         @mutex.synchronize do
-          keys = @connections.keys
-          keys.each do |key|
-            connection = @connections[key]
-            next if service_key && connection.service_key != service_key.to_s
-
-            @connections.delete(key)
-            remove_affinity_for_locked(connection)
+          if service_key
+            service = service_key.to_s
+            @connections.delete_if { |_key, connection| connection.service_key == service }
+            discard_affinities_locked { |connection| connection.service_key == service }
+          else
+            @connections.clear
+            @affinity.clear
+            @bound_affinity_keys.clear
           end
         end
         self
@@ -199,17 +198,15 @@ module Rubernetes
       end
 
       def affinity_for(service_key, source_ip, now: @clock.call)
-        @mutex.synchronize do
-          connection = @affinity[[service_key.to_s, source_ip.to_s]]
-          return nil unless connection
-          return nil if connection.expired?(now)
-
-          connection
-        end
+        @mutex.synchronize { active_affinity_locked(service_key, source_ip, now) }
       end
 
       def prune(now: @clock.call)
-        @mutex.synchronize { remove_expired_locked(now) }
+        @mutex.synchronize do
+          expired = remove_expired_locked(now)
+          discard_affinities_locked { |connection| connection.expired?(now) }
+          expired
+        end
       end
 
       private
@@ -227,49 +224,74 @@ module Rubernetes
         backend.to_s
       end
 
-      def affinity_backend_locked(service_key, source_ip, candidates, affinity, _timeout_seconds, now)
+      def affinity_backend_locked(service_key, source_ip, candidates, affinity, now)
         return nil unless affinity.to_s == "ClientIP" && source_ip
 
-        current = @affinity[[service_key.to_s, source_ip.to_s]]
+        current = active_affinity_locked(service_key, source_ip, now)
         return nil unless current
 
-        if current.expired?(now)
-          @affinity.delete([service_key.to_s, source_ip.to_s])
-          return nil
-        end
         candidates.find { |candidate| backend_identity(candidate) == backend_identity(current.backend) }
+      end
+
+      def active_affinity_locked(service_key, source_ip, now)
+        key = [service_key.to_s, source_ip.to_s]
+        lease = @affinity[key]
+        return lease unless lease&.expired?(now)
+
+        delete_affinity_locked(key)
+        nil
+      end
+
+      def store_affinity_locked(service_key, source_ip, connection, bound: false)
+        key = [service_key.to_s, source_ip.to_s]
+        # Reinsert at the end of the ordered hash on new-flow use.
+        delete_affinity_locked(key)
+        if @affinity.size >= @max_entries
+          discard_affinities_locked { |lease| lease.expired?(connection.last_seen) }
+          delete_affinity_locked(@affinity.each_key.first) if @affinity.size >= @max_entries
+        end
+        @affinity[key] = connection
+        @bound_affinity_keys[connection.key] = key if bound
       end
 
       def ensure_capacity_locked
         return if @connections.size < @max_entries
 
-        oldest_key, oldest = @connections.min_by { |_key, connection| connection.last_seen.to_f }
-        @connections.delete(oldest_key)
-        remove_affinity_for_locked(oldest)
+        oldest_key, = @connections.min_by { |_key, connection| connection.last_seen.to_f }
+        remove_connection_locked(oldest_key)
       end
 
       def remove_expired_locked(now)
         expired = @connections.filter_map do |key, connection|
           next unless connection.expired?(now)
 
-          @connections.delete(key)
-          remove_affinity_for_locked(connection)
-          connection
+          remove_connection_locked(key)
         end
         expired.freeze
       end
 
-      def remove_affinity_for_locked(connection)
-        @affinity.delete_if { |_key, candidate| candidate.equal?(connection) || candidate.key == connection.key }
+      def remove_connection_locked(key)
+        # Explicit bind may attach affinity to its connection. A lease
+        # learned from routing remains valid when that flow disappears.
+        affinity_key = @bound_affinity_keys.delete(key)
+        @affinity.delete(affinity_key) if affinity_key
+        @connections.delete(key)
+      end
+
+      def delete_affinity_locked(key)
+        lease = @affinity.delete(key)
+        @bound_affinity_keys.delete(lease.key) if lease && @bound_affinity_keys[lease.key] == key
+      end
+
+      def discard_affinities_locked
+        @affinity.each do |key, lease|
+          delete_affinity_locked(key) if yield lease
+        end
       end
     end
 
-    # Deterministic backend selection contract shared by the Ruby model,
-    # nftables, and eBPF.  The selector is Jenkins one-at-a-time over the
-    # source address bytes (IPv4: four bytes, IPv6: sixteen), seed zero, then
-    # modulo the lexicographically sorted backend set. Keeping the byte
-    # contract here avoids a model-only rendezvous algorithm that disagrees
-    # with the kernel datapaths.
+    # Jenkins lookup3 over the source address. A fresh ClientIP selection
+    # also hashes the source port and scales the result like nftables.
     class DeterministicHash
       MASK32 = 0xffff_ffff
 
@@ -284,11 +306,13 @@ module Rubernetes
         [packet_hash(key), backend_identity(backend)].hash
       end
 
-      def select(key, backends)
+      def select(key, backends, client_ip_affinity: false)
         candidates = Array(backends).sort_by { |backend| backend_identity(backend) }
         return nil if candidates.empty?
 
-        candidates.fetch(packet_hash(key) % candidates.length)
+        hash = client_ip_affinity ? self.class.packet_hash(key, include_source_port: true) : packet_hash(key)
+        index = client_ip_affinity ? (hash * candidates.length) >> 32 : hash % candidates.length
+        candidates.fetch(index)
       end
 
       alias call select
@@ -297,7 +321,7 @@ module Rubernetes
         self.class.packet_hash(key)
       end
 
-      def self.packet_hash(key)
+      def self.packet_hash(key, include_source_port: false)
         fields = key.respond_to?(:to_a) ? key.to_a : key.to_s.split("|", 5)
         source_ip = fields[1].to_s
         bytes = if source_ip.empty?
@@ -305,6 +329,7 @@ module Rubernetes
                 else
                   IPAddr.new(source_ip).hton
                 end
+        bytes += [fields[2].to_i].pack("nxx") if include_source_port
         jenkins_hash(bytes)
       rescue ArgumentError
         0
