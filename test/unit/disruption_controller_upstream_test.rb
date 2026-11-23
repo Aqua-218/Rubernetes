@@ -69,6 +69,19 @@ class DisruptionControllerUpstreamTest < Minitest::Test
 
   def events = @last.events.map { |event| event["reason"] }
 
+  def test_integer_budget_does_not_list_workloads
+    adapter = Class.new(Controller::StoreAdapter) do
+      def list(descriptor, **) = raise("unexpected #{descriptor.kind} list")
+      def find(*) = nil
+    end.new(Object.new)
+    pdb(min_available: 1)
+    pod("p")
+
+    result = @controller.plan(@pdb, pods: @pods, store: adapter, now: NOW)
+
+    assert_equal 1, result.status["expectedPods"]
+  end
+
   def test_no_selector
     pdb(min_available: 3, selector: {})
     sync
