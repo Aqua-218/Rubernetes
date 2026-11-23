@@ -9,7 +9,7 @@ module Rubernetes
         ENDPOINTS = ResourceDescriptor.parse("Endpoints")
 
         def plan(resource, store: nil, pods: nil, endpoints: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           # This controller's declared kind is Endpoints, so the reconcile
           # loop resolves a queue key to the Endpoints object -- but the
           # desired state is derived from the *Service*: its selector picks
@@ -25,8 +25,7 @@ module Rubernetes
           end
           pods ||= adapter ? adapter.list(POD, namespace: Support.namespace(service)) : []
           endpoints ||= adapter ? adapter.find(ENDPOINTS, name: Support.name(service), namespace: Support.namespace(service)) : nil
-          selector = Support.value(Support.spec(service), "selector", {})
-          selector = Support.value(selector, "matchLabels", selector) if selector.is_a?(Hash) && Support.value(selector, "matchLabels", nil)
+          selector = Support.unwrap_match_labels(Support.value(Support.spec(service), "selector", {}))
           # endpoints_controller.go syncService: "services without a selector
           # receive no endpoints from this controller; the user is responsible
           # for the Endpoints object".  Creating an empty one raced the user:
@@ -50,7 +49,7 @@ module Rubernetes
         alias reconcile_service plan
 
         def delete(service, endpoints: nil, store: nil)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           endpoints ||= adapter&.find(ENDPOINTS, name: Support.name(service), namespace: Support.namespace(service))
           operations = endpoints ? [operation_delete(endpoints, descriptor: ENDPOINTS, reason: "service deletion")] : []
           ReconcileResult.new(operations: operations, controller: name)
@@ -78,10 +77,12 @@ module Rubernetes
         end
 
         def selected_pods(service, pods, selector)
+          matches = Support.selector_predicate(selector)
+          publish_not_ready = Support.value(Support.spec(service), "publishNotReadyAddresses") == true
           Array(pods).select do |pod|
             namespace_matches?(service, pod) &&
-              !Support.metadata(pod).key?("deletionTimestamp") &&
-              Support.selector_matches?(selector, pod)
+              matches.call(pod) &&
+              Support.pod_in_endpoints?(pod, include_terminating: publish_not_ready)
           end
         end
 
@@ -89,51 +90,26 @@ module Rubernetes
         # its ready and not-ready addresses.
         def subsets_for(service, selected)
           groups = {}
+          publish_not_ready = Support.value(Support.spec(service), "publishNotReadyAddresses") == true
           selected.each do |pod|
             address = address_for(pod, service)
             next if address.nil?
 
-            ports = endpoint_ports(service, pod)
+            ports = Support.service_endpoint_ports(service, pod, include_empty_name: false)
+            if ports.empty?
+              spec = Support.spec(service)
+              next unless Array(Support.value(spec, "ports")).empty? && Support.value(spec, "clusterIP") == "None"
+            end
+
             group = (groups[ports] ||= {"ports" => ports, "addresses" => [], "notReadyAddresses" => []})
-            (Support.ready?(pod) ? group["addresses"] : group["notReadyAddresses"]) << address
+            field = publish_not_ready || Support.ready?(pod) ? "addresses" : "notReadyAddresses"
+            group[field] << address
           end
           groups.values.sort_by { |group| group["ports"].map { |entry| entry["port"].to_i } }.map do |group|
             subset = {"ports" => group["ports"]}
             subset["addresses"] = group["addresses"] unless group["addresses"].empty?
             subset["notReadyAddresses"] = group["notReadyAddresses"] unless group["notReadyAddresses"].empty?
             subset
-          end
-        end
-
-        # v1.EndpointPort carries the port *on the Pod*, not the Service
-        # port: a subset describes where traffic actually lands.  Copying
-        # the ServicePort verbatim published the Service port (and its
-        # nodePort), which is not a field EndpointPort even has.
-        # A named targetPort resolves per Pod (podutil.FindPort), so Pods
-        # whose container ports differ land in different subsets, exactly as
-        # upstream's endpoints controller groups them.
-        def endpoint_ports(service, pod)
-          container_ports = Array(Support.value(Support.spec(pod), "containers", [])).flat_map do |container|
-            Array(Support.value(container, "ports", []))
-          end
-          Array(Support.value(Support.spec(service), "ports", [])).map do |port|
-            target = Support.value(port, "targetPort", nil)
-            target = Support.value(port, "port", nil) if target.nil? || target.to_s.empty?
-            protocol = Support.value(port, "protocol", "TCP").to_s
-            unless target.to_s.match?(/\A\d+\z/)
-              match = container_ports.find do |candidate|
-                Support.value(candidate, "name", "").to_s == target.to_s &&
-                  Support.value(candidate, "protocol", "TCP").to_s == protocol
-              end
-              target = match ? Support.value(match, "containerPort", nil) : Support.value(port, "port", nil)
-            end
-            entry = {"port" => Support.integer(target, Support.integer(Support.value(port, "port", 0), 0)),
-                     "protocol" => protocol}
-            name = Support.value(port, "name", nil).to_s
-            entry["name"] = name unless name.empty?
-            app_protocol = Support.value(port, "appProtocol", nil)
-            entry["appProtocol"] = app_protocol.to_s unless app_protocol.nil? || app_protocol.to_s.empty?
-            entry
           end
         end
 
@@ -146,7 +122,7 @@ module Rubernetes
                       end
           candidate["subsets"] = subsets
           candidate["metadata"] ||= {}
-          candidate["metadata"]["labels"] ||= {}
+          candidate["metadata"]["labels"] = Support.service_endpoint_labels(service)
           # pkg/controller/endpoint/endpoints_controller.go ControllerName.
           candidate["metadata"]["labels"]["endpoints.kubernetes.io/managed-by"] = "endpoint-controller"
           candidate
@@ -163,10 +139,7 @@ module Rubernetes
         # family of its clusterIP, else the Pod's own primary), so an IPv6
         # Service in a dual-stack cluster is not published at the Pod's IPv4.
         def address_for(pod, service = nil)
-          status = Support.status(pod)
-          ips = Array(Support.value(status, "podIPs", [])).filter_map { |entry| Support.value(entry, "ip", nil).to_s }.reject(&:empty?)
-          primary = Support.value(status, "podIP", nil) || Support.value(status, "podIp", nil)
-          ips = [primary.to_s] if ips.empty? && !primary.to_s.empty?
+          ips = Support.pod_endpoint_ips(pod)
           family = Array(Support.value(Support.spec(service || {}), "ipFamilies", [])).first.to_s
           if family.empty?
             cluster_ip = Support.value(Support.spec(service || {}), "clusterIP", "").to_s
@@ -184,7 +157,8 @@ module Rubernetes
                     "name" => Support.name(pod), "uid" => Support.uid(pod)}
           target.delete("namespace") if target["namespace"].empty?
           target.delete("uid") if target["uid"].to_s.empty?
-          {"ip" => ip.to_s, "targetRef" => target}
+          {"ip" => ip.to_s, "targetRef" => target, "nodeName" => Support.value(Support.spec(pod), "nodeName").to_s,
+           "hostname" => Support.endpoint_hostname(pod, service)}.compact
         end
       end
     end
