@@ -52,7 +52,7 @@ module Rubernetes
         end
 
         def plan(deployment, store: nil, replicasets: nil, pods: nil, now: nil, **_options)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           replicasets ||= list_children(adapter, REPLICA_SET, Support.namespace(deployment))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
@@ -90,13 +90,10 @@ module Rubernetes
           selector = Support.value(Support.spec(deployment), "selector", nil)
           return empty if selector.nil? || (selector.is_a?(Hash) && selector.empty?)
 
+          matches = Support.selector_predicate(selector)
           adoptable = replica_sets.select do |rs|
             Support.value(Support.metadata(rs), "deletionTimestamp", nil).nil? &&
-              Support.selector_matches?(selector, rs) &&
-              Support.owner_references(rs).none? do |reference|
-                flag = Support.ref_value(reference, "controller", false)
-                flag == true || flag.to_s.casecmp("true").zero?
-              end
+              matches.call(rs) && Support.controller_owner_reference(rs).nil?
           end
           return empty if adoptable.empty?
           return empty unless adoption_allowed?(adapter, deployment, DESCRIPTOR)
@@ -106,7 +103,7 @@ module Rubernetes
             candidate = Support.deep_copy(rs)
             candidate["metadata"] ||= {}
             candidate["metadata"]["ownerReferences"] =
-              Support.owner_references(candidate).map { |reference| Support.deep_copy(reference) } +
+              Support.owner_references(candidate) +
               [Support.owner_reference(deployment)]
             by_name[Support.name(rs).to_s] = candidate
             operation_update(rs, candidate, descriptor: REPLICA_SET, reason: "deployment replica set adoption")
@@ -148,7 +145,7 @@ module Rubernetes
         end
 
         def delete(deployment, replicasets: nil, store: nil, propagation_policy: :background)
-          adapter = store || (self.store && StoreAdapter.new(self.store))
+          adapter = store || @adapter
           replicasets ||= list_children(adapter, REPLICA_SET, Support.namespace(deployment))
           owned_sets = owned(deployment, replicasets)
           operations = if propagation_policy.to_sym == :orphan
