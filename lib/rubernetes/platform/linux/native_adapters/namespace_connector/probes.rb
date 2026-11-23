@@ -1,14 +1,61 @@
 # frozen_string_literal: true
 
+require "net/http"
+require_relative "../../../../http_probe_headers"
+require_relative "../../../../http_probe_response"
+require_relative "../../../../grpc_health_probe"
+
 module Rubernetes
   module Platform
     module Linux
       module NativeAdapters
         # Probes run from inside the Pod's network namespace.
         class NamespaceConnector
-          # HTTP GET inside the Pod network namespace.  The request is a plain
-          # HTTP/1.1 exchange on a blocking socket with an IO.select deadline;
-          # no Timeout thread is created in the namespace helper child.
+          HTTP_REDIRECTS = HTTPProbeResponse::REDIRECT_CODES
+          HTTP_REDIRECT_LIMIT = HTTPProbeResponse::REDIRECT_LIMIT
+          HTTP_BODY_LIMIT = HTTPProbeResponse::BODY_LIMIT
+          HTTP_RESPONSE_LIMIT = 1024 * 1024
+
+          # Net::HTTPResponse parses the framing while the underlying IO
+          # limits header and body reads from an untrusted probe endpoint.
+          class ProbeSocket
+            def initialize(socket, deadline)
+              @socket = socket
+              @deadline = deadline
+              @remaining_bytes = HTTP_RESPONSE_LIMIT
+            end
+
+            def read_nonblock(length, ...)
+              NamespaceConnector.probe_http_remaining(@deadline)
+              raise EffectError, "HTTP probe response is too large" if @remaining_bytes.zero?
+
+              chunk = @socket.read_nonblock([length, @remaining_bytes].min, ...)
+              @remaining_bytes -= chunk.bytesize if chunk.is_a?(String)
+              chunk
+            end
+
+            def write_nonblock(...)
+              NamespaceConnector.probe_http_remaining(@deadline)
+              @socket.write_nonblock(...)
+            end
+
+            # Net::BufferedIO waits through to_io. Recheck the shared deadline
+            # before every wait, even when a partial response arrived earlier.
+            def to_io = self
+
+            def wait_readable(timeout)
+              @socket.to_io.wait_readable([timeout, NamespaceConnector.probe_http_remaining(@deadline)].min)
+            end
+
+            def wait_writable(timeout)
+              @socket.to_io.wait_writable([timeout, NamespaceConnector.probe_http_remaining(@deadline)].min)
+            end
+
+            def closed? = @socket.closed?
+          end
+
+          # HTTP GET inside the Pod network namespace. Buffered socket IO
+          # enforces timeouts without a Timeout thread in the helper child.
           def http_get(sandbox:, container:, definition:, timeout: 1.0, **_options)
             raise EffectError, "HTTP probe requires a namespace adapter" unless @namespace_adapter
 
@@ -17,21 +64,16 @@ module Rubernetes
             port = Integer(definition["port"] || 80)
             path = String(definition["path"] || "/")
             path = "/#{path}" unless path.start_with?("/")
-            headers = Array(definition["httpHeaders"]).each_with_object({}) do |header, result|
-              item = header.to_h.transform_keys(&:to_s)
-              result[String(item["name"])] = String(item["value"]) unless item["name"].to_s.empty?
-            end
+            headers = HTTPProbeHeaders.from_action(definition["httpHeaders"])
             # v1.HTTPGetAction.scheme selects HTTP or HTTPS.  kubelet's HTTPS
             # prober does not verify the server certificate -- the endpoint is
             # the container's own, and a Pod that serves its readiness over
             # TLS (every admission webhook does) is never ready without this.
             tls = String(definition["scheme"] || definition[:scheme]).casecmp("HTTPS").zero?
             deadline = Float(timeout)
-            result = @namespace_adapter.within_namespaces(handle, only: [:network], timeout: deadline + 5.0) do
+            @namespace_adapter.within_namespaces(handle, only: [:network], timeout: deadline + 5.0) do
               NamespaceConnector.blocking_http_get(host, port, path, headers, deadline, tls: tls)
-            end
-            {"status" => Integer(result.fetch("status")), "success" => Integer(result.fetch("status")).between?(200, 399),
-             "message" => "HTTP #{result.fetch("status")}", "body_bytes" => Integer(result.fetch("body_bytes"))}.freeze
+            end.freeze
           end
 
           def grpc_check(sandbox:, container:, definition:, timeout: 1.0, **_options)
@@ -60,19 +102,7 @@ module Rubernetes
           end
 
           def self.blocking_grpc_check(host, port, service, timeout)
-            require "grpc"
-            require "grpc/health/v1/health_services_pb"
-            stub = ::Grpc::Health::V1::Health::Stub.new(host_port(host, port), :this_channel_is_insecure, timeout: timeout)
-            request = ::Grpc::Health::V1::HealthCheckRequest.new(service: service.to_s)
-            response = stub.check(request, deadline: Time.now + timeout)
-            status = response.status.to_s
-            {"success" => status == "SERVING", "message" => "gRPC health check status: #{status}"}
-          rescue ::GRPC::DeadlineExceeded
-            {"success" => false, "message" => "gRPC probe timed out after #{timeout}s"}
-          rescue ::GRPC::BadStatus => error
-            {"success" => false, "message" => "gRPC probe failed: #{error.message}"}
-          rescue LoadError => error
-            {"success" => false, "message" => "gRPC probe unavailable: #{error.message}"}
+            GRPCHealthProbe.check(host_port(host, port), service, timeout)
           end
 
           def tcp_socket(sandbox:, container:, definition:, timeout: 1.0, **_options)
@@ -111,49 +141,74 @@ module Rubernetes
           end
 
           def self.blocking_http_get(host, port, path, headers, timeout, tls: false)
-            started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            remaining = -> { timeout - (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) }
-            connect = blocking_tcp_connect(host, port, timeout)
-            raise EffectError, "HTTP probe connect failed: #{connect.fetch("message")}" unless connect.fetch("connected")
+            scheme = tls ? "https" : "http"
+            uri = URI("#{scheme}://#{host_port(host, port)}#{path}")
+            origin = uri.hostname
+            deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+            HTTP_REDIRECT_LIMIT.times do |hop|
+              response = probe_http_exchange(uri, headers, deadline)
+              target = response.delete("location")
+              return response unless target && !target.empty? && HTTP_REDIRECTS.include?(response.fetch("status"))
 
-            transport = TCPSocket.new(host.to_s.delete_prefix("[").delete_suffix("]"), Integer(port))
-            socket = tls ? start_probe_tls(transport, host) : transport
-            begin
-              request = ["GET #{path} HTTP/1.1", "Host: #{host_port(host, port)}", "User-Agent: rubernetes-probe/1", "Connection: close"]
-              headers.each { |name, value| request << "#{name}: #{value}" }
-              socket.write(request.join("\r\n") + "\r\n\r\n")
-              buffer = "".b
-              loop do
-                wait = remaining.call
-                raise EffectError, "HTTP probe timed out" if wait <= 0
-                break unless socket.wait_readable(wait)
+              uri = uri.merge(target)
+              return response unless uri.hostname == origin
 
-                begin
-                  chunk = socket.read_nonblock(16 * 1024, exception: false)
-                rescue EOFError
-                  break
-                end
-                break if chunk.nil?
-                next if chunk == :wait_readable
-
-                buffer << chunk
-                break if buffer.bytesize > 1024 * 1024
-                break if buffer.include?("\r\n\r\n".b) && buffer.start_with?("HTTP/".b) && buffer.bytesize >= 12
-              end
-              status = buffer[%r{\AHTTP/1\.[01] (\d{3})}, 1]
-              raise EffectError, "HTTP probe received no status line" unless status
-
-              {"status" => Integer(status), "body_bytes" => buffer.bytesize}
-            ensure
-              socket.close
-              transport.close unless transport.closed?
+              headers = HTTPProbeHeaders.redirected(headers, target)
+              raise EffectError, "stopped after #{HTTP_REDIRECT_LIMIT} redirects" if hop + 1 == HTTP_REDIRECT_LIMIT
+              raise EffectError, "HTTP probe redirect requires HTTP or HTTPS" unless %w[http https].include?(uri.scheme)
             end
+          end
+
+          def self.probe_http_exchange(uri, headers, deadline)
+            host = uri.hostname
+            transport = connect_probe_http(host, uri.port, deadline)
+            socket = uri.scheme == "https" ? start_probe_tls(transport, host, deadline) : transport
+            fields = HTTPProbeHeaders.for_request(headers, host_port(host, uri.port))
+            fields["Connection"] ||= ["close"]
+            request = ["GET #{uri.request_uri} HTTP/1.1"]
+            fields.each { |name, values| values.each { |value| request << "#{name}: #{value}" } }
+            remaining = probe_http_remaining(deadline)
+            io = Net::BufferedIO.new(ProbeSocket.new(socket, deadline), read_timeout: remaining, write_timeout: remaining)
+            io.write(request.join("\r\n") + "\r\n\r\n")
+            response = Net::HTTPResponse.read_new(io)
+            response = Net::HTTPResponse.read_new(io) while response.is_a?(Net::HTTPInformation) && response.code != "101"
+            probe_http_remaining(deadline)
+            probe_http_result(response, io, deadline)
+          ensure
+            socket&.close
+            transport&.close unless transport&.closed?
+          end
+
+          def self.connect_probe_http(host, port, deadline)
+            addresses = Addrinfo.getaddrinfo(host, port, nil, :STREAM, timeout: probe_http_remaining(deadline))
+            last_error = nil
+            addresses.each do |address|
+              return address.connect(timeout: probe_http_remaining(deadline))
+            rescue SystemCallError => error
+              last_error = error
+            end
+            raise EffectError, "HTTP probe connect failed: #{last_error&.message || "no address"}"
+          end
+
+          def self.probe_http_result(response, io, deadline)
+            HTTPProbeResponse.capture do |consume|
+              response.reading_body(io, true) do
+                consume.call(response) { io.read_timeout = probe_http_remaining(deadline) }
+              end
+            end
+          end
+
+          def self.probe_http_remaining(deadline)
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            raise EffectError, "HTTP probe timed out" unless remaining.positive?
+
+            remaining
           end
 
           # kubelet's HTTPS prober sets InsecureSkipVerify: the probe targets
           # the container's own endpoint, whose certificate is routinely
           # self-signed and issued for a name the probe does not use.
-          def self.start_probe_tls(transport, host)
+          def self.start_probe_tls(transport, host, deadline)
             context = OpenSSL::SSL::SSLContext.new
             context.verify_mode = OpenSSL::SSL::VERIFY_NONE
             ssl = OpenSSL::SSL::SSLSocket.new(transport, context)
@@ -161,8 +216,14 @@ module Rubernetes
             name = host.to_s.delete_prefix("[").delete_suffix("]")
             ssl.hostname = name unless name.empty? || name.match?(/\A[\d.]+\z/) || name.include?(":")
             ssl.sync_close = false
-            ssl.connect
-            ssl
+            loop do
+              remaining = probe_http_remaining(deadline)
+              case ssl.connect_nonblock(exception: false)
+              when :wait_readable then transport.wait_readable(remaining)
+              when :wait_writable then transport.wait_writable(remaining)
+              else return ssl
+              end
+            end
           end
         end
       end
