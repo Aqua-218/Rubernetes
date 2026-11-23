@@ -135,6 +135,36 @@ class NativeSubresourcesTest < Minitest::Test
     assert_raises(Native::ConfigurationError) { runtime.port_forward(container.id, [0], timeout: 1) }
   end
 
+  def test_status_and_stop_share_one_exit_wait
+    waiting = Queue.new
+    release = Queue.new
+    waits = Queue.new
+    adapter = ProcessAdapter.new(exit_status: 7)
+    adapter.define_singleton_method(:wait) do |pid:, timeout: nil|
+      waits << pid
+      if timeout.positive?
+        waiting << true
+        release.pop
+      end
+      super(pid: pid, timeout: timeout)
+    end
+    runtime = native(process_adapter: adapter)
+    container = running_container(runtime)
+    stop = Thread.new { runtime.stop_container(container.id, timeout: 1) }
+    Timeout.timeout(3) { waiting.pop }
+
+    assert_equal "running", runtime.container_status(container.id).fetch("state")
+
+    release << true
+
+    assert_equal :stopped, Timeout.timeout(3) { stop.value }.state
+    assert_equal 7, runtime.wait_container(container.id, timeout: 0).fetch("exitCode")
+    assert_equal 1, waits.size
+  ensure
+    release << true
+    stop&.join(3)
+  end
+
   def test_agent_service_exposes_injected_native_subresources
     connector = Connector.new
     runtime = native(process_adapter: ProcessAdapter.new, exec_adapter: connector)
@@ -170,6 +200,19 @@ class NativeSubresourcesTest < Minitest::Test
 
     assert_equal "Failed", result.phase
     assert_match(/init container/, result.error)
+    record = lifecycle.record("pod-native")
+    init_status = record.fetch(:status).fetch("initContainerStatuses").first
+    terminated = init_status.fetch("state").fetch("terminated")
+    runtime_containers = record.fetch(:containers).map { |entry| entry.fetch(:name) }
+
+    assert_equal 7, terminated.fetch("exitCode")
+    assert_equal "Error", terminated.fetch("reason")
+    assert_equal ["init"], runtime_containers
+    assert_equal "PodInitializing", record.dig(:status, "containerStatuses", 0, "state", "waiting", "reason")
+    assert_equal "stopped", runtime.container_status(terminated.fetch("containerID")).fetch("state")
+
+    lifecycle.terminate("pod-native")
+
     assert_empty runtime.sandboxes
   end
 
