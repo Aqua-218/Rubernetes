@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require_relative "../test_helper"
+require "rubernetes/bootstrap/config"
 require "rubernetes/controller"
 require "rubernetes/observability/metrics"
 
@@ -33,6 +35,32 @@ class PodGCControllerUpstreamTest < Minitest::Test
     assert_equal %w[b c], deletes(result)
     assert(result.operations.select(&:delete?).all? { |operation| operation.patch == {"gracePeriodSeconds" => 0} }, "force deleted")
     assert_empty result.operations.reject(&:delete?), "terminal Pods are not re-marked"
+  end
+
+  def test_nonpositive_threshold_disables_terminated_pod_collection
+    pods = [pod("terminal", phase: "Failed"), pod("unscheduled", node: "", deleting: true)]
+
+    [0, -1].each do |threshold|
+      assert_equal ["unscheduled"], deletes(GC.new.plan(pods: pods, nodes: [node("n1")], terminated_pod_gc_threshold: threshold))
+    end
+  end
+
+  def test_controller_manager_accepts_a_signed_32_bit_threshold
+    name = "rubernetes-controller-manager"
+    Dir.mktmpdir do |root|
+      path = File.join(root, "config.yml")
+      load_threshold = lambda do |threshold|
+        File.write(path, YAML.dump({"version" => 1, "processes" => {name => {"terminated_pod_gc_threshold" => threshold}}}))
+        Rubernetes::Bootstrap::Config.load(process_name: name, path: path).process.fetch("terminated_pod_gc_threshold")
+      end
+
+      [100, 0, -(2**31), (2**31) - 1].each do |threshold|
+        assert_equal threshold, load_threshold.call(threshold)
+      end
+      ["100", 2**31, -(2**31) - 1].each do |threshold|
+        assert_raises(Rubernetes::Bootstrap::Config::Error) { load_threshold.call(threshold) }
+      end
+    end
   end
 
   def test_orphans_wait_out_the_quarantine_and_get_a_disruption_condition
