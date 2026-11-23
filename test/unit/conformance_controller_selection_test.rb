@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "rubernetes/api"
 require "rubernetes/cluster"
 
 # The conformance cluster derives its controller list from the corpus minus
@@ -11,6 +12,8 @@ require "rubernetes/cluster"
 # whose Service was deleted, a ReplicaSet whose Deployment was deleted and a
 # CronJob's Jobs all stayed in the API for ever.
 class ConformanceControllerSelectionTest < Minitest::Test
+  Response = Struct.new(:body)
+
   def marker_kinds
     Rubernetes::Cluster::CONTROLLER_ONLY_KINDS
   end
@@ -39,5 +42,27 @@ class ConformanceControllerSelectionTest < Minitest::Test
     assert_includes(selected, "garbage-collector-controller")
     assert_includes(selected, "pod-garbage-collector-controller")
     refute_includes(selected, "job-controller")
+  end
+
+  def test_selection_discovers_kinds_from_served_nonpreferred_versions
+    api = Rubernetes::API
+    group = "scheduling.k8s.io"
+    registry = api::Registry.new
+    registry.register(group: group, version: "v1", resource: "priorityclasses", kind: "PriorityClass")
+    registry.register(group: group, version: "v1alpha2", resource: "podgroups", kind: "PodGroup", scope: :namespaced)
+    cluster = Object.new.extend(Rubernetes::Cluster::Configs)
+    [false, true].each do |enabled|
+      server = api::Server.new(registry: registry, store: api::MemoryStore.new, runtime_config: {"#{group}/v1alpha2" => true},
+                               feature_gates: {"GenericWorkload" => enabled})
+      client = Object.new
+      client.define_singleton_method(:raw) do |method, path|
+        response = server.call(api::Request.new(method: method, path: path))
+        Response.new(JSON.generate(response.body))
+      end
+      client.define_singleton_method(:close) { nil }
+      cluster.define_singleton_method(:api_client) { |_kubeconfig| client }
+
+      assert_equal enabled, cluster.selected_controllers("fixture").include?("podgroup-protection-controller")
+    end
   end
 end
