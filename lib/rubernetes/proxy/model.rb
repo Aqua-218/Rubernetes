@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "ipaddr"
 require "time"
+require_relative "topology_hints"
 
 module Rubernetes
   module Proxy
@@ -25,16 +28,7 @@ module Rubernetes
         default
       end
 
-      def string_keys(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(name, child), result| result[name.to_s] = string_keys(child) }
-        when Array
-          value.map { |child| string_keys(child) }
-        else
-          value
-        end
-      end
+      def string_keys(value) = ObjectTree.stringify_keys(value)
 
       def deep_copy(value)
         case value
@@ -49,18 +43,7 @@ module Rubernetes
         end
       end
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |name, child|
-            deep_freeze(name)
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value)
 
       def immutable(value)
         deep_freeze(deep_copy(value))
@@ -323,12 +306,7 @@ module Rubernetes
         @external_ips = Array(external_ips || ModelSupport.key(spec, "externalIPs", [])).filter_map do |ip|
           ModelSupport.canonical_ip(ip)
         end.uniq.freeze
-        status = ModelSupport.key(source, "status", {}) || {}
-        ingress = Array(ModelSupport.key(ModelSupport.key(status, "loadBalancer", {}) || {}, "ingress", []) || {})
-        status_load_balancer_ips = ingress.filter_map { |entry| ModelSupport.key(ModelSupport.string_keys(entry || {}), "ip", nil) }
-        @load_balancer_ips = Array(load_balancer_ips || ModelSupport.key(spec, "loadBalancerIPs",
-                                                                         nil) || ModelSupport.key(spec, "loadBalancerIP",
-                                                                                                  nil) || status_load_balancer_ips).filter_map do |ip|
+        @load_balancer_ips = Array(load_balancer_ips || ModelSupport.key(spec, "loadBalancerIPs", nil) || advertised_vips(source)).filter_map do |ip|
           ModelSupport.canonical_ip(ip)
         end.uniq.freeze
         @external_name = (external_name || ModelSupport.key(spec, "externalName", nil))&.to_s
@@ -459,6 +437,16 @@ module Rubernetes
 
       private
 
+      def advertised_vips(source)
+        return [] unless @service_type == "LoadBalancer"
+
+        status = ModelSupport.key(source, "status", {})
+        load_balancer = ModelSupport.key(status, "loadBalancer", {})
+        Array(ModelSupport.key(load_balancer, "ingress", [])).filter_map do |entry|
+          ModelSupport.key(entry, "ip", nil) unless ModelSupport.key(entry, "ipMode", nil).to_s == "Proxy"
+        end
+      end
+
       def ensure_unique_ports!
         keys = ports.map(&:key)
         raise ValidationError, "service ports must be unique by port and protocol" unless keys.uniq.length == keys.length
@@ -516,7 +504,7 @@ module Rubernetes
     # may serve existing connections while new connections avoid them.
     class Endpoint
       attr_reader :address, :addresses, :port, :port_name, :protocol, :node_name, :zone, :hostname,
-                  :target_ref, :ready, :serving, :terminating, :hints, :family, :slice_name
+                  :target_ref, :ready, :serving, :terminating, :hints, :node_hints, :family, :slice_name
 
       def initialize(value = nil, address: nil, addresses: nil, ip: nil, port: nil, protocol: nil,
                      node_name: nil, zone: nil, hostname: nil, target_ref: nil,
@@ -543,12 +531,11 @@ module Rubernetes
         @hostname = (hostname || ModelSupport.key(source, "hostname", nil))&.to_s
         @target_ref = ModelSupport.immutable(target_ref || ModelSupport.key(source, "targetRef", {}) || {})
         @ready = ready.nil? ? default_condition(source, "ready", true) : ModelSupport.bool(ready, default: true)
-        @serving = serving.nil? ? default_condition(source, "serving", @ready) : ModelSupport.bool(serving, default: @ready)
+        @serving = serving.nil? ? default_condition(source, "serving", true) : ModelSupport.bool(serving, default: true)
         @terminating = terminating.nil? ? default_condition(source, "terminating", false) : ModelSupport.bool(terminating)
         raw_hints = hints || ModelSupport.key(source, "hints", {}) || {}
-        @hints = Array(ModelSupport.key(raw_hints, "forZones", nil) || ModelSupport.key(raw_hints, "for_zones", nil)).map do |hint|
-          ModelSupport.key(ModelSupport.string_keys(hint), "name", hint).to_s
-        end.reject(&:empty?).uniq.freeze
+        @hints = TopologyHints.names(raw_hints, "forZones", "for_zones")
+        @node_hints = TopologyHints.names(raw_hints, "forNodes", "for_nodes")
         @family = ModelSupport.normalize_family(family || ModelSupport.key(source, "addressType", nil) || ModelSupport.ip_family(@address))
         raise ValidationError, "endpoint address family must be IPv4 or IPv6" unless Service::IP_FAMILIES.include?(@family)
 
@@ -593,28 +580,14 @@ module Rubernetes
       # (and protocol); the slice's number is the real target port, so
       # backends on different ports (three API servers behind
       # default/kubernetes) all qualify.  The name is the SERVICE port's name,
-      # not its targetPort: upstream keys endpoints by
-      # ServicePortName{namespace/name, *port.Name, protocol}
-      # (pkg/proxy/endpointslicecache.go).  An unnamed Service port matches an
-      # unnamed slice port, and only then does the numeric targetPort decide.
+      # not its targetPort. An unnamed Service port matches an unnamed slice port.
       def port_compatible?(service_port)
-        return false unless service_port.respond_to?(:protocol) && service_port.protocol == protocol
-
-        service_name = service_port.respond_to?(:name) ? service_port.name.to_s : ""
-        return port_name.to_s == service_name unless service_name.empty? && port_name.to_s.empty?
-        return true if service_name.empty? && port_name.to_s.empty?
-
-        target = service_port.target_port
-        return port == target.to_i if target.is_a?(Integer)
-
-        target.nil? || target.to_s.empty? || port_name.to_s == target.to_s
+        service_port.respond_to?(:protocol) && service_port.protocol == protocol &&
+          port_name.to_s == (service_port.respond_to?(:name) ? service_port.name.to_s : "")
       end
 
-      def healthy?
-        ready && serving && !terminating
-      end
-
-      alias ready? healthy?
+      alias healthy? ready
+      alias ready? ready
 
       def serving?
         serving
@@ -649,11 +622,20 @@ module Rubernetes
           "hostname" => hostname,
           "targetRef" => ModelSupport.deep_copy(target_ref),
           "conditions" => {"ready" => ready, "serving" => serving, "terminating" => terminating},
-          "hints" => (hints.empty? ? nil : {"forZones" => hints.map { |name| {"name" => name} }})
+          "hints" => topology_hints
         }.compact
       end
 
       private
+
+      def topology_hints
+        return if hints.empty? && node_hints.empty?
+
+        result = {}
+        result["forZones"] = hints.map { |name| {"name" => name} } unless hints.empty?
+        result["forNodes"] = node_hints.map { |name| {"name" => name} } unless node_hints.empty?
+        result
+      end
 
       def default_condition(source, name, default)
         value = ModelSupport.key(ModelSupport.key(source, "conditions", {}) || {}, name, default)
