@@ -24,6 +24,10 @@ A missing adapter, a skipped test or a source change during the capture
 makes the bundle `INCOMPLETE`. An `INCOMPLETE` bundle never passes. The
 tools here neither require nor create a Git repository.
 
+For M1–M8 probe reports larger than 64 KiB, the command record points to
+`stdout_artifact`. The file contains the exact output. The gate checks its
+SHA-256 digest and byte count against the bundle.
+
 ## The chain of gates
 
 Each gate depends on the one before it. `rake m1:verify` needs a `COMPLETE`
