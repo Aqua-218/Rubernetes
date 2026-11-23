@@ -99,7 +99,7 @@ module Rubernetes
             key = String(identity)
             raise Error, "user namespace allocation identity must not be empty" if key.empty?
 
-            @mutex.synchronize do
+            synchronize_allocations do
               existing = @allocations[key]
               return mapping_for(existing) if existing
 
@@ -115,12 +115,12 @@ module Rubernetes
           end
 
           def lookup(identity)
-            entry = @mutex.synchronize { @allocations[String(identity)] }
+            entry = synchronize_allocations { @allocations[String(identity)] }
             entry && mapping_for(entry)
           end
 
           def release(identity)
-            @mutex.synchronize do
+            synchronize_allocations do
               removed = @allocations.delete(String(identity))
               persist! if removed
               !removed.nil?
@@ -128,10 +128,22 @@ module Rubernetes
           end
 
           def allocations
-            @mutex.synchronize { @allocations.transform_values(&:dup).freeze }
+            synchronize_allocations { @allocations.transform_values(&:dup).freeze }
           end
 
           private
+
+          def synchronize_allocations
+            @mutex.synchronize do
+              File.open("#{@path}.lock", File::RDWR | File::CREAT | File::NOFOLLOW, 0o600) do |lock|
+                lock.flock(File::LOCK_EX)
+                @allocations = load
+                yield
+              end
+            end
+          rescue SystemCallError => error
+            raise Error, "user namespace allocation lock failed: #{error.message}"
+          end
 
           def mapping_for(entry)
             Mapping.new(uid_base: Integer(entry.fetch("uid_base")), gid_base: Integer(entry.fetch("gid_base")),
