@@ -726,7 +726,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
   # Kubernetes REST validation observation.
   owner_invalid_json = JSON.generate(owner_invalid_hash)
   owner_validation = begin
-    validator = owner_klass.definition.validator
+    definition = owner_klass.definition
     # The external strategy receives the canonical JSON fixture, not the
     # in-memory graph used to construct it.  In particular, encoding/json
     # prunes nil/empty optional reference fields; validating owner_hash here
@@ -735,32 +735,26 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
     # pointers and Pod status).  Parse the exact request payload for the
     # Ruby-side observation so both implementations see identical input.
     owner_wire_hash = JSON.parse(owner_json)
-    owner_missing_wire_hash = JSON.parse(owner_missing_json)
-    owner_update_wire_hash = JSON.parse(owner_update_json)
-    owner_invalid_wire_hash = JSON.parse(owner_invalid_json)
     # The REST validation oracle observes the object after the owning
     # strategy's PrepareForCreate/PrepareForUpdate hook.  Keep preparation
     # explicit and fixture-local: normal public validation must not require
     # server-assigned metadata.uid for Job create requests.
     prepare = gvk.fetch("kind") == "Job"
-    create_errors = validator.errors(owner_wire_hash, unknown_fields: :reject, operation: :create,
-                                                      strategy_prepare: prepare)
-    invalid_errors = validator.errors(owner_invalid_wire_hash, unknown_fields: :reject, operation: :create,
-                                                               strategy_prepare: prepare)
-    update_errors = validator.errors(owner_update_wire_hash, unknown_fields: :reject, operation: :update,
-                                                             old: owner_wire_hash, strategy_prepare: prepare)
-    missing_errors = validator.errors(owner_missing_wire_hash, unknown_fields: :reject, operation: :create,
-                                                               strategy_prepare: prepare)
+    create_accepted, create_errors = local_strategy_observation(definition, owner_wire_hash, operation: :create, prepare: prepare)
+    invalid_accepted, invalid_errors = local_strategy_observation(definition, JSON.parse(owner_invalid_json), operation: :create, prepare: prepare)
+    update_accepted, update_errors = local_strategy_observation(definition, JSON.parse(owner_update_json), operation: :update,
+                                                                                                           old: owner_wire_hash, prepare: prepare)
+    missing_accepted, missing_errors = local_strategy_observation(definition, JSON.parse(owner_missing_json), operation: :create, prepare: prepare)
     {
       "applicable" => true,
-      "create_accepted" => create_errors.empty?,
-      "create_errors" => semantic_error_signature(create_errors),
-      "invalid_accepted" => invalid_errors.empty?,
-      "invalid_errors" => semantic_error_signature(invalid_errors),
-      "update_accepted" => update_errors.empty?,
-      "update_errors" => semantic_error_signature(update_errors),
-      "missing_accepted" => missing_errors.empty?,
-      "missing_errors" => semantic_error_signature(missing_errors)
+      "create_accepted" => create_accepted,
+      "create_errors" => create_errors,
+      "invalid_accepted" => invalid_accepted,
+      "invalid_errors" => invalid_errors,
+      "update_accepted" => update_accepted,
+      "update_errors" => update_errors,
+      "missing_accepted" => missing_accepted,
+      "missing_errors" => missing_errors
     }
   rescue Rubernetes::Schema::GenerationError => error
     unavailable = [{
@@ -858,6 +852,18 @@ def local_validation_observation(validator, wire_hash, operation:, old: nil, pre
   old_subject = old
   old_subject = definition.defaulting.apply_hash(old, kubernetes_admission_defaults: false) if old && definition.respond_to?(:defaulting)
   errors = validator.errors(subject, unknown_fields: :reject, operation: operation, old: old_subject, strategy_prepare: prepare)
+  [errors.empty?, semantic_error_signature(errors)]
+end
+
+def local_strategy_observation(definition, wire_hash, operation:, old: nil, prepare: false)
+  subject = definition.defaulting.apply_hash(wire_hash, kubernetes_admission_defaults: true)
+  previous = definition.defaulting.apply_hash(old, kubernetes_admission_defaults: true) if old
+  scheduling = Rubernetes::Schema::KubernetesValidator
+  if definition.group == "scheduling.k8s.io" && scheduling::SCHEDULING_DECLARATIVE_KINDS.include?(definition.kind)
+    # The Go strategy runner uses the upstream default feature gates.
+    subject = scheduling.prepare_scheduling_validation(subject, previous, definition.kind, [], nil)
+  end
+  errors = definition.validator.errors(subject, unknown_fields: :reject, operation: operation, old: previous, strategy_prepare: prepare)
   [errors.empty?, semantic_error_signature(errors)]
 end
 
