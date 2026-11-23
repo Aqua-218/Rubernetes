@@ -89,6 +89,72 @@ class CustomResourceFieldSelectorTest < Minitest::Test
     assert_equal %w[cr0], names("/apis/example.com/v1/namespaces/ns/es?fieldSelector=hostPort=host1:80")
   end
 
+  def test_paginated_list_counts_matches_in_the_served_version
+    path = "/apis/example.com/v2/namespaces/ns/es"
+    {"a" => "other", "cr3" => "host1"}.each do |name, host|
+      response = @call.call("POST", path, {"apiVersion" => "example.com/v2", "kind" => "E",
+                                           "metadata" => {"name" => name}, "host" => host, "port" => "80"})
+
+      assert_equal 201, response.status
+    end
+    query = "#{path}?limit=2&fieldSelector=host=host1"
+    first = @call.call("GET", query).body
+    token = first.fetch("metadata").fetch("continue")
+    second = @call.call("GET", "#{query}&continue=#{token}").body
+
+    assert_equal(%w[cr0 cr1], first.fetch("items").map { |object| object.dig("metadata", "name") })
+    assert_equal(["cr3"], second.fetch("items").map { |object| object.dig("metadata", "name") })
+    assert_equal first.dig("metadata", "resourceVersion"), second.dig("metadata", "resourceVersion")
+    assert_empty second.dig("metadata", "continue").to_s
+    [first, second].each { |page| refute page.fetch("metadata").key?("remainingItemCount") }
+  end
+
+  def test_watch_replays_selector_transitions_from_the_given_revision
+    path = "/apis/example.com/v2/namespaces/ns/es"
+    cursor = @call.call("GET", path).body.dig("metadata", "resourceVersion")
+    revisions = %w[cr1 other cr2 host1].each_slice(2).map do |name, host|
+      current = @call.call("GET", "#{path}/#{name}").body
+      changed = @call.call("PUT", "#{path}/#{name}", current.merge("host" => host))
+
+      assert_equal 200, changed.status
+
+      changed.body.dig("metadata", "resourceVersion")
+    end
+    expected = [["DELETED", "cr1", "host1", revisions[0]], ["ADDED", "cr2", "host1", revisions[1]]]
+    url = "#{path}?watch=1&fieldSelector=host=host1&resourceVersion=#{cursor}&timeoutSeconds=1"
+    ["", "&sendInitialEvents=false&resourceVersionMatch=NotOlderThan"].each do |options|
+      response = @call.call("GET", url + options)
+
+      assert_equal expected, watch_events(response.body)
+    ensure
+      response&.body&.close
+    end
+  end
+
+  def test_watch_without_initial_events_at_zero_uses_the_current_selector_state
+    path = "/apis/example.com/v2/namespaces/ns/es"
+    query = "watch=1&fieldSelector=host=host1&resourceVersion=0&" \
+            "sendInitialEvents=false&resourceVersionMatch=NotOlderThan&timeoutSeconds=1"
+    response = @call.call("GET", "#{path}?#{query}")
+
+    assert_equal 200, response.status
+
+    current = @call.call("GET", "#{path}/cr1").body
+    changed = @call.call("PUT", "#{path}/cr1", current.merge("host" => "other"))
+
+    assert_equal 200, changed.status
+    assert_equal [["DELETED", "cr1", "host1", changed.body.dig("metadata", "resourceVersion")]], watch_events(response.body)
+  ensure
+    response&.body&.close
+  end
+
+  def watch_events(stream)
+    stream.each_json_line(timeout: 1).map do |line|
+      type, object = JSON.parse(line).values_at("type", "object")
+      [type, object.dig("metadata", "name"), object["host"], object.dig("metadata", "resourceVersion")]
+    end
+  end
+
   def test_watch_converts_and_reports_selector_transitions
     rv = @call.call("GET", "/apis/example.com/v2/namespaces/ns/es").body["metadata"]["resourceVersion"]
     watch = @call.call("GET",
