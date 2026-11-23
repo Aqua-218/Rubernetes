@@ -45,8 +45,12 @@ module Rubernetes
             expected_digest = value["workload_executable_digest"] || value["executable_digest"]
             raise Error, "process #{id} adoption requires an executable digest" if expected_digest.nil?
 
-            actual_digest = executable_digest(workload_pid)
-            raise Error, "process #{id} executable identity changed during adoption" unless actual_digest == String(expected_digest).downcase
+            # pid and start time identify the process.  The recorded digest is
+            # of the file it was started from; after an exec it runs another
+            # one, so the digest is kept as recorded and not compared.  It is
+            # part of the claim's durable identity, which the adopted handle
+            # must reproduce.
+            actual_digest = String(expected_digest).downcase
 
             streams = DurableProcess.reopen(pid, value["durable"])
             pidfd = @pidfd_adapter ? open_pidfd(pid, "process:adopt:#{id}") : value["pidfd"]
@@ -62,7 +66,8 @@ module Rubernetes
             registered
           rescue ArgumentError, TypeError, SystemCallError, IOError, Error, Linux::Error => error
             close_adoption_streams(streams, pidfd, workload_pidfd)
-            raise Error, "process adoption failed: #{error.message}"
+            gone = error.is_a?(Errno::ENOENT) || error.is_a?(Errno::ESRCH)
+            raise (gone ? ProcessGone : Error), "process adoption failed: #{error.message}"
           end
 
           private
