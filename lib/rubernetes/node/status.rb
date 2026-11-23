@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "time"
 
 require_relative "../node_declared_features"
+require_relative "../client/errors"
 
 module Rubernetes
   module Node
@@ -35,29 +38,9 @@ module Rubernetes
         "#{host}:#{port}"
       end
 
-      def string_keys(value)
-        case value
-        when Hash
-          value.each_with_object({}) do |(name, child), result|
-            result[name.to_s] = string_keys(child)
-          end
-        when Array
-          value.map { |child| string_keys(child) }
-        else
-          value
-        end
-      end
+      def string_keys(value) = ObjectTree.stringify_keys(value)
 
-      def deep_copy(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(name, child), result| result[name] = deep_copy(child) }
-        when Array
-          value.map { |child| deep_copy(child) }
-        else
-          value
-        end
-      end
+      def deep_copy(value) = ObjectTree.copy(value)
 
       # Every Hash and Array frozen here -- children first -- is recorded, so
       # a caller can tell a deeply frozen value (safe to memoize anything
@@ -215,15 +198,24 @@ module Rubernetes
       # v1.PodCondition on the wire: camelCase keys, reason/message only when
       # set, lastTransitionTime preserved while the status does not change.
       Condition = Data.define(
-        :type, :status, :reason, :message, :last_transition_time, :last_heartbeat_time, :observed_generation
+        :type, :status, :reason, :message, :last_transition_time, :last_heartbeat_time, :observed_generation, :observed_fields
       ) do
         # observedGeneration (PodObservedGenerationTracking) is optional so
         # every existing constructor keeps working.
-        def initialize(observed_generation: nil, **rest)
+        def initialize(observed_generation: nil, observed_fields: nil, **rest)
           super
         end
 
+        def self.from_pod_status(fields)
+          new(type: fields.fetch("type").to_s, status: fields["status"].to_s,
+              reason: fields["reason"], message: fields["message"],
+              last_transition_time: fields["lastTransitionTime"], last_heartbeat_time: fields["lastProbeTime"],
+              observed_generation: fields["observedGeneration"], observed_fields: Helpers.immutable(fields))
+        end
+
         def to_h
+          return Helpers.deep_copy(observed_fields) if observed_fields
+
           {
             "type" => type,
             "status" => status,
@@ -231,12 +223,7 @@ module Rubernetes
             "lastTransitionTime" => last_transition_time
           }.tap do |payload|
             payload["observedGeneration"] = observed_generation unless observed_generation.nil?
-            # The status is delivered as a merge patch, so a field that is
-            # simply omitted keeps whatever the API server already holds.  A
-            # Pod that recovered from a failed mount would otherwise keep
-            # reporting `FailedMount` as its reason for the rest of its life,
-            # which is what `kubectl get pods` prints in the STATUS column.
-            # An explicit null clears it.
+            # Preserve the reported shape for empty reasons and messages.
             payload["reason"] = reason.to_s.empty? ? nil : reason
             payload["message"] = message.to_s.empty? ? nil : message
           end
@@ -246,7 +233,7 @@ module Rubernetes
         :pod_uid, :phase, :conditions, :container_statuses, :init_container_statuses,
         :ephemeral_container_statuses,
         :reason, :message, :pod_ip, :host_ip, :start_time, :observed_generation, :pod_ips,
-        :resources, :allocated_resources
+        :resources, :allocated_resources, :host_ips
       ) do
         def to_h
           {
@@ -271,8 +258,10 @@ module Rubernetes
             ips = Array(pod_ips).map(&:to_s).reject(&:empty?)
             ips = [pod_ip.to_s] if ips.empty? && !pod_ip.to_s.empty?
             payload["podIPs"] = ips.map { |ip| {"ip" => ip} } unless ips.empty?
-            payload["hostIP"] = host_ip unless host_ip.to_s.empty?
-            payload["hostIPs"] = [{"ip" => host_ip}] unless host_ip.to_s.empty?
+            node_ips = Array(host_ips).reject(&:empty?)
+            node_ips = [host_ip] if node_ips.empty? && !host_ip.to_s.empty?
+            payload["hostIP"] = node_ips.first unless node_ips.empty?
+            payload["hostIPs"] = node_ips.map { |ip| {"ip" => ip} } unless node_ips.empty?
             payload["startTime"] = start_time unless start_time.to_s.empty?
             payload["observedGeneration"] = observed_generation unless observed_generation.nil?
             # InPlacePodLevelResourcesVerticalScaling: the Pod's actuated and
@@ -287,28 +276,50 @@ module Rubernetes
       # ->(pod, status, seconds) after the API server took a status.
       attr_accessor :sync_observer
 
-      def initialize(reporter: nil, endpoint_manager: nil, clock: -> { Time.now.utc })
+      KUBELET_CONDITION_TYPES = %w[Initialized ContainersReady Ready PodScheduled PodResizePending PodResizeInProgress].freeze
+      GATED_KUBELET_CONDITIONS = {
+        "PodReadyToStartContainers" => "PodReadyToStartContainersCondition",
+        "AllContainersRestarting" => "RestartAllContainersOnContainerExits"
+      }.freeze
+
+      def self.kubelet_condition_types(feature_gates)
+        # Both condition gates are enabled by default in Kubernetes v1.36.
+        enabled = GATED_KUBELET_CONDITIONS.filter_map do |type, gate|
+          type unless Helpers.key(feature_gates, gate, true) == false
+        end
+        (KUBELET_CONDITION_TYPES + enabled).freeze
+      end
+
+      # Retain the type's first position and the last value for that type,
+      # including for a Pod from storage with duplicate conditions.
+      def self.conditions_by_type(conditions)
+        Array(conditions).each_with_object({}) do |entry, indexed|
+          type = Helpers.key(entry, "type", nil).to_s
+          indexed[type] = entry unless type.empty?
+        end
+      end
+
+      def initialize(reporter: nil, report_target: nil, endpoint_manager: nil, clock: -> { Time.now.utc }, feature_gates: {})
         @reporter = reporter
+        @report_target = report_target
         @endpoint_manager = endpoint_manager
         @clock = clock
+        @kubelet_condition_types = self.class.kubelet_condition_types(feature_gates)
         @mutex = Mutex.new
         @snapshots = {}
         @reported = {}
         # Per-Pod ordering of reports (see aggregate).
         @sequence = 0
-        @reported_sequence = {}
+        @snapshot_sequences = {}
         @report_locks = Hash.new { |locks, key| locks[key] = Mutex.new }
       end
 
-      # Aggregate runtime observations into a Kubernetes-compatible status.
-      # The returned object is detached and frozen so callers cannot mutate a
-      # snapshot that another reconciliation thread is using.
+      # Aggregate runtime observations into a frozen Kubernetes Pod status.
       def aggregate(pod_value = nil, pod: nil, containers: nil, init_containers: nil, state: nil, phase: nil,
-                    pod_ip: nil, host_ip: nil, reason: nil, message: nil,
+                    pod_ip: nil, host_ip: nil, host_ips: nil, reason: nil, message: nil,
                     observed_generation: nil, start_time: nil, pod_ips: nil, all_containers_restarting: false,
-                    pod_resources: nil, allocated_resources: nil, resize_conditions: [])
-        # The caller read the Pod's state just before this call: a sequence
-        # taken now orders snapshots by when their inputs were read.
+                    pod_resources: nil, allocated_resources: nil, resize_conditions: [], preserve_phase: false)
+        # Order snapshots by when their callers read the Pod state.
         sequence = @mutex.synchronize { @sequence += 1 }
         computed_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         pod = pod_value if pod.nil?
@@ -339,13 +350,7 @@ module Rubernetes
         # and clients wait on exactly that reason.
         apply_container_reason(regular_statuses, reason, message)
         apply_container_reason(init_statuses, reason, message)
-        phase = derive_phase(
-          object,
-          regular_statuses,
-          init_statuses,
-          explicit_phase: phase,
-          explicit_reason: reason
-        )
+        phase = derive_phase(object, regular_statuses, init_statuses, explicit_phase: phase, explicit_reason: reason) unless preserve_phase
         earlier = @mutex.synchronize { @snapshots[uid] }
         conditions = build_conditions(
           phase: phase,
@@ -358,11 +363,14 @@ module Rubernetes
           all_containers_restarting: all_containers_restarting
         )
         # PodResizePending / PodResizeInProgress carry the generation of the
-        # resize they describe, not the Pod's current one.
-        conditions += Array(resize_conditions).map do |entry|
-          Condition.new(type: entry.fetch("type"), status: "True", reason: entry["reason"].to_s, message: entry["message"].to_s,
-                        last_transition_time: entry["lastTransitionTime"] || Helpers.now(@clock).iso8601(6),
-                        last_heartbeat_time: Helpers.now(@clock).iso8601(6), observed_generation: entry["observedGeneration"])
+        # resize they describe. A locally reported disruption supersedes a
+        # condition of the same type carried over from an earlier report.
+        Array(resize_conditions).each do |entry|
+          type = entry.fetch("type")
+          conditions = conditions.reject { |condition| condition.type == type }
+          conditions << Condition.new(type: type, status: "True", reason: entry["reason"].to_s, message: entry["message"].to_s,
+                                      last_transition_time: entry["lastTransitionTime"] || Helpers.now(@clock).iso8601(6),
+                                      last_heartbeat_time: Helpers.now(@clock).iso8601(6), observed_generation: entry["observedGeneration"])
         end
         snapshot = Snapshot.new(
           pod_uid: uid,
@@ -375,6 +383,7 @@ module Rubernetes
           message: message.to_s,
           pod_ip: pod_ip || Helpers.key(observations, "podIP", ""),
           host_ip: host_ip || Helpers.key(observations, "hostIP", ""),
+          host_ips: Array(host_ips || Helpers.key(observations, "hostIPs", [])).map { |entry| Helpers.key(entry, "ip", entry).to_s }.freeze,
           start_time: first_start_time(start_time, observations, object, earlier),
           observed_generation: observed_generation || Helpers.key(observations, "observedGeneration", nil),
           pod_ips: Array(pod_ips || Helpers.key(observations, "podIPs", [])).map { |entry| Helpers.key(entry, "ip", entry).to_s }.freeze,
@@ -382,59 +391,58 @@ module Rubernetes
           allocated_resources: allocated_resources.nil? ? nil : Helpers.immutable(allocated_resources)
         ).freeze
         status = snapshot.to_h
-        # Several threads compute a Pod's status (the sync loop, probes,
-        # container events, a resize) and each reports its own.  Unordered, a
-        # status computed before a later one could land after it: a probe's
-        # snapshot taken while a resize was running delivered
-        # PodResizeInProgress after the resize's own "completed" report, and
-        # the condition stayed on the Pod ("[sig-node] Pod InPlace Resize ...
-        # unexpected resize condition type PodResizeInProgress").  kubelet's
-        # status manager never sends a status older than one it has sent; a
-        # snapshot older than the newest delivered one is dropped here.
+        # Serialize publication by Pod. Drop older observations so a probe
+        # cannot restore PodResizeInProgress after a completed resize.
         report_lock = @mutex.synchronize { @report_locks[uid] }
         report_lock.synchronize do
-          stale = @mutex.synchronize do
-            newer = @reported_sequence[uid].to_i > sequence
-            @snapshots[uid] = snapshot unless newer
-            newer
-          end
-          return @mutex.synchronize { @snapshots[uid] } if stale
+          newer = @mutex.synchronize do
+            next @snapshots[uid] if @snapshot_sequences[uid].to_i > sequence
 
-          publish_in_order(uid, object, status, sequence, computed_at)
+            @snapshots[uid] = snapshot
+            @snapshot_sequences[uid] = sequence
+            nil
+          end
+          return newer if newer
+
+          publish_in_order(uid, object, status, computed_at)
         end
         snapshot
       end
 
-      def publish_in_order(uid, object, status, sequence, computed_at = nil)
-        already_reported = @mutex.synchronize { @reported[uid] == status }
-        # kubelet's status manager only talks to the API server when the
-        # status it computed differs from the one it last delivered.  Without
-        # that check a steady Pod is patched once per reconcile, and every
-        # patch is a write through consensus for a status nobody changed.
-        # The comparison is on the status payload that goes on the wire, not
-        # on the snapshot: a snapshot carries per-observation bookkeeping such
-        # as a condition's heartbeat time that never reaches the API server,
-        # and comparing that would make every pass look like a change.  The
-        # last *delivered* payload is tracked separately from the last
-        # computed snapshot, so a failed report is retried on the next pass.
-        unless already_reported
-          delivered = report(object, status)
-          @mutex.synchronize { @reported[uid] = Helpers.deep_copy(status) }
-          # statusManager.syncPod: kubelet_pod_status_sync_duration_seconds
-          # from the status's computation, and the startup SLI's first
-          # all-running status.
-          if delivered && @sync_observer
-            begin
-              @sync_observer.call(object, status, computed_at && (Process.clock_gettime(Process::CLOCK_MONOTONIC) - computed_at))
-            rescue StandardError
-              nil
-            end
-          end
+      def publish_in_order(uid, object, status, computed_at = nil)
+        target = @report_target ? @report_target.call(object) : object
+        delivery = [pod_uid(target), status] if target
+        # A replacement mirror needs the latest status even if its payload is
+        # unchanged. Comparing the wire payload excludes observation timestamps
+        # that change every pass. Failed reports are retried on the next pass.
+        return unless target && @mutex.synchronize { @reported[uid] != delivery }
+
+        @pods_changed&.call
+        delivered = report(target, status)
+        @mutex.synchronize { @reported[uid] = Helpers.deep_copy(delivery) }
+        return unless delivered && @sync_observer
+
+        # kubelet_pod_status_sync_duration_seconds and the startup SLI.
+        begin
+          @sync_observer.call(object, status, computed_at && (Process.clock_gettime(Process::CLOCK_MONOTONIC) - computed_at))
+        rescue StandardError
+          nil
         end
-        @mutex.synchronize { @reported_sequence[uid] = sequence }
       end
 
       alias update aggregate
+
+      # A mirror can appear after the workload's latest runtime observation.
+      def republish(pod)
+        uid = pod_uid(pod)
+        lock = @mutex.synchronize { @report_locks[uid] }
+        lock.synchronize do
+          snapshot = @mutex.synchronize { @snapshots[uid] }
+          publish_in_order(uid, pod, snapshot.to_h) if snapshot
+        end
+      end
+
+      attr_writer :pods_changed
 
       def [](pod_or_uid)
         @mutex.synchronize { @snapshots[pod_uid(pod_or_uid)] }
@@ -459,7 +467,7 @@ module Rubernetes
         @mutex.synchronize do
           key = pod_uid(pod_or_uid)
           @reported.delete(key)
-          @reported_sequence.delete(key)
+          @snapshot_sequences.delete(key)
           @report_locks.delete(key)
           @snapshots.delete(key)
         end
@@ -568,11 +576,11 @@ module Rubernetes
         }
         container_id = Helpers.key(status, "containerID", Helpers.key(status, "container_id", nil))
         result["containerID"] = container_id.to_s unless container_id.nil? || container_id.to_s.empty?
-        # kubelet convertToAPIContainerStatuses: a running container reports
-        # the resources it runs with (never nil -- clients dereference it)
-        # and allocatedResources carries its requests.
+        stop_signal = Helpers.key(status, "stopSignal", nil)
+        result["stopSignal"] = stop_signal if stop_signal
+        # Running containers report their resources and echo their requests in allocatedResources.
         if state.to_s == "running"
-          resources = Helpers.key(definition, "resources", nil)
+          resources = Helpers.key(status, "resources", Helpers.key(definition, "resources", nil))
           resources = {} unless resources.is_a?(Hash)
           result["resources"] = Helpers.deep_copy(resources)
           requests = Helpers.key(resources, "requests", nil)
@@ -584,24 +592,26 @@ module Rubernetes
         result["user"] = Helpers.deep_copy(user) if user.is_a?(Hash)
         health = Helpers.key(status, "allocatedResourcesStatus", nil)
         result["allocatedResourcesStatus"] = Helpers.deep_copy(health) if health.is_a?(Array) && !health.empty?
-        mounts = volume_mount_statuses(definition)
-        result["volumeMounts"] = mounts if mounts && %w[running terminated].include?(state.to_s)
+        mounts = volume_mount_statuses(definition, Helpers.key(status, "imageVolumeRefs", {}), Helpers.key(status, "recursiveReadOnlyMounts", nil))
+        result["volumeMounts"] = mounts if !mounts.empty? && %w[running terminated].include?(state.to_s)
         result
       end
 
-      # RecursiveReadOnlyMounts: each volume mount as the container got it;
-      # a read-only one says whether it is recursively read-only (the node
-      # applies Enabled and IfPossible, see NativeAdapters#recursive_readonly).
-      def volume_mount_statuses(definition)
-        mounts = Array(Helpers.key(definition, "volumeMounts", []))
-        return nil if mounts.empty?
-
-        mounts.map do |mount|
+      # Report the applied recursive read-only mode and resolved image digest.
+      def volume_mount_statuses(definition, image_volume_refs = {}, observed_recursive_mounts = nil)
+        Array(Helpers.key(definition, "volumeMounts", [])).map do |mount|
           mount = Helpers.string_keys(mount)
           entry = {"name" => mount["name"].to_s, "mountPath" => mount["mountPath"].to_s}
+          image_ref = image_volume_refs[entry["name"]]
+          entry["volumeStatus"] = {"image" => {"imageRef" => image_ref}} if image_ref
           entry["readOnly"] = true if mount["readOnly"] == true
           if mount["readOnly"] == true
-            entry["recursiveReadOnly"] = %w[Enabled IfPossible].include?(mount["recursiveReadOnly"].to_s) ? "Enabled" : "Disabled"
+            recursive = if observed_recursive_mounts.nil?
+                          %w[Enabled IfPossible].include?(mount["recursiveReadOnly"])
+                        else
+                          observed_recursive_mounts[entry["mountPath"]] == true
+                        end
+            entry["recursiveReadOnly"] = recursive ? "Enabled" : "Disabled"
           end
           entry
         end
@@ -651,13 +661,8 @@ module Rubernetes
         # container that will restart, not as one that never started.
         return "Pending" if init_statuses.any? { |status| !init_initialized?(status) && !restarting_all?(status) }
 
-        # kubelet getPhase (pkg/kubelet/kubelet_pods.go): count the regular
-        # containers by state.  A container still Waiting (no earlier
-        # termination) keeps the Pod Pending -- "Running" means every
-        # container has been started.  Reporting Running with a container
-        # still ContainerCreating let clients ask for its logs and get a 400
-        # ("[sig-network] DNS should provide DNS for ExternalName services"
-        # reads every container's logs once the Pod is Running).
+        # kubelet getPhase: a container waiting for its initial start keeps
+        # the Pod Pending. A container backing off has started before.
         running = stopped = succeeded = waiting = 0
         restartable_stopped = 0
         regular_statuses.each do |status|
@@ -666,7 +671,7 @@ module Rubernetes
           last_terminated = Helpers.key(Helpers.key(status, "lastState", {}), "terminated", nil)
           if Helpers.key(state, "running", nil)
             running += 1
-          elsif restarting_all?(status)
+          elsif restarting_all?(status) || Helpers.key(Helpers.key(state, "waiting", {}), "reason", nil) == "CrashLoopBackOff"
             stopped += 1
             restartable_stopped += 1
           elsif terminated || last_terminated
@@ -719,7 +724,7 @@ module Rubernetes
         return true if terminated_success?(status)
 
         state = Helpers.key(status, "state", {})
-        !Helpers.key(state, "running", nil).nil? && !status["ready"].nil?
+        !Helpers.key(state, "running", nil).nil? && status["started"] == true
       end
 
       # kubelet's status manager stamps startTime on the first status it ever
@@ -751,10 +756,7 @@ module Rubernetes
       def build_conditions(phase:, regular_statuses:, init_statuses:, pod:, previous: [], sandbox_ready: false,
                            all_containers_restarting: false)
         timestamp = Helpers.now(@clock).iso8601(6)
-        # GeneratePodInitializedCondition: a restartable init container
-        # (sidecar) counts once it has started; only regular init containers
-        # have to run to completion.  Requiring every sidecar to have exited
-        # 0 kept a Pod with a running sidecar ContainersNotInitialized for ever.
+        # Restartable init containers count once started. Other init containers must complete successfully.
         sidecars = sidecar_names(pod)
         init_done = ->(status) { terminated_success?(status) || (sidecars.include?(status["name"].to_s) && status["started"] == true) }
         initialized = init_statuses.all?(&init_done)
@@ -762,19 +764,10 @@ module Rubernetes
         # a Pod once initialized stays initialized while its init containers
         # run again in place.
         initialized ||= Array(previous).any? { |entry| entry.type == "Initialized" && entry.status == "True" }
-        containers_ready = phase == "Running" && regular_statuses.any? && regular_statuses.all? { |status| status["ready"] }
-        # kubelet GeneratePodReadyCondition: every readinessGate's condition
-        # must also be True before the Pod is Ready.  spec.readinessGates was
-        # validated by the API server and read by nobody, so a Pod with an
-        # unsatisfied gate reported itself Ready.
-        gates_ready = readiness_gates_satisfied?(pod, previous)
-        # kubelet's Generate*Condition functions: a condition that is not True
-        # says WHY, and clients print and wait on exactly those reasons.
-        # Initialized is ContainersNotInitialized while an init container has
-        # not finished; ContainersReady and Ready are PodCompleted once the Pod
-        # is terminal and ContainersNotReady otherwise; Ready simply mirrors
-        # ContainersReady whenever that is not True, and only then considers
-        # the readiness gates.
+        ready_statuses = regular_statuses + init_statuses.select { |status| sidecars.include?(status["name"].to_s) }
+        containers_ready = phase == "Running" && regular_statuses.any? && ready_statuses.all? { |status| status["ready"] }
+        published_conditions = pod_conditions(pod, previous)
+        gates_ready = readiness_gates_satisfied?(pod, published_conditions)
         initialized_condition = condition("Initialized", initialized, timestamp)
         unless initialized
           incomplete = init_statuses.reject(&init_done)
@@ -785,7 +778,7 @@ module Rubernetes
             message: "containers with incomplete status: [#{incomplete.join(" ")}]"
           )
         end
-        containers_ready_condition = containers_ready_state(containers_ready, phase, regular_statuses, timestamp)
+        containers_ready_condition = containers_ready_state(containers_ready, phase, ready_statuses, timestamp)
         ready_condition = if containers_ready_condition.status != "True"
                             condition("Ready", false, timestamp,
                                       reason: containers_ready_condition.reason,
@@ -796,23 +789,22 @@ module Rubernetes
                             condition("Ready", false, timestamp, reason: "ReadinessGatesNotReady",
                                                                  message: "corresponding condition of pod readiness gate is not \"True\"")
                           end
-        conditions = [
-          condition("PodReadyToStartContainers", sandbox_ready, timestamp),
-          initialized_condition,
-          containers_ready_condition
-        ]
-        conditions << ready_condition
+        conditions = []
+        conditions << condition("PodReadyToStartContainers", sandbox_ready, timestamp) if @kubelet_condition_types.include?("PodReadyToStartContainers")
+        conditions.push(initialized_condition, containers_ready_condition, ready_condition)
         conditions << condition("PodScheduled", pod_scheduled?(pod), timestamp)
-        restarting = all_containers_restarting_condition(pod, phase, all_containers_restarting, timestamp)
-        conditions << restarting if restarting
-        # PodObservedGenerationTracking: every condition the kubelet writes
-        # names the metadata.generation it observed ("[sig-node] Pods Extended
-        # pod observedGeneration field set in pod conditions").
+        if @kubelet_condition_types.include?("AllContainersRestarting")
+          restarting = all_containers_restarting_condition(pod, phase, all_containers_restarting, timestamp)
+          conditions << restarting if restarting
+        end
+        # Kubelet-authored conditions record the generation observed by the node.
         generation = Helpers.key(Helpers.key(pod, "metadata", {}), "generation", nil)
-        (conditions + custom_conditions(pod, previous)).map do |entry|
+        conditions.map! do |entry|
           preserved = preserve_transition(entry, previous)
           generation.nil? ? preserved : preserved.with(observed_generation: Integer(generation))
-        end.freeze
+        end
+        custom = published_conditions.reject { |type, _| @kubelet_condition_types.include?(type) }
+        conditions.concat(custom.values.map { |entry| Condition.from_pod_status(entry) }).freeze
       end
 
       # status.GenerateAllContainersRestartingCondition, published only for a
@@ -829,11 +821,11 @@ module Rubernetes
 
       # generateContainersReadyConditionForTerminalPhase: a Pod that has
       # finished reports PodCompleted rather than a list of unready containers.
-      def containers_ready_state(containers_ready, phase, regular_statuses, timestamp)
+      def containers_ready_state(containers_ready, phase, statuses, timestamp)
         return condition("ContainersReady", true, timestamp) if containers_ready
         return condition("ContainersReady", false, timestamp, reason: "PodCompleted") if %w[Succeeded Failed].include?(phase.to_s)
 
-        unready = regular_statuses.reject { |status| status["ready"] }.map { |status| status["name"] }
+        unready = statuses.reject { |status| status["ready"] }.map { |status| status["name"] }
         return condition("ContainersReady", false, timestamp) if unready.empty?
 
         condition("ContainersReady", false, timestamp, reason: "ContainersNotReady",
@@ -849,9 +841,6 @@ module Rubernetes
         entry.with(last_transition_time: earlier.last_transition_time)
       end
 
-      KUBELET_CONDITION_TYPES = %w[PodReadyToStartContainers Initialized ContainersReady Ready PodScheduled AllContainersRestarting
-                                   PodResizePending PodResizeInProgress].freeze
-
       def readiness_gate_types(pod)
         Array(Helpers.key(Helpers.key(pod, "spec", {}), "readinessGates", [])).filter_map do |gate|
           value = Helpers.key(gate, "conditionType", nil).to_s
@@ -863,36 +852,18 @@ module Rubernetes
       # status is "True"; an absent condition is not ready.  The conditions a
       # gate names are written by something other than the kubelet, so they are
       # read from the Pod's current status.
-      def readiness_gates_satisfied?(pod, previous)
-        types = readiness_gate_types(pod)
-        return true if types.empty?
-
-        published = pod_conditions(pod, previous)
-        types.all? { |type| published[type].to_s == "True" }
-      end
-
-      # Conditions the kubelet does not own (a readiness gate's own condition,
-      # written by a controller) must survive a status update rather than be
-      # dropped.
-      def custom_conditions(pod, previous)
-        published = pod_conditions(pod, previous)
-        timestamp = Helpers.now(@clock).iso8601(6)
-        published.reject { |type, _| KUBELET_CONDITION_TYPES.include?(type) }.map do |type, status|
-          Condition.new(type: type, status: status.to_s, reason: "", message: "",
-                        last_transition_time: timestamp, last_heartbeat_time: timestamp)
-        end
+      def readiness_gates_satisfied?(pod, conditions)
+        readiness_gate_types(pod).all? { |type| conditions.dig(type, "status").to_s == "True" }
       end
 
       def pod_conditions(pod, previous)
-        result = {}
-        Array(previous).each { |entry| result[entry.type.to_s] = entry.status.to_s }
-        Array(Helpers.key(Helpers.key(pod, "status", {}), "conditions", [])).each do |entry|
-          type = Helpers.key(entry, "type", nil).to_s
-          next if type.empty?
-
-          result[type] = Helpers.key(entry, "status", "").to_s
-        end
-        result
+        published = Helpers.key(pod, "status", nil)
+        conditions = if published.is_a?(Hash)
+                       Helpers.key(published, "conditions", nil)
+                     else
+                       Array(previous).map(&:to_h)
+                     end
+        self.class.conditions_by_type(conditions)
       end
 
       def pod_scheduled?(pod)
@@ -932,11 +903,14 @@ module Rubernetes
         end
         true
       rescue StandardError => error
-        # The Pod is already gone from the API (force-deleted, namespace
-        # torn down): kubelet drops the status write instead of failing the
-        # termination it was reporting.
-        gone = (error.respond_to?(:status) && error.status.to_i == 404) || error.message.to_s.include?("HTTP 404")
-        raise unless gone
+        # Drop status writes for disappeared or replaced Pod UIDs.
+        code = error.respond_to?(:status) ? error.status.to_i : error.message[/\bHTTP (\d{3})\b/, 1].to_i
+        stale_uid = code == 409 && error.message.include?("UID in precondition:")
+        if code == 422 && error.is_a?(Client::APIError)
+          causes = Array(error.status_object&.dig("details", "causes"))
+          stale_uid = !causes.empty? && causes.all? { |cause| cause["field"] == "metadata.uid" && cause["reason"] == "FieldValueInvalid" }
+        end
+        raise unless code == 404 || stale_uid
 
         nil
       end
