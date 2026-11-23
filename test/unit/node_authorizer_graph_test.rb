@@ -106,6 +106,42 @@ class NodeAuthorizerGraphTest < Minitest::Test
     end
   end
 
+  def test_azure_file_uses_the_bound_claim_or_explicit_secret_namespace
+    graph = Z::NodeGraph.new
+    graph.add_pod(pod("web", node: "n1", claim: "data"))
+    volume = pv("azure", claim: "data")
+    volume["spec"].delete("csi")
+    volume["spec"]["azureFile"] = {"shareName" => "share", "secretName" => "account"}
+    graph.add_pv(volume)
+
+    assert graph.references?("n1", :secrets, "ns", "account")
+    volume["spec"]["azureFile"]["secretNamespace"] = "vault"
+    graph.add_pv(volume)
+
+    assert graph.references?("n1", :secrets, "vault", "account")
+    refute graph.references?("n1", :secrets, "ns", "account")
+    refute graph.references?("other", :secrets, "vault", "account")
+  end
+
+  def test_iscsi_pv_chap_secret_references_the_correct_node_and_namespace
+    graph = Z::NodeGraph.new
+    graph.add_pod(pod("web", node: "n1", claim: "data"))
+    volume = pv("iscsi", claim: "data")
+    volume["spec"].delete("csi")
+    volume["spec"]["iscsi"] = {"secretRef" => {"name" => "chap", "namespace" => "storage"}}
+    graph.add_pv(volume)
+
+    assert graph.references?("n1", :secrets, "storage", "chap")
+    refute graph.references?("n1", :secrets, "ns", "chap")
+    refute graph.references?("n2", :secrets, "storage", "chap")
+
+    volume["spec"]["iscsi"]["secretRef"].delete("namespace")
+    graph.add_pv(volume)
+
+    assert graph.references?("n1", :secrets, "ns", "chap")
+    refute graph.references?("n1", :secrets, "storage", "chap")
+  end
+
   def wait_until(timeout = 5)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     until yield
