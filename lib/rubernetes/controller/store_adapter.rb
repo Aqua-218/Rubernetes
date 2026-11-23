@@ -4,6 +4,8 @@ require_relative "errors"
 require_relative "support"
 require_relative "types"
 require_relative "effect_journal"
+require_relative "../api/status"
+require_relative "../api/patch"
 
 module Rubernetes
   module Controller
@@ -23,6 +25,10 @@ module Rubernetes
 
       attr_reader :store, :effect_journal
 
+      def self.wrap(store)
+        store.is_a?(StoreAdapter) ? store : new(store)
+      end
+
       def initialize(store, effect_journal: nil, component: nil, identity: nil)
         raise ArgumentError, "store is required" unless store
 
@@ -30,23 +36,29 @@ module Rubernetes
         @effect_journal = effect_journal || EffectJournal.from_env(component: component, identity: identity)
       end
 
+      def selector_candidates(descriptor, object)
+        list(descriptor, namespace: Support.namespace(object) || :all)
+      end
+
       def list(descriptor_or_kind, namespace: :all, selector: nil, fresh: false)
         descriptor = descriptor(descriptor_or_kind)
-        candidates = list_all(selector: nil)
-        candidates.select! { |object| matches_descriptor?(object, descriptor) }
-        unless namespace == :all || namespace.nil?
-          candidates.select! do |object|
-            descriptor.cluster_scoped? || Support.namespace(object).to_s == namespace.to_s
-          end
+        matches = Support.selector_predicate(selector) if selector
+        items = list_all.select do |object|
+          matches_descriptor?(object, descriptor) &&
+            (namespace == :all || namespace.nil? || descriptor.cluster_scoped? || Support.namespace(object).to_s == namespace.to_s) &&
+            (!matches || matches.call(object))
         end
-        candidates.select! { |object| Support.selector_matches?(selector, object) } if selector
-        candidates.sort_by { |object| [Support.namespace(object).to_s, Support.name(object)] }
+        items.sort_by! { |object| [Support.namespace(object).to_s, Support.name(object)] }
+        items.map! { |object| Support.deep_copy(object) }
       end
 
       alias list_objects list
 
+      def custom_resource_collections = {}
+      def custom_resource_descriptors = []
+
       def all(selector: nil)
-        list_all(selector: selector)
+        list_all(selector: selector).map { |item| Support.deep_copy(item) }
       end
 
       # Every object that lives inside `namespace`.  The in-process store
@@ -94,6 +106,10 @@ module Rubernetes
 
       alias get find
 
+      def fetch_scale(descriptor, name:, namespace:)
+        find(descriptor, name: name, namespace: namespace)
+      end
+
       def exists?(descriptor_or_kind, name:, namespace: nil)
         !find(descriptor_or_kind, name: name, namespace: namespace).nil?
       end
@@ -105,20 +121,13 @@ module Rubernetes
         result = @store.create(key_for(descriptor, object), Support.deep_copy(object))
         record_effect!(descriptor: descriptor, object: object, action: :create, response: result)
         result
-      rescue ArgumentError => error
-        if error.message.include?("wrong number") || error.message.include?("keyword")
-          return call_create_fallback(object, descriptor, error,
-                                      fence: fence)
-        end
-
-        raise
       end
 
       # effect_action distinguishes a status-subresource write from a spec
       # update in the effect journal: upstream issues them as two different
       # API calls (PUT resource, PUT resource/status), so they are two
       # different semantic effects even when they touch the same object.
-      def update(object, descriptor: nil, existing: nil, fence: nil, effect_action: :update)
+      def update(object, descriptor: nil, existing: nil, fence: nil, effect_action: :update, subresource: nil)
         descriptor ||= self.class.descriptor(object)
         ensure_descriptor_matches!(object, descriptor)
         current = existing || find(descriptor, name: Support.name(object), namespace: Support.namespace(object))
@@ -126,68 +135,54 @@ module Rubernetes
         return current if current && current == object
 
         key = key_for(descriptor, object)
-        if @store.respond_to?(:update)
-          fence&.call
-          result = @store.update(key, Support.deep_copy(object),
-                                 resource_version: Support.value(Support.metadata(current || {}), "resourceVersion", nil))
-          record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
-          result
-        elsif @store.respond_to?(:replace)
-          fence&.call
-          result = @store.replace(key, Support.deep_copy(object))
-          record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
-          result
-        else
-          raise StoreError, "store does not implement update or replace"
-        end
-      rescue ArgumentError => error
-        if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown update")
-          return call_update_fallback(object, descriptor, current, error, fence: fence,
-                                                                          effect_action: effect_action)
-        end
-
-        raise
+        payload = Support.deep_copy(object)
+        result = if @store.respond_to?(:update)
+                   version = Support.value(Support.metadata(current), "resourceVersion")
+                   options = version_options(:update, 2, version)
+                   fence&.call
+                   @store.update(key, payload, **options)
+                 elsif @store.respond_to?(:replace)
+                   fence&.call
+                   @store.replace(key, payload)
+                 else
+                   raise StoreError, "store does not implement update or replace"
+                 end
+        record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
+        result
       end
 
       def delete(object_or_descriptor, name: nil, namespace: nil, descriptor: nil, fence: nil)
-        if object_or_descriptor.is_a?(Hash)
-          object = object_or_descriptor
-          descriptor ||= self.class.descriptor(object)
-          ensure_descriptor_matches!(object, descriptor)
-          key_for(descriptor, object)
-          existing = find(descriptor, name: Support.name(object), namespace: Support.namespace(object))
-          return nil unless existing
-
-          ensure_uid_matches!(existing, object)
-          key = key_for(descriptor, existing)
-          expected = Support.value(Support.metadata(existing), "resourceVersion", nil)
-        else
-          descriptor ||= self.class.descriptor(object_or_descriptor)
-          object = find(descriptor, name: name, namespace: namespace)
-          return nil unless object
-
-          key = key_for(descriptor, object)
-          expected = Support.value(Support.metadata(object), "resourceVersion", nil)
+        requested = object_or_descriptor if object_or_descriptor.is_a?(Hash)
+        descriptor ||= self.class.descriptor(object_or_descriptor)
+        if requested
+          ensure_descriptor_matches!(requested, descriptor)
+          name = Support.name(requested)
+          namespace = Support.namespace(requested)
         end
+        existing = find(descriptor, name: name, namespace: namespace)
+        return nil unless existing
+
+        ensure_uid_matches!(existing, requested) if requested
+        key = key_for(descriptor, existing)
+        expected = Support.value(Support.metadata(existing), "resourceVersion")
+        options = version_options(:delete, 1, expected)
         fence&.call
-        result = @store.delete(key, resource_version: expected)
-        record_effect!(descriptor: descriptor, object: object, action: :delete, response: result)
-        result
-      rescue ArgumentError => error
-        if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown delete")
-          return call_delete_fallback(key, expected, error,
-                                      fence: fence)
+        result = @store.delete(key, **options)
+        if options.key?(:resource_version)
+          record_effect!(descriptor: descriptor, object: requested || existing, action: :delete, response: result)
+        else
+          record_effect!(descriptor: nil, object: nil, action: :delete, response: result, reconcile_key: key)
         end
-
-        raise
+        result
       end
 
       def apply(operation, fence: nil)
+        notify = operation.method(:notify) if operation.respond_to?(:notify)
         result = apply_operation(operation, fence: fence)
-        operation.notify(true) if operation.respond_to?(:notify)
+        notify&.call(true)
         result
       rescue StandardError => error
-        operation.notify(false, error) if operation.respond_to?(:notify)
+        notify&.call(false, error)
         # Every upstream controller that creates objects ignores a create the
         # API server refused because the namespace is being deleted
         # (apierrors.HasStatusCause(err, v1.NamespaceTerminatingCause)): all
@@ -195,7 +190,7 @@ module Rubernetes
         # removing its Pods' tracking finalizers -- must still happen.
         # Raising here aborted the batch before those writes, the Pod kept
         # its finalizer, and the namespace stayed Terminating for ever.
-        raise unless operation.create? && self.class.namespace_terminating?(error)
+        raise unless operation.action == :create && self.class.namespace_terminating?(error)
 
         nil
       end
@@ -219,6 +214,10 @@ module Rubernetes
           apply_update(operation, fence: fence)
         when :patch
           apply_patch(operation, fence: fence)
+        when :strategic_patch
+          apply_strategic_patch(operation, fence: fence)
+        when :json_patch
+          apply_json_patch(operation, fence: fence)
         when :status_update
           apply_status(operation, fence: fence)
         when :status_merge
@@ -266,7 +265,7 @@ module Rubernetes
                 else
                   raw
                 end
-        Array(items).map { |item| Support.deep_copy(item) }
+        Array(items)
       rescue StandardError => error
         raise unless error.class.name.to_s.end_with?("NotFound", "Gone")
 
@@ -288,49 +287,19 @@ module Rubernetes
         "registry/#{descriptor.api_version}/#{descriptor.resource}/#{namespace}/#{Support.name(object)}"
       end
 
-      def call_create_fallback(object, descriptor, original_error, fence: nil)
-        raise original_error unless @store.method(:create).arity.abs >= 2
+      # Both in-tree stores accept resource_version. Older adapters name the
+      # precondition prec or only take positional arguments. Choose before
+      # calling the fence so a write that raised afterwards is never replayed.
+      def version_options(action, argument_count, version)
+        parameters = @store.method(action).parameters
+        keywords = parameters.filter_map { |type, name| name if %i[key keyreq].include?(type) }
+        return {resource_version: version} if keywords.include?(:resource_version)
+        return {prec: version} if keywords.include?(:prec)
+        return {} if parameters.assoc(:nokey)
 
-        fence&.call
-        result = @store.create(key_for(descriptor, object), Support.deep_copy(object))
-        record_effect!(descriptor: descriptor, object: object, action: :create, response: result)
-        result
-      end
-
-      def call_update_fallback(object, descriptor, current, original_error, fence: nil, effect_action: :update)
-        expected = Support.value(Support.metadata(current || {}), "resourceVersion", nil)
-        begin
-          fence&.call
-          result = @store.update(key_for(descriptor, object), Support.deep_copy(object), prec: expected)
-          record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
-          result
-        rescue ArgumentError
-          begin
-            fence&.call
-            result = @store.update(key_for(descriptor, object), Support.deep_copy(object))
-            record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
-            result
-          rescue StandardError
-            raise original_error
-          end
-        end
-      end
-
-      def call_delete_fallback(key, expected, original_error, fence: nil)
-        fence&.call
-        result = @store.delete(key, prec: expected)
-        record_effect!(descriptor: descriptor_for_key(key), object: nil, action: :delete, response: result,
-                       reconcile_key: key)
-        result
-      rescue ArgumentError
-        begin
-          fence&.call
-          result = @store.delete(key)
-          record_effect!(descriptor: nil, object: nil, action: :delete, response: result, reconcile_key: key)
-          result
-        rescue StandardError
-          raise original_error
-        end
+        takes_options = parameters.any? { |type, _| %i[keyrest rest].include?(type) } ||
+                        parameters.count { |type, _| %i[opt req].include?(type) } > argument_count
+        takes_options ? {resource_version: version} : {}
       end
 
       def apply_create(operation, fence: nil)
@@ -346,7 +315,9 @@ module Rubernetes
         ensure_uid_matches!(existing, operation.object)
         return existing if existing && existing == operation.object
 
-        update(operation.object, descriptor: operation.resource, existing: existing, fence: fence)
+        options = {descriptor: operation.resource, existing: existing, fence: fence}
+        options[:subresource] = operation.subresource if operation.respond_to?(:subresource) && operation.subresource
+        update(operation.object, **options)
       end
 
       def apply_patch(operation, fence: nil)
@@ -356,6 +327,29 @@ module Rubernetes
 
         candidate = Support.merge_hash(existing, operation.patch || {})
         update(candidate, descriptor: operation.resource, existing: existing, fence: fence)
+      end
+
+      def apply_strategic_patch(operation, fence: nil)
+        object = operation.object
+        existing = find(operation.resource, name: Support.name(object), namespace: Support.namespace(object))
+        return nil unless existing
+
+        ensure_uid_matches!(existing, object)
+        candidate = API::Patch.apply(existing, operation.patch, type: :strategic, resource: operation.resource)
+        return existing if candidate == existing
+
+        update(candidate, descriptor: operation.resource, existing: existing, fence: fence, effect_action: :patch)
+      end
+
+      def apply_json_patch(operation, fence: nil)
+        object = operation.object
+        existing = find(operation.resource, name: Support.name(object), namespace: Support.namespace(object))
+        return nil unless existing
+
+        candidate = API::Patch.apply(existing, operation.patch, type: :json, resource: operation.resource)
+        return existing if candidate == existing
+
+        update(candidate, descriptor: operation.resource, existing: existing, fence: fence, effect_action: :patch)
       end
 
       def apply_status(operation, fence: nil)
@@ -418,10 +412,6 @@ module Rubernetes
         end
         @effect_journal.record(effect_type: action.to_s, reconcile_key: key, action: action,
                                object: object, response: response)
-      end
-
-      def descriptor_for_key(_key)
-        nil
       end
     end
   end
