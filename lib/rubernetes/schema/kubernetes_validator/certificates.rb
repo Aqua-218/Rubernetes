@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../pem"
+
 module Rubernetes
   module Schema
     # certificates.k8s.io: CertificateSigningRequest, ClusterTrustBundle and
@@ -8,6 +10,7 @@ module Rubernetes
       module_function
 
       POD_CERTIFICATE_REQUEST_DEFAULT_MAX_EXPIRATION = 86_400
+      MAX_TRUST_BUNDLE_SIZE = 1024 * 1024
 
       def certificate_signing_request_errors(root, operation)
         spec = fetch(root, "spec")
@@ -65,17 +68,67 @@ module Rubernetes
         [issue(path, :invalid, "must be a valid PKCS#10 certificate request")]
       end
 
-      def cluster_trust_bundle_errors(root, operation)
-        return [] unless operation == :create
-
+      def cluster_trust_bundle_errors(root, operation, old)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
-        trust_bundle = fetch(spec, "trustBundle")
-        valid_pem = trust_bundle.is_a?(String) && trust_bundle.include?("-----BEGIN CERTIFICATE-----")
-        return [] if valid_pem
+        signer = fetch(spec, "signerName").to_s
+        signer_path = %w[spec signerName]
+        issues = signer.empty? ? [] : signer_name_errors(signer, signer_path)
+        trust_bundle = fetch(spec, "trustBundle").to_s
+        previous = fetch(old, "spec")
+        if operation == :update && previous.is_a?(Hash)
+          issues.concat(trust_bundle_pem_errors(trust_bundle)) if trust_bundle != fetch(previous, "trustBundle").to_s
+          if signer != fetch(previous, "signerName").to_s
+            issues << ValidationIssue.new(path: signer_path, code: :invalid, value: signer, message: "field is immutable")
+          end
+        else
+          issues.concat(trust_bundle_pem_errors(trust_bundle))
+        end
 
-        [issue(%w[spec trustBundle], :invalid, "at least one trust anchor must be provided")]
+        issues
+      end
+
+      def trust_bundle_pem_errors(bundle)
+        require "openssl"
+        path = %w[spec trustBundle]
+        return [issue(path, :too_long, "may not be more than #{MAX_TRUST_BUNDLE_SIZE} bytes")] if bundle.bytesize > MAX_TRUST_BUNDLE_SIZE
+
+        anchors = Hash.new { |indices, bytes| indices[bytes] = [] }
+        errors = PEM.blocks(bundle).each_with_index.filter_map do |block, index|
+          detail = trust_bundle_block_error(block)
+          if detail
+            trust_bundle_issue(path, "entry #{index} #{detail}")
+          else
+            anchors[block.bytes] << index
+            nil
+          end
+        end
+        return errors unless errors.empty?
+        return [trust_bundle_issue(path, "at least one trust anchor must be provided")] if anchors.empty?
+
+        anchors.values.filter_map do |indices|
+          trust_bundle_issue(path, "duplicate trust anchor (indices [#{indices.join(" ")}])") if indices.length > 1
+        end
+      end
+
+      def trust_bundle_block_error(block)
+        return "has bad block type: #{block.type}" unless block.type == "CERTIFICATE"
+        return "has PEM block headers" if block.headers
+
+        certificate = OpenSSL::X509::Certificate.new(block.bytes)
+        return "does not parse as X.509" unless certificate.to_der == block.bytes
+
+        constraints = certificate.extensions.find { |extension| extension.oid == "basicConstraints" }
+        return "does not have the CA bit set" unless constraints&.value&.match?(/\ACA:TRUE(?:,|\z)/)
+
+        nil
+      rescue OpenSSL::OpenSSLError, ArgumentError
+        "does not parse as X.509"
+      end
+
+      def trust_bundle_issue(path, message)
+        ValidationIssue.new(path: path, code: :invalid, value: "<value omitted>", message: message, kubernetes_type: "Invalid value")
       end
 
       def signer_name_errors(value, path)
