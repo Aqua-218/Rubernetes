@@ -286,24 +286,27 @@ class LifecycleImagePinningTest < Minitest::Test
     end
   end
 
-  # An agent that dies leaves staging directories that nothing can release
-  # any more; without a startup reclaim they accumulate until the node's disk
-  # is full and every later image pull fails with ENOSPC.
-  def test_reclaim_removes_only_stages_whose_owner_is_gone
+  def test_reclaim_requires_an_unlocked_lease_and_no_live_rootfs
     Dir.mktmpdir("rubernetes-reclaim-") do |root|
-      abandoned = File.join(root, "rubernetes-image-20260908-999999-abcdef")
-      FileUtils.mkdir_p(File.join(abandoned, "rootfs"))
-      File.write(File.join(abandoned, "rootfs", "layer"), "x" * 128)
-      owned = File.join(root, "rubernetes-image-20260908-#{Process.pid}-abcdef")
-      FileUtils.mkdir_p(owned)
-      unrelated = File.join(root, "someone-elses-directory")
-      FileUtils.mkdir_p(unrelated)
+      # The names' PIDs need not be meaningful in the janitor's namespace.
+      live, abandoned, recovered, legacy = %w[live abandoned recovered legacy].map do |name|
+        File.join(root, "rubernetes-image-20260908-999999-#{name}").tap do |stage|
+          FileUtils.mkdir_p(File.join(stage, "rootfs"))
+        end
+      end
+      lease = Rubernetes::Image::StagingLease.acquire(live)
+      Rubernetes::Image::StagingLease.acquire(abandoned).close
+      Rubernetes::Image::StagingLease.acquire(recovered).close
+      Dir.mkdir(File.join(root, "unrelated"))
 
-      assert_equal(1, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root))
-      refute_path_exists(abandoned, "a stage whose creating process is gone must be reclaimed")
-      assert(File.directory?(owned), "a stage owned by a live process must be left alone")
-      assert(File.directory?(unrelated), "only this resolver's own staging names may be removed")
-      assert_equal(0, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root))
+      protected = [File.join(recovered, "rootfs")]
+
+      assert_equal 1, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root, protected_roots: protected)
+      refute_path_exists abandoned
+      [live, recovered, legacy, File.join(root, "unrelated")].each { |path| assert_path_exists path }
+      assert_equal 0, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root, protected_roots: protected)
+    ensure
+      lease&.close
     end
   end
 end
