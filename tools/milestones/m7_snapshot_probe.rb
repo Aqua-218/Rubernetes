@@ -65,6 +65,14 @@ module M7SnapshotProbe
     [outcome, pod]
   end
 
+  def copy_snapshot(source, destination)
+    # Preserve the snapshot's zero pages on filesystems without reflinks.
+    # The corruption cases need private inodes even when data blocks can be shared.
+    return if system("cp", "--recursive", "--preserve=mode", "--reflink=auto", "--sparse=always", "--", source, destination)
+
+    raise IOError, "copying snapshot #{source} to #{destination} failed"
+  end
+
   def run
     started_at = S.now
     S.require_root!
@@ -77,7 +85,7 @@ module M7SnapshotProbe
       pristine = pool.latest(runtime.runtime_class)
       base_id = pristine.id
       backup = File.join(root, "pristine")
-      FileUtils.cp_r(pristine.directory, backup)
+      copy_snapshot(pristine.directory, backup)
       outcome, pod = restore_attempt(runtime, network, "snapshot-pristine")
       session = pod && pod["session"]
       cases << {"id" => "pristine_restore", "outcome" => outcome, "restored_from" => session&.base&.id,
@@ -85,7 +93,7 @@ module M7SnapshotProbe
       S.stop_pod(runtime, network, pod) if pod
       corpus(pristine).each do |name, damage|
         FileUtils.rm_rf(pristine.directory)
-        FileUtils.cp_r(backup, pristine.directory)
+        copy_snapshot(backup, pristine.directory)
         damage.call
         sandbox_ids_before = runtime.identity_ledger.all.length
         outcome, pod = restore_attempt(runtime, network, "snapshot-#{name}")
@@ -98,9 +106,11 @@ module M7SnapshotProbe
                   "passed" => outcome != "started" && vmms.zero? && live_identities.zero? && resources.empty?}
       end
       FileUtils.rm_rf(pristine.directory)
-      FileUtils.cp_r(backup, pristine.directory)
+      copy_snapshot(backup, pristine.directory)
       outcome, pod = restore_attempt(runtime, network, "snapshot-after-corpus")
-      cases << {"id" => "restore_after_corpus", "outcome" => outcome, "passed" => outcome == "started"}
+      restored_from = pod && pod["session"]&.base&.id
+      cases << {"id" => "restore_after_corpus", "outcome" => outcome, "restored_from" => restored_from,
+                "passed" => outcome == "started" && restored_from == base_id}
       S.stop_pod(runtime, network, pod) if pod
     ensure
       network.detach_all
