@@ -4,6 +4,8 @@ require "base64"
 require "json"
 require "openssl"
 
+require_relative "../../support/secure_compare"
+
 module Rubernetes
   module Security
     module Authentication
@@ -127,13 +129,7 @@ module Rubernetes
           OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Integer.new(r), OpenSSL::ASN1::Integer.new(s)]).to_der
         end
 
-        def secure_compare(left, right)
-          return false unless left.bytesize == right.bytesize
-
-          result = 0
-          left.bytes.zip(right.bytes) { |a, b| result |= a ^ b }
-          result.zero?
-        end
+        def secure_compare(left, right) = SecureCompare.call(left, right)
 
         # RFC 7638 JWK thumbprint used as the default key id.
         def key_id(public_key)
