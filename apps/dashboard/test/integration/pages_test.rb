@@ -151,6 +151,11 @@ class PagesTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "textarea[name=expr]", text: "up"
     assert_select "[data-graph-panel]"
+    get "/graph", params: {"g0.expr" => "up == 1", "g0.tab" => "1"}
+
+    assert_response :success
+    assert_select "textarea[name=expr]", text: "up == 1"
+    assert_select '[data-graph-panel][data-tab="table"]'
     get "/targets"
 
     assert_select "h2", text: %r{apiserver \(1/1 up\)}
