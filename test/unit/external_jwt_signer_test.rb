@@ -8,6 +8,7 @@ require_relative "../test_helper"
 require_relative "../support/grpc_fake_server"
 require "rubernetes/security"
 require "rubernetes/bootstrap/config"
+require "rubernetes/bootstrap/security_assembly"
 require "rubernetes/observability/metrics"
 
 # --service-account-signing-endpoint: tokens signed by an external signer
@@ -143,5 +144,32 @@ class ExternalJWTSignerTest < Minitest::Test
     config.send(:validate_security!,
                 {"authentication" => {"service_account" => {"issuer" => "https://i", "signing_endpoint" => "/run/signer.sock",
                                                             "allow_signing_with_non_oidc_keys" => true}}})
+  end
+
+  def test_apiserver_caps_the_extended_jwt_at_the_external_signers_limit
+    with_signer do |socket, _key|
+      service_account = {"issuer" => "https://issuer.example", "signing_endpoint" => socket, "max_expiration_seconds" => 3607}
+      configuration = {"authentication" => {"service_account" => service_account}}
+      now = Time.utc(2026, 11, 19, 17, 0, 0)
+      assembly = Rubernetes::Bootstrap::SecurityAssembly.new(config: configuration, store: Rubernetes::Storage::MemoryStore.new,
+                                                             key_for: ->(*) { "" }, clock: -> { now })
+      token, expiration = assembly.service_account_issuer.issue(
+        namespace: "default", service_account_name: "workload", service_account_uid: "sa-uid", expiration_seconds: 3607,
+        bound_object: {"kind" => "Pod", "name" => "workload", "uid" => "pod-uid"}
+      )
+      claims = A::JWT.parse(token)[1]
+
+      assert_equal 3607, expiration - now
+      assert_equal 3607, claims.dig("kubernetes.io", "warnafter") - claims["iat"]
+      assert_equal 7200, claims["exp"] - claims["iat"]
+
+      service_account["max_expiration_seconds"] = 7201
+      error = assert_raises(A::ExternalJWTSigner::Error) do
+        Rubernetes::Bootstrap::SecurityAssembly.new(config: configuration, store: Rubernetes::Storage::MemoryStore.new, key_for: ->(*) { "" })
+      end
+      assert_match(/cannot be set longer than the token expiration supported/, error.message)
+    ensure
+      assembly&.external_jwt_signer&.stop
+    end
   end
 end
