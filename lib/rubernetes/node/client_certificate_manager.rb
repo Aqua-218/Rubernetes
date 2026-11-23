@@ -2,7 +2,10 @@
 
 require "fileutils"
 require "openssl"
+require "tempfile"
 require "yaml"
+
+require_relative "../client/kubeconfig"
 
 module Rubernetes
   module Node
@@ -23,6 +26,7 @@ module Rubernetes
     class ClientCertificateManager
       SIGNER = "kubernetes.io/kube-apiserver-client-kubelet"
       PAIR_PREFIX = "kubelet-client"
+      MAX_PAIR_BYTES = 1_048_576
       WAIT_TIMEOUT = 15 * 60.0
       POLL_INTERVAL = 2.0
       RETRY_INTERVAL = 30.0
@@ -46,19 +50,48 @@ module Rubernetes
       end
 
       def current_path
-        File.join(@cert_dir, "#{PAIR_PREFIX}-current.pem")
+        File.join(@cert_dir, "#{self.class::PAIR_PREFIX}-current.pem")
+      end
+
+      # Read both credentials from the same generation even if rotation moves
+      # the current link while a new TLS connection is being configured.
+      def current_pair
+        validate_store_directory!
+        path = current_path
+        if File.lstat(path).symlink?
+          generation = File.readlink(path)
+          timestamp = generation.delete_prefix("#{self.class::PAIR_PREFIX}-")
+          raise Error, "invalid kubelet certificate generation" if timestamp == generation || !/\A[0-9]{4}(?:-[0-9]{2}){5}\.pem\z/.match?(timestamp)
+
+          path = File.join(@cert_dir, generation)
+        end
+
+        flags = File::RDONLY | File::NONBLOCK
+        flags |= File::NOFOLLOW if File.const_defined?(:NOFOLLOW)
+        File.open(path, flags) do |file|
+          stat = file.stat
+          unless stat.file? && stat.uid == Process.euid && stat.mode.nobits?(0o077) && stat.mode.anybits?(0o400)
+            raise Error, "kubelet client certificate and key must be a private regular file owned by the kubelet"
+          end
+
+          bytes = file.binmode.read(MAX_PAIR_BYTES + 1)
+          raise Error, "kubelet client certificate and key file exceeds #{MAX_PAIR_BYTES} bytes" if bytes.bytesize > MAX_PAIR_BYTES
+
+          bytes
+        end
+      rescue SystemCallError => error
+        raise Error, "cannot read kubelet client certificate and key: #{error.message}"
       end
 
       # The current certificate, or nil when none is stored or it is not
       # the node's own (a template mismatch forces a new request).
       def current_certificate
-        return nil unless File.exist?(current_path)
-
-        certificate = OpenSSL::X509::Certificate.new(File.read(current_path))
+        pair = current_pair
+        certificate = OpenSSL::X509::Certificate.new(pair)
         return nil unless satisfies_template?(certificate)
 
-        certificate
-      rescue OpenSSL::X509::CertificateError, SystemCallError
+        certificate if certificate.check_private_key(OpenSSL::PKey.read(pair))
+      rescue OpenSSL::OpenSSLError, Error
         nil
       end
 
@@ -129,6 +162,13 @@ module Rubernetes
       # ->() after a failed renewal (CertificateRenewFailure).
 
       def stopped? = @mutex.synchronize { @stop }
+
+      def validate_store_directory!
+        stat = File.lstat(@cert_dir)
+        return if stat.directory? && stat.uid == Process.euid && stat.mode.nobits?(0o022) && File.realpath(@cert_dir) == @cert_dir
+
+        raise Error, "kubelet client certificate directory must be owned by the kubelet, without writable group or other permissions or symlinks"
+      end
 
       def rotation_loop(client, on_rotate)
         until stopped?
@@ -213,10 +253,12 @@ module Rubernetes
         raise Error, "issued certificate does not match the requested key" unless certificate.check_private_key(key)
 
         FileUtils.mkdir_p(@cert_dir, mode: 0o700)
+        validate_store_directory!
         stamp = @clock.call.utc.strftime("%Y-%m-%d-%H-%M-%S")
-        path = File.join(@cert_dir, "#{PAIR_PREFIX}-#{stamp}.pem")
-        File.write(path, pem.to_s.strip + "\n" + key.private_to_pem, perm: 0o600)
-        link = File.join(@cert_dir, ".#{PAIR_PREFIX}-current.#{Process.pid}")
+        prefix = self.class::PAIR_PREFIX
+        path = File.join(@cert_dir, "#{prefix}-#{stamp}.pem")
+        atomic_write(path, pem.to_s.strip + "\n" + key.private_to_pem)
+        link = File.join(@cert_dir, ".#{prefix}-current.#{Process.pid}")
         File.unlink(link) if File.symlink?(link) || File.exist?(link)
         File.symlink(File.basename(path), link)
         File.rename(link, current_path)
@@ -224,14 +266,16 @@ module Rubernetes
       end
 
       def kubeconfig_valid?(path)
-        document = YAML.safe_load_file(path) || {}
-        user = Array(document["users"]).first&.dig("user") || {}
-        file = user["client-certificate"]
-        return false if file.to_s.empty? || !File.exist?(file)
+        context = Client::Kubeconfig.load(path).resolve(preload_exec: false, client_certificate_store: self)
+        return valid? if context.client_certificate_store
 
-        certificate = OpenSSL::X509::Certificate.new(File.read(file))
+        pem = context.client_certificate_data
+        pem ||= File.binread(context.client_certificate_file, MAX_PAIR_BYTES + 1) if context.client_certificate_file
+        return false if pem.nil? || pem.bytesize > MAX_PAIR_BYTES
+
+        certificate = OpenSSL::X509::Certificate.new(pem)
         valid?(certificate)
-      rescue StandardError
+      rescue Client::ConfigurationError, OpenSSL::X509::CertificateError, SystemCallError
         false
       end
 
@@ -247,7 +291,15 @@ module Rubernetes
                     "contexts" => [{"name" => "default-context",
                                     "context" => {"cluster" => "default-cluster", "user" => "default-auth"}}]}
         FileUtils.mkdir_p(File.dirname(path))
-        File.write(path, YAML.dump(document), perm: 0o600)
+        atomic_write(path, YAML.dump(document))
+      end
+
+      def atomic_write(path, content)
+        Tempfile.create(".#{File.basename(path)}", File.dirname(path), binmode: true) do |file|
+          file.write(content)
+          file.fsync
+          File.rename(file.path, path)
+        end
       end
 
       def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
