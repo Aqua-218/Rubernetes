@@ -96,7 +96,7 @@ module Rubernetes
                   else
                     [body_json]
                   end
-        [status, headers.merge("content-type" => "application/json"), payload]
+        [status, {"content-type" => "application/json"}.merge(headers), payload]
       end
 
       private
