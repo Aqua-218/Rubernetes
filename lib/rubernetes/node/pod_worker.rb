@@ -18,7 +18,8 @@ module Rubernetes
       DEFAULT_IDLE_TIMEOUT = 60.0
 
       def initialize(identifier = nil, pod_uid: nil, key: nil, reconcile: nil, executor: nil,
-                     error_handler: nil, auto_start: true, idle_timeout: DEFAULT_IDLE_TIMEOUT, on_idle: nil, &block)
+                     error_handler: nil, auto_start: true, idle_timeout: DEFAULT_IDLE_TIMEOUT, on_idle: nil,
+                     retain_history: true, &block)
         @pod_uid = (identifier || pod_uid || key).to_s
         raise ArgumentError, "pod_uid is required" if @pod_uid.empty?
 
@@ -31,6 +32,7 @@ module Rubernetes
         raise ArgumentError, "idle_timeout must be positive" if @idle_timeout && !@idle_timeout.positive?
 
         @on_idle = on_idle
+        @retain_history = retain_history
         @queue = Queue.new
         @mutex = Mutex.new
         @run_mutex = Mutex.new
@@ -83,12 +85,16 @@ module Rubernetes
       def enqueue_coalesced(task)
         @mutex.synchronize do
           if coalescable?(task)
-            replaced = !@pending.nil?
-            @pending = task
-            # One wake-up per pending slot: a replacement reuses the token the
-            # first enqueue already posted.
-            @queue << :__work__ unless replaced
+            if @pending
+              @pending[0] = task
+            else
+              @pending = [task]
+              @queue << @pending
+            end
           else
+            # A later sync must remain behind this deletion even if the old
+            # slot is still in the queue.
+            @pending&.clear
             @pending = nil
             @queue << task
           end
@@ -100,11 +106,10 @@ module Rubernetes
         !task.nil? && task.action.to_s.upcase != "DELETED"
       end
 
-      def take_pending
+      def take_pending(slot)
         @mutex.synchronize do
-          task = @pending
-          @pending = nil
-          task
+          @pending = nil if @pending.equal?(slot)
+          slot.first
         end
       end
 
@@ -213,7 +218,7 @@ module Rubernetes
           end
           break if task == :__stop__
 
-          task = take_pending if task == :__work__
+          task = take_pending(task) if task.is_a?(Array)
           next if task.nil?
 
           execute(task)
@@ -222,7 +227,7 @@ module Rubernetes
       rescue StandardError => error
         # A worker thread must report an unexpected fatal exception to its
         # owner; otherwise a dead lane would silently stop reconciling a Pod.
-        @mutex.synchronize { @failures << serialize_error(error) }
+        @mutex.synchronize { @failures << serialize_error(error) } if @retain_history
         @error_handler&.call(@pod_uid, error)
         raise
       ensure
@@ -244,13 +249,13 @@ module Rubernetes
                  end
         @mutex.synchronize do
           @processed += 1
-          @results << result
+          @results << result if @retain_history
         end
         result
       rescue StandardError => error
         @mutex.synchronize do
           @processed += 1
-          @failures << serialize_error(error)
+          @failures << serialize_error(error) if @retain_history
         end
         @error_handler&.call(@pod_uid, error)
         raise if Thread.current == Thread.main
@@ -288,7 +293,7 @@ module Rubernetes
     # different Pods are allowed to run concurrently.
     class PodWorkerPool
       def initialize(reconcile: nil, worker_factory: nil, error_handler: nil,
-                     auto_start: true, idle_timeout: PodWorker::DEFAULT_IDLE_TIMEOUT, &block)
+                     auto_start: true, idle_timeout: PodWorker::DEFAULT_IDLE_TIMEOUT, retain_history: true, &block)
         @reconcile = reconcile || block
         raise ArgumentError, "reconcile callback is required" unless @reconcile || worker_factory
 
@@ -296,6 +301,7 @@ module Rubernetes
         @error_handler = error_handler
         @auto_start = auto_start
         @idle_timeout = idle_timeout
+        @retain_history = retain_history
         @mutex = Mutex.new
         @workers = {}
       end
@@ -310,8 +316,8 @@ module Rubernetes
       # Look-up and enqueue happen under one lock so a worker retiring at the
       # same moment cannot be dropped between the two (which would leave two
       # workers, and two threads, for one Pod).
-      def enqueue(pod, action: nil, request_id: nil)
-        uid = pod_uid(pod)
+      def enqueue(pod, action: nil, request_id: nil, worker_key: nil)
+        uid = worker_key || pod_uid(pod)
         @mutex.synchronize do
           worker = (@workers[uid] ||= build_worker(uid))
           worker.enqueue(pod, action: action, request_id: request_id)
@@ -369,7 +375,7 @@ module Rubernetes
           @worker_factory.call(uid)
         else
           PodWorker.new(pod_uid: uid, reconcile: @reconcile, error_handler: @error_handler, auto_start: @auto_start,
-                        idle_timeout: @idle_timeout, on_idle: method(:retire))
+                        idle_timeout: @idle_timeout, on_idle: method(:retire), retain_history: @retain_history)
         end
       end
 
