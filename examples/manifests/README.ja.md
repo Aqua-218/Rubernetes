@@ -6,7 +6,7 @@
 
 | ファイル | 内容 |
 |---|---|
-| [web.rb](web.rb) | ConfigMap、Deployment、Service。環境変数で本番用と開発用を切り替える |
+| [web.rb](web.rb) | ConfigMap、Deployment、Service。本番では CPU 使用率 70% を目標に 3〜8 レプリカで自動スケールする |
 | [tenants.rb](tenants.rb) | テナントの一覧から、namespace、ResourceQuota、Deploymentを繰り返し作る |
 | [nightly_report.rb](nightly_report.rb) | Secretと作業用ボリュームを使うCronJob |
 
@@ -36,10 +36,10 @@ deployment "web" do
   replicas 3
 
   container "nginx", image: "nginx:1.27" do
-    port 80
+    port 80, name: :http
     cpu request: "100m", limit: "500m"
     env from: configmap("web-config")
-    readiness_probe http_get: {path: "/", port: 80}, period_seconds: 5
+    http_probe :readiness, port: :http, period_seconds: 5
   end
 end
 ```
