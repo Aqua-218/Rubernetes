@@ -228,6 +228,59 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     end
   end
 
+  # A container that exits between the kernel snapshot and its adoption must
+  # not fail the restart: recovery observes again and treats the sandbox as
+  # the dead operation it now is.
+  def test_restart_survives_a_container_that_exits_after_the_snapshot
+    skip "native restart reconstruction requires root" unless Process.uid.zero?
+    begin
+      directory = Dir.mktmpdir("m2-stale-snapshot-")
+      sandbox_root = File.join(directory, "sandboxes")
+      adapters = NativeAdapters.for_profile(profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup")
+      options = {
+        profile: :kernel_isolation, adapters: adapters, sandbox_root: sandbox_root,
+        cgroup_root: "/sys/fs/cgroup", journal_path: File.join(directory, "journal.wal"),
+        log_root: File.join(directory, "logs"),
+        security_context: {"allow_privilege_escalation" => false, "seccomp" => "RuntimeDefault"}
+      }
+      first = Rubernetes::Runtime::Native.new(**options)
+      sandbox_id = "m2-stale-#{Process.pid}-#{SecureRandom.hex(4)}"
+      image_bytes = "verified-stale-snapshot-image"
+      sandbox = first.run_sandbox(
+        {"id" => sandbox_id, "image_bytes" => image_bytes, "image_digest" => "sha256:#{Digest::SHA256.hexdigest(image_bytes)}"},
+        request_id: "stale-sandbox"
+      )
+      container = first.create_container(sandbox, {"id" => "app", "command" => ["/bin/sh", "-c", "sleep 30"]}, request_id: "stale-create")
+      first.start_container(container, request_id: "stale-start")
+      stale = first.resource_inventory
+      workload = first.container_status(container).fetch("process").fetch("workload_pid")
+      Process.kill("KILL", workload)
+      wait_until(timeout: 5) { !File.exist?("/proc/#{workload}") }
+
+      second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
+      kernel = Rubernetes::Runtime::Native::KernelObserver.new(ledger: second.ledger)
+      observations = 0
+      observer = lambda do
+        observations += 1
+        observations == 1 ? stale : kernel.list_resources
+      end
+
+      second.recover(observer: observer)
+
+      assert_operator observations, :>=, 2, "a stale snapshot must be replaced by a fresh observation"
+      refute(second.sandboxes.any? { |entry| entry.fetch("id") == sandbox_id && entry.fetch("state").to_s == "running" })
+    ensure
+      [second, first].each do |runtime|
+        next unless runtime&.sandboxes&.any?
+
+        runtime.stop_sandbox(sandbox_id, timeout: 1)
+        runtime.remove_sandbox(sandbox_id)
+      rescue StandardError
+        nil
+      end
+    end
+  end
+
   # Requirement: PDEATHSIG must cover the actual workload when the agent
   # wrapper is SIGKILLed, while the wrapper remains a subreaper for descendants.
   # Mutation target: removing either PDEATHSIG or subreaper setup.
