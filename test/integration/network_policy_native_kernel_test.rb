@@ -380,13 +380,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                      probe("client", "ipv4", "TCP", 29_081) == :allowed
                  end
                when "additive_union"
-                 with_fixture do
-                   apply([ingress_policy("additive-one", from: pod_peer("client"), port: 29_081),
-                          ingress_policy("additive-two", from: pod_peer("client"), port: 29_082)]) &&
-                     probe("client", "ipv4", "TCP", 29_081) == :allowed &&
-                     probe("client", "ipv4", "TCP", 29_082) == :allowed &&
-                     probe("client", "ipv4", "TCP", 29_083) == :denied
-                 end
+                 run_additive_union
                when "ipblock_except_ipv4"
                  with_fixture do
                    block = {"ipBlock" => {"cidr" => "10.244.0.0/24", "except" => ["10.244.0.2/32"]}}
@@ -440,9 +434,13 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                  end
                when "udp"
                  with_fixture do
-                   apply([ingress_policy("udp", from: pod_peer("client"), port: 29_084, protocol: "UDP")]) &&
-                     probe("client", "ipv4", "UDP", 29_084) == :allowed &&
-                     probe("client", "ipv6", "UDP", 29_084) == :allowed
+                   apply([ingress_policy("udp", from: pod_peer("client"), port: 29_084, protocol: "UDP")])
+                   addresses = %w[ipv4 ipv6]
+                   numeric = addresses.all? { |family| probe("client", family, "UDP", 29_084) == :allowed }
+                   all_udp = [{"from" => [pod_peer("client")], "ports" => [{"protocol" => "UDP"}]}]
+                   apply([policy("all-udp", selector: {"app" => "server"}, types: ["Ingress"], ingress: all_udp)])
+                   numeric && addresses.all? { |family| probe("client", family, "UDP", 29_084) == :allowed } &&
+                     verify_ports(29_084 => :denied)
                  end
                when "sctp"
                  with_fixture do
@@ -473,15 +471,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                    true
                  end
                when "atomic_readback"
-                 with_fixture do
-                   apply([ingress_policy("atomic-allow", from: pod_peer("client"), port: 29_081)])
-                   first = @adapter.readback(snapshot: @engine.snapshot.to_h).fetch("verified")
-                   allowed = probe("client", "ipv4", "TCP", 29_081) == :allowed
-                   apply([ingress_policy("atomic-deny", from: nil)])
-                   second = @adapter.readback(snapshot: @engine.snapshot.to_h).fetch("verified")
-                   denied = probe("client", "ipv4", "TCP", 29_081) == :denied
-                   first && second && allowed && denied
-                 end
+                 run_atomic_readback
                when "multi_interface_readback"
                  with_fixture do
                    policies = [
@@ -523,6 +513,43 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
       add_blocker(error.code, error.message)
     rescue StandardError => error
       @failures << {"cell" => cell, "error" => "#{error.class}: #{error.message}"}
+    end
+
+    def run_additive_union
+      with_fixture do
+        apply([])
+        verify_ports(29_083 => :allowed)
+        ingress = [ingress_policy("in-one", from: pod_peer("client"), port: 29_081, end_port: 29_082),
+                   ingress_policy("in-two", from: pod_peer("client"), port: 29_084)]
+        egress = [egress_policy("out-one", to: pod_peer("server"), port: 29_081),
+                  egress_policy("out-two", to: pod_peer("server"), port: 29_083, end_port: 29_084)]
+        apply(ingress + egress)
+        verify_ports(29_081 => :allowed, 29_082 => :denied, 29_083 => :denied, 29_084 => :allowed)
+      end
+    end
+
+    def run_atomic_readback
+      with_fixture do
+        deny = ingress_policy("atomic-deny", from: nil)
+        allow = ingress_policy("atomic-allow", from: pod_peer("client"), port: 29_081)
+        [[deny], [deny, allow], [deny]].zip(%i[denied allowed denied]).each do |policies, expected|
+          apply(policies)
+          raise "policy readback failed" unless @adapter.readback(snapshot: @engine.snapshot.to_h).fetch("verified")
+
+          verify_ports(29_081 => expected)
+        end
+        true
+      end
+    end
+
+    def verify_ports(ports)
+      %w[ipv4 ipv6].each do |family|
+        ports.each do |port, expected|
+          observed = probe("client", family, "TCP", port)
+          raise "#{family} TCP #{port} expected #{expected}, got #{observed} (#{@last_probe_line})" unless observed == expected
+        end
+      end
+      true
     end
 
     def run_default_deny(direction:, source:, expected:)
@@ -788,11 +815,12 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
     end
   end
 
-  class EBPFReverseConntrackKernelRunner < NativePacketMatrixRunner
+  class EBPFPolicyKernelRunner < NativePacketMatrixRunner
     FIXED_SOURCE_PORT = 50_000
 
     def run
       with_fixture do
+        verify_direction_conjunction
         apply([
                 ingress_policy("reverse-key-ingress", from: pod_peer("client"), port: 29_081),
                 # The reverse response targets the client's fixed source port. A
@@ -813,15 +841,33 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
 
     private
 
+    def verify_direction_conjunction
+      apply([
+              egress_policy("client-allowed-range", to: pod_peer("server"), port: 29_081, end_port: 29_082),
+              ingress_policy("server-allowed-range", from: pod_peer("client"), port: 29_082, end_port: 29_083)
+            ])
+      ports = {29_081 => :denied, 29_082 => :allowed, 29_083 => :denied, 29_084 => :denied}
+      %w[ipv4 ipv6].each do |family|
+        ports.each do |port, expected|
+          observed = probe("client", family, "TCP", port)
+          raise "#{family} policy conjunction on TCP #{port}: expected #{expected}, got #{observed}" unless observed == expected
+        end
+      end
+    end
+
     def setup_fixture
       super
       @adapter.detach
-      @adapter = Rubernetes::Network::EBPFPolicyAdapter.new(interfaces: [@host_links.fetch(1)])
+      @adapter = Rubernetes::Network::EBPFPolicyAdapter.new
       @engine = Rubernetes::Network::PolicyEngine.new(
         adapter: @adapter,
         pod_index: pod_index,
         namespace_labels: {"apps" => {"team" => "client"}, "services" => {"team" => "server"}}
       )
+    end
+
+    def pod_index
+      super.zip(@host_links).map { |pod, interface| pod.merge("interface" => interface) }
     end
   end
 
@@ -852,14 +898,14 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
     assert_equal true, result.fetch("production_capable"), result.inspect
   end
 
-  def test_ebpf_policy_reverse_conntrack_key_on_kernel_veth
+  def test_ebpf_policy_directions_and_reverse_conntrack_on_kernel_veth
     if ENV["RUBERNETES_NETWORK_POLICY_EBPF_INNER"] != "1"
       environment = {"RUBERNETES_NETWORK_POLICY_EBPF_INNER" => "1"}
       output, error, status = Open3.capture3(
         # bpf(2) needs CAP_BPF/CAP_NET_ADMIN in the initial user namespace; a
         # root runner keeps it and only isolates the network namespace.
         environment, "unshare", (Process.euid.zero? ? "-n" : "-Urn"), "--", RbConfig.ruby, "-Itest", "-Ilib", __FILE__,
-        "--name", "test_ebpf_policy_reverse_conntrack_key_on_kernel_veth"
+        "--name", name
       )
       skip error.strip if status.exitstatus == 77 && error.start_with?("SKIP:")
       failure_output = "#{output}\n#{error}"
@@ -873,8 +919,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
       return pass # rubocop:disable Minitest/ReturnInTestMethod
     end
 
-    result = EBPFReverseConntrackKernelRunner.new.run
-    puts "NETWORK_POLICY_EBPF_REVERSE=#{result}"
+    result = EBPFPolicyKernelRunner.new.run
+    puts "NETWORK_POLICY_EBPF_DIRECTIONS_AND_REVERSE=#{result}"
 
     assert_equal true, result
   rescue CapabilityBlocker => error
