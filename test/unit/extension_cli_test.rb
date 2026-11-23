@@ -108,4 +108,75 @@ class ExtensionCLITest < Minitest::Test
     assert_includes @stderr.string, "Usage: rubectl extension COMMAND"
     assert_equal 64, rubectl("apply")
   end
+
+  def test_preview_uses_real_filter_and_score_hooks_offline
+    source = File.expand_path("../../examples/extensions/team_rules.rb", __dir__)
+    batch = {"kind" => "Pod", "metadata" => {"name" => "crunch", "namespace" => "dev", "labels" => {"tier" => "batch"}},
+             "spec" => {"nodeName" => "quiet"}}
+    nodes = %w[quiet busy interactive].map do |name|
+      {"kind" => "Node", "metadata" => {"name" => name, "labels" => {"workload" => name}}}
+    end
+    resident = {"kind" => "Pod", "metadata" => {"name" => "resident", "uid" => "resident"}, "spec" => {"nodeName" => "busy"}}
+    file = write("cluster.json", JSON.generate({"kind" => "List", "items" => [batch, resident, *nodes]}))
+
+    assert_equal 0, rubectl("preview", source, "dev/crunch", file), @stderr.string
+    assert_includes @stdout.string, "2/3 nodes pass"
+    assert_includes @stdout.string, "quiet  pass  +200"
+    assert_includes @stdout.string, "busy  pass  +180"
+    assert_includes @stdout.string, "interactive  rejected  team-rules.KeepBatchOffInteractive: node is reserved"
+    assert_empty @client.applied
+
+    previous = write("previous.rb", 'score("PreferQuietNodes", weight: 2) { 100 }')
+    @stdout.truncate(0)
+    @stdout.rewind
+
+    assert_equal 0, rubectl("diff", previous, source, "dev/crunch", file), @stderr.string
+    assert_includes @stdout.string, "2/3 nodes changed"
+    assert_includes @stdout.string, "busy  pass +200 → pass +180"
+    assert_includes @stdout.string, "interactive  pass +200 → rejected by team-rules.KeepBatchOffInteractive"
+    refute_match(/^  quiet/, @stdout.string)
+  end
+
+  def test_diff_explains_scoring_changes_that_cancel_out
+    old = write("earlier.rb", %(score("Capacity") { 70 }\nscore("Cost") { 30 }))
+    edited = write("policy.rb", %(score("Capacity") { 60 }\nscore("Cost") { 40 }))
+    items = [{"kind" => "Pod", "metadata" => {"name" => "app"}}, {"kind" => "Node", "metadata" => {"name" => "blue"}}]
+    snapshot = write("snapshot.json", JSON.generate({"kind" => "List", "items" => items}))
+
+    assert_equal 0, rubectl("diff", old, edited, "default/app", snapshot), @stderr.string
+    assert_includes @stdout.string, "blue  pass +100 → pass +100"
+    assert_includes @stdout.string, "policy.Capacity  70 × 1 → 60 × 1  (#{edited}:1)"
+    assert_includes @stdout.string, "policy.Cost  30 × 1 → 40 × 1  (#{edited}:2)"
+    assert_empty @client.applied
+  end
+
+  def test_diff_reports_the_broken_local_file_before_reading_the_cluster
+    old = write("previous.rb", "score(\"bad\") {")
+    current = write("current.rb", 'score("valid") { 100 }')
+
+    assert_equal 64, rubectl("diff", old, current, "default/test")
+    assert_includes @stderr.string, old
+    assert_includes @stderr.string, "line 1"
+  end
+
+  def test_preview_reads_paginated_live_state_and_reports_plugin_errors
+    path = write("broken.rb", 'filter("Broken") { raise "bad rule" }')
+    calls = []
+    @client.define_singleton_method(:get) do |resource, query:|
+      calls << [resource, query]
+      if resource.end_with?("/nodes")
+        {"items" => [{"metadata" => {"name" => "worker"}}]}
+      elsif query["continue"]
+        {"items" => [{"metadata" => {"name" => "target"}}]}
+      else
+        {"items" => [], "metadata" => {"continue" => "next"}}
+      end
+    end
+
+    assert_equal 64, rubectl("preview", path, "default/target")
+    assert_match(/broken.Broken.*bad rule/, @stderr.string)
+    assert_equal ["/api/v1/pods", "/api/v1/pods", "/api/v1/nodes"], calls.map(&:first)
+    assert_equal "next", calls[1].last.fetch("continue")
+    assert_empty @client.applied
+  end
 end
