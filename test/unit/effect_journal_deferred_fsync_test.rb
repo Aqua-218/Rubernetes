@@ -11,12 +11,16 @@ class EffectJournalDeferredFsyncTest < Minitest::Test
     Dir.mktmpdir("effect-journal") do |directory|
       journal = Rubernetes::Controller::EffectJournal.new(path: File.join(directory, "effects.jsonl"), component: "cm", identity: "t")
 
-      journal.record(effect_type: "create", reconcile_key: "ns/a", action: :create, object: {"metadata" => {"name" => "a"}})
-      journal.record(effect_type: "create", reconcile_key: "ns/b", action: :create, object: {"metadata" => {"name" => "b"}})
+      # Control the background worker in the explicit-flush case. The other
+      # test waits for the real worker to clear the same pending flag.
+      journal.stub(:start_flusher_locked, nil) do
+        journal.record(effect_type: "create", reconcile_key: "ns/a", action: :create, object: {"metadata" => {"name" => "a"}})
+        journal.record(effect_type: "create", reconcile_key: "ns/b", action: :create, object: {"metadata" => {"name" => "b"}})
 
-      assert_equal 2, File.readlines(journal.path).length, "written and flushed immediately"
-      assert_predicate journal, :fsync_pending?
-      journal.flush!
+        assert_equal 2, File.readlines(journal.path).length, "written and flushed immediately"
+        assert_predicate journal, :fsync_pending?
+        journal.flush!
+      end
 
       refute_predicate journal, :fsync_pending?
       journal.close
