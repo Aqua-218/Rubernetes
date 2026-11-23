@@ -2,6 +2,8 @@
 
 require "digest"
 
+require_relative "../support/secure_compare"
+
 module Rubernetes
   module Image
     # A validated OCI content digest. M2 intentionally accepts only SHA-256 because
@@ -88,13 +90,7 @@ module Rubernetes
 
       private
 
-      def secure_compare(left, right)
-        return false unless left.bytesize == right.bytesize
-
-        result = 0
-        left.bytes.zip(right.bytes) { |a, b| result |= a ^ b }
-        result.zero?
-      end
+      def secure_compare(left, right) = SecureCompare.call(left, right)
     end
   end
 end
