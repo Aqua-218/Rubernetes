@@ -22,22 +22,21 @@ class M1ProbesTest < Minitest::Test
 
     generation, _stderr, generation_status = run_probe("generation")
 
-    assert_equal generation.fetch("passed"), generation_status.success?
+    assert_predicate generation_status, :success?, generation.dig("canonical_check", "stderr")
+    assert_equal true, generation.fetch("passed")
     assert_equal 2, generation.fetch("runs").length
     assert_equal 0, generation.fetch("byte_diff_count")
     assert_equal generation.fetch("canonical_differences").length, generation.fetch("canonical_diff_count")
-    if generation.fetch("passed")
-      assert_equal 0, generation.fetch("canonical_diff_count")
-    else
-      assert_operator generation.fetch("canonical_diff_count"), :>, 0
-      assert_operator generation.fetch("failure_count"), :>, 0
-    end
+    assert_equal 0, generation.fetch("canonical_diff_count")
   end
 
   def test_roundtrip_probe_reports_a_complete_validation_criterion
     report, _stderr, status = run_probe("roundtrip")
 
-    assert_predicate status, :success?, report.fetch("errors").join("\n")
+    failures = report.fetch("cases").reject { |entry| entry.fetch("passed") }
+    messages = failures.map { |entry| "#{entry.fetch("id")}: #{entry.fetch("errors").join(", ")}" }
+
+    assert_predicate status, :success?, (report.fetch("errors") + messages).join("\n")
     assert_equal true, report.fetch("passed")
     assert_equal 311, report.fetch("gvk_count")
     assert_equal 770, report.fetch("case_count")
