@@ -2,8 +2,10 @@
 
 require "fileutils"
 require "json"
+require_relative "../platform/linux/kubelet_cgroup_layout"
 require_relative "status"
 require_relative "../resource_helpers"
+require_relative "../runtime/memory_qos"
 
 module Rubernetes
   module Node
@@ -21,9 +23,8 @@ module Rubernetes
     #   event on the Node.
     # * qosContainerManager.UpdateCgroups -- BestEffort always 2 shares,
     #   Burstable the shares of its Pods' CPU requests; on every Pod change and
-    #   once a minute.  Guaranteed Pods are kubepods children upstream; here
-    #   they share a "guaranteed" directory, which therefore gets the shares
-    #   of its Pods' requests, so it weighs what those Pods would.
+    #   once a minute. Guaranteed Pods are direct children of kubepods. The
+    #   standalone legacy hierarchy can still use a separate "guaranteed" tier.
     #
     # Several agents of one host may share the hierarchy (a multi-node
     # cluster on one machine).  Each then publishes its node allocatable and
@@ -52,17 +53,21 @@ module Rubernetes
                      enforce_node_allocatable: ["pods"], system_reserved_cgroup: nil, kube_reserved_cgroup: nil,
                      active_pods: -> { [] }, event: nil, error_handler: nil, period: PERIOD_SECONDS,
                      pid_max_paths: %w[/proc/sys/kernel/pid_max /proc/sys/kernel/threads-max],
-                     node_name: nil, state_dir: nil)
-        @base = File.join(File.expand_path(root.to_s), hierarchy.to_s)
-        @node_name = (node_name || Process.pid).to_s
-        @state_dir = state_dir || File.join("/run/rubernetes/qos-cgroups", hierarchy.to_s)
-        @start_time = process_start_time(Process.pid)
+                     node_name: nil, state_dir: nil, reserved_memory_percent: nil, memory_qos_policy: nil)
         @root = File.expand_path(root.to_s)
+        @base = File.join(@root, hierarchy.to_s)
+        @node_name = (node_name || Process.pid).to_s
+        @kubelet_layout = Platform::Linux::KubeletCgroupLayout.new(@root) if hierarchy == Platform::Linux::KubeletCgroupLayout::HIERARCHY
+        @reservation_owner = Platform::Linux::KubeletCgroupLayout.reservation_owner(@node_name) if @kubelet_layout
+        @state_dir = state_dir || state_directory(hierarchy)
+        @start_time = process_start_time(Process.pid)
         @capacity = quantities(capacity)
         pid_max = read_pid_max(pid_max_paths)
         @capacity["pid"] ||= Rational(pid_max) if pid_max
         @system_reserved = quantities(system_reserved)
         @kube_reserved = quantities(kube_reserved)
+        @reserved_memory_percent = reserved_memory_percent
+        @memory_qos_policy = memory_qos_policy
         @enforce = Array(enforce_node_allocatable).map(&:to_s)
         unknown = @enforce - ENFORCEMENT_KEYS
         raise Error, "invalid enforce_node_allocatable #{unknown.join(", ")}" unless unknown.empty?
@@ -94,6 +99,10 @@ module Rubernetes
       end
 
       def start
+        if @kubelet_layout && !@thread
+          Platform::Linux::CgroupV2.new(root: @root, kubelet_layout: @kubelet_layout).prepare_kubelet_hierarchy!
+          @kubelet_layout.clear_reservations(@reservation_owner)
+        end
         @thread ||= Thread.new do
           until @mutex.synchronize { @stop }
             tick
@@ -101,6 +110,12 @@ module Rubernetes
           end
         end
         self
+      end
+
+      def with_pod_cgroup(uid, qos, &)
+        return yield unless @kubelet_layout
+
+        @kubelet_layout.with_reservation(uid, qos, @reservation_owner, &)
       end
 
       def stop
@@ -129,10 +144,13 @@ module Rubernetes
 
       # One pass: publish this node's share, then write the composition.
       def tick(pods = nil)
-        requests = qos_requests(pods || Array(@active_pods.call))
-        publish(requests)
+        pods ||= Array(@active_pods.call)
+        memory = qos_memory_requests(pods) if @reserved_memory_percent || @memory_qos_policy
+        publish(qos_requests(pods), memory: memory)
         peers = live_states
         enforce_node_allocatable(peers)
+        update_qos_memory_limits(peers)
+        update_memory_qos(peers)
         update(peers)
       rescue StandardError => error
         @error_handler&.call(error, :qos_cgroups)
@@ -141,7 +159,7 @@ module Rubernetes
       # getNodeAllocatableInternalAbsolute (pods enforced) or
       # internalCapacity: this node's values.
       def node_values
-        @enforce.include?("pods") ? subtract(@capacity, sum(@system_reserved, @kube_reserved)) : @capacity
+        @enforce.include?("pods") ? absolute_node_values : @capacity
       end
 
       # The cgroup settings getCgroupConfig derives from the sum of the live
@@ -163,8 +181,8 @@ module Rubernetes
         return limits if limits == @last_written
 
         write_settings(@base, limits)
-        write_settings(resolve(@system_reserved_cgroup), cgroup_settings(@system_reserved)) if @enforce.include?("system-reserved")
-        write_settings(resolve(@kube_reserved_cgroup), cgroup_settings(@kube_reserved)) if @enforce.include?("kube-reserved")
+        write_settings(resolve(@system_reserved_cgroup), reserved_cgroup_settings(@system_reserved)) if @enforce.include?("system-reserved")
+        write_settings(resolve(@kube_reserved_cgroup), reserved_cgroup_settings(@kube_reserved)) if @enforce.include?("kube-reserved")
         # enforceExistingCgroup(..., compressibleResources: true): CPU only.
         if @enforce.include?("system-reserved-compressible")
           write_settings(resolve(@system_reserved_cgroup), cgroup_settings(@system_reserved, compressible_only: true))
@@ -203,6 +221,7 @@ module Rubernetes
       # ->(operation, seconds) per cgroup the manager writes
       # (kubelet_cgroup_manager_duration_seconds).
       attr_writer :cgroup_observer
+      attr_writer :memory_qos_gauge
 
       # setCPUCgroupConfig over every live node's requests.  Returns
       # {qos => cpu.weight} as written.
@@ -217,6 +236,7 @@ module Rubernetes
           "burstable" => shares_to_weight(milli_cpu_to_shares(requests["Burstable"])),
           "besteffort" => shares_to_weight(MIN_SHARES)
         }
+        weights.delete("guaranteed") if @kubelet_layout
         return weights if weights == @last_qos && weights.keys.all? { |qos| current_weight(qos) == weights[qos] }
 
         weights.each do |qos, weight|
@@ -253,12 +273,30 @@ module Rubernetes
       def milli_cpu_to_shares(milli) = self.class.milli_cpu_to_shares(milli)
       def shares_to_weight(shares) = self.class.shares_to_weight(shares)
 
+      def self.parse_reserved_memory(values)
+        unsupported = values.keys.find { |resource| resource != "memory" }
+        raise Error, "cannot reserve #{unsupported.inspect} resource" if unsupported
+        return nil if values.empty?
+
+        value = values.fetch("memory")
+        percent = value.is_a?(String) && value[/\A([+-]?\d+)%+\z/, 1]
+        percent = Integer(percent, 10) if percent
+        raise Error, "memory must be a percentage between 0 and 100" unless percent && (0..100).cover?(percent)
+
+        percent
+      end
+
       # This node's share, replaced atomically.
-      def publish(requests)
+      def publish(requests, memory: nil)
         FileUtils.mkdir_p(@state_dir, mode: 0o700)
         state = {"node" => @node_name, "pid" => Process.pid, "start_time" => @start_time,
                  "allocatable" => node_values.transform_values(&:to_s),
                  "requests" => requests.to_h}
+        state["qos_allocatable_memory"] = absolute_node_values.fetch("memory").to_s if !@enforce.include?("pods") && @capacity.key?("memory")
+        state["reserved_memory"] = memory.transform_values { |bytes| (bytes * @reserved_memory_percent) / 100 } if @reserved_memory_percent
+        if @memory_qos_policy
+          state["protected_memory"] = @memory_qos_policy == Runtime::MemoryQoS::TIERED_RESERVATION ? memory : {}
+        end
         temporary = "#{state_path}.#{Process.pid}.tmp"
         File.write(temporary, JSON.generate(state), perm: 0o600)
         File.rename(temporary, state_path)
@@ -283,7 +321,89 @@ module Rubernetes
 
       private
 
+      def absolute_node_values
+        subtract(@capacity, sum(@system_reserved, @kube_reserved))
+      end
+
+      def qos_memory_requests(pods)
+        requests = Hash.new(0)
+        pods.each do |pod|
+          pod = Helpers.string_keys(pod)
+          next if terminal?(pod)
+
+          qos = ResourceHelpers.qos_class(pod)
+          next if qos == "BestEffort"
+
+          memory = ResourceHelpers.pod_requests(pod)["memory"]
+          requests[qos] += memory.value.ceil if memory
+        end
+        requests
+      end
+
+      def update_memory_qos(peers)
+        protections = peers.filter_map { |peer| peer["protected_memory"] }
+        return if protections.empty?
+
+        guaranteed = protections.sum { |memory| memory.fetch("Guaranteed", 0) }
+        burstable = protections.sum { |memory| memory.fetch("Burstable", 0) }
+        write_if_changed(File.join(@base, "memory.min"), guaranteed + burstable)
+        write_if_changed(File.join(@base, "guaranteed", "memory.min"), guaranteed) unless @kubelet_layout
+        write_if_changed(File.join(@base, "burstable", "memory.low"), burstable)
+        local = peers.find { |peer| peer["node"] == @node_name }&.fetch("protected_memory", {}) || {}
+        @memory_qos_gauge&.call(local.fetch("Guaranteed", 0), local.fetch("Burstable", 0))
+      end
+
+      def reserved_cgroup_settings(resources)
+        settings = cgroup_settings(resources)
+        settings["memory.min"] = settings["memory.max"] if @memory_qos_policy && settings.key?("memory.max")
+        settings
+      end
+
+      def write_if_changed(path, value)
+        write(path, value.to_s) if File.exist?(path) && File.read(path).strip != value.to_s
+      end
+
+      def update_qos_memory_limits(peers)
+        reservations = peers.filter_map { |peer| peer["reserved_memory"] }
+        return if reservations.empty?
+
+        # GetNodeAllocatableAbsolute is the tier base even when "pods" is
+        # absent from enforceNodeAllocatable. Existing peer state carries
+        # only the root limit, which is also the tier base in the default mode.
+        total = peers.sum { |peer| Rational(peer["qos_allocatable_memory"] || peer.dig("allocatable", "memory") || 0) }
+        allocatable_memory = [total, @capacity.fetch("memory", 0)].min.ceil
+        return unless allocatable_memory.positive?
+
+        burstable = [allocatable_memory - reservations.sum { |entry| entry.fetch("Guaranteed", 0) }, 0].max
+        best_effort = [burstable - reservations.sum { |entry| entry.fetch("Burstable", 0) }, 0].max
+        write_qos_memory_limit("burstable", burstable)
+        write_qos_memory_limit("besteffort", best_effort)
+      end
+
+      def write_qos_memory_limit(qos, limit)
+        directory = File.join(@base, qos)
+        file = File.join(directory, "memory.max")
+        return unless File.exist?(file) && File.read(file).strip != limit.to_s
+
+        begin
+          write(file, limit.to_s)
+        rescue Errno::EBUSY, Errno::ENOMEM
+          usage = Integer(File.read(File.join(directory, "memory.current")).strip)
+          raise unless usage > limit
+
+          write(file, usage.to_s)
+        end
+      end
+
       def state_path = File.join(@state_dir, "#{@node_name.gsub(/[^A-Za-z0-9_.-]/, "_")}.json")
+
+      def state_directory(hierarchy)
+        base = File.join("/run/rubernetes/qos-cgroups", hierarchy.to_s)
+        return base unless @kubelet_layout
+
+        stat = File.stat(@root)
+        File.join(base, "#{stat.dev}-#{stat.ino}")
+      end
 
       def live?(pid, start_time)
         return false unless pid.is_a?(Integer)
