@@ -86,6 +86,11 @@ module Rubernetes
         nil
       end
 
+      def reload_client_ca!(certificates)
+        store = certificate_store(certificates)
+        @mutex.synchronize { @client_ca = store }
+      end
+
       # GetRequestAttributes.
       def request_attributes(user, request)
         path = request.path.to_s
@@ -136,10 +141,11 @@ module Rubernetes
       # x509 request authenticator: the chain must verify against the client
       # CA and the certificate must allow client authentication.
       def certificate_user(certificate, chain)
-        return nil if @client_ca.nil?
+        store = @mutex.synchronize { @client_ca }
+        return nil if store.nil?
 
         intermediates = chain.reject { |entry| entry.to_der == certificate.to_der }
-        return nil unless @client_ca.verify(certificate, intermediates)
+        return nil unless store.verify(certificate, intermediates)
 
         usage = certificate.extensions.find { |extension| extension.oid == "extendedKeyUsage" }
         return nil if usage && usage.value.split(/,\s*/).none? do |value|
