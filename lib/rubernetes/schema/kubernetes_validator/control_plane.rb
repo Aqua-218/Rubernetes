@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../../coordination/version"
+
 module Rubernetes
   module Schema
     # Kinds the control plane keeps about itself: APIService, StorageVersion,
@@ -160,22 +162,62 @@ module Rubernetes
         [issue(%w[spec resource resource], :invalid, DNS1035_LABEL_MSG)]
       end
 
-      def lease_candidate_errors(root)
+      def lease_candidate_errors(root, old)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
         issues = []
+        lease_name = fetch(spec, "leaseName")
         binary_version = fetch(spec, "binaryVersion")
-        if !blank?(binary_version) && !binary_version.to_s.match?(/\A\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/)
-          issues << issue(%w[spec binaryVersion], :invalid, "must be a valid semantic version")
-        end
+        emulation_version = fetch(spec, "emulationVersion")
         strategy = fetch(spec, "strategy")
-        value = strategy.is_a?(Hash) ? fetch(strategy, "strategy") : strategy
-        if !blank?(value) && value.to_s != "OldestEmulationVersion"
-          issues << issue(%w[spec strategy strategy], :unsupported,
-                          "supported values: \"OldestEmulationVersion\"")
+        issues << issue(%w[spec leaseName], :required, "") if blank?(lease_name)
+        issues << issue(%w[spec binaryVersion], :required, "") if blank?(binary_version)
+        issues << issue(%w[spec strategy], :required, "") if blank?(strategy)
+
+        binary = coordination_version(binary_version, "binaryVersion", issues)
+        emulation = coordination_version(emulation_version, "emulationVersion", issues)
+        if binary && emulation && (binary <=> emulation).negative?
+          issues << issue(%w[spec binaryVersion], :invalid, "must be greater than or equal to `emulationVersion`")
+        end
+        if strategy == "OldestEmulationVersion" && (emulation.nil? || emulation == Coordination::Version::ZERO)
+          issues << issue(%w[spec emulationVersion], :required, "must be specified when `strategy` is 'OldestEmulationVersion'")
+        end
+        issues.concat(coordination_strategy_errors(strategy))
+        old_spec = fetch(old || {}, "spec")
+        issues << issue(%w[spec leaseName], :invalid, "field is immutable") if old_spec && fetch(old_spec, "leaseName") != lease_name
+        issues
+      end
+
+      def lease_errors(root)
+        spec = fetch(root, "spec")
+        return [] unless spec.is_a?(Hash)
+
+        strategy = fetch(spec, "strategy")
+        issues = coordination_strategy_errors(strategy)
+        duration = fetch(spec, "leaseDurationSeconds")
+        issues << issue(%w[spec leaseDurationSeconds], :invalid, "must be greater than 0") if duration.is_a?(Numeric) && duration <= 0
+        transitions = fetch(spec, "leaseTransitions")
+        issues << issue(%w[spec leaseTransitions], :invalid, "must be greater than or equal to 0") if transitions.is_a?(Numeric) && transitions.negative?
+        if blank?(strategy) && !blank?(fetch(spec, "preferredHolder"))
+          issues << issue(%w[spec preferredHolder], :forbidden, "may only be specified if `strategy` is defined")
         end
         issues
+      end
+
+      def coordination_version(value, field, issues)
+        return if blank?(value)
+
+        parsed = Coordination::Version.key(value)
+        issues << issue(["spec", field], :invalid, "must be a valid semantic version") if parsed.nil?
+        parsed
+      end
+
+      def coordination_strategy_errors(strategy)
+        return [] if blank?(strategy) || strategy == "OldestEmulationVersion"
+        return [issue(%w[spec strategy strategy], :unsupported, "supported values: \"OldestEmulationVersion\"")] unless strategy.to_s.include?("/")
+
+        qualified_name_messages(strategy).map { |message| issue(%w[spec strategy strategy], :invalid, message) }
       end
 
       private_class_method :server_storage_version_errors, :common_encoding_version_errors, :storage_version_condition_errors
