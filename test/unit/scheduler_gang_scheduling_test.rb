@@ -26,16 +26,112 @@ class SchedulerGangSchedulingTest < Minitest::Test
                         "spec" => {"schedulingPolicy" => {"gang" => {"minCount" => min_count}}}}}
   end
 
-  def framework
+  def framework(feature_gates = {}, &delete_pod)
     @binds = []
     @conditions = []
+    @unschedulable_members = []
     @metrics = S::Metrics.new
     S::Framework.new(bind: lambda { |pod, node|
       @binds << [pod.name, node.name]
       true
-    }, metrics: @metrics, opportunistic_batching: false,
-                     feature_gates: {"GangScheduling" => true, "GenericWorkload" => true},
-                     pod_group_status: ->(namespace, name, condition) { @conditions << [namespace, name, condition] })
+    }, metrics: @metrics, opportunistic_batching: false, delete_pod: delete_pod, async_preemption: false,
+                     feature_gates: {"GangScheduling" => true, "GenericWorkload" => true}.merge(feature_gates),
+                     pod_group_status: ->(namespace, name, condition) { @conditions << [namespace, name, condition] },
+                     pod_group_unschedulable: ->(result, nodes) { @unschedulable_members << [result.pod.name, result.status, nodes] })
+  end
+
+  def test_workload_aware_preemption_removes_a_lower_priority_group_atomically
+    groups = group(2)
+    groups.dig("default/gang", "spec")["priority"] = 100
+    groups["default/victims"] = {"spec" => {"disruptionMode" => "PodGroup", "priority" => 50}}
+    nodes = %w[n1 n2].map { |name| node(name, cpu: "1") }
+    victims = nodes.map do |target|
+      victim = pod("low-#{target.name}", group: "victims")
+      victim.with("spec" => victim.spec.merge("nodeName" => target.name))
+    end
+    pending = %w[a b].map { |name| pod(name) }
+
+    [false, true].each do |enabled|
+      deleted = []
+      fw = framework({"WorkloadAwarePreemption" => enabled}) { |victim| deleted << victim.name }
+      pending.each { |member| fw.enqueue(member) }
+      result = fw.schedule_next(nodes: nodes, pods: pending + victims, pod_groups: groups)
+
+      refute_predicate result, :scheduled?
+      assert_empty @binds
+      assert_equal(enabled ? %w[low-n1 low-n2] : [], deleted.sort)
+      next unless enabled
+
+      assert_equal "pod group is waiting for preemption to complete", result.reason
+      fw.requeue_on_event("PodDelete", old_object: victims.first)
+      fw.queue.promote_unschedulable
+
+      assert_predicate fw.schedule_next(nodes: nodes, pods: pending, pod_groups: groups), :scheduled?
+    end
+  end
+
+  def test_topology_aware_placement_keeps_the_group_in_a_feasible_domain
+    key = "topology.kubernetes.io/zone"
+    groups = group(2)
+    groups.dig("default/gang", "spec")["schedulingConstraints"] = {"topology" => [{"key" => key}]}
+    nodes = {"a1" => "a", "b1" => "b", "b2" => "b"}.map do |name, zone|
+      original = node(name, cpu: "1")
+      original.with("metadata" => original.metadata.merge("labels" => {key => zone}))
+    end
+    pods = %w[a b].map { |name| pod(name) }
+    fw = framework("TopologyAwareWorkloadScheduling" => true)
+    pods.each { |member| fw.enqueue(member) }
+
+    assert_predicate fw.schedule_next(nodes: nodes, pods: pods, pod_groups: groups), :scheduled?
+    assert_equal %w[b1 b2], @binds.map(&:last).sort
+    assert_equal 0, fw.queue.in_flight_pods
+  end
+
+  def test_the_topology_gate_controls_whether_a_group_can_span_domains
+    key = "topology.kubernetes.io/zone"
+    groups = group(2)
+    groups.dig("default/gang", "spec")["schedulingConstraints"] = {"topology" => [{"key" => key}]}
+    nodes = %w[a b].map do |zone|
+      original = node(zone, cpu: "1")
+      original.with("metadata" => original.metadata.merge("labels" => {key => zone}))
+    end
+    pods = %w[a b].map { |name| pod(name) }
+
+    [false, true].each do |enabled|
+      fw = framework("TopologyAwareWorkloadScheduling" => enabled)
+      pods.each { |member| fw.enqueue(member) }
+      result = fw.schedule_next(nodes: nodes, pods: pods, pod_groups: groups)
+
+      assert_equal !enabled, result.scheduled?, result.inspect
+      assert_equal(enabled ? 0 : 2, @binds.length)
+      next unless enabled
+
+      peer = pods.find { |item| item.name != result.pod.name }
+
+      assert_equal [[peer.name, :unschedulable, 2]], @unschedulable_members
+    end
+  end
+
+  def test_topology_placement_scores_resources_alongside_member_count
+    key = "topology.kubernetes.io/zone"
+    nodes = {"small" => "3", "large" => "24"}.map do |name, cpu|
+      original = node(name, cpu: cpu)
+      original.with("metadata" => original.metadata.merge("labels" => {key => name}))
+    end
+    groups = group(2)
+    spec = groups.dig("default/gang", "spec")
+    spec["schedulingConstraints"] = {"topology" => [{"key" => key}]}
+
+    [2, 4].each do |count|
+      spec["schedulingPolicy"] = {"basic" => {}} if count == 4
+      pods = Array.new(count) { |index| pod("pod-#{index}") }
+      fw = framework("TopologyAwareWorkloadScheduling" => true)
+      pods.each { |member| fw.enqueue(member) }
+
+      assert_predicate fw.schedule_next(nodes: nodes, pods: pods, pod_groups: groups), :scheduled?
+      assert_equal ["small"] * [3, count].min, @binds.map(&:last)
+      assert_equal count == 4 ? 1 : 0, @unschedulable_members.length
+    end
   end
 
   def line(text, name, labels) = text[/^#{Regexp.escape(name)}#{Regexp.escape(labels)} (\S+)$/, 1]
