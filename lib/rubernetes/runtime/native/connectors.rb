@@ -116,13 +116,12 @@ module Rubernetes
         # either (the CRI tags each line with its stream and ReadLogs returns
         # them all).  Serving stdout alone hid every diagnostic a workload
         # writes to stderr.
-        def logs(value, follow: false, since: nil, tail: nil, stream: :all, timestamps: false)
-          sandbox, container = find_container(value)
+        def logs(value, follow: false, since: nil, tail: nil, stream: :all, timestamps: false, sandbox_id: nil)
           # A container that ran and exited (a restart being backed off, the
           # querier of the DNS specs whose loop has finished) keeps its log with
           # the supervisor under its process id even after the handle was
           # released; kubelet serves that log until the container is removed.
-          handle = container.process || (container.state == :stopped ? "process-#{sandbox.id}-#{container.id}" : nil)
+          handle = container_log_handle(value, sandbox_id)
           raise InvalidState, "logs require a started container" unless handle
 
           @process_supervisor.logs(handle, follow: follow, since: since, tail: tail, stream: stream,
@@ -130,6 +129,15 @@ module Rubernetes
         end
 
         private
+
+        def container_log_handle(value, sandbox_id)
+          sandbox, container = find_container(value)
+          container.process || (process_log_key(sandbox.id, container.id) if container.state == :stopped || sandbox_id)
+        rescue Error
+          raise unless sandbox_id
+
+          archived_container_log_handle(value, sandbox_id)
+        end
 
         # Attach joins a running container's streams the way the CRI shim does:
         # output is the container's log from the moment of attaching (the
@@ -139,9 +147,16 @@ module Rubernetes
           process = container.process
           raise CapabilityError, "container process does not expose attach streams" unless process
 
-          input = stream_requested?(stdin) ? borrow_process_stream(process.stdin) : nil
-          output = stream_requested?(stdout) ? follow_log_stream(process, :stdout) : nil
-          error = !tty && stream_requested?(stderr) ? follow_log_stream(process, :stderr) : nil
+          if stream_requested?(stdin) && process.stdin && !process.stdin.closed?
+            finish = -> { @process_supervisor.finish_stdin(process) } if container.spec["stdinOnce"] == true
+            input = BorrowedProcessStream.new(process.stdin, &finish)
+          end
+          # When a client leaves container stdin open, its own input EOF
+          # ends the attach session without waiting for the container to
+          # exit. With stdinOnce we instead collect the output through exit.
+          detach = input.method(:closed?) if input && !finish
+          output = stream_requested?(stdout) ? follow_log_stream(process, :stdout, stop: detach) : nil
+          error = !tty && stream_requested?(stderr) ? follow_log_stream(process, :stderr, stop: detach) : nil
           raise CapabilityError, "container process stdin stream is unavailable" if stream_requested?(stdin) && input.nil?
           raise CapabilityError, "container process stdout stream is unavailable" if stream_requested?(stdout) && output.nil?
           raise CapabilityError, "container process stderr stream is unavailable" if stream_requested?(stderr) && !tty && error.nil?
@@ -152,17 +167,13 @@ module Rubernetes
         # nil when the process's log cannot be followed (its handle was closed
         # under the attach, the log file is gone): the caller reports the
         # stream as unavailable.
-        def follow_log_stream(process, stream)
+        def follow_log_stream(process, stream, stop:)
           # Only new output: the log so far belongs to `logs`, not `attach`.
           existing = @process_supervisor.logs(process, follow: false, stream: stream)
           since = existing.is_a?(String) ? existing.bytesize : nil
-          @process_supervisor.logs(process, follow: true, since: since, stream: stream)
+          @process_supervisor.logs(process, follow: true, since: since, stream: stream, stop: stop)
         rescue *PROCESS_ERRORS
           nil
-        end
-
-        def borrow_process_stream(stream)
-          stream && BorrowedProcessStream.new(stream)
         end
 
         def validate_duplex_result!(result, operation:, options: {})
