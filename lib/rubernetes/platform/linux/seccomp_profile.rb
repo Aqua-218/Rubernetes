@@ -28,19 +28,28 @@ module Rubernetes
         }.freeze
         ENOSYS = 38
         EPERM = 1
+        U64_MAX = (1 << 64) - 1
 
         # One argument condition of a rule.
         Arg = Data.define(:index, :value, :value_two, :op) do
           def self.from(hash)
             input = hash.to_h.transform_keys(&:to_s)
-            op = String(input.fetch("op"))
+            new(index: input.fetch("index"), value: input.fetch("value", 0),
+                value_two: input.fetch("valueTwo", input.fetch("value_two", 0)), op: input.fetch("op"))
+          end
+
+          def initialize(index:, value:, value_two:, op:)
+            op = String(op)
             raise ProfileError, "unsupported seccomp argument operator #{op.inspect}" unless OPERATORS.include?(op)
 
-            index = Integer(input.fetch("index"))
+            index = Integer(index)
             raise ProfileError, "seccomp argument index must be 0..5" unless index.between?(0, 5)
 
-            new(index: index, value: Integer(input.fetch("value", 0)),
-                value_two: Integer(input.fetch("valueTwo", input.fetch("value_two", 0))), op: op)
+            value = Integer(value)
+            value_two = Integer(value_two)
+            raise ProfileError, "seccomp argument operands must be unsigned 64-bit integers" unless value.between?(0, U64_MAX) && value_two.between?(0, U64_MAX)
+
+            super
           end
 
           def to_h
@@ -49,7 +58,7 @@ module Rubernetes
 
           # The semantics the compiled BPF must reproduce.
           def match?(argument)
-            actual = Integer(argument) & 0xFFFF_FFFF_FFFF_FFFF
+            actual = Integer(argument) & U64_MAX
             case op
             when "SCMP_CMP_EQ" then actual == value
             when "SCMP_CMP_NE" then actual != value
