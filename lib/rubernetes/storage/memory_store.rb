@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "monitor"
+require "openssl"
 require "securerandom"
 
 require_relative "memory_store/errors"
@@ -64,14 +65,16 @@ module Rubernetes
       WatchOverflow = Storage::WatchOverflow
 
       DEFAULT_HISTORY_REVISIONS = 100_000
-      # kube-apiserver's --etcd-compaction-interval, five minutes: etcd keeps
-      # roughly one interval of history and compacts everything older, so a
-      # continue token or a watch resourceVersion older than that is Gone.
-      # A store that keeps a day of history never expires either, and clients
-      # that are supposed to handle the expiry -- an informer relisting, a
-      # chunked list resuming from an inconsistent token -- are never
-      # exercised, which is what the API chunking conformance spec measures.
-      DEFAULT_HISTORY_SECONDS = 5 * 60
+      COMPATIBILITY_HISTORY_POLICY = "compatibility"
+      LONGER_HISTORY_POLICY = "longer_window"
+      DEFAULT_HISTORY_POLICY = LONGER_HISTORY_POLICY
+      COMPATIBILITY_HISTORY_SECONDS = 5 * 60
+      LIST_CONTINUE_SECONDS = 5 * 60
+      DEFAULT_HISTORY_SECONDS = 24 * 60 * 60
+      DEFAULT_HISTORY_SECONDS_BY_POLICY = {
+        COMPATIBILITY_HISTORY_POLICY => COMPATIBILITY_HISTORY_SECONDS,
+        LONGER_HISTORY_POLICY => DEFAULT_HISTORY_SECONDS
+      }.freeze
       DEFAULT_WATCHER_BUFFER_EVENTS = 1_024
       DEFAULT_WATCHER_BUFFER_BYTES = 16 * 1024 * 1024
       DEFAULT_BOOKMARK_INTERVAL = 30.0
@@ -97,12 +100,15 @@ module Rubernetes
 
       def initialize(
         history_revisions: DEFAULT_HISTORY_REVISIONS,
-        history_seconds: DEFAULT_HISTORY_SECONDS,
+        history_retention_policy: DEFAULT_HISTORY_POLICY,
+        history_seconds: DEFAULT_HISTORY_SECONDS_BY_POLICY[history_retention_policy],
         watcher_buffer_size: DEFAULT_WATCHER_BUFFER_EVENTS,
         watcher_buffer_bytes: DEFAULT_WATCHER_BUFFER_BYTES,
         bookmark_interval: DEFAULT_BOOKMARK_INTERVAL,
         max_update_retries: DEFAULT_UPDATE_RETRIES,
         clock: -> { Time.now.utc },
+        token_secret: SecureRandom.hex(32),
+        legacy_token_secret: token_secret,
         sleeper: ->(seconds) { Kernel.sleep(seconds) },
         random: Random.new,
         **options
@@ -110,12 +116,20 @@ module Rubernetes
         history_revisions, history_seconds = retention_options(options, history_revisions, history_seconds)
         watcher_buffer_size = option_value(options, *WATCHER_BUFFER_EVENTS_OPTIONS, default: watcher_buffer_size)
         watcher_buffer_bytes = option_value(options, *WATCHER_BUFFER_BYTES_OPTIONS, default: watcher_buffer_bytes)
-        @token_secret = options.delete(:token_secret)&.to_s || SecureRandom.hex(32)
+        @token_secret = token_secret.nil? ? nil : token_secret.to_s.dup.freeze
+        @legacy_token_secret = (legacy_token_secret || SecureRandom.hex(32)).to_s.dup.freeze
         options.delete(:strict_request_uid)
         raise ArgumentError, "unknown MemoryStore options: #{options.keys.join(", ")}" unless options.empty?
 
-        @history_revisions = validate_limit(history_revisions, "history_revisions", allow_nil: true)
-        @history_seconds = validate_duration(history_seconds, "history_seconds")
+        unless DEFAULT_HISTORY_SECONDS_BY_POLICY.key?(history_retention_policy)
+          raise ArgumentError, "history_retention_policy must be one of #{DEFAULT_HISTORY_SECONDS_BY_POLICY.keys.join(", ")}"
+        end
+
+        @retain_longer_window = history_retention_policy == LONGER_HISTORY_POLICY
+        @history_revisions = validate_history_revisions(history_revisions)
+        @history_seconds = validate_interval(history_seconds, "history_seconds", optional: true)
+        raise ArgumentError, "history_seconds must be finite" if @retain_longer_window && @history_seconds && !@history_seconds.finite?
+
         @watcher_buffer_size = validate_positive_limit(watcher_buffer_size, "watcher_buffer_size")
         @watcher_buffer_bytes = validate_positive_limit(watcher_buffer_bytes, "watcher_buffer_bytes")
         @bookmark_interval = validate_interval(bookmark_interval, "bookmark_interval")
@@ -124,6 +138,10 @@ module Rubernetes
         @sleeper = sleeper
         @random = random
         initialize_state
+      end
+
+      def use_continue_token_secret(secret)
+        @monitor.synchronize { @token_secret = secret }
       end
 
       private
@@ -156,9 +174,10 @@ module Rubernetes
         @monitor = Monitor.new
         @revision = 0
         @compacted_revision = 0
-        @objects = {}
-        @versions = Hash.new { |hash, key| hash[key] = [] }
-        @known_keys = {}
+        # Every retained key owns one version chain. Its last entry is the
+        # current object, or a tombstone retained for historical reads.
+        @live_versions = {}
+        @deleted_versions = {}
         @sorted_keys = nil
         @resource_revisions = {}
         @history = []
@@ -166,7 +185,6 @@ module Rubernetes
         @requests = {}
         @request_locks = {}
         @watchers = {}
-        @next_watcher_id = 0
       end
     end
 
