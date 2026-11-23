@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../observability/metrics"
+require_relative "kubelet_pod_metrics"
 require_relative "pod_startup_latency_tracker"
 require_relative "../schema/quantity"
 
@@ -13,6 +14,8 @@ module Rubernetes
     # records at scrape time (node name, running Pods and containers by
     # state, desired / active / mirror Pods, the cgroup version).
     class KubeletMetrics
+      include KubeletPodMetrics
+
       POD_START_BUCKETS = [0.5, 1, 2, 3, 4, 5, 6, 8, 10, 20, 30, 45, 60, 120, 180, 240, 300, 360, 480, 600, 900, 1200, 1800,
                            2700, 3600].freeze
       # prometheus.DefBuckets.
@@ -26,9 +29,6 @@ module Rubernetes
                             [30 << 30, "30GB-40GB"], [40 << 30, "40GB-60GB"], [60 << 30, "60GB-100GB"], [100 << 30, "GT100GB"]].freeze
       CONTAINER_TYPES = {"init" => "init_container", "sidecar" => "init_container", "ephemeral" => "ephemeral_container"}.freeze
       TERMINAL_STATES = %w[Removed Stopped Failed Succeeded].freeze
-      # PodWorkerState of a lifecycle record (kubelet_working_pods lifecycle).
-      TERMINATING_STATES = %w[Stopping RollingBack CleanupPending].freeze
-      TERMINATED_STATES = %w[Stopped Removed Failed].freeze
       # kubelet.go admissionRejectionReasons.
       ADMISSION_REJECTION_REASONS = ["AppArmor", "PodOSSelectorNodeLabelDoesNotMatch", "PodOSNotSupported", "InvalidNodeInfo",
                                      "InitContainerRestartPolicyForbidden", "SupplementalGroupsPolicyNotSupported",
@@ -498,14 +498,7 @@ module Rubernetes
         %w[created running exited unknown].each do |state|
           registry.set("kubelet_running_containers", states[state], {"container_state" => state})
         end
-        static = live.count { |record| static?(record) }
-        %w[false true].each do |flag|
-          count = flag == "true" ? static : live.length - static
-          registry.set("kubelet_desired_pods", count, {"static" => flag})
-          registry.set("kubelet_active_pods", count, {"static" => flag})
-        end
-        registry.set("kubelet_mirror_pods", static)
-        working_pods(registry, pods)
+        pod_gauges(registry, pods)
         resize_gauges(registry, pods)
         registry.set("kubelet_managed_ephemeral_containers", pods.sum do |record|
           Array((record[:pod] || record["pod"]).dig("spec", "ephemeralContainers")).length
@@ -524,13 +517,9 @@ module Rubernetes
 
         source = (mount["source"] || mount[:source]).to_s
         backend = (mount["backend"] || mount[:backend]).to_s
-        if %w[persistentVolumeClaim ephemeral].include?(source)
-          return "kubernetes.io/csi" if !(mount["uniqueName"] || mount[:uniqueName]).to_s.empty? || backend.empty? || backend == "csi"
+        return VOLUME_PLUGIN_NAMES[source] || VOLUME_PLUGIN_NAMES[backend] unless %w[persistentVolumeClaim ephemeral].include?(source)
 
-          VOLUME_PLUGIN_NAMES[backend]
-        else
-          VOLUME_PLUGIN_NAMES[source] || VOLUME_PLUGIN_NAMES[backend]
-        end
+        VOLUME_PLUGIN_NAMES[backend.empty? ? "csi" : backend]
       end
 
       private
@@ -598,7 +587,8 @@ module Rubernetes
       VOLUME_PLUGIN_NAMES = {
         "emptyDir" => "kubernetes.io/empty-dir", "hostPath" => "kubernetes.io/host-path", "configMap" => "kubernetes.io/configmap",
         "secret" => "kubernetes.io/secret", "downwardAPI" => "kubernetes.io/downward-api", "projected" => "kubernetes.io/projected",
-        "csi" => "kubernetes.io/csi", "local" => "kubernetes.io/local-volume", "image" => "kubernetes.io/image"
+        "csi" => "kubernetes.io/csi", "local" => "kubernetes.io/local-volume", "image" => "kubernetes.io/image", "nfs" => "kubernetes.io/nfs",
+        "iscsi" => "kubernetes.io/iscsi", "fc" => "kubernetes.io/fc"
       }.freeze
 
       # OperationCompleteHook: one storage operation (volume_mount,
@@ -743,26 +733,6 @@ module Rubernetes
         registry.set("kubelet_pod_in_progress_resizes", in_progress)
       end
 
-      # kubelet_pods.go HandlePodCleanups: every valid PodWorkerSync
-      # combination, zero included.
-      def working_pods(registry, pods)
-        counts = Hash.new(0)
-        pods.each do |record|
-          state = (record[:state] || record["state"]).to_s
-          lifecycle = if TERMINATED_STATES.include?(state) then "terminated"
-                      elsif TERMINATING_STATES.include?(state) then "terminating"
-                      else "sync"
-                      end
-          counts[[lifecycle, "desired", static?(record) ? "true" : "false"]] += 1
-        end
-        [%w[desired true], %w[desired false], %w[orphan true], %w[orphan false], %w[runtime_only unknown]].each do |config, static|
-          %w[sync terminating terminated].each do |lifecycle|
-            registry.set("kubelet_working_pods", counts[[lifecycle, config, static]],
-                         {"lifecycle" => lifecycle, "config" => config, "static" => static})
-          end
-        end
-      end
-
       # recordAdmissionRejection: known reasons, OutOf<extended resource>,
       # or Other.
       def admission_rejection(reason)
@@ -869,13 +839,6 @@ module Rubernetes
         return "created" if container[:id] || container["id"]
 
         "unknown"
-      end
-
-      def static?(record)
-        pod = record[:pod] || record["pod"]
-        annotations = pod.dig("metadata", "annotations") || {}
-        annotations["kubernetes.io/config.source"].to_s.then { |source| !source.empty? && source != "api" } ||
-          annotations.key?("kubernetes.io/config.mirror")
       end
 
       def cgroup_version
