@@ -15,22 +15,24 @@ require "rubernetes/observability/metrics"
 class AdmissionWebhookClientX509Test < Minitest::Test
   Plugins = Rubernetes::Security::Admission::Plugins
 
-  def certificate(san: nil)
+  def certificate(san: nil, issuer: nil)
     key = OpenSSL::PKey::RSA.new(2048)
     cert = OpenSSL::X509::Certificate.new
     cert.version = 2
     cert.serial = 2
     # No SAN: hostname verification falls back to the CN (OpenSSL::SSL.verify_certificate_identity).
-    cert.subject = cert.issuer = OpenSSL::X509::Name.parse(san ? "/CN=webhook.test" : "/CN=127.0.0.1")
+    cert.subject = OpenSSL::X509::Name.parse(san ? "/CN=webhook.test" : "/CN=127.0.0.1")
+    cert.issuer = issuer ? issuer.first.subject : cert.subject
     cert.public_key = key.public_key
     cert.not_before = Time.now - 60
     cert.not_after = Time.now + 3600
     if san
       factory = OpenSSL::X509::ExtensionFactory.new
-      factory.subject_certificate = factory.issuer_certificate = cert
+      factory.subject_certificate = cert
+      factory.issuer_certificate = issuer ? issuer.first : cert
       cert.add_extension(factory.create_extension("subjectAltName", san, false))
     end
-    cert.sign(key, "SHA256")
+    cert.sign(issuer ? issuer.last : key, "SHA256")
     [cert, key]
   end
 
@@ -115,6 +117,20 @@ class AdmissionWebhookClientX509Test < Minitest::Test
     rescue StandardError
       nil
     end
+    thread&.kill
+  end
+
+  def test_explicitly_pinned_non_self_signed_webhook_certificate_is_trusted
+    cert, key = certificate(san: "IP:127.0.0.1", issuer: certificate)
+    server, port, thread = serve(cert, key)
+    client = Plugins::WebhookClient.new
+    config = {"url" => "https://127.0.0.1:#{port}/validate", "caBundle" => [cert.to_pem].pack("m0")}
+    code, body = Timeout.timeout(30) { client.call(config, {"request" => {"uid" => "leaf"}}, timeout_seconds: 5) }
+
+    assert_equal(200, code)
+    assert_equal("leaf", body.dig("response", "uid"))
+  ensure
+    server&.close
     thread&.kill
   end
 end
