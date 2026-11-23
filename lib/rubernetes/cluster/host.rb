@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../platform/linux/kubelet_cgroup_layout"
+
 module Rubernetes
   module Cluster
     # Host-global leftovers of earlier runs, and the processes of this one.
@@ -70,6 +72,7 @@ module Rubernetes
       end
 
       def kill_stale_workloads
+        cleanup_kubelet_workload_cgroups
         control = File.join(workload_cgroup, "cgroup.kill")
         return unless File.exist?(control)
 
@@ -83,6 +86,35 @@ module Rubernetes
         remove_stale_cgroup_directories
       rescue SystemCallError
         nil
+      end
+
+      # kubepods can contain work from another kubelet. Target only exact
+      # claims from this stopped cluster's journals, including kernel identity.
+      def cleanup_kubelet_workload_cgroups
+        layout = Platform::Linux::KubeletCgroupLayout.new(cgroup_root)
+        Dir.glob(File.join(root, "runtime", "worker-*")).each do |node|
+          layout.clear_reservations(layout.class.reservation_owner(File.basename(node)))
+        end
+        paths = Dir.glob(File.join(root, "runtime", "worker-*", "ledger.jsonl"))
+        return if paths.empty?
+
+        require_relative "../runtime/native"
+        adapter = Platform::Linux::CgroupV2.new(root: cgroup_root, kubelet_layout: layout)
+        paths.each do |path|
+          journal = Runtime::Native::Support::RollbackJournal.new(path)
+          ledger = Runtime::Native::Support::OwnershipLedger.new(journal: journal)
+          ledger.resources.each do |claim|
+            next unless claim["kind"] == "cgroup"
+
+            metadata = claim.fetch("metadata")
+            handle = layout.handle(metadata["path"].to_s)
+            next unless handle && handle.identity == claim["identity"] && File.directory?(handle.path)
+            next unless File.stat(handle.path).ino == metadata["cgroup_inode"]
+
+            adapter.kill(handle)
+            adapter.remove(handle)
+          end
+        end
       end
 
       # Killing leaves the Pod and container cgroup directories behind (only an
@@ -195,8 +227,19 @@ module Rubernetes
         # round; two arenas are plenty for a Ruby process, whose object heap
         # is not malloc'd.
         environment = {"MALLOC_ARENA_MAX" => ENV.fetch("MALLOC_ARENA_MAX", "2")}.merge(gc_environment)
-        pid = Process.spawn(environment, RbConfig.ruby, *Cluster.load_path_arguments,
-                            File.join(SOURCE_ROOT, "exe", executable), "--config", config,
+        if isolated_worker_networks?
+          api_addresses = families.map { |family| host_advertise_address(family) }
+          environment.merge!(worker_networks.proxy_environment(api_addresses: api_addresses, service_cidrs: service_cidrs))
+        end
+        command = if @bin_dir
+                    [File.join(@bin_dir, executable)]
+                  else
+                    [RbConfig.ruby, *Cluster.load_path_arguments, File.join(SOURCE_ROOT, "exe", executable)]
+                  end
+        if isolated_worker_networks? && (worker = name[/\A(?:agent|proxy)-worker-(\d+)\z/, 1])
+          command = worker_networks.process_command(Integer(worker), command)
+        end
+        pid = Process.spawn(environment, *command, "--config", config,
                             # Its own process group: the cluster must outlive the
                             # shell that started it, and a signal aimed at that
                             # shell must not take half the control plane with it.
