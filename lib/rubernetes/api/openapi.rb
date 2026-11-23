@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 require "uri"
+require_relative "crd/openapi_metadata"
+require_relative "crd/openapi_routes"
+require_relative "crd/openapi_v2_routes"
+require_relative "crd/openapi_references"
 
 module Rubernetes
   module API
@@ -16,6 +21,8 @@ module Rubernetes
       def initialize(root: DEFAULT_ROOT)
         @root = File.expand_path(root.to_s)
         @dynamic = {}
+        @dynamic_index = {}
+        @group_encodings = {}
         @dynamic_v2 = {}
         # One group/version can be served by several CustomResourceDefinitions
         # -- the conformance spec "works for multiple CRDs of same group and
@@ -55,6 +62,22 @@ module Rubernetes
         static_document(relative)
       end
 
+      # An in-flight encoding may finish after the CRD is withdrawn. Its local
+      # cache then falls out of scope with the request, along with the bytes.
+      def encoded_group(path, document, format)
+        relative = relative_path(path)
+        cache = @mutex.synchronize do
+          @group_encodings[relative] ||= {} if (@dynamic[relative] || @static[relative]).equal?(document)
+        end
+        return yield unless cache
+
+        cached = @mutex.synchronize { cache[format] }
+        return cached if cached
+
+        encoded = yield
+        @mutex.synchronize { cache[format] ||= encoded }
+      end
+
       # The shipped documents never change while the server runs; each is
       # parsed once and the same (frozen) object is handed out, which also
       # lets the server keep its encoding and ETag.
@@ -92,6 +115,8 @@ module Rubernetes
           if owners.empty?
             @dynamic_owners.delete(key)
             @dynamic.delete("v3/apis/#{key}.json")
+            @group_encodings.delete("v3/apis/#{key}.json")
+            @dynamic_index.delete("apis/#{key}")
             @dynamic_v2.delete(key)
           else
             refresh_dynamic_locked(key, owners)
@@ -130,32 +155,17 @@ module Rubernetes
         # document too; the CustomResourcePublishOpenAPI specs poll
         # /openapi/v2 for the definition and its schema.  Only the CRD's own
         # schemas: v2.json already carries the shared meta definitions.
-        @dynamic_v2[key] = (merged.dig("components", "schemas") || {}).dup
+        components = merged["components"] ||= {}
+        schemas = components["schemas"] || {}
+        @dynamic_v2[key] = {schemas: schemas, paths: merged.fetch("paths", {})}
+        components["schemas"] = schemas.transform_values { |schema| CRD::OpenAPIMetadata.with_embedded(schema, v2: false) }
         add_referenced_components(merged)
-        @dynamic["v3/apis/#{key}.json"] = wrap_refs(merged)
-      end
-
-      # kube-openapi builder3/util WrapRefs: an OpenAPI v3 `$ref` may not carry
-      # sibling keys, so a reference with a description (the CRD's `metadata`
-      # property, "Standard object's metadata ...") is published as
-      # `allOf: [{$ref}]` plus the siblings.  kubectl resolves a bare `$ref`
-      # in place and drops the siblings, which made
-      # `kubectl explain <crd>.metadata` print only ObjectMeta's own
-      # description; "CustomResourcePublishOpenAPI works for CRD with
-      # validation schema" matches on the property description.  swagger 2.0
-      # keeps the sibling form, so this runs on the v3 document only.
-      def wrap_refs(value)
-        case value
-        when Hash
-          wrapped = value.each_with_object({}) { |(key, item), result| result[key] = wrap_refs(item) }
-          if wrapped["$ref"].is_a?(String) && wrapped.size > 1
-            reference = wrapped.delete("$ref")
-            wrapped["allOf"] = [{"$ref" => reference}]
-          end
-          wrapped
-        when Array then value.map { |item| wrap_refs(item) }
-        else value
-        end
+        CRD::OpenAPIRoutes.add_delete_options_gvks(merged) { @static["v2.json"] ||= deep_freeze(read_document("v2.json")) }
+        bytes = JSON.generate(merged)
+        hash = Digest::SHA512.hexdigest(bytes).upcase
+        @group_encodings["v3/apis/#{key}.json"] = {json: [bytes, hash]}
+        @dynamic_index["apis/#{key}"] = {"serverRelativeURL" => "/openapi/v3/apis/#{key}?hash=#{hash}"}
+        @dynamic["v3/apis/#{key}.json"] = merged
       end
 
       # apiextensions-apiserver publishes a CRD document that resolves on its
@@ -167,31 +177,20 @@ module Rubernetes
       def add_referenced_components(document)
         schemas = (document["components"] ||= {})["schemas"] ||= {}
         shared = shared_components
-        pending = collect_refs(document)
+        pending = []
+        document["paths"] = CRD::OpenAPIReferences.routes(document["paths"], pending) if document["paths"]
+        schemas.transform_values! { |schema| CRD::OpenAPIReferences.v3(schema, pending) }
         until pending.empty?
-          name = pending.shift
+          name = pending.pop
           next if schemas.key?(name) || !shared.key?(name)
 
-          schemas[name] = JSON.parse(JSON.generate(shared.fetch(name)))
-          pending.concat(collect_refs(schemas[name]))
+          schemas[name] = CRD::OpenAPIReferences.v3(shared.fetch(name), pending)
         end
         document
       end
 
       def shared_components
-        @shared_components ||= (read_document("v3/api/v1.json") || {}).dig("components", "schemas") || {}
-      end
-
-      def collect_refs(value, found = [])
-        case value
-        when Hash
-          reference = value["$ref"]
-          found << reference.delete_prefix("#/components/schemas/") if reference.is_a?(String) && reference.start_with?("#/components/schemas/")
-          value.each_value { |child| collect_refs(child, found) }
-        when Array
-          value.each { |child| collect_refs(child, found) }
-        end
-        found
+        @shared_components ||= (@static["v3/api/v1.json"] || read_document("v3/api/v1.json") || {}).dig("components", "schemas") || {}
       end
 
       def relative_path(path)
@@ -216,14 +215,17 @@ module Rubernetes
       end
 
       def v2_with_dynamic(document)
-        overlay = @mutex.synchronize { @dynamic_v2.values.reduce({}) { |all, schemas| all.merge(schemas) } }
-        return document if overlay.empty? || document.nil?
+        overlays = @mutex.synchronize { @dynamic_v2.values }
+        return document if overlays.empty? || document.nil?
 
-        document = JSON.parse(JSON.generate(document))
-        definitions = document["definitions"].is_a?(Hash) ? document["definitions"] : {}
-        overlay.each { |name, schema| definitions[name] = v2_schema(v2_definition(schema)) }
-        document["definitions"] = definitions
-        document
+        definitions = document.fetch("definitions", {}).dup
+        paths = document.fetch("paths", {}).dup
+        routes = CRD::OpenAPIV2Routes.new(document.fetch("parameters", {}))
+        overlays.each do |overlay|
+          overlay[:schemas].each { |name, schema| definitions[name] = CRD::OpenAPIReferences.v2(v2_definition(schema)) }
+          paths.merge!(routes.convert(overlay[:paths]))
+        end
+        document.merge("definitions" => definitions, "paths" => paths)
       end
 
       # apiextensions-apiserver/pkg/controller/openapi/builder buildKubeNative:
@@ -232,8 +234,9 @@ module Rubernetes
       # at all -- not even apiVersion/kind/metadata, because kubectl would then
       # reject every other field.  Only the group-version-kind marker survives.
       def v2_definition(schema)
-        return v2_structural(schema) unless schema.is_a?(Hash) &&
-                                            schema["x-kubernetes-preserve-unknown-fields"] == true
+        unless schema.is_a?(Hash) && schema["x-kubernetes-preserve-unknown-fields"] == true
+          return CRD::OpenAPIMetadata.with_embedded(v2_structural(schema), v2: true)
+        end
 
         bare = {"type" => "object"}
         %w[x-kubernetes-group-version-kind x-kubernetes-selectable-fields].each do |extension|
@@ -289,28 +292,12 @@ module Rubernetes
         end
       end
 
-      # swagger 2.0 refers to #/definitions/..., OpenAPI v3 to
-      # #/components/schemas/...; CRD schemas are otherwise identical.
-      def v2_schema(value)
-        case value
-        when Hash
-          value.each_with_object({}) do |(key, item), result|
-            result[key] = key == "$ref" && item.is_a?(String) ? item.sub("#/components/schemas/", "#/definitions/") : v2_schema(item)
-          end
-        when Array then value.map { |item| v2_schema(item) }
-        else value
-        end
-      end
-
       def v3_index_with_dynamic(index)
-        paths = dynamic_paths
-        return index if paths.empty?
+        @mutex.synchronize do
+          return index if @dynamic_index.empty?
 
-        index = index.nil? ? {"paths" => {}} : JSON.parse(JSON.generate(index))
-        paths.each do |path|
-          index["paths"][path] ||= {"serverRelativeURL" => "/openapi/v3/#{path}"}
+          {"paths" => (index || {}).fetch("paths", {}).merge(@dynamic_index)}
         end
-        index
       end
 
       def deep_freeze(value)
