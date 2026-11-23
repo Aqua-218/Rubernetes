@@ -61,6 +61,18 @@ class LifecycleHookFailureTest < Minitest::Test
     assert_equal(1, runtime.calls.length)
   end
 
+  def test_prestop_http_hook_uses_the_pod_address_and_its_containers_named_port
+    runtime = Runtime.new
+    pod = record
+    pod[:runtime_pod_ips] = ["2001:db8::8"]
+    container = pod.fetch(:containers).first.fetch(:spec)
+    container["ports"] = [{"name" => "web", "containerPort" => 8090}]
+    container["lifecycle"]["preStop"]["httpGet"] = {"host" => "", "port" => "web", "path" => "/drain"}
+    lifecycle(runtime).send(:run_pre_stop_hooks, pod[:pod], pod)
+
+    assert_equal ["2001:db8::8", 8090, "/drain"], runtime.calls.first.fetch(:definition).values_at("host", "port", "path")
+  end
+
   def test_a_container_that_never_started_has_no_prestop_hook
     runtime = Runtime.new
     entry = record(started: false)
