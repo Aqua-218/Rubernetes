@@ -11,6 +11,34 @@ require_relative "support"
 
 module Rubernetes
   module Network
+    module StatePersistence
+      private
+
+      def persist!(event, payload)
+        previous = @durable_state
+        written = @store&.replace(@state)
+        committed = !@store.nil?
+        @durable_state = written.is_a?(Hash) ? written : Support.copy(@state)
+        @state = Support.working_copy(written) if written.is_a?(Hash)
+        append_journal(event, payload)
+      rescue StandardError
+        # A journal failure after replace must keep memory aligned with disk.
+        @state = Support.copy(previous) unless committed
+        raise
+      end
+
+      def append_journal(event, payload)
+        return unless @journal
+
+        parameters = @journal.method(:append).parameters
+        if parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :operation_id }
+          @journal.append(operation_id: self.class::JOURNAL_OPERATION, event: event, payload: payload)
+        else
+          @journal.append(event: event, payload: payload)
+        end
+      end
+    end
+
     # Atomic JSON state used by IPAM and the network operation journal.  It is
     # intentionally independent from the runtime WAL so the network package
     # can be used by a node agent without loading the full runtime stack.
