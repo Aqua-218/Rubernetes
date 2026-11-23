@@ -14,6 +14,7 @@ module Rubernetes
       include Pki
       include Host
       include Configs
+      include DNSAddon
       include Readiness
       include Shrink
 
@@ -31,9 +32,12 @@ module Rubernetes
       # joins the workers through a bootstrap token and the CSR API.
       def initialize(root:, name: File.basename(root), cluster_id: name, controls: 3, workers: 3, ip_families: %w[ipv4],
                      cgroup_root: "/sys/fs/cgroup", identities: :admin, ready_timeout: 180, log_levels: {}, force: false,
-                     extensions: false, storage: false, descriptor: {})
+                     extensions: false, storage: false, descriptor: {}, datastore: "raft", bin_dir: nil, nat64_prefix: nil,
+                     load_balancer_pool: nil, default_routed_load_balancer: false, isolated_worker_networks: false, dns_resolv_conf: nil,
+                     allocate_node_cidrs: false)
         raise ArgumentError, "identities must be one of #{IDENTITY_MODES.join(", ")}" unless IDENTITY_MODES.include?(identities)
         raise ArgumentError, "a cluster needs at least one control node and one worker" unless controls.positive? && workers.positive?
+        raise ArgumentError, "the memory datastore requires exactly one control node" unless datastore == "raft" || (datastore == "memory" && controls == 1)
 
         @root = File.expand_path(root)
         @cluster_name = name
@@ -41,18 +45,59 @@ module Rubernetes
         @control_ids = Array.new(controls) { |index| "control-#{index}" }.freeze
         @worker_ids = Array.new(workers) { |index| "worker-#{index}" }.freeze
         @families = ip_families.map(&:to_s).freeze
+        @nat64_prefix = normalize_nat64_prefix(nat64_prefix) if nat64_prefix
+        @dns_resolv_conf = File.realpath(dns_resolv_conf) if dns_resolv_conf
+        @load_balancer_pool = validate_load_balancer_pool(load_balancer_pool) if load_balancer_pool
+        raise Error, "default_routed_load_balancer must be true or false" unless [true, false].include?(default_routed_load_balancer)
+        raise Error, "--default-routed-load-balancer requires --load-balancer-pool" if default_routed_load_balancer && !@load_balancer_pool
+
+        @default_routed_load_balancer = default_routed_load_balancer
         @cgroup_root = cgroup_root
         @identities = identities
+        @isolated_worker_networks = isolated_worker_networks
+        raise ArgumentError, "isolated workers require component identities for routed kubelet access" if @isolated_worker_networks && !component_identities?
+        raise ArgumentError, "allocate_node_cidrs must be true or false" unless [true, false].include?(allocate_node_cidrs)
+
+        @allocate_node_cidrs = allocate_node_cidrs
+
         @ready_timeout = ready_timeout
         @log_levels = log_levels
         @force = force
         @extensions = extensions
         @storage = storage
         @descriptor = descriptor
+        @datastore = datastore
+        @bin_dir = bin_dir && File.realpath(bin_dir)
       end
+
+      def normalize_nat64_prefix(value)
+        raise Error, "--nat64-prefix requires --ip-family ipv6" unless families == ["ipv6"]
+
+        Network::Nat64Prefix.new(value).to_s
+      rescue ArgumentError => error
+        raise Error, error.message
+      end
+      private :normalize_nat64_prefix
+
+      def validate_load_balancer_pool(cidrs)
+        pool = Network::LoadBalancerPool.new(cidrs)
+        raise Error, "the LoadBalancer pool must use the cluster's IP families" unless (pool.families.map(&:downcase) - families).empty?
+
+        reserved = service_cidrs + worker_ids.each_index.flat_map { |index| families.map { |family| pod_cidr(index, family) } }
+        reserved << @nat64_prefix if @nat64_prefix
+        unless (overlap = reserved.find { |cidr| pool.conflicts_with?(cidr) }).nil?
+          raise Error, "the LoadBalancer pool overlaps cluster network #{overlap}"
+        end
+
+        pool
+      rescue ArgumentError => error
+        raise Error, error.message
+      end
+      private :validate_load_balancer_pool
 
       def component_identities? = @identities != :admin
       def tls_bootstrap? = @identities == :bootstrap
+      def isolated_worker_networks? = @isolated_worker_networks
       def log_level(component) = @log_levels.fetch(component, "info")
 
       # The configuration section that lets a component load Extension
@@ -62,7 +107,12 @@ module Rubernetes
       # Every "node" of the cluster is this host, which is the one case the
       # in-tree hostPath provisioner is meant for: with it and a default
       # StorageClass, a PersistentVolumeClaim just works.
-      def storage_section = @storage ? {"enable_hostpath_provisioner" => true} : {}
+      def storage_section
+        return {} unless @storage
+
+        {"enable_hostpath_provisioner" => true, "hostpath_provisioner_root" => File.join(root, "persistent-volumes")}
+      end
+
       def descriptor_path = File.join(root, "cluster.json")
 
       # Returns the cluster descriptor (also written to cluster.json); raises
@@ -73,6 +123,7 @@ module Rubernetes
           provision
         rescue StandardError
           down
+          worker_networks.cleanup! if isolated_worker_networks?
           raise
         end
       end
@@ -83,6 +134,7 @@ module Rubernetes
 
           descriptor = adopt_stored_shape
           ensure_cgroup_root!
+          worker_networks.prepare! if isolated_worker_networks?
           restart(descriptor)
         end
       end
@@ -111,6 +163,7 @@ module Rubernetes
 
           adopt_stored_shape
           stopped = down
+          worker_networks.cleanup!
           if other_live_clusters.empty?
             kill_stale_workloads
             purge_stale_namespaces
@@ -133,6 +186,7 @@ module Rubernetes
           raise Error, "no provisioned cluster at #{root}; run `up` first" unless File.file?(descriptor_path)
 
           descriptor = JSON.parse(File.binread(descriptor_path))
+          @bin_dir = descriptor.fetch("bin_dir", @bin_dir)
           current = descriptor.fetch("processes").filter_map { |process| process.fetch("name")[/\Aapiserver-(.+)\z/, 1] }
           return shrink(descriptor, current, controls) if controls < current.length
 
@@ -161,6 +215,9 @@ module Rubernetes
         descriptor = JSON.parse(File.binread(descriptor_path))
         @families = descriptor.dig("profile", "ip_families")&.map(&:to_s)&.freeze || families
         @cgroup_root = descriptor.fetch("cgroup_root", cgroup_root)
+        @bin_dir = descriptor.fetch("bin_dir", @bin_dir)
+        @isolated_worker_networks = descriptor.fetch("isolated_worker_networks", @isolated_worker_networks)
+        @allocate_node_cidrs = descriptor.fetch("allocate_node_cidrs", false)
         descriptor
       rescue JSON::ParserError, SystemCallError
         {}
@@ -288,7 +345,9 @@ module Rubernetes
         # "Address already in use" while the old ones keep the old nodes Ready.
         down
         refuse_to_disturb_other_clusters!
+        worker_networks.cleanup!
         unmount_stale_mounts
+        kill_stale_workloads
         FileUtils.rm_rf(root)
         FileUtils.mkdir_p(root)
 
@@ -296,19 +355,44 @@ module Rubernetes
         # by a crashed run makes the next run's identical name look like
         # someone else's resource, and the agent correctly refuses to adopt
         # it.  Only the "rbn" names this provisioner owns are removed.
-        kill_stale_workloads
-        purge_stale_namespaces
-        purge_stale_bridge_links
+        prepare_worker_topology!
         ensure_cgroup_root!
+      end
+
+      def prepare_worker_topology!
+        if isolated_worker_networks?
+          worker_networks.prepare!
+        else
+          purge_stale_namespaces
+          purge_stale_bridge_links
+        end
+      end
+
+      def worker_networks
+        @worker_networks ||= WorkerNetworks.new(root, worker_ids.each_index.map { |index| families.map { |family| pod_cidr(index, family) } })
+      end
+
+      def await_ready_workers!(count, since: nil)
+        await!("#{count} Ready nodes") { ready_nodes(kubeconfig, since: since) >= count }
+        await!("NodeIPAM Pod CIDR assignments") { pod_cidrs_published?(kubeconfig, node_ipam_assignments) } if @allocate_node_cidrs
+        return unless isolated_worker_networks?
+
+        worker_ids.each_index { |index| worker_networks.prefer_node_sources!(index, node_advertise_addresses(index)) }
+      end
+
+      def new_descriptor
+        descriptor = {"schema_version" => 1, "kind" => "rubernetes_cluster",
+                      "profile" => {"name" => cluster_name, "ip_families" => families}}.merge(@descriptor)
+        descriptor.merge!("root" => root, "cgroup_root" => cgroup_root, "started_at" => Time.now.utc.iso8601, "processes" => [])
+        descriptor.merge!({"bin_dir" => @bin_dir, "isolated_worker_networks" => (true if isolated_worker_networks?),
+                           "allocate_node_cidrs" => (true if @allocate_node_cidrs)}.compact)
       end
 
       def provision
         pki = issue_pki
         issue_raft_identities(cluster_id)
         ports = allocate_ports
-        descriptor = {"schema_version" => 1, "kind" => "rubernetes_cluster",
-                      "profile" => {"name" => cluster_name, "ip_families" => families}}.merge(@descriptor)
-        descriptor.merge!("root" => root, "cgroup_root" => cgroup_root, "started_at" => Time.now.utc.iso8601, "processes" => [])
+        descriptor = new_descriptor
         processes = descriptor.fetch("processes")
 
         control_ids.each do |id|
@@ -326,8 +410,13 @@ module Rubernetes
         end
         replicas.zip(control_ids) { |replica, id| await!("apiserver #{id} /readyz") { api_ready?(replica.fetch(:kubeconfig)) } }
         apply_coredns_rbac!(kubeconfig) if pki[:identities]
+        apply_policy_reader_rbac!(kubeconfig) if pki[:identities]
+        if @load_balancer_pool && pki[:identities]
+          manifest = YAML.safe_load_file(File.join(SOURCE_ROOT, "config", "addons", "routed-load-balancer-rbac.yml"))
+          apply!(kubeconfig, manifest, "the routed LoadBalancer controller's RBAC")
+        end
         apply!(kubeconfig, {"items" => [DEFAULT_STORAGE_CLASS]}, "the default StorageClass") if @storage
-        bootstrap_token = tls_bootstrap? ? create_bootstrap_token!(kubeconfig) : nil
+        bootstrap_token = prepare_tls_bootstrap!(kubeconfig, endpoints.first, pki) if tls_bootstrap?
 
         scheduler = replicas[1 % replicas.length]
         processes << spawn_process("scheduler", "rubernetes-scheduler",
@@ -343,7 +432,8 @@ module Rubernetes
           processes.concat(spawn_node(id, index, replicas[(index + 1) % replicas.length], pki, bootstrap_token))
         end
 
-        await!("#{worker_ids.length} Ready nodes") { ready_nodes(kubeconfig) >= worker_ids.length }
+        await_ready_workers!(worker_ids.length)
+        install_cluster_dns!(kubeconfig)
         # A Pod cannot be created before its namespace has a ServiceAccount;
         # "ready" must mean the first `kubectl run` works.
         await!("the default ServiceAccount") { stored?(kubeconfig, "/api/v1/namespaces/default/serviceaccounts/default") }
@@ -359,15 +449,18 @@ module Rubernetes
 
       def spawn_node(id, index, replica, pki, bootstrap_token)
         endpoint = replica.fetch(:endpoint)
+        instance = id if isolated_worker_networks?
+        endpoint = worker_networks.endpoint(index, families.first, endpoint) if instance
         bootstrap = if bootstrap_token
                       {"kubeconfig" => File.join(root, "runtime", id, "kubelet.conf"),
                        "bootstrap_kubeconfig" => write_bootstrap_kubeconfig(endpoint, pki, id, bootstrap_token),
                        "rotate_certificates" => true, "cert_dir" => File.join(root, "runtime", id, "pki")}
                     end
         agent = write_agent_config(id, index, component_kubeconfig(endpoint, pki, "node-#{id}", replica.fetch(:kubeconfig)),
-                                   dns_kubeconfig: pki[:identities] ? component_kubeconfig(endpoint, pki, "coredns", nil) : nil,
+                                   dns_kubeconfig: component_kubeconfig(endpoint, pki, "coredns", nil, instance: instance),
+                                   policy_kubeconfig: component_kubeconfig(endpoint, pki, "network-policy-reader", nil, instance: instance),
                                    pki: pki, bootstrap: bootstrap)
-        proxy = write_proxy_config(id, index, component_kubeconfig(endpoint, pki, "kube-proxy", replica.fetch(:kubeconfig)))
+        proxy = write_proxy_config(id, index, component_kubeconfig(endpoint, pki, "kube-proxy", replica.fetch(:kubeconfig), instance: instance))
         [spawn_process("agent-#{id}", "rubernetes-agent", agent), spawn_process("proxy-#{id}", "rubernetes-proxy", proxy)]
       end
 
@@ -391,10 +484,12 @@ module Rubernetes
           replica = File.join(root, server.fetch("name").sub("apiserver-", "kubeconfig-"))
           await!("#{server.fetch("name")} /readyz") { api_ready?(File.file?(replica) ? replica : kubeconfig) }
         end
+        restore_policy_reader!(clients)
         since = Time.now.utc
         respawned.concat(clients.map(&respawn))
         agents = clients.count { |process| process.fetch("executable") == "rubernetes-agent" }
-        await!("#{agents} Ready nodes") { ready_nodes(kubeconfig, since: since) >= agents }
+        await_ready_workers!(agents, since: since)
+        install_cluster_dns!(kubeconfig)
         raise_on_dead!(respawned, "start")
 
         descriptor["processes"] = respawned
@@ -403,13 +498,32 @@ module Rubernetes
         descriptor
       end
 
+      # Component logs are append-only and can be several GiB after a long run.
+      def component_log_excerpt(path)
+        File.open(path, File::RDONLY | File::NONBLOCK) do |log|
+          return "no log" unless log.stat.file?
+
+          offset = [log.size - 8_192, 0].max
+          log.seek(offset)
+          tail = log.read(8_192).to_s.force_encoding(Encoding::UTF_8).scrub
+          lines = tail.lines
+          if offset.positive? && lines.size <= 2
+            # The read may start inside the older line. Keep the latest error.
+            return "…#{tail.strip[-299..] || tail.strip}"
+          end
+
+          lines.last(2).join.strip[0, 300]
+        end
+      rescue Errno::ENOENT
+        "no log"
+      end
+
       def raise_on_dead!(processes, phase)
         dead = processes.reject { |process| alive?(process.fetch("pid")) }
         return if dead.empty?
 
         details = dead.map do |process|
-          log = process.fetch("log")
-          "#{process.fetch("name")}: #{File.file?(log) ? File.readlines(log).last(2).join.strip[0, 300] : "no log"}"
+          "#{process.fetch("name")}: #{component_log_excerpt(process.fetch("log"))}"
         end
         raise Error, "cluster processes exited during #{phase}: #{details.join(" | ")}"
       end
