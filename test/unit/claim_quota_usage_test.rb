@@ -33,8 +33,12 @@ class ClaimQuotaUsageTest < Minitest::Test
     claims = [claim([{"name" => "a", "exactly" => {"deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 2}}]),
               claim([{"name" => "a", "exactly" => {"deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 1}}])]
 
-    assert_equal 3, controller.send(:usage_for, "gpu.deviceclass.resource.k8s.io/devices", claims)
-    assert_equal 2, controller.send(:usage_for, "count/resourceclaims.resource.k8s.io", claims)
+    quota = {"kind" => "ResourceQuota", "metadata" => {"namespace" => "ns", "name" => "devices"},
+             "spec" => {"hard" => {"gpu.deviceclass.resource.k8s.io/devices" => "5", "count/resourceclaims.resource.k8s.io" => "3"}}}
+    used = controller.plan(quota, objects: claims).status.fetch("used")
+
+    assert_equal "3", used.fetch("gpu.deviceclass.resource.k8s.io/devices")
+    assert_equal "2", used.fetch("count/resourceclaims.resource.k8s.io")
     assert_equal "ResourceClaim", controller.send(:counted_kind, "gpu.deviceclass.resource.k8s.io/devices")
   end
 end
