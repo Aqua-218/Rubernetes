@@ -145,7 +145,7 @@ class NodeAuthorizerUpstreamTest < Minitest::Test
     assert_predicate decide("create", "events", group: "events.k8s.io", namespace: "team"), :allowed?
     assert_predicate decide("get", "endpoints", namespace: "team", name: "x"), :allowed?
     assert_predicate decide("list", "endpoints", namespace: "team"), :no_opinion?
-    assert_predicate decide("list", "clustertrustbundles", group: "certificates.k8s.io"), :allowed?
+    assert_predicate decide("list", "clustertrustbundles", group: "certificates.k8s.io"), :no_opinion?
     mirror = POD.merge("metadata" => POD["metadata"].merge("annotations" => {"kubernetes.io/config.mirror" => "x"}))
     @graph.pods = [mirror]
     @now += 5
