@@ -18,6 +18,7 @@ class ProxyEBPFKernelTest < Minitest::Test
     SKIPPABLE_ERRNOS = [Errno::EPERM::Errno, Errno::EACCES::Errno, Errno::EOPNOTSUPP::Errno,
                         Errno::ENOSYS::Errno].freeze
     PORT = 29_071
+    FRAGMENT_POLICY = ENV.fetch("RK_PROXY_FRAGMENT_POLICY").to_sym
     NODE_PORT = 30_081
     BACKEND_PORT = 29_072
     BACKEND_PORT_V6 = 29_073
@@ -47,7 +48,8 @@ class ProxyEBPFKernelTest < Minitest::Test
       "service_rules" => {"type" => "hash", "key_size" => 40, "value_size" => 64, "max_entries" => 16},
       "backends" => {"type" => "array_of_structs", "key_size" => 16, "value_size" => 96, "max_entries" => 32},
       "conntrack" => {"type" => "lru_hash", "key_size" => 40, "value_size" => 48, "max_entries" => 16},
-      "client_ip_affinity" => {"type" => "lru_hash", "key_size" => 24, "value_size" => 16, "max_entries" => 16},
+      "client_ip_affinity" => {"type" => "lru_hash", "key_size" => 24,
+                               "value_size" => Proxy::EBPFProgram::WireFormat::AFFINITY_VALUE_SIZE, "max_entries" => 16},
       "sctp_crc32c" => {"type" => "array", "key_size" => 4, "value_size" => 4, "max_entries" => 256}
     }.freeze
 
@@ -58,6 +60,7 @@ class ProxyEBPFKernelTest < Minitest::Test
 
       netlink = Rubernetes::Network::Netlink.new
       role = ENV.fetch("RK_PROXY_ROLE")
+      reassemble = ENV.fetch("RK_PROXY_FRAGMENT_POLICY") == "reassemble"
       peer = ENV.fetch("RK_PROXY_PEER")
       prefix = Integer(ENV.fetch("RK_PROXY_PREFIX"))
       peer_ip = ENV.fetch("RK_PROXY_PEER_IP")
@@ -85,7 +88,7 @@ class ProxyEBPFKernelTest < Minitest::Test
       STDOUT.sync = true
 
       def receive_datagram(socket)
-        payload, address, _flags, *controls = socket.recvmsg(128, 0, 1024)
+        payload, address, _flags, *controls = socket.recvmsg(4096, 0, 1024)
         pktinfo = controls.find do |control|
           control.cmsg_is?(Socket::IPPROTO_IP, Socket::IP_PKTINFO) ||
             control.cmsg_is?(Socket::IPPROTO_IPV6, Socket::IPV6_PKTINFO)
@@ -117,6 +120,24 @@ class ProxyEBPFKernelTest < Minitest::Test
         else
           pktinfo.ipv6_pktinfo.fetch(0).ip_address
         end
+      end
+
+      def echo_fragmented_datagram(socket)
+        raise "backend did not receive reassembled datagram" unless IO.select([socket], nil, nil, 5.0)
+
+        payload, address, pktinfo = receive_datagram(socket)
+        raise "datagram reassembly changed the payload" unless payload == "d" * 2000
+
+        send_datagram(socket, payload, address, pktinfo)
+      end
+
+      def roundtrip_fragmented_datagram(socket, vip, port)
+        payload = "d" * 2000
+        socket.send(payload, 0, vip, port)
+        raise "fragmented UDP reply did not arrive" unless IO.select([socket], nil, nil, 5.0)
+
+        reply, source = socket.recvfrom(4096)
+        raise "fragmented UDP reply lost the payload or Service address" unless [reply, source[3], source[1]] == [payload, vip, port]
       end
 
       puts "ready"
@@ -153,6 +174,8 @@ class ProxyEBPFKernelTest < Minitest::Test
         tcp_server_v6 = TCPServer.new("::", backend_tcp_port_v6)
         puts "peer-ready=#{peer_mac}"
         puts "backend-ready"
+        # The parent installs permanent IPv6 neighbor entries before starting traffic.
+        STDIN.gets
         readable = IO.select([receiver], nil, nil, 5.0)
         raise "backend did not receive a DNAT packet" unless readable
         payload, address, pktinfo = receive_datagram(receiver)
@@ -166,6 +189,7 @@ class ProxyEBPFKernelTest < Minitest::Test
         raise "client source was not preserved through DNAT" unless address.ip_address == remote
         backend_selected_ip = pktinfo_address(pktinfo)
         send_datagram(receiver, "isolated-tc-reply", address, pktinfo)
+        echo_fragmented_datagram(receiver) if reassemble
         readable = IO.select([receiver], nil, nil, 5.0)
         raise "backend did not receive the NodePort packet" unless readable
         payload, address, pktinfo = receive_datagram(receiver)
@@ -183,6 +207,7 @@ class ProxyEBPFKernelTest < Minitest::Test
         raise "IPv6 client source was not preserved through DNAT" unless address.ip_address == remote_v6
         backend_selected_ip_v6 = pktinfo_address(pktinfo)
         send_datagram(receiver_v6, "isolated-tc-reply6", address, pktinfo)
+        echo_fragmented_datagram(receiver_v6) if reassemble
         readable = IO.select([receiver_v6], nil, nil, 5.0)
         raise "backend did not receive the IPv6 NodePort packet" unless readable
         payload, address, pktinfo = receive_datagram(receiver_v6)
@@ -228,6 +253,7 @@ class ProxyEBPFKernelTest < Minitest::Test
         raise "unexpected reverse payload #{response.inspect}" unless response == "isolated-tc-reply"
         raise "reverse SNAT did not restore the Service VIP: address=#{address.inspect} expected=#{service_ip}:#{port}" unless address[3] == service_ip && address[1] == port
         puts "reply4=#{response}:#{address[3]}:#{address[1]}:src=#{source_port}"
+        roundtrip_fragmented_datagram(sender, service_ip, port) if reassemble
         sender.send("isolated-nodeport", 0, service_ip, node_port)
         ready_sockets = IO.select([sender], nil, nil, 5.0)
         raise "NodePort reverse packet did not traverse TC egress" unless ready_sockets
@@ -245,6 +271,7 @@ class ProxyEBPFKernelTest < Minitest::Test
         raise "routed IPv6 veth baseline did not return" unless ready_sockets
         baseline, = sender_v6.recvfrom(128)
         raise "unexpected routed IPv6 veth baseline #{baseline.inspect}" unless baseline == "baseline6-reply"
+        puts "baseline6=ok"
         sender_v6.send("isolated-tc-packet6", 0, service_ip_v6, port)
         ready_sockets = IO.select([sender_v6], nil, nil, 5.0)
         raise "IPv6 reverse packet did not traverse TC egress" unless ready_sockets
@@ -252,6 +279,7 @@ class ProxyEBPFKernelTest < Minitest::Test
         raise "unexpected IPv6 reverse payload #{response.inspect}" unless response == "isolated-tc-reply6"
         raise "IPv6 reverse SNAT did not restore the Service VIP" unless address[3] == service_ip_v6 && address[1] == port
         puts "reply6=#{response}:#{address[3]}:#{address[1]}:src=#{source_port_v6}"
+        roundtrip_fragmented_datagram(sender_v6, service_ip_v6, port) if reassemble
         sender_v6.send("isolated-nodeport6", 0, service_ip_v6, node_port)
         ready_sockets = IO.select([sender_v6], nil, nil, 5.0)
         raise "IPv6 NodePort reverse packet did not traverse TC egress" unless ready_sockets
@@ -298,6 +326,24 @@ class ProxyEBPFKernelTest < Minitest::Test
       raise Rubernetes::Platform::Linux::Error.new(errno: error.errno, operation: "sysctl #{path}")
     rescue Errno::ENOENT => error
       raise Rubernetes::Platform::Linux::Error.new(errno: error.errno, operation: "sysctl #{path}")
+    end
+
+    def child_report(children, role, stage)
+      report = Timeout.timeout(5) { children.fetch(role).fetch(:stdout).gets }
+      return report if report
+
+      raise "#{stage} ended before its report: #{child_diagnostics(children)}"
+    rescue Timeout::Error
+      raise "#{stage} report timed out: #{child_diagnostics(children)}"
+    end
+
+    def child_diagnostics(children)
+      children.map do |role, child|
+        wait_thread = child.fetch(:thread)
+        status = wait_thread.alive? ? "running" : wait_thread.value.inspect
+        stderr = child.fetch(:stderr).read_nonblock(4096, exception: false)
+        "#{role}=#{status} stderr=#{stderr.is_a?(String) ? stderr.strip.inspect : stderr.inspect}"
+      end.join(", ")
     end
 
     def spawn_child(role:, peer:, prefix:, peer_ip:, peer_ip_v6:, network:, network_v6:, gateway:, gateway_v6:, remote:, remote_v6:, service_ip:, service_ip_v6:)
@@ -413,16 +459,13 @@ class ProxyEBPFKernelTest < Minitest::Test
                                 session_affinity: "ClientIP")
       node_rule = Proxy::Rule.new(service_key: "default/web-nodeport", service_type: "NodePort", kind: "NodePort",
                                   virtual_ip: nil, port: PORT, node_port: NODE_PORT, protocol: "UDP",
-                                  backends: [endpoint, endpoint_extra])
-      node_rule_v6 = Proxy::Rule.new(service_key: "default/web-nodeport", service_type: "NodePort", kind: "NodePort",
-                                     virtual_ip: nil, port: PORT, node_port: NODE_PORT, protocol: "UDP",
-                                     backends: [endpoint_v6, endpoint_extra_v6])
+                                  backends: [endpoint, endpoint_extra, endpoint_v6, endpoint_extra_v6])
       tcp_rule = Proxy::Rule.new(service_key: "default/web-tcp", service_type: "ClusterIP", kind: "ClusterIP",
                                  virtual_ip: CLIENT_HOST_IP, port: TCP_PORT, protocol: "TCP", backends: [tcp_endpoint, tcp_endpoint_extra])
       tcp_rule_v6 = Proxy::Rule.new(service_key: "default/web-tcp", service_type: "ClusterIP", kind: "ClusterIP",
                                     virtual_ip: CLIENT_HOST_IP_V6, port: TCP_PORT, protocol: "TCP", backends: [tcp_endpoint_v6, tcp_endpoint_extra_v6])
-      backend = Struct.new(:rules).new([rule, rule_v6, node_rule, node_rule_v6, tcp_rule, tcp_rule_v6])
-      adapter = Proxy::LinuxEBPFAdapter.new(interface: CLIENT_HOST, map_layout: LAYOUT)
+      backend = Struct.new(:rules).new([rule, rule_v6, node_rule, tcp_rule, tcp_rule_v6])
+      adapter = Proxy::LinuxEBPFAdapter.new(interface: CLIENT_HOST, map_layout: LAYOUT, fragment_policy: FRAGMENT_POLICY)
       result = adapter.attach(hook: :tc, backend: backend)
       raise "kernel identity readback was not verified" unless result[:verified]
       raise "both TC directions were not attached" unless result[:links].length == 2
@@ -462,7 +505,7 @@ class ProxyEBPFKernelTest < Minitest::Test
       node_observed = adapter.bpf.map_lookup(map: adapter.maps.fetch("service_rules"), key: node_key,
                                               resource_id: "test:proxy:nodeport-v4-lookup")
       raise "NodePort service rule map readback mismatch" unless node_observed == node_value
-      node_key_v6, node_value_v6 = adapter.send(:encode_service_rule, node_rule_v6)
+      node_key_v6, node_value_v6 = adapter.send(:encode_service_rule_for_family, node_rule, 6)
       node_observed_v6 = adapter.bpf.map_lookup(map: adapter.maps.fetch("service_rules"), key: node_key_v6,
                                                 resource_id: "test:proxy:nodeport-v6-lookup")
       raise "IPv6 NodePort service rule map readback mismatch" unless node_observed_v6 == node_value_v6
@@ -486,88 +529,60 @@ class ProxyEBPFKernelTest < Minitest::Test
           raise unless error.errno == Errno::EEXIST::Errno
         end
       end
-      children.fetch(:client).fetch(:stdin).write("run\n")
-      children.fetch(:client).fetch(:stdin).flush
       children.fetch(:backend).fetch(:stdin).write("run\n")
       children.fetch(:backend).fetch(:stdin).flush
+      children.fetch(:client).fetch(:stdin).write("run\n")
+      children.fetch(:client).fetch(:stdin).flush
       children.fetch(:client).fetch(:stdin).close
       children.fetch(:client)[:stdin] = nil
-      baseline = begin
-        Timeout.timeout(5) { children.fetch(:client).fetch(:stdout).gets }
-      rescue Timeout::Error => error
-        children.each do |role, child|
-          warn "#{role} baseline timeout alive=#{child.fetch(:thread).alive?} status=#{child.fetch(:thread).value.inspect} stderr=#{child.fetch(:stderr).read.inspect}"
-        end
-        raise error
-      end
-      if baseline.nil?
-        children.each do |role, child|
-          warn "#{role} baseline eof alive=#{child.fetch(:thread).alive?} status=#{child.fetch(:thread).value.inspect} stderr=#{child.fetch(:stderr).read.inspect}"
-        end
-      end
+      baseline = child_report(children, :client, "IPv4 routed baseline")
       raise "routed veth baseline was not reported" unless baseline&.strip == "baseline=ok"
-      client_stdout = children.fetch(:client).fetch(:stdout)
-      unless IO.select([client_stdout], nil, nil, 5.0)
-        details = children.map do |role, child|
-          "#{role} alive=#{child.fetch(:thread).alive?} status=#{child.fetch(:thread).value.inspect} stderr=#{child.fetch(:stderr).read.inspect}"
-        end.join("; ")
-        raise "reply wait timeout: #{details}"
-      end
-      reply = client_stdout.gets
+      reply = child_report(children, :client, "IPv4 Service reply")
       unless reply&.strip&.start_with?("reply4=isolated-tc-reply:#{CLIENT_HOST_IP}:#{PORT}")
-        details = children.map do |role, child|
-          "#{role} status=#{child.fetch(:thread).value.inspect} stderr=#{child.fetch(:stderr).read.inspect}"
-        end.join("; ")
-        raise "reverse SNAT proof was not reported: #{reply.inspect}; #{details}"
+        raise "reverse SNAT proof was not reported: #{reply.inspect}, #{child_diagnostics(children)}"
       end
-      raise "IPv4 NodePort reply timeout" unless IO.select([client_stdout], nil, nil, 5.0)
-      nodeport_reply = client_stdout.gets
+      nodeport_reply = child_report(children, :client, "IPv4 NodePort reply")
       raise "IPv4 NodePort reverse SNAT proof was not reported" unless nodeport_reply&.start_with?("nodeport4=isolated-nodeport-reply:#{CLIENT_HOST_IP}:#{NODE_PORT}")
-      raise "IPv6 reply timeout" unless IO.select([client_stdout], nil, nil, 5.0)
-      reply6 = client_stdout.gets
+      # The routed baseline and the Service probe have independent packet deadlines.
+      baseline6 = child_report(children, :client, "IPv6 routed baseline")
+      raise "routed IPv6 veth baseline was not reported" unless baseline6.strip == "baseline6=ok"
+      reply6 = child_report(children, :client, "IPv6 Service reply")
       raise "IPv6 reverse SNAT proof was not reported" unless reply6&.start_with?("reply6=isolated-tc-reply6:#{CLIENT_HOST_IP_V6}:#{PORT}")
-      raise "IPv6 NodePort reply timeout" unless IO.select([client_stdout], nil, nil, 5.0)
-      nodeport_reply6 = client_stdout.gets
+      nodeport_reply6 = child_report(children, :client, "IPv6 NodePort reply")
       raise "IPv6 NodePort reverse SNAT proof was not reported" unless nodeport_reply6&.start_with?("nodeport6=isolated-nodeport-reply6:#{CLIENT_HOST_IP_V6}:#{NODE_PORT}")
-      raise "TCP reply timeout" unless IO.select([client_stdout], nil, nil, 5.0)
-      tcp_reply = client_stdout.gets
+      tcp_reply = child_report(children, :client, "IPv4 TCP reply")
       raise "TCP reverse SNAT proof was not reported" unless tcp_reply&.start_with?("tcp4=isolated-tc-tcp-reply:#{CLIENT_HOST_IP}:#{TCP_PORT}")
-      raise "IPv6 TCP reply timeout" unless IO.select([client_stdout], nil, nil, 5.0)
-      tcp_reply6 = client_stdout.gets
+      tcp_reply6 = child_report(children, :client, "IPv6 TCP reply")
       raise "IPv6 TCP reverse SNAT proof was not reported" unless tcp_reply6&.start_with?("tcp6=isolated-tc-tcp-reply6:#{CLIENT_HOST_IP_V6}:#{TCP_PORT}")
-      unless IO.select([backend_stdout], nil, nil, 3.0)
-        details = children.map do |role, child|
-          "#{role} alive=#{child.fetch(:thread).alive?} status=#{child.fetch(:thread).value.inspect} stderr=#{child.fetch(:stderr).read.inspect}"
-        end.join("; ")
-        raise "backend result timeout: #{details}"
-      end
-      backend_line = backend_stdout.gets
+      backend_line = child_report(children, :backend, "backend addresses")
       expected_backend = /backend=dnat:(#{Regexp.escape(BACKEND_PEER_IP)}|#{Regexp.escape(BACKEND_EXTRA_IP)}):#{BACKEND_PORT}:source=#{Regexp.escape(CLIENT_PEER_IP)}:/
       raise "routed backend DNAT proof was not reported" unless backend_line&.match?(expected_backend)
       expected_backend_v6 = /backend6=dnat:(#{Regexp.escape(BACKEND_PEER_IP_V6)}|#{Regexp.escape(BACKEND_EXTRA_IP_V6)}):#{BACKEND_PORT_V6}:source=#{Regexp.escape(CLIENT_PEER_IP_V6)}/
       raise "routed IPv6 backend DNAT proof was not reported" unless backend_line&.match?(expected_backend_v6)
       raise "routed TCP backend DNAT proof was not reported" unless backend_line.include?("tcp=#{BACKEND_TCP_PORT}:tcp6=#{BACKEND_TCP_PORT_V6}")
-      source_port = Integer(reply.split("src=", 2).last)
-      source_port_v6 = Integer(reply6.split("src=", 2).last)
-      packed_ip = ->(value) { adapter.send(:packed_ip, value) }
-      conntrack_key = [4, 17, source_port, PORT, 0].pack("CCS<S<S<") +
-                      packed_ip.call(CLIENT_PEER_IP) + packed_ip.call(CLIENT_HOST_IP)
-      conntrack_value = adapter.bpf.map_lookup(map: adapter.maps.fetch("conntrack"), key: conntrack_key,
-                                               resource_id: "test:proxy:conntrack-v4-lookup")
-      raise "IPv4 conntrack state was not created" unless conntrack_value
-      conntrack_key_v6 = [6, 17, source_port_v6, PORT, 0].pack("CCS<S<S<") +
-                         packed_ip.call(CLIENT_PEER_IP_V6) + packed_ip.call(CLIENT_HOST_IP_V6)
-      conntrack_value_v6 = adapter.bpf.map_lookup(map: adapter.maps.fetch("conntrack"), key: conntrack_key_v6,
-                                                  resource_id: "test:proxy:conntrack-v6-lookup")
-      raise "IPv6 conntrack state was not created" unless conntrack_value_v6
-      affinity_key = adapter.send(:service_token, rule) + packed_ip.call(CLIENT_PEER_IP)
-      affinity_value = adapter.bpf.map_lookup(map: adapter.maps.fetch("client_ip_affinity"), key: affinity_key,
-                                              resource_id: "test:proxy:affinity-v4-lookup")
-      raise "IPv4 ClientIP affinity state was not created" unless affinity_value
-      affinity_key_v6 = adapter.send(:service_token, rule_v6) + packed_ip.call(CLIENT_PEER_IP_V6)
-      affinity_value_v6 = adapter.bpf.map_lookup(map: adapter.maps.fetch("client_ip_affinity"), key: affinity_key_v6,
-                                                 resource_id: "test:proxy:affinity-v6-lookup")
-      raise "IPv6 ClientIP affinity state was not created" unless affinity_value_v6
+      if FRAGMENT_POLICY == :reject
+        source_port = Integer(reply.split("src=", 2).last)
+        source_port_v6 = Integer(reply6.split("src=", 2).last)
+        packed_ip = ->(value) { adapter.send(:packed_ip, value) }
+        conntrack_key = [4, 17, source_port, PORT, 0].pack("CCS<S<S<") +
+                        packed_ip.call(CLIENT_PEER_IP) + packed_ip.call(CLIENT_HOST_IP)
+        conntrack_value = adapter.bpf.map_lookup(map: adapter.maps.fetch("conntrack"), key: conntrack_key,
+                                                 resource_id: "test:proxy:conntrack-v4-lookup")
+        raise "IPv4 conntrack state was not created" unless conntrack_value
+        conntrack_key_v6 = [6, 17, source_port_v6, PORT, 0].pack("CCS<S<S<") +
+                           packed_ip.call(CLIENT_PEER_IP_V6) + packed_ip.call(CLIENT_HOST_IP_V6)
+        conntrack_value_v6 = adapter.bpf.map_lookup(map: adapter.maps.fetch("conntrack"), key: conntrack_key_v6,
+                                                    resource_id: "test:proxy:conntrack-v6-lookup")
+        raise "IPv6 conntrack state was not created" unless conntrack_value_v6
+        affinity_key = adapter.send(:service_token, rule) + packed_ip.call(CLIENT_PEER_IP)
+        affinity_value = adapter.bpf.map_lookup(map: adapter.maps.fetch("client_ip_affinity"), key: affinity_key,
+                                                resource_id: "test:proxy:affinity-v4-lookup")
+        raise "IPv4 ClientIP affinity state was not created" unless affinity_value
+        affinity_key_v6 = adapter.send(:service_token, rule_v6) + packed_ip.call(CLIENT_PEER_IP_V6)
+        affinity_value_v6 = adapter.bpf.map_lookup(map: adapter.maps.fetch("client_ip_affinity"), key: affinity_key_v6,
+                                                   resource_id: "test:proxy:affinity-v6-lookup")
+        raise "IPv6 ClientIP affinity state was not created" unless affinity_value_v6
+      end
       empty_backend = Struct.new(:rules).new([])
       update = adapter.update(backend: empty_backend, diff: :delete)
       raise "map update identity was not verified" unless adapter.verify_update(result: update, backend: empty_backend)
@@ -605,8 +620,18 @@ class ProxyEBPFKernelTest < Minitest::Test
   RUBY
 
   def test_tc_ebpf_service_dnat_reverse_snat_and_map_readback_on_routed_veth_namespaces
+    run_kernel_profile(:reject)
+  end
+
+  def test_default_tc_proxy_shares_kernel_conntrack_for_short_and_fragmented_udp
+    run_kernel_profile(:reassemble)
+  end
+
+  private
+
+  def run_kernel_profile(fragment_policy)
     kernel_version = `uname -r`.scan(/\A(\d+)\.(\d+)/).first&.map!(&:to_i)
-    environment = {}
+    environment = {"RK_PROXY_FRAGMENT_POLICY" => fragment_policy.to_s}
     if kernel_version && (kernel_version <=> [6, 12]).negative?
       # Only the SCTP CRC32c sub-feature is pinned to Linux >= 6.12.  The
       # TCP/UDP DNAT, reverse SNAT, conntrack, and TC readback proof below
