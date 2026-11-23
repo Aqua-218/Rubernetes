@@ -47,7 +47,7 @@ module Rubernetes
         return unless @policy_sync
 
         @policy_mutex.synchronize do
-          @policy_pods = recover_policy_pods(lifecycle.records, runtime)
+          @policy_pods = recover_policy_pods(lifecycle, runtime)
           @policy_sync.start(pods: @policy_pods.values)
         end
       end
@@ -139,23 +139,46 @@ module Rubernetes
 
       private
 
-      def recover_policy_pods(records, runtime)
-        records.values.filter_map do |record|
+      def recover_policy_pods(lifecycle, runtime)
+        lifecycle.records.values.filter_map do |record|
           sandbox = record[:sandbox_id]
           stored = record[:network]
           next unless sandbox && stored && stored["state"] == "committed" && !Array(stored["ips"] || stored["ip"]).empty?
           next if record.fetch(:cleanup_completed, {}).key?("network:#{sandbox}")
+
+          # A sandbox the runtime no longer knows has no network namespace
+          # left to enforce policy on.  Lifecycle recovery sees the same
+          # condition as SandboxGone and finishes the Pod's cleanup; failing
+          # here instead would keep the whole agent from starting.
+          next if sandbox_lost?(runtime, sandbox)
 
           pod = record.fetch(:pod)
           operation = @interface.operation(stored.fetch("operation_id"))
           result = operation.fetch("result")
           unless operation["state"] == "committed" && result && result["sandbox_id"] == sandbox &&
                  verified_attachment?(runtime, sandbox, pod)
-            raise Network::OwnershipError, "cannot confirm recovered policy attachment for sandbox #{sandbox}"
+            # kubelet does not refuse to start over one Pod.  The Pod is
+            # treated as a changed sandbox: left out of the policy set and
+            # rebuilt by the first sync, so its policy is programmed against
+            # an attachment this agent made itself.
+            unless lifecycle.replace_sandbox(sandbox, message: "network attachment could not be confirmed after restart")
+              raise Network::OwnershipError, "cannot confirm recovered policy attachment for sandbox #{sandbox}"
+            end
+
+            next
           end
 
           [sandbox, policy_pod(pod, result)]
         end.to_h
+      end
+
+      def sandbox_lost?(runtime, sandbox)
+        runtime.network_sandbox_context(sandbox)
+        false
+      rescue StandardError => error
+        raise unless error.message.to_s.include?("unknown sandbox")
+
+        true
       end
 
       def verified_attachment?(runtime, sandbox, pod)
