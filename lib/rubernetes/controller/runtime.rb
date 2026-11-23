@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "runtime/watch_routing"
 require "json"
 require "time"
 require_relative "errors"
+require_relative "hpa_sync"
 require_relative "support"
 require_relative "types"
 require_relative "store_adapter"
@@ -21,7 +23,7 @@ module Rubernetes
         raise MissingReconcileError, "BaseController is abstract and requires a concrete controller implementation" if instance_of?(BaseController)
 
         @store = store
-        @adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
+        @adapter = store && StoreAdapter.wrap(store)
         @definition = definition
         @name = (name || definition&.name || self.class.name.split("::").last).to_s
         @apply = !!apply
@@ -69,7 +71,7 @@ module Rubernetes
         leader_guard = options.delete(:leader_guard)
         raise ArgumentError, "leader_guard must respond to call" if leader_guard && !leader_guard.respond_to?(:call)
 
-        adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
+        adapter = store.equal?(@store) ? @adapter : (store && StoreAdapter.wrap(store))
         resource = resolve_resource(resource_or_key, adapter)
         stale = stale_sync_skip(resource)
         return stale if stale
@@ -168,7 +170,7 @@ module Rubernetes
       end
 
       def reconcile_orphans(key, store: @store, apply: true, leader_guard: nil)
-        adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
+        adapter = store.equal?(@store) ? @adapter : (store && StoreAdapter.wrap(store))
         result = plan_orphans(key, store: adapter)
         return nil if result.nil?
         return result unless apply && adapter
@@ -211,13 +213,20 @@ module Rubernetes
         Array(children).select { |child| Support.owner_reference_matches?(resource, child, controller: controller) }
       end
 
-      def operation_update(resource, candidate, descriptor: nil, reason: nil)
+      def operation_update(resource, candidate, descriptor: nil, reason: nil, subresource: nil)
         return nil if resource == candidate
 
         descriptor ||= ResourceDescriptor.parse(resource)
         Operation.new(action: :update, resource: descriptor,
                       key: object_key(descriptor, candidate), object: candidate,
-                      reason: reason)
+                      reason: reason, subresource: subresource)
+      end
+
+      def operation_owner_reference(resource, owner, descriptor:, reason:, adopt:)
+        reference = adopt ? Support.owner_reference(owner) : {"uid" => Support.uid(owner), "$patch" => "delete"}
+        patch = {"metadata" => {"uid" => Support.uid(resource), "ownerReferences" => [reference]}}
+        Operation.new(action: :strategic_patch, resource: descriptor,
+                      key: object_key(descriptor, resource), object: resource, patch: patch, reason: reason)
       end
 
       def operation_status(resource, status, descriptor: nil, reason: "status update", force: false)
@@ -240,20 +249,21 @@ module Rubernetes
       end
 
       def operation_create(object, owner: nil, descriptor: nil, reason: nil, operation_key: nil)
-        candidate = Support.deep_copy(object)
-        candidate["metadata"] ||= {}
+        # Operation snapshots the payload. Copy only the path changed here.
+        metadata = object["metadata"] || {}
         if owner
-          refs = Array(candidate["metadata"]["ownerReferences"])
+          refs = Array(metadata["ownerReferences"])
           reference = Support.owner_reference(owner)
-          refs.reject! do |existing|
+          refs = refs.reject do |existing|
             controller = Support.ref_value(existing, "controller", false)
             controller == true || controller.to_s.casecmp("true").zero? ||
               (Support.ref_value(existing, "kind", "").to_s == Support.kind(owner) &&
                Support.ref_value(existing, "name", "").to_s == Support.name(owner))
           end
           refs << reference
-          candidate["metadata"]["ownerReferences"] = refs
+          metadata = metadata.merge("ownerReferences" => refs)
         end
+        candidate = object.merge("metadata" => metadata)
         descriptor ||= ResourceDescriptor.parse(candidate)
         Operation.new(action: :create, resource: descriptor,
                       key: operation_key || object_key(descriptor, candidate), object: candidate,
@@ -303,6 +313,10 @@ module Rubernetes
 
       protected
 
+      def adapter_for(store)
+        store ? StoreAdapter.wrap(store) : @adapter
+      end
+
       def resolve_resource(resource_or_key, adapter)
         if resource_or_key.is_a?(Hash)
           return resource_or_key unless adapter
@@ -346,6 +360,8 @@ module Rubernetes
     # compatibility boundary; instantiating their implementation class
     # directly would silently discard those captured dependencies.
     class DefinitionController
+      include HPASync
+
       attr_reader :definition, :store
 
       def initialize(definition, store:, options: {})
@@ -354,6 +370,7 @@ module Rubernetes
         @options = options.is_a?(Hash) ? options.dup : {}
         @event_sink = @options.delete(:event_sink) || @options.delete("event_sink")
         @options.freeze
+        initialize_hpa_sync
       end
 
       def name
@@ -414,6 +431,7 @@ module Rubernetes
       def plan_orphans(key, store: @store)
         return nil unless orphan_cleanup?
 
+        forget_hpa_sync(key)
         orphan_implementation(store).plan_orphans(key, store: store)
       end
 
@@ -422,7 +440,7 @@ module Rubernetes
         return nil if result.nil?
         return result unless apply
 
-        adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
+        adapter = StoreAdapter.wrap(store)
         Support.with_controller(result.controller || name) do
           result.batches.each { |batch| adapter.apply_batch(batch, fence: leader_guard) }
         end
@@ -434,11 +452,14 @@ module Rubernetes
       end
 
       def reconcile(resource, store: @store, apply: true, leader_guard: nil, **)
+        deferred = delayed_hpa_plan(resource) if leader_guard
+        return deferred if deferred
+
         result = plan(resource, store: store, **)
 
         return result unless apply
 
-        adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
+        adapter = StoreAdapter.wrap(store)
         begin
           Support.with_controller(result.controller || name) do
             result.batches.each { |batch| adapter.apply_batch(batch, fence: leader_guard) }
@@ -462,6 +483,8 @@ module Rubernetes
     # supplied by the existing watch package; this class only owns the bridge
     # from queue keys to controller reconcile calls and the leader gate.
     class Manager
+      include WatchRouting
+
       attr_reader :registry, :elector, :controllers, :queue, :informers, :last_error
 
       # A reconcile that takes longer than this is reported: one slow key
@@ -625,6 +648,7 @@ module Rubernetes
         election = @elector_mutex.synchronize { @elector.step }
         return {election: election, reconciled: 0, follower: true}.freeze unless @elector.leader?
 
+        enqueue_due_garbage_collector_sweep
         # step(wait: 0) is a synchronous pass (run_once, tests, tools): drain
         # what is queued now on this thread.  A waiting step is the
         # controller-manager loop, which the persistent pool serves.
@@ -634,6 +658,17 @@ module Rubernetes
                        drain(wait, first: true)
                      end
         {election: election, reconciled: reconciled, follower: false}.freeze
+      end
+
+      # Follow up a deletion even if no informer changes arrive while its
+      # owner is waiting. The collector throttles full scans independently.
+      private def enqueue_due_garbage_collector_sweep
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return if @next_gc_sweep_at && @next_gc_sweep_at > now
+
+        @next_gc_sweep_at = now + 1.0
+        collector = @manager_mutex.synchronize { @controllers.values.find { |controller| garbage_collector?(controller) } }
+        enqueue(GARBAGE_COLLECTOR_SWEEP_KEY, controller: collector.name) if collector
       end
 
       # A persistent pool of workers drains the shared queue, the way
@@ -712,7 +747,7 @@ module Rubernetes
 
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         store = store_for(controller)
-        adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
+        adapter = StoreAdapter.wrap(store)
         nodes = adapter.list(controller.resource_descriptor, namespace: :all)
         reconciled = 0
         Array(nodes).each do |node|
@@ -824,12 +859,7 @@ module Rubernetes
 
               started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               result = begin
-                controller.reconcile(resource, store: store_for(controller), apply: true,
-                                               leader_guard: lambda {
-                                                 unless refresh_leadership
-                                                   raise LeadershipLostError, "controller leadership was lost before applying an operation"
-                                                 end
-                                               })
+                reconcile_controller(controller, resource, key)
               rescue LeadershipLostError
                 raise
               rescue StandardError => error
@@ -911,6 +941,13 @@ module Rubernetes
         end
       end
 
+      private def reconcile_controller(controller, resource, key)
+        options = {}
+        options[:reconcile_attempt] = @queue.num_requeues(key) if controller.name == "resourcepoolstatusrequest-controller"
+        guard = -> { raise LeadershipLostError, "controller leadership was lost before applying an operation" unless refresh_leadership }
+        controller.reconcile(resource, store: store_for(controller), apply: true, leader_guard: guard, **options)
+      end
+
       # {keys:, orphans:, reconcile:} seconds since the last call, then reset.
       # Where the reconcile time goes, per controller.  The totals alone said
       # the workers were busy, not with what: a burst of Service creations
@@ -984,9 +1021,8 @@ module Rubernetes
         # events) matches the same keys twice and was routed twice.
         observed_objects = [object]
         observed_objects << old_object if old_object && routing_identity(old_object) != routing_identity(object)
+        watches = controller_watches(controller)
         observed_objects.each do |observed|
-          watches = controller_watches(controller)
-          matching = watches.select { |watch| watch_matches?(watch, observed) }
           if watches.empty?
             enqueue([Support.namespace(observed), Support.name(observed)].compact.join("/"), controller: name)
             next
@@ -996,9 +1032,8 @@ module Rubernetes
           # same kind/name at another apiVersion must not fall through to the
           # legacy name-only route, or a controller can reconcile the wrong
           # object after an API migration.
-          next if matching.empty?
-
-          matching.each do |watch|
+          watches.each do |watch|
+            next unless watch_matches?(watch, observed)
             next unless watch.predicate.nil? || watch.predicate.call(observed)
 
             queue_keys_for(controller, watch, observed).each do |key|
@@ -1045,9 +1080,8 @@ module Rubernetes
 
       # Controllers with cleanup to do for an object that is no longer there.
       #
-      # The garbage collector's own kind is a controller-only marker, so no
-      # event ever routes a key to IT -- but it watches Pods, ReplicaSets,
-      # Deployments and the rest, and those routes are what carry it here.
+      # The garbage collector has a dedicated sweep key and can also use a
+      # foreign reconcile to bring a pending sweep forward.
       # Asking every controller instead, on every key, was the single most
       # expensive thing the reconcile loop did: measured under a parallel
       # conformance run it spent 220 seconds of worker time per 30 seconds of
@@ -1061,12 +1095,7 @@ module Rubernetes
         candidates = orphan_capable_controllers
         unless routed.empty?
           names = routed.to_h { |name| [name.to_s, true] }
-          # The garbage collector owns no kind and is never a key's route, so
-          # routing alone silenced its missing-owner sweep for good: pods
-          # whose ReplicationController had been deleted lived on for ever
-          # ("[sig-api-machinery] Garbage collector should delete pods created
-          # by rc when not orphaning").  It rides along on every key; its own
-          # sweep interval bounds the cost.
+          # Its sweep interval bounds the cost of opportunistic cleanup.
           candidates = candidates.select { |controller| names.key?(controller.name.to_s) || garbage_collector?(controller) }
         end
         candidates.select { |controller| find_resource(controller, key).nil? }
@@ -1154,66 +1183,6 @@ module Rubernetes
         Support.api_version(object).to_s == watch.resource.api_version
       end
 
-      def routing_identity(object)
-        metadata = Support.metadata(object)
-        [Support.namespace(object), Support.name(object), Support.labels(object),
-         Support.value(metadata, "ownerReferences", nil)]
-      end
-
-      def queue_keys_for(controller, watch, object)
-        if watch.via == :owner_reference
-          direct_reference = Support.owner_references(object).find do |reference|
-            controller_flag = Support.ref_value(reference, "controller", false)
-            (controller_flag == true || controller_flag.to_s.casecmp("true").zero?) &&
-              valid_owner_reference?(controller, object, reference)
-          end
-          if direct_reference
-            direct = owner_watch_queue_key(watch, object, direct_reference)
-            return normalize_queue_keys(direct)
-          end
-
-          ancestor = ownership_ancestor(controller, object)
-          return normalize_queue_keys([Support.namespace(ancestor), Support.name(ancestor)].compact.join("/")) if ancestor
-
-          return []
-        end
-
-        return matching_controller_keys(controller, object, selector_source: watch.selector_source) if %i[label selector].include?(watch.via)
-
-        # A Namespace controller's relation to a namespaced object is plain
-        # containment: the object's own namespace is the only key worth
-        # reconciling.  Falling through to the fan-out below made every event
-        # on any namespaced object re-sweep every namespace in the cluster,
-        # so one namespace deletion cost a full content sweep per namespace
-        # per event.
-        if watch.via == :all && controller.resource_descriptor.kind == "Namespace" &&
-           watch.resource.kind != "Namespace"
-          return normalize_queue_keys(Support.namespace(object))
-        end
-
-        # A foreign `:all` watch has no owner identity in the observed object.
-        # Queueing its namespace/name would either address a controller with
-        # the wrong kind or silently drop a cluster-scoped event (for example,
-        # a Node change watched by every DaemonSet). Fan the event out to the
-        # controller's own resources; self-watches still use their declared
-        # queue key below so same-GVK routing remains precise.
-        # route: :namespace confines the fan-out to the controller's objects
-        # in the observed object's namespace: a quota only ever counts its
-        # own namespace, and fanning every Pod event in the cluster out to
-        # every quota made each quota recompute dozens of times a minute --
-        # often in the window between admission charging it for a new object
-        # and that object being stored, which erased the charge.
-        if watch.via == :all && watch.route == :namespace && watch.resource.gvk != controller.resource_descriptor.gvk
-          return namespace_controller_keys(controller, object)
-        end
-        if watch.via == :all && watch.resource.gvk != controller.resource_descriptor.gvk &&
-           watch.route != :self
-          return all_controller_keys(controller)
-        end
-
-        normalize_queue_keys(watch.queue_key&.call(object))
-      end
-
       def normalize_queue_keys(key)
         Array(key).filter_map do |candidate|
           value = candidate.to_s
@@ -1245,7 +1214,7 @@ module Rubernetes
       # their Service.
       def matching_controller_keys(controller, object, selector_source: nil)
         descriptor = selector_source || controller.resource_descriptor
-        store_adapter.list(descriptor, namespace: Support.namespace(object) || :all).filter_map do |candidate|
+        store_adapter.selector_candidates(descriptor, object).filter_map do |candidate|
           selector = Support.value(Support.spec(candidate), "selector", {})
           next unless Support.selector_matches?(selector, object)
 
@@ -1253,18 +1222,10 @@ module Rubernetes
         end.uniq
       end
 
-      def namespace_controller_keys(controller, object)
-        namespace = Support.namespace(object)
+      def controller_keys(controller, namespace: :all)
         return [] if namespace.to_s.empty?
 
         store_adapter.list(controller.resource_descriptor, namespace: namespace).filter_map do |candidate|
-          key = [Support.namespace(candidate), Support.name(candidate)].compact.join("/")
-          key unless key.empty?
-        end.uniq
-      end
-
-      def all_controller_keys(controller)
-        store_adapter.list(controller.resource_descriptor, namespace: :all).filter_map do |candidate|
           key = [Support.namespace(candidate), Support.name(candidate)].compact.join("/")
           key unless key.empty?
         end.uniq
@@ -1368,7 +1329,7 @@ module Rubernetes
       end
 
       def store_adapter
-        @store.is_a?(StoreAdapter) ? @store : StoreAdapter.new(@store)
+        StoreAdapter.wrap(@store)
       end
 
       def normalize_controller_options(options)
