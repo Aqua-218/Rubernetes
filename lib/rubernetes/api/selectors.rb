@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
+require_relative "shard_selector"
+require_relative "../schema/job_selector"
+
 module Rubernetes
   module API
     # Kubernetes label and field selector evaluation for list/watch/delete.
@@ -18,23 +23,7 @@ module Rubernetes
         end
 
         def matches?(value, present: true)
-          value = value.to_s unless value.nil?
-          case operator
-          when :exists
-            present
-          when :not_exists
-            !present
-          when :equals
-            present && value == values.first
-          when :not_equals
-            !present || value != values.first
-          when :in
-            present && values.include?(value)
-          when :not_in
-            !present || !values.include?(value)
-          else
-            false
-          end
+          LabelRequirement.matches?(operator, value&.to_s, values, present: present)
         end
       end
 
@@ -54,7 +43,8 @@ module Rubernetes
         return selector if selector.is_a?(self)
         return new if selector.nil? || selector.to_s.strip.empty?
 
-        parts = split_requirements(selector.to_s)
+        parts = LabelRequirement.split(selector.to_s) { |side| raise Error, "selector has an unmatched #{side} parenthesis" }
+        parts.pop if parts.last == ""
         parts = parts.reject(&:empty?) if skip_empty_terms
         new(parts.map { |part| parse_requirement(part) })
       end
@@ -123,26 +113,13 @@ module Rubernetes
         "status.phase" => "",
         "status.podIP" => "",
         "status.nominatedNodeName" => "",
-        "involvedObject.namespace" => "",
-        "involvedObject.name" => "",
-        "involvedObject.kind" => "",
-        "involvedObject.uid" => "",
-        "involvedObject.fieldPath" => "",
-        "involvedObject.apiVersion" => "",
-        "involvedObject.resourceVersion" => "",
         "reason" => "",
         "source" => "",
         "reportingComponent" => "",
         "reportingController" => "",
-        "regarding.namespace" => "",
-        "regarding.name" => "",
-        "regarding.kind" => "",
-        "regarding.uid" => "",
-        "regarding.fieldPath" => "",
-        "regarding.apiVersion" => "",
-        "regarding.resourceVersion" => "",
         "type" => ""
-      }.freeze
+      }.merge(EVENT_REGARDING_FIELDS.to_h { |field| ["involvedObject.#{field}", ""] },
+              EVENT_REGARDING_FIELDS.to_h { |field| ["regarding.#{field}", ""] }).freeze
 
       # `aliases` is false while resolving an alias candidate: a candidate list
       # may name the selectable field itself ("reportingComponent"), which
@@ -192,35 +169,14 @@ module Rubernetes
       class << self
         private
 
-        def split_requirements(value)
-          parts = []
-          current = +""
-          depth = 0
-          value.each_char do |character|
-            depth += 1 if character == "("
-            depth -= 1 if character == ")"
-            raise Error, "selector has an unmatched closing parenthesis" if depth.negative?
-
-            if character == "," && depth.zero?
-              parts << current.strip
-              current = +""
-            else
-              current << character
-            end
-          end
-          raise Error, "selector has an unmatched opening parenthesis" unless depth.zero?
-
-          parts << current.strip unless current.strip.empty?
-          parts
-        end
-
         def parse_requirement(part)
           raise Error, "selector requirement cannot be empty" if part.empty?
 
           if (match = part.match(/\A(.+?)\s+(notin|in)\s*\(([^)]*)\)\z/i))
             key = validate_key(match[1].strip, part)
-            values = match[3].split(",").map(&:strip).reject(&:empty?)
-            raise Error, "set selector #{part.inspect} must contain a value" if values.empty?
+            # labels.Parse treats () and empty slots between commas as the
+            # empty label value. Preserve leading and trailing empty values.
+            values = match[3].empty? ? [""] : match[3].split(",", -1).map(&:strip)
 
             operator = match[2].downcase == "in" ? :in : :not_in
             return Requirement.new(key: key, operator: operator, values: values)
@@ -254,16 +210,22 @@ module Rubernetes
     # A selector pair keeps label and field concerns separate while exposing a
     # single predicate to storage adapters.
     class Selectors
-      attr_reader :label, :field
+      attr_reader :label, :field, :shard
 
-      def initialize(label: nil, field: nil, label_selector: nil, field_selector: nil)
+      def initialize(label: nil, field: nil, shard: nil, label_selector: nil, field_selector: nil, shard_selector: nil)
         @label = parse_with_field(label || label_selector, "labelSelector")
         @field = parse_with_field(field || field_selector, "fieldSelector")
+        @shard = shard || ShardSelector.parse(shard_selector)
         freeze
       end
 
       def matches?(object)
-        label.matches?(labels_from(object)) && field.matches?(object)
+        if shard && !shard.matches?(object)
+          yield if block_given?
+          return false
+        end
+
+        (label.empty? || label.matches?(labels_from(object))) && field.matches?(object)
       end
 
       alias match? matches?
@@ -291,6 +253,7 @@ module Rubernetes
       def labels_from(object)
         metadata = object.is_a?(Hash) ? (object["metadata"] || object[:metadata] || {}) : {}
         labels = metadata["labels"] || metadata[:labels] || {}
+        labels = Schema::JobSelector.inherited_labels(object) || labels if Schema::JobSelector.object?(object)
         labels.merge("metadata.name" => metadata["name"] || metadata[:name])
       end
     end
