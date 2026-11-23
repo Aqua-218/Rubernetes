@@ -81,17 +81,17 @@ module Rubernetes
             deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Integer(timeout))
             output = +""
             loop do
+              # Reap before reading so a quick hook's final write is already
+              # visible when we report its exit. Descendants may keep the pipe open.
+              status = reap(pid, WNOHANG)
               unless reader.closed?
-                begin
-                  chunk = reader.read_nonblock(4096)
-                  output << chunk if output.bytesize < OUTPUT_LIMIT
-                rescue IO::WaitReadable
-                  nil
-                rescue EOFError
+                chunk = reader.read_nonblock(OUTPUT_LIMIT, exception: false)
+                if chunk.nil?
                   reader.close
+                elsif chunk.is_a?(String) && output.bytesize < OUTPUT_LIMIT
+                  output << chunk.byteslice(0, OUTPUT_LIMIT - output.bytesize)
                 end
               end
-              status = reap(pid, WNOHANG)
               if status
                 unless status.success?
                   raise EffectError,
