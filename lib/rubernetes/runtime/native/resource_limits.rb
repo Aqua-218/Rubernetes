@@ -8,6 +8,8 @@ module Rubernetes
       # the workload runs, attributes OOM kills, resizes in place, and reads
       # limits and usage back from the kernel.
       module ResourceLimits
+        attr_writer :memory_qos_allocatable, :cpu_quota_exemptions
+
         # The bootstrap that sets up a container's security is an interpreter
         # process living in the container's own cgroup, and it allocates while
         # it works.  A small memory ceiling -- 32Mi and 64Mi are ordinary in
@@ -61,12 +63,13 @@ module Rubernetes
           spec.delete("limits")
           spec.delete(:limits)
           qos = normalize_qos(sandbox.config)
-          limits = container_cgroup_limits(spec, qos: qos, pod: pod_spec ? {"spec" => normalize_hash(pod_spec)} : sandbox.config)
+          pod = pod_spec ? normalize_hash(sandbox.config).merge("spec" => normalize_hash(pod_spec)) : sandbox.config
+          limits = container_cgroup_limits(spec, qos: qos, pod: pod)
           @cgroup.configure(container.cgroup, limits) if container.cgroup
           @mutex.synchronize { @deferred_memory_limits.delete(container_resource_id(sandbox, container)) }
           sandbox.update_container(container, spec: immutable(spec))
           if pod_spec && sandbox.cgroup
-            pod_limits = pod_cgroup_limits(normalize_hash(sandbox.config).merge("spec" => normalize_hash(pod_spec), "pod_limits" => nil))
+            pod_limits = pod_cgroup_limits(pod.merge("pod_limits" => nil))
             @cgroup.configure_pod(sandbox.cgroup, pod_limits) unless pod_limits.nil? || pod_limits.empty?
           end
           record(:container_resized, sandbox_id: sandbox.id, container_id: container.id, limits: limits)
@@ -112,7 +115,7 @@ module Rubernetes
             container = sandbox.container(entry["id"] || entry[:id])
             next unless container.cgroup
 
-            limits = container_cgroup_limits(normalize_hash(container.spec), qos: qos, pod: {"spec" => spec})
+            limits = container_cgroup_limits(normalize_hash(container.spec), qos: qos, pod: config)
             @cgroup.configure(container.cgroup, limits.slice("cpu.max", "memory.max"))
           end
           sandbox.update_config(immutable(config))
@@ -154,7 +157,9 @@ module Rubernetes
           return normalize_hash(explicit) if mapping?(explicit) && !explicit.to_h.empty?
           return {} unless (input["spec"] || input[:spec]).is_a?(Hash)
 
-          Resources.pod_cgroup_limits(input, qos: normalize_qos(input), memory_qos: config.memory_qos, pids_limit: config.pod_pids_limit)
+          enforce_cpu_quota = config.cpu_cfs_quota && !@cpu_quota_exemptions&.pod_cpu_quota_exempt?(input)
+          Resources.pod_cgroup_limits(input, qos: normalize_qos(input), memory_qos: memory_qos_options, pids_limit: config.pod_pids_limit,
+                                             cpu_period: config.cpu_period, cpu_cfs_quota: enforce_cpu_quota)
         end
 
         # Explicit `limits` win; otherwise the v1.36.2 container formulas are
@@ -162,11 +167,21 @@ module Rubernetes
         # (cpu.weight=1, cpu.max=max) when nothing was requested.
         def container_cgroup_limits(input, qos:, pod: nil)
           pod_spec = pod && (pod["spec"] || pod[:spec])
-          derived = Resources.container_cgroup_limits(input, qos: qos, memory_qos: config.memory_qos,
+          quota_exempt = @cpu_quota_exemptions&.container_cpu_quota_exempt?(pod, input)
+          derived = Resources.container_cgroup_limits(input, qos: qos, memory_qos: memory_qos_options,
+                                                             single_process_oom_kill: config.single_process_oom_kill,
                                                              pids_limit: input["pids_limit"] || input[:pids_limit] || config.pod_pids_limit,
+                                                             cpu_period: config.cpu_period, cpu_cfs_quota: config.cpu_cfs_quota,
+                                                             quota_exempt: quota_exempt,
                                                              pod: pod_spec.is_a?(Hash) ? pod_spec : nil)
           explicit = input["limits"] || input[:limits] || {}
           derived.merge(normalize_hash(explicit))
+        end
+
+        def memory_qos_options
+          return unless config.memory_qos
+
+          {policy: config.memory_reservation_policy, factor: config.memory_throttling_factor, allocatable: @memory_qos_allocatable}
         end
 
         # Splits +limits+ into what is written when the cgroup is created and
@@ -235,6 +250,16 @@ module Rubernetes
         rescue Platform::Linux::CgroupV2::Error => error
           record(:oom_events_unavailable, sandbox_id: sandbox.id, container_id: container.id, error: error.message)
           nil
+        end
+
+        def sandbox_cgroup_path_options(sandbox)
+          case @cgroup
+          when Platform::Linux::CgroupV2, Platform::Linux::NativeAdapters::CgroupAdapter
+            metadata = sandbox.config["metadata"]
+            {pod_uid: (metadata["uid"] if metadata.is_a?(Hash)), sandbox: sandbox.cgroup}
+          else
+            {}
+          end
         end
 
         def normalize_qos(input)
