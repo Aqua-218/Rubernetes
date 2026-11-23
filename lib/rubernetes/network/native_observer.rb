@@ -38,6 +38,12 @@ module Rubernetes
         "route_add" => %w[route], "route_delete" => %w[route],
         "fdb_add" => %w[neighbour], "fdb_delete" => %w[neighbour]
       }.freeze
+      IPV6_DAD_TIMEOUT_LIMIT = 6.0
+      IPV6_READBACK_ERRORS = {
+        tentative: "IPv6 duplicate address detection was still in progress",
+        missing: "IPv6 address was absent",
+        ready: "IPv6 address became ready after the deadline"
+      }.freeze
 
       def resources(namespace: nil, namespace_fd: nil, kinds: nil, link_name: nil)
         target = namespace_fd || namespace
@@ -114,14 +120,114 @@ module Rubernetes
         resources_for(operation).first&.fetch("identity", nil)
       end
 
+      def wait_for_ipv6_address(operation, started:, timeout:, interval:, adaptive:)
+        normal_deadline = started + timeout
+        deadline = normal_deadline
+        tentative_identity = nil
+        state = nil
+        attempts = 0
+        loop do
+          break if state && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+          observation = ipv6_address_observation(operation)
+          return unless observation
+
+          attempts += 1
+          state, address = observation
+          identity = address&.fetch("identity")
+          if tentative_identity && identity && tentative_identity != identity
+            raise OwnershipError, "kernel IPv6 address identity changed while reading back #{operation.resource}"
+          end
+          raise OwnershipError, "kernel IPv6 duplicate address detection failed for #{operation.resource}" if state == :dad_failed
+
+          if state == :ready
+            return [[address], attempts] if Process.clock_gettime(Process::CLOCK_MONOTONIC) <= deadline
+
+            break
+          end
+
+          if state == :missing
+            deadline = normal_deadline
+            adaptive = false
+          elsif state == :tentative
+            tentative_identity ||= identity
+            if adaptive
+              adaptive = false
+              deadline = ipv6_dad_deadline(operation, address, started, interval, normal_deadline)
+            end
+          end
+
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          break unless remaining.positive?
+
+          sleep([interval, remaining].min)
+        end
+
+        reason = IPV6_READBACK_ERRORS.fetch(state)
+        raise OwnershipError, "kernel observer did not read back #{operation.resource} (#{reason})"
+      end
+
+      # Unlike ownership proofs, this readback exposes an unready address
+      # only as diagnostic state. It still matches the exact ADD tuple.
+      def ipv6_address_observation(operation)
+        value = operation.to_h
+        return unless Support.fetch(value, "action") == "address_add"
+
+        params = Support.fetch(value, "parameters", default: {})
+        address, embedded_prefix = Support.fetch(params, "address", default: nil).to_s.split("/", 2)
+        prefix = Support.fetch(params, "prefix", default: nil) || embedded_prefix
+        return unless address&.include?(":") && prefix && Support.fetch(params, "interface", "name", default: nil)
+
+        resource = matching_resource(value, include_unready_address: true)
+        return [:missing, nil] unless resource
+
+        metadata = resource.fetch("metadata")
+        return [:dad_failed, resource] if metadata.fetch("dad_failed")
+
+        [metadata.fetch("tentative") ? :tentative : :ready, resource]
+      end
+
+      def ipv6_dad_window(operation, interface:)
+        params = Support.fetch(operation.to_h, "parameters", default: {})
+        target = Support.fetch(params, "namespace_fd", "namespace", default: nil)
+        return @netlink.with_namespace(target, operation: "network_ipv6_dad") { ipv6_dad_settings(interface) } if target
+
+        ipv6_dad_settings(interface)
+      rescue ArgumentError, SystemCallError
+        nil
+      end
+
       private
 
-      def matching_resource(value)
+      def ipv6_dad_deadline(operation, address, started, interval, normal_deadline)
+        window = ipv6_dad_window(operation, interface: address.dig("metadata", "ifname"))
+        return normal_deadline unless window
+
+        # Include one polling interval after the kernel's estimated maximum
+        # duration while bounding the whole wait from the first observation.
+        limit = [window + interval, IPV6_DAD_TIMEOUT_LIMIT].min
+        [normal_deadline, started + limit].max
+      end
+
+      def ipv6_dad_settings(interface)
+        config = "/proc/sys/net/ipv6/conf/#{interface}"
+        transmits = Integer(File.read("#{config}/dad_transmits"), 10)
+        start_delay = Integer(File.read("#{config}/router_solicitation_delay"), 10)
+        retransmit_ms = Integer(File.read("/proc/sys/net/ipv6/neigh/#{interface}/retrans_time_ms"), 10)
+        return unless transmits.positive? && start_delay >= 0 && retransmit_ms.positive?
+
+        # The Linux DAD worker rearms its timer after each probe. A delayed
+        # dispatch can keep a valid address tentative past the nominal sum.
+        # Allow one retransmission interval of slack within the global cap.
+        start_delay + ((transmits + 1) * retransmit_ms / 1000.0)
+      end
+
+      def matching_resource(value, include_unready_address: false)
         params = Support.fetch(value, "parameters", default: {})
         target = Support.fetch(params, "namespace_fd", "namespace", default: nil)
         if target && @netlink.respond_to?(:with_namespace)
           return @netlink.with_namespace(target, operation: "network_identity") do
-            matching_resource(value.merge("parameters" => params.reject { |key, _| %w[namespace namespace_fd].include?(key.to_s) }))
+            matching_resource(value.merge("parameters" => params.reject { |key, _| %w[namespace namespace_fd].include?(key.to_s) }), include_unready_address:)
           end
         end
 
@@ -179,7 +285,7 @@ module Rubernetes
           prefix = address_prefix(address, prefix)
           interface = Support.fetch(params, "interface", "name", default: nil)
           resource = snapshot.find do |entry|
-            ready = Support.fetch(value, "action") != "address_add" ||
+            ready = include_unready_address || action != "address_add" ||
                     (entry.dig("metadata", "tentative") == false && entry.dig("metadata", "dad_failed") == false)
             entry.fetch("kind") == "address" && ready &&
               entry.dig("metadata", "address") == address &&
