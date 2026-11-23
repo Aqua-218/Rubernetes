@@ -54,6 +54,26 @@ class APIWatchInitialStateTest < Minitest::Test
     assert_includes(events, %w[ADDED already-here])
   end
 
+  def test_legacy_watch_member_filters_events_and_rejects_a_conflicting_selector
+    create_configmap("first")
+    create_configmap("second")
+    path = "/api/v1/watch/namespaces/dev/configmaps/second"
+    watched = call("GET", "#{path}?timeoutSeconds=0")
+
+    assert_equal 200, watched.status
+    assert_equal(["second"], watched.body.to_a.map { |event| event.dig("object", "metadata", "name") })
+    mismatch = call("GET", "#{path}?fieldSelector=metadata.name=first&timeoutSeconds=0")
+
+    assert_equal 400, mismatch.status
+    assert_equal "fieldSelector metadata.name doesn't match requested name", mismatch.body["message"]
+    assert_equal 405, call("DELETE", path).status
+    member = call("GET", "/api/v1/namespaces/dev/configmaps/second?watch=true")
+
+    assert_equal "ConfigMap", member.body["kind"]
+  ensure
+    watched&.body&.close if watched&.stream?
+  end
+
   def test_the_replayed_state_honours_the_label_selector
     create_configmap("selected", "team" => "blue")
     create_configmap("ignored", "team" => "green")
