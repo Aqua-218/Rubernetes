@@ -34,15 +34,13 @@ module Rubernetes
         @bucket_rate = positive_float(bucket_rate, "bucket_rate")
         @mutex = Mutex.new
         @condition = ConditionVariable.new
-        @queue = []
-        @queued = {}
+        @queue = {} # insertion-ordered key => ready time
         # Keys whose current queue entry came from add_after: scheduled work
         # (a timed resync or progress deadline), distinct from a retry.
         @timed = {}
         @processing = {}
         @dirty = {}
         @requeues = Hash.new(0)
-        @ready_at = {}
         @tokens = @bucket_capacity
         @last_refill = @clock.call
         @next_token_at = @last_refill
@@ -72,8 +70,14 @@ module Rubernetes
 
       def add(key)
         normalized = normalize_key(key)
-        @mutex.synchronize { @timed.delete(normalized) }
-        enqueue(normalized, ready_at: @clock.call)
+        @mutex.synchronize do
+          raise IOError, "WorkQueue is shut down" if @closed
+
+          @timed.delete(normalized)
+          enqueue_locked(normalized, ready_at: @clock.call)
+          @condition.broadcast
+        end
+        self
       end
 
       def add_after(key, delay)
@@ -82,7 +86,7 @@ module Rubernetes
         @mutex.synchronize do
           raise IOError, "WorkQueue is shut down" if @closed
 
-          already_queued = @queued.key?(normalized) && !@timed.key?(normalized)
+          already_queued = @queue.key?(normalized) && !@timed.key?(normalized)
           enqueue_locked(normalized, ready_at: @clock.call + normalized_delay)
           # An immediate entry already waiting keeps its immediate nature.
           @timed[normalized] = true unless already_queued
@@ -96,7 +100,7 @@ module Rubernetes
       # concurrent workers, so a hot failing key cannot exhaust upstream.
       def add_rate_limited(key)
         normalized = normalize_key(key)
-        delay = @mutex.synchronize do
+        @mutex.synchronize do
           raise IOError, "WorkQueue is shut down" if @closed
 
           now = @clock.call
@@ -107,9 +111,8 @@ module Rubernetes
           token_delay = reserve_token_locked(now)
           enqueue_locked(normalized, ready_at: now + exponential + token_delay)
           @condition.broadcast
-          [exponential + token_delay, exponential, token_delay]
+          exponential + token_delay
         end
-        delay.first
       end
 
       def get(timeout: nil)
@@ -122,10 +125,8 @@ module Rubernetes
 
             key = ready_key_locked
             if key
-              @queue.delete_at(@queue.index(key) || 0)
-              @queued.delete(key)
               @timed.delete(key)
-              ready = @ready_at.delete(key)
+              ready = @queue.delete(key)
               record_wait_locked(ready)
               @processing[key] = true
               metrics_get_locked(key)
@@ -144,14 +145,8 @@ module Rubernetes
         @mutex.synchronize do
           @processing.delete(normalized)
           metrics_done_locked(normalized)
-          if @closed
-            @dirty.delete(normalized)
-            @ready_at.delete(normalized)
-          elsif @dirty.delete(normalized)
-            enqueue_locked(normalized, ready_at: @ready_at.delete(normalized) || @clock.call)
-          else
-            @ready_at.delete(normalized)
-          end
+          ready = @dirty.delete(normalized)
+          enqueue_locked(normalized, ready_at: ready) if ready && !@closed
           @condition.broadcast
         end
         self
@@ -182,7 +177,7 @@ module Rubernetes
 
       def queued?(key)
         normalized = normalize_key(key)
-        @mutex.synchronize { @queued.key?(normalized) }
+        @mutex.synchronize { @queue.key?(normalized) }
       end
 
       # {count:, average:, max:} since the last call, then reset -- a gauge a
@@ -201,7 +196,7 @@ module Rubernetes
 
       def ready_at(key)
         normalized = normalize_key(key)
-        @mutex.synchronize { @ready_at[normalized] }
+        @mutex.synchronize { @queue[normalized] || @dirty[normalized] }
       end
 
       def shut_down
@@ -212,9 +207,7 @@ module Rubernetes
         @mutex.synchronize do
           @closed = true
           @queue.clear
-          @queued.clear
           @dirty.clear
-          @ready_at.clear
           @requeues.clear
           @condition.broadcast
         end
@@ -243,13 +236,13 @@ module Rubernetes
       # immediately runnable.
       def delayed?(key)
         normalized = normalize_key(key)
-        @mutex.synchronize { @queued.key?(normalized) && @timed.key?(normalized) }
+        @mutex.synchronize { @queue.key?(normalized) && @timed.key?(normalized) }
       end
 
       # Keys waiting for a future ready time (add_after / rate-limited
       # backoff); they are queued but not yet runnable.
       def delayed_length
-        @mutex.synchronize { @queue.count { |key| @timed.key?(key) } }
+        @mutex.synchronize { @queue.each_key.count { |key| @timed.key?(key) } }
       end
 
       def empty?
@@ -257,33 +250,20 @@ module Rubernetes
       end
 
       def keys
-        @mutex.synchronize { (@queue + @processing.keys).uniq.freeze }
+        @mutex.synchronize { (@queue.keys + @processing.keys).freeze }
       end
 
       private
 
-      def enqueue(key, ready_at:)
-        @mutex.synchronize do
-          raise IOError, "WorkQueue is shut down" if @closed
-
-          enqueue_locked(key, ready_at: ready_at)
-          @condition.broadcast
-        end
-        self
-      end
-
       def enqueue_locked(key, ready_at:)
         if @processing.key?(key)
           metrics_add_locked(key) unless @dirty.key?(key)
-          @dirty[key] = true
-          @ready_at[key] ||= ready_at
-        elsif !@queued.key?(key)
+          @dirty[key] ||= ready_at
+        elsif @queue.key?(key)
+          @queue[key] = ready_at if ready_at < @queue.fetch(key)
+        else
           metrics_add_locked(key)
-          @queued[key] = true
-          @ready_at[key] = ready_at
-          @queue << key
-        elsif ready_at < @ready_at.fetch(key, ready_at)
-          @ready_at[key] = ready_at
+          @queue[key] = ready_at
         end
       end
 
@@ -298,7 +278,8 @@ module Rubernetes
       # while "conformance/..." and "endpointslice-..." keys went first.
       def ready_key_locked
         now = @clock.call
-        @queue.find { |key| @ready_at.fetch(key, now) <= now }
+        @queue.each_pair { |key, ready| return key if ready <= now }
+        nil
       end
 
       def registry
@@ -396,7 +377,7 @@ module Rubernetes
 
       def wait_for_work_locked(deadline, wall_deadline)
         now = @clock.call
-        next_ready = @queue.map { |key| @ready_at.fetch(key, now) }.min
+        next_ready = @queue.each_value.min
         wait_for = next_ready && [next_ready - now, 0].max
         wait_for = deadline - now if deadline && wait_for.nil?
         wait_for = [wait_for, deadline - now].min if deadline && wait_for
