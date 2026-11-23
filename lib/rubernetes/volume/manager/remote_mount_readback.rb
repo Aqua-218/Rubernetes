@@ -13,15 +13,10 @@ module Rubernetes
           response = sanitize_response(AdapterSupport.result_hash(value))
           observed = remote_mount_readback(target, aliases: aliases)
           if @require_real_readback
-            if observed.nil? && stage && (stage_without_mount_declared? || response["stageSkipped"] == true)
-              # CSI permits NodeStageVolume to complete without a kernel mount
-              # (csi-driver-host-path, NFS-style drivers record the stage and
-              # mount only at NodePublishVolume).  Because a missing readback is
-              # otherwise the signature of a lost effect, this is accepted only
-              # when the volume spec declares csi.stageWithoutMount for the
-              # driver.  Nothing exists in the kernel to own, so the stage is
-              # recorded explicitly as unmounted and never enters the mount
-              # ledger; NodePublishVolume still requires an independent readback.
+            if observed.nil? && stage && (kubelet_csi? || stage_without_mount_declared? || response["stageSkipped"] == true)
+              # Kubernetes CSI permits staging without a kernel mount. Hold the
+              # original directory identity for NodePublishVolume, which still
+              # needs independent proof of the published mount.
               return unmounted_stage_identity(response, target, path_identity: path_identity)
             end
             unless observed
@@ -48,10 +43,12 @@ module Rubernetes
         end
 
         def unmounted_stage_identity(response, target, path_identity: nil)
+          source = Types.csi_mount_source(remote_id)
           identity = {
-            "volumeId" => id, "source" => "csi://#{remote_id}", "sourceIdentity" => "csi://#{remote_id}",
+            "volumeId" => id, "source" => source, "sourceIdentity" => source,
             "target" => target, "stage" => true, "mounted" => false, "readonly" => readonly?,
-            "secret" => secret?, "filesystemUuid" => nil, "filesystemUuidAvailable" => false
+            "secret" => secret?, "mountId" => nil, "deviceId" => nil, "root" => nil,
+            "filesystemUuid" => nil, "filesystemUuidAvailable" => false
           }
           response.each do |key, child|
             key = key.to_s
@@ -106,7 +103,10 @@ module Rubernetes
           end
 
           hash = Capability.hash_like?(result) ? result.to_h.transform_keys(&:to_s) : nil
-          return nil unless hash && (hash["mountId"] || hash["mount_id"]) && (hash["target"] || hash["mountpoint"])
+          return nil unless hash && (hash["mountId"] || hash["mount_id"])
+
+          observed_target = hash["target"] || hash["mountpoint"]
+          return nil unless observed_target && File.expand_path(observed_target) == File.expand_path(path)
 
           hash
         end
