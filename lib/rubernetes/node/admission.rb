@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../label_requirement"
+
 # Node-local admission.  Scheduling is owned by the scheduler, but a node
 # agent must repeat the safety checks immediately before creating a sandbox:
 # resource availability, node identity, OS/architecture and runtime support.
@@ -7,6 +9,7 @@
 require_relative "registration"
 require_relative "resource_manager"
 require_relative "../resource_helpers"
+require_relative "../taint_toleration"
 require_relative "../node_declared_features"
 
 module Rubernetes
@@ -82,11 +85,14 @@ module Rubernetes
                      operating_system: DEFAULT_OS, architecture: DEFAULT_ARCH, runtime_classes: {},
                      runtime_handlers: nil, node_schedulable: true, features: {}, allowed_unsafe_sysctls: [],
                      declared_features: nil, declared_features_framework: NodeDeclaredFeatures::DEFAULT_FRAMEWORK,
-                     version: NodeDeclaredFeatures::KUBERNETES_VERSION, node_labels_provider: nil)
+                     version: NodeDeclaredFeatures::KUBERNETES_VERSION, node_labels_provider: nil, node_taints: nil,
+                     node_taints_provider: nil)
         # The kubelet admits against the live Node (getNodeAnyWayFunc): labels
         # added after the agent started -- `kubectl label node`, which is how
         # nodeSelector tests steer Pods -- count.  The configured labels are
         # the fallback when the Node cannot be read.
+        @node_taints = node_taints
+        @node_taints_provider = node_taints_provider
         @node_labels_provider = node_labels_provider
         @cached_labels = nil
         @labels_mutex = Mutex.new
@@ -145,6 +151,7 @@ module Rubernetes
           method(:check_sysctls),
           method(:check_resource_allocation),
           method(:check_resources),
+          method(:check_no_execute_taints),
           method(:check_pod_features),
           method(:check_declared_features),
           method(:check_node_shutdown)
@@ -258,6 +265,24 @@ module Rubernetes
         rejected(pod, "NodeNameMismatch", "pod is assigned to node #{assigned.inspect}, not #{@node_name}")
       end
 
+      def check_no_execute_taints(pod, **_options)
+        return unless @node_taints
+
+        entries = Array(pod.dig("spec", "tolerations"))
+        comparisons = @features[TaintToleration::GATE] == true
+        untolerated = lambda do |taint|
+          taint["effect"] == "NoExecute" && entries.none? { |entry| TaintToleration.matches?(entry, taint, comparisons: comparisons) }
+        end
+        return unless Array(@node_taints.call).any?(&untolerated)
+
+        # The scheduler can observe a taint removal before the next kubelet
+        # status report. Confirm a cached rejection with the current Node.
+        live = @node_taints_provider&.call
+        return if live && live.none?(&untolerated)
+
+        rejected(pod, "TaintToleration", "Predicate TaintToleration failed: node(s) had taints that the pod didn't tolerate")
+      end
+
       def check_schedulable(pod, **_options)
         return nil if @node_schedulable
 
@@ -272,7 +297,7 @@ module Rubernetes
         requested ||= Support.object_hash(Support.value(Support.metadata(pod), "annotations", {}))["kubernetes.io/os"]
         return nil if requested.nil? || requested.to_s.empty? || normalize_os(requested) == @operating_system
 
-        rejected(pod, "UnsupportedOS", "pod requires OS #{requested.inspect}, node provides #{@operating_system.inspect}",
+        rejected(pod, "PodOSNotSupported", "Failed to admit pod as the OS field doesn't match node OS",
                  details: {"requestedOS" => requested, "nodeOS" => @operating_system})
       end
 
@@ -533,13 +558,9 @@ module Rubernetes
       def match_selector_value?(actual, operator, values)
         present = !actual.nil? && !actual.to_s.empty?
         case operator
-        when "In" then present && values.include?(actual.to_s)
-        when "NotIn" then !present || !values.include?(actual.to_s)
-        when "Exists" then present
-        when "DoesNotExist" then !present
         when "Gt" then present && actual.to_f > values.fetch(0).to_f
         when "Lt" then present && actual.to_f < values.fetch(0).to_f
-        else false
+        else LabelRequirement.matches?(operator, actual.to_s, values, present: present)
         end
       end
 
