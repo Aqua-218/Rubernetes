@@ -12,15 +12,16 @@ class APIServiceSyncFixesTest < Minitest::Test
   # one X-Remote-Group line per group, and the backend only reads the first
   # value of a joined line (system:masters was lost).
   def test_repeated_identity_headers_go_out_one_line_per_value
-    request = Net::HTTP::Get.new("/apis/x/v1").extend(Rubernetes::API::Aggregator::RepeatedHeaderLines)
+    request = Net::HTTP::Get.new("/apis/x/v1").extend(Rubernetes::API::Request::RepeatedHeaderLines)
     request.delete("X-Remote-Group")
     request.add_field("X-Remote-Group", "system:masters")
     request.add_field("X-Remote-Group", "system:authenticated")
     request["X-Remote-User"] = "system:kube-aggregator"
 
     lines = request.each_capitalized.to_a
-    assert_equal [["X-Remote-Group", "system:masters"], ["X-Remote-Group", "system:authenticated"]],
-                 lines.select { |key, _| key == "X-Remote-Group" }
+
+    assert_equal([["X-Remote-Group", "system:masters"], ["X-Remote-Group", "system:authenticated"]],
+                 lines.select { |key, _| key == "X-Remote-Group" })
     assert_includes lines, ["X-Remote-User", "system:kube-aggregator"]
   end
 
@@ -30,14 +31,14 @@ class APIServiceSyncFixesTest < Minitest::Test
     scheduled = []
     synced = []
     service = Rubernetes::Bootstrap::APIServerService.allocate
-    service.instance_variable_set(:@aggregator, Struct.new(:synced, :names) {
+    service.instance_variable_set(:@aggregator, Struct.new(:synced, :names) do
       def sync(object) = synced << object.dig("metadata", "name")
       def backend_names = names
       def remove(name) = names.delete(name)
-    }.new(synced, ["v1beta1.stale.example.com"]))
-    service.instance_variable_set(:@api_server, Struct.new(:scheduled) {
+    end.new(synced, ["v1beta1.stale.example.com"]))
+    service.instance_variable_set(:@api_server, Struct.new(:scheduled) do
       def schedule_apiservice_availability(name) = scheduled << name
-    }.new(scheduled))
+    end.new(scheduled))
 
     service.send(:apply_dynamic_snapshot, :apiservice, [{"metadata" => {"name" => "v1.metrics.k8s.io"}}])
     event = Struct.new(:type, :object).new("MODIFIED", {"metadata" => {"name" => "v1beta1.custom.example.com"}})
