@@ -13,7 +13,7 @@ module Rubernetes
           record = fetch_record(id)
           ensure_known!(record)
           begin
-            backend = build_backend(id.to_s, record.spec)
+            backend = rebuild_backend(record)
             backends[id.to_s] = backend
             backend
           rescue StandardError => error
@@ -31,7 +31,7 @@ module Rubernetes
           @csi = registry
           # As at construction with csi:, CSI dispatch needs descriptor-safe
           # targets.
-          @path_security = descriptor_path_security if @default_path_security
+          @path_security = descriptor_path_security if @default_path_security && !@path_security.descriptor_capable?
           recover_unconfigured_csi_backends!
         end
 
@@ -59,9 +59,12 @@ module Rubernetes
 
           klass = BUILTIN_BACKENDS[backend_name] || BUILTIN_BACKENDS[backend_name.downcase] ||
                   raise(UnsupportedError, "unsupported volume backend #{backend_name.inspect}")
-          klass.new(id: id, spec: spec, adapter: @adapter, root: @root, path_security: @path_security,
-                    mount_adapter: @mount_adapter, device_adapter: @device_adapter,
-                    require_real_readback: @require_real_readback)
+          options = {id: id, spec: spec, adapter: @adapter, root: @root, path_security: @path_security,
+                     mount_adapter: @mount_adapter, device_adapter: @device_adapter,
+                     require_real_readback: @require_real_readback}
+          options[:storage_devices] = @storage_devices if klass <= SCSIBackend
+          options[:project_quota] = @project_quota if klass == EmptyDirBackend
+          klass.new(**options)
         end
 
         private
@@ -116,9 +119,20 @@ module Rubernetes
           raise CSIUnavailable, "CSI driver mismatch: volume requests #{requested.inspect}, configured plugin is #{actual.inspect}"
         end
 
+        def rebuild_backend(record)
+          spec = record.spec
+          if record.backend == "projected"
+            spec = spec.except("podCertificateProvider", "tokenRotator")
+            if ProjectedBackend.service_account_token_source?(Types.key(spec, "sources", []))
+              spec["tokenRotator"] = token_rotator_for(Types.key(spec, "pod", {}))
+            end
+          end
+          build_backend(record.id, spec)
+        end
+
         def recover_backends_from_store!
           volume_store.each_value do |record|
-            @backends[record.id] = build_backend(record.id, record.spec)
+            @backends[record.id] = rebuild_backend(record)
           rescue StandardError => error
             # A corrupt/incomplete record remains visible but is fenced.  The
             # old behavior swallowed the reconstruction failure, allowing a
