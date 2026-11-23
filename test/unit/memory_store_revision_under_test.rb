@@ -57,10 +57,28 @@ class MemoryStoreRevisionUnderTest < Minitest::Test
     store.create("registry/pods/ns/p", object("p", namespace: "ns"))
     store.delete("registry/pods/ns/p")
     restored = Store.new
-    restored.import_state(store.export_state)
+    restored.import_state(store.export_state.reject { |field, _| field == "resource_revisions" })
 
     %w[registry/clusterroles/ registry/pods/ registry/rolebindings/].each do |prefix|
       assert_equal store.revision_under(prefix), restored.revision_under(prefix), prefix
     end
+  end
+
+  def test_compacted_deletes_keep_their_key_space_revision_across_restart
+    store = Store.new
+    store.create("registry/pods/ns/p", object("p"))
+    store.create("registry/pods/ns/q", object("q"))
+    store.delete("registry/pods/ns/q")
+    store.create("registry/roles/ns/r", object("r"))
+    store.delete("registry/roles/ns/r")
+    store.compact!(revision: store.revision)
+
+    restored = Store.new
+    restored.import_state(JSON.parse(JSON.generate(store.export_state)))
+
+    assert_equal 3, restored.revision_under("registry/pods/")
+    assert_equal 5, restored.revision_under("registry/roles/")
+    assert_equal 0, restored.revision_under("registry/secrets/")
+    assert_equal ["registry/pods/ns/p"], restored.export_state.fetch("known_keys")
   end
 end
