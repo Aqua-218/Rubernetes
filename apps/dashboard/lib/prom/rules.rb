@@ -5,6 +5,7 @@ require "json"
 require "net/http"
 require "uri"
 require_relative "../tsdb/store"
+require_relative "alert_template"
 
 module Prom
   # Recording and alerting rules in the Prometheus rule-file format:
@@ -27,9 +28,8 @@ module Prom
   # Alerting rules keep per-label-set state (pending -> firing -> resolved,
   # honouring `for` and `keep_firing_for`), write ALERTS and
   # ALERTS_FOR_STATE series, and post Alertmanager-style webhook
-  # notifications on transitions.  Templates support the subset of Go
-  # templating the Prometheus docs show for annotations: $labels.<name>,
-  # $value, $externalLabels, and the humanize* / printf functions.
+  # notifications on transitions. Rule labels and annotations can use
+  # Prometheus template variables and query helpers.
   class Rules
     class Error < StandardError; end
 
@@ -53,11 +53,12 @@ module Prom
       new(document, file: path, **)
     end
 
-    def initialize(document, file: nil, webhook_url: nil, external_labels: {}, logger: nil, http: nil,
+    def initialize(document, file: nil, webhook_url: nil, external_labels: {}, external_url: nil, logger: nil, http: nil,
                    default_interval_ms: 15_000)
       @file = file
       @webhook_url = webhook_url
-      @external_labels = external_labels
+      @external_labels = external_labels.transform_keys(&:to_s).transform_values(&:to_s)
+      @external_url = external_url
       @logger = logger
       @http = http || method(:post_json)
       @default_interval_ms = default_interval_ms
@@ -214,12 +215,22 @@ module Prom
       seen = {}
       rows = []
       vector.each do |series|
-        labels = series.metric.reject { |k, _| k == "__name__" }.merge(rule.labels).merge("alertname" => rule.name)
         value = series.point[1]
-        annotations = rule.annotations.transform_values { |template| expand(template, labels, value) }
-        key = [rule.object_id, labels.sort.to_s]
-        seen[key] = true
-        @mutex.synchronize do
+        expander = AlertTemplate.new(labels: series.metric, value: value, external_labels: @external_labels, external_url: @external_url,
+                                     timestamp_ms: now_ms, engine: engine)
+        labels = series.metric.merge(rule.labels.transform_values { |template| expand(template, expander, rule) })
+        labels.delete("__name__")
+        labels.delete_if { |_, label| label.empty? }
+        labels["alertname"] = rule.name
+        key = [rule.object_id, labels.sort]
+        raise Error, "vector contains metrics with the same labelset after applying alert labels" if seen.key?(key)
+
+        annotations = rule.annotations.transform_values { |template| expand(template, expander, rule) }
+        seen[key] = [labels, annotations, value]
+      end
+
+      @mutex.synchronize do
+        seen.each do |key, (labels, annotations, value)|
           entry = @active[key]
           if entry.nil? || entry.state == "resolved"
             entry = Alert.new(rule: rule, labels: labels, annotations: annotations, state: "pending", active_at_ms: now_ms,
@@ -237,8 +248,6 @@ module Prom
             end
           end
         end
-      end
-      @mutex.synchronize do
         @active.each do |key, entry|
           next unless key[0] == rule.object_id
           next if seen.key?(key)
@@ -298,89 +307,11 @@ module Prom
 
     # ---------------------------------------------------------- templates
 
-    HUMANIZE_UNITS = %w[k M G T P E Z Y].freeze
-
-    def expand(template, labels, value)
-      template.to_s.gsub(/\{\{-?\s*(.*?)\s*-?\}\}/m) do
-        expression = Regexp.last_match(1)
-        begin
-          template_value(expression, labels, value)
-        rescue StandardError
-          "{{ #{expression} }}"
-        end
-      end
-    end
-
-    def template_value(expression, labels, value)
-      case expression
-      when /\A\$labels\.([a-zA-Z_][a-zA-Z0-9_]*)\z/ then labels.fetch(Regexp.last_match(1), "")
-      when /\A\$value\z/ then Promql::Engine.format_value(value.to_f)
-      when /\A\$externalLabels\.([a-zA-Z_]\w*)\z/ then @external_labels.fetch(Regexp.last_match(1), "").to_s
-      when /\Ahumanize\s+(.+)\z/ then humanize(number_arg(Regexp.last_match(1), labels, value))
-      when /\Ahumanize1024\s+(.+)\z/ then humanize(number_arg(Regexp.last_match(1), labels, value), base: 1024)
-      when /\AhumanizePercentage\s+(.+)\z/ then format("%.4g%%", number_arg(Regexp.last_match(1), labels, value) * 100)
-      when /\AhumanizeDuration\s+(.+)\z/ then humanize_duration(number_arg(Regexp.last_match(1), labels, value))
-      when /\AhumanizeTimestamp\s+(.+)\z/ then Time.at(number_arg(Regexp.last_match(1), labels, value)).utc.iso8601
-      when /\Aprintf\s+"([^"]*)"\s+(.+)\z/ then format(Regexp.last_match(1), number_arg(Regexp.last_match(2), labels, value))
-      when /\Atitle\s+(.+)\z/ then string_arg(Regexp.last_match(1), labels, value).split.map(&:capitalize).join(" ")
-      when /\AtoUpper\s+(.+)\z/ then string_arg(Regexp.last_match(1), labels, value).upcase
-      when /\AtoLower\s+(.+)\z/ then string_arg(Regexp.last_match(1), labels, value).downcase
-      else raise Error, "unsupported template #{expression}"
-      end
-    end
-
-    def number_arg(text, labels, value)
-      text = text.strip
-      return value.to_f if text == "$value"
-      return Float(labels.fetch(Regexp.last_match(1), "0")) if text =~ /\A\$labels\.(\w+)\z/
-
-      Float(text)
-    end
-
-    def string_arg(text, labels, value)
-      text = text.strip
-      return Promql::Engine.format_value(value.to_f) if text == "$value"
-      return labels.fetch(Regexp.last_match(1), "") if text =~ /\A\$labels\.(\w+)\z/
-
-      text.gsub(/\A"|"\z/, "")
-    end
-
-    def humanize(number, base: 1000)
-      return number.to_s unless number.finite?
-      return format("%.4g", number) if number.abs < base
-
-      prefix = ""
-      HUMANIZE_UNITS.each do |unit|
-        break if number.abs < base
-
-        number /= base
-        prefix = unit
-      end
-      prefix = "Ki" if base == 1024 && prefix == "k"
-      prefix = "#{prefix}i" if base == 1024 && !prefix.empty? && !prefix.end_with?("i")
-      format("%.4g%s", number, prefix)
-    end
-
-    def humanize_duration(seconds)
-      return seconds.to_s unless seconds.finite?
-
-      negative = seconds.negative?
-      seconds = seconds.abs
-      result = if seconds >= 1
-                 days = (seconds / 86_400).floor
-                 hours = ((seconds % 86_400) / 3600).floor
-                 minutes = ((seconds % 3600) / 60).floor
-                 secs = seconds % 60
-                 parts = []
-                 parts << "#{days}d" if days.positive?
-                 parts << "#{hours}h" if hours.positive? || days.positive?
-                 parts << "#{minutes}m" if minutes.positive? || hours.positive? || days.positive?
-                 parts << format("%.4gs", secs)
-                 parts.join(" ")
-               else
-                 format("%.4gms", seconds * 1000)
-               end
-      negative ? "-#{result}" : result
+    def expand(template, expander, rule)
+      expander.expand(template)
+    rescue StandardError => e
+      @logger&.call(:warn, "rule.template_failed", rule: rule.name, error: e.message)
+      "<error expanding template: #{e.message}>"
     end
 
     # ------------------------------------------------------- notifications
@@ -401,7 +332,7 @@ module Prom
 
       payload = pending.map do |alert|
         {"status" => alert.state == "firing" ? "firing" : "resolved",
-         "labels" => alert.labels.merge(@external_labels), "annotations" => alert.annotations,
+         "labels" => @external_labels.merge(alert.labels), "annotations" => alert.annotations,
          "startsAt" => iso(alert.fired_at_ms || alert.active_at_ms),
          "endsAt" => alert.state == "resolved" ? iso(alert.resolved_at_ms || now_ms) : "0001-01-01T00:00:00Z",
          "generatorURL" => ""}
