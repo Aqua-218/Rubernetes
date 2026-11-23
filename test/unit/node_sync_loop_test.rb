@@ -102,4 +102,33 @@ class NodeSyncLoopTest < Minitest::Test
 
     assert_equal([%w[ADDED solo]], seen)
   end
+
+  def test_worker_errors_reach_the_sync_loop_handler_with_the_pod_key
+    failure = RuntimeError.new("could not update status")
+    reported = Queue.new
+    reconciled = Queue.new
+    loop_ = Rubernetes::Node::SyncLoop.new(
+      source: Source.new,
+      reconcile: lambda { |object, action:, **|
+        raise failure if action == "ADDED"
+
+        reconciled << object.dig("metadata", "uid")
+      },
+      error_handler: ->(error, event) { reported << [error, event] }
+    )
+    loop_.enqueue_pod(pod("same-worker"), action: "ADDED")
+
+    assert_equal [failure, "same-worker"], reported.pop(timeout: 2)
+
+    loop_.enqueue_pod(pod("same-worker"), action: "MODIFIED")
+
+    assert_equal "same-worker", reconciled.pop(timeout: 2)
+    pool = loop_.instance_variable_get(:@workers)
+
+    assert pool.drain(timeout: 1)
+    assert_empty pool["same-worker"].failures
+    assert_empty pool["same-worker"].results
+  ensure
+    loop_&.instance_variable_get(:@workers)&.stop(drain: false)
+  end
 end
