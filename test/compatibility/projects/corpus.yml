@@ -6,6 +6,8 @@
 # returned, so a run cannot drift onto a mutable tag.  No template, manifest,
 # source, image or webhook configuration carries a Rubernetes-specific patch:
 # the install command is the project's own documented procedure.
+# source_tag records the upstream application release, or the exact chart
+# release in chart-only repositories. source_commit is the peeled Git commit.
 #
 # A finite corpus never proves "every project" works; per the spec this lane
 # is an independent check of composite usage paths, while the primary
@@ -51,7 +53,8 @@ projects:
     chart_version: "10.8.1"
     app_version: "v3.5.2"
     upstream_repository: https://github.com/argoproj/argo-helm
-    source_commit: "https://github.com/argoproj/argo-helm@v3.5.2"
+    source_tag: "argo-cd-10.8.1"
+    source_commit: "https://github.com/argoproj/argo-helm/commit/748dd9f3c7642583e194bbad38b8cc099e7120a9"
     license: "Apache-2.0"
     categories: [helm-chart, operator, statefulset-pvc]
     domains: [gitops]
@@ -61,9 +64,10 @@ projects:
       - ecr-public.aws.com/docker/library/redis:8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763
       - ghcr.io/dexidp/dex:v2.45.1@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462
       - quay.io/argoproj/argocd:v3.5.2@sha256:e2aadfae709d904e87f46ba4aa49601d827b3022db22cd4d03aae816a2e7097b
-    install: "helm upgrade --install argo-cd argo/argo-cd --version 10.8.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+    install: "helm upgrade --install argo-cd argo/argo-cd --version 10.8.1 --namespace \"$K6_NAMESPACE\" --create-namespace --set crds.keep=false --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://argo-cd.readthedocs.io/en/stable/developer-guide/api-docs/"
+    smoke: "kubectl get --raw \"/api/v1/namespaces/$K6_NAMESPACE/services/https:argo-cd-argocd-server:443/proxy/api/version\" | ruby -rjson -e 'abort unless JSON.parse(STDIN.read)[\"Version\"].start_with?(\"v3.\")'"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade argo-cd argo/argo-cd --version 10.8.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback argo-cd 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -74,19 +78,26 @@ projects:
     chart_version: "2.0.4"
     app_version: "v4.1.2"
     upstream_repository: https://github.com/argoproj/argo-helm
-    source_commit: "https://github.com/argoproj/argo-helm@v4.1.2"
+    source_tag: "argo-workflows-2.0.4"
+    source_commit: "https://github.com/argoproj/argo-helm/commit/3bbb4305eea903b3305f16e73ef8617c5fe222d2"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [gitops]
     chart_package: argo-workflows-2.0.4.tgz
+    # The full schemas are applied by the stock pre-install Job. The pinned
+    # chart also packages their names as templates for the disposable cleanup.
+    crd_inventory_value: "crds.full=false"
     chart_sha256: eb4193d21134380d6ab5d289a34c8198cf7a17a8ba7ee26ea5548fb610b06178
     images:
       - quay.io/argoproj/argocli:v4.1.2@sha256:4e47842692bb72705cb8179279989d26039e5ed318f8fa7cc77df1b246d97c67
       - quay.io/argoproj/argo-workflows-crdinstaller:v4.1.2@sha256:aba6f00943af0c306c409b4f95a294e4a506ac1aed4fecccb1cb5ce4c5f7f457
       - quay.io/argoproj/workflow-controller:v4.1.2@sha256:466192f538abfe750157c5bb5c0b883137b19f67af27c5636ab15bc853c96668
-    install: "helm upgrade --install argo-workflows argo/argo-workflows --version 2.0.4 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - quay.io/argoproj/argoexec:v4.1.2@sha256:4a7b9a9859b63e7aea7927c69fc336a5ef07f8dbea91ae2e175cda8788d972e9
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+    install: "helm upgrade --install argo-workflows argo/argo-workflows --version 2.0.4 --namespace \"$K6_NAMESPACE\" --create-namespace --set workflow.serviceAccount.create=true --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/argoproj/argo-workflows/blob/v4.1.2/examples/hello-world.yaml"
+    smoke: "bash test/compatibility/projects/smoke/argo-workflows.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade argo-workflows argo/argo-workflows --version 2.0.4 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback argo-workflows 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -97,7 +108,8 @@ projects:
     chart_version: "v1.21.1"
     app_version: "v1.21.1"
     upstream_repository: https://github.com/cert-manager/cert-manager
-    source_commit: "https://github.com/cert-manager/cert-manager@v1.21.1"
+    source_tag: "v1.21.1"
+    source_commit: "https://github.com/cert-manager/cert-manager/commit/24e33194fb39488eff2bbf10c6dc640f407cad44"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [certificate, security]
@@ -108,43 +120,92 @@ projects:
       - quay.io/jetstack/cert-manager-controller:v1.21.1@sha256:416a2d76870d996460e62bd7f521bf14fa017be9e3e904aab92163a331fcb61a
       - quay.io/jetstack/cert-manager-startupapicheck:v1.21.1@sha256:d8ab6416e6e7303a86fa0a8daa82c94a8001f21c9d78eb2e7db20534e5d07ae8
       - quay.io/jetstack/cert-manager-webhook:v1.21.1@sha256:d8b3961b51c8c7320633f8208dc46bf88aa13804d0f7cbe48a096b2c523cee42
-    install: "helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+    # The upstream Helm installation enables CRDs explicitly. Disposable fixtures
+    # also use the chart's documented option to remove them on uninstall.
+    install: "helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.1 --namespace \"$K6_NAMESPACE\" --create-namespace --set crds.enabled=true,crds.keep=false --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://cert-manager.io/docs/configuration/selfsigned/"
+    smoke: "kubectl -n \"$K6_NAMESPACE\" apply -f test/compatibility/projects/smoke/cert-manager.yml && kubectl -n \"$K6_NAMESPACE\" wait certificate/k6-smoke --for=condition=Ready --timeout=2m && test \"$(kubectl -n \"$K6_NAMESPACE\" get secret k6-smoke-tls -o jsonpath={.type})\" = kubernetes.io/tls"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade cert-manager jetstack/cert-manager --version v1.21.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback cert-manager 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
     uninstall: "helm uninstall cert-manager --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
   - name: cilium
+    fixture_namespace: k6-cilium
     chart: cilium/cilium
     chart_version: "1.20.1"
     app_version: "1.20.1"
     upstream_repository: https://github.com/cilium/cilium
-    source_commit: "https://github.com/cilium/cilium@1.20.1"
+    source_tag: "1.20.1"
+    source_commit: "https://github.com/cilium/cilium/commit/7d68cfb394f2960e10aa72e76d0d51e66c1b2ebc"
     license: "Apache-2.0"
     categories: [helm-chart, operator]
     domains: [security]
     chart_package: cilium-1.20.1.tgz
     chart_sha256: 06210eef7c23d15f7699c79e2fe3a1ec9c389024c5c5c006ea04022d322449a2
+    # Cilium's operator registers these schemas from its pinned binary.
+    fixture_crds:
+      - ciliumbgpadvertisements.cilium.io
+      - ciliumbgpclusterconfigs.cilium.io
+      - ciliumbgpnodeconfigoverrides.cilium.io
+      - ciliumbgpnodeconfigs.cilium.io
+      - ciliumbgppeerconfigs.cilium.io
+      - ciliumcidrgroups.cilium.io
+      - ciliumclusterwideenvoyconfigs.cilium.io
+      - ciliumclusterwidenetworkpolicies.cilium.io
+      - ciliumdatapathplugins.cilium.io
+      - ciliumegressgatewaypolicies.cilium.io
+      - ciliumendpoints.cilium.io
+      - ciliumendpointslices.cilium.io
+      - ciliumenvoyconfigs.cilium.io
+      - ciliumgatewayclassconfigs.cilium.io
+      - ciliumidentities.cilium.io
+      - ciliuml2announcementpolicies.cilium.io
+      - ciliumloadbalancerippools.cilium.io
+      - ciliumlocalredirectpolicies.cilium.io
+      - ciliumnetworkpolicies.cilium.io
+      - ciliumnodeconfigs.cilium.io
+      - ciliumnodes.cilium.io
+      - ciliumpodippools.cilium.io
     images:
       - quay.io/cilium/cilium-envoy:v1.37.5-1786810558-766ccfb37260a43e9d228837aa84ce3faf9f64e7@sha256:75b8094c7127736a2ffd2dce3945e0931cb6df21b0372ff661940eca26730b91
       - quay.io/cilium/cilium:v1.20.1@sha256:ae9ea21f7427fe24bc6ea7247eb552157a1b0a431744045d3f641545ca71d11b
       - quay.io/cilium/operator-generic:v1.20.1@sha256:6c3885fc7b629099fdbe2a5c87869c86feb825fa18fae299eac0f61918d16ecf
-    install: "helm upgrade --install cilium cilium/cilium --version 1.20.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
-    ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
-    scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
-    upgrade: "helm upgrade cilium cilium/cilium --version 1.20.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
-    rollback: "helm rollback cilium 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+    # The dedicated, one-worker QEMU fixture supplies a guest API port and
+    # Cilium's CNI configuration directory. Leave kube-proxy in use.
+    install: >-
+      helm upgrade --install cilium cilium/cilium --version 1.20.1
+      --namespace "$K6_NAMESPACE" --create-namespace
+      --values "${RUBERNETES_K6_CILIUM_VALUES:?requires the dedicated QEMU guest fixture}"
+      --set k8sServiceHost=127.0.0.1 --set-string "k8sServicePort=${RUBERNETES_K6_CILIUM_API_PORT:?}"
+      --wait --timeout 15m
+    ready: "bash test/compatibility/projects/smoke/cilium.sh ready"
+    smoke_reference: "https://docs.cilium.io/en/stable/installation/k8s-install-helm/"
+    smoke: "bash test/compatibility/projects/smoke/cilium.sh traffic"
+    after_smoke: "bash test/compatibility/projects/smoke/cilium.sh cleanup"
+    # The host-network operator and its health port are exclusive to a node.
+    # This single-worker guest scales the actual operator down then back up.
+    scale: "kubectl -n \"$K6_NAMESPACE\" scale deployment/cilium-operator --replicas=0"
+    scale_targets: [deployment/cilium-operator]
+    upgrade: >-
+      helm upgrade cilium cilium/cilium --version 1.20.1
+      --namespace "$K6_NAMESPACE" --reuse-values
+      --set-string "k8sServicePort=${RUBERNETES_K6_CILIUM_API_PORT:?}" --wait --timeout 15m
+    rollback: "bash test/compatibility/projects/smoke/cilium.sh rollback"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
-    uninstall: "helm uninstall cilium --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
+    uninstall: >-
+      helm uninstall cilium --namespace "$K6_NAMESPACE" --wait --timeout 10m
+      && bash test/compatibility/projects/smoke/cilium.sh release-cni-state;
+      kubectl delete namespace "$K6_NAMESPACE" --ignore-not-found --timeout=10m
   - name: cloudnative-pg
     chart: cnpg/cloudnative-pg
     chart_version: "0.29.0"
     app_version: "1.30.0"
     upstream_repository: https://github.com/cloudnative-pg/charts
-    source_commit: "https://github.com/cloudnative-pg/charts@1.30.0"
+    source_tag: "cloudnative-pg-v0.29.0"
+    source_commit: "https://github.com/cloudnative-pg/charts/commit/d1b5ad60cee2d9432a9cc05627b42a8d8dc7bbae"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [database]
@@ -152,9 +213,12 @@ projects:
     chart_sha256: 668e065ff53508d58238788fd35b355a925060843629a951df0e6a9362e6d32f
     images:
       - ghcr.io/cloudnative-pg/cloudnative-pg:1.30.0@sha256:a2701eb97cdd2a34b1fdb2cb51987f544b706e40bec72ae7146cd8580efefebb
+      - ghcr.io/cloudnative-pg/postgresql:18.4-standard-trixie@sha256:ebf3919504d7523a63e8e2fee9b051211de714644b36469275558c624afd50ec
     install: "helm upgrade --install cloudnative-pg cnpg/cloudnative-pg --version 0.29.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://cloudnative-pg.io/docs/1.30/quickstart/"
+    smoke: "bash test/compatibility/projects/smoke/cloudnative-pg.sh"
+    before_uninstall: "kubectl -n \"$K6_NAMESPACE\" delete cluster.postgresql.cnpg.io/k6-smoke --ignore-not-found --wait --timeout=3m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade cloudnative-pg cnpg/cloudnative-pg --version 0.29.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback cloudnative-pg 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -165,7 +229,8 @@ projects:
     chart_version: "3.5.0"
     app_version: "3.5.0"
     upstream_repository: https://github.com/elastic/cloud-on-k8s
-    source_commit: "https://github.com/elastic/cloud-on-k8s@3.5.0"
+    source_tag: "v3.5.0"
+    source_commit: "https://github.com/elastic/cloud-on-k8s/commit/386c7b14f2d1bbb7f2af1e7da997e64875f16e47"
     license: "Elastic-2.0"
     categories: [helm-chart, operator, crd-webhook, statefulset-pvc]
     domains: [observability, database]
@@ -173,9 +238,12 @@ projects:
     chart_sha256: eda9ec502c786fc1ad293e7f4235fdef43b2c741dcc977ab1f62377d72b5173f
     images:
       - docker.elastic.co/eck/eck-operator:3.5.0@sha256:b6f261372d9d9af7b00aab03efea25263314d16063c4d440ac322e52c2fdf314
+      - docker.elastic.co/elasticsearch/elasticsearch:9.4.3@sha256:851ff5f9615ab7d2f00931114f6db32850f0208ec9fe7e841f135ac78f5f13d5
     install: "helm upgrade --install eck-operator elastic/eck-operator --version 3.5.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/elastic/cloud-on-k8s/blob/386c7b14f2d1bbb7f2af1e7da997e64875f16e47/config/samples/elasticsearch/elasticsearch.yaml"
+    smoke: "bash test/compatibility/projects/smoke/eck-operator.sh"
+    after_smoke: 'kubectl -n "$K6_NAMESPACE" delete elasticsearch/k6-smoke --ignore-not-found --wait --timeout=3m && kubectl -n "$K6_NAMESPACE" wait --for=delete statefulset/k6-smoke-es-default --timeout=2m'
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade eck-operator elastic/eck-operator --version 3.5.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback eck-operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -186,7 +254,8 @@ projects:
     chart_version: "2.10.0"
     app_version: "v2.10.0"
     upstream_repository: https://github.com/external-secrets/external-secrets
-    source_commit: "https://github.com/external-secrets/external-secrets@v2.10.0"
+    source_tag: "v2.10.0"
+    source_commit: "https://github.com/external-secrets/external-secrets/commit/279f56c84d5d4058c3bfdeeaf5b1c2febb8851c0"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [security]
@@ -196,18 +265,24 @@ projects:
       - ghcr.io/external-secrets/external-secrets:v2.10.0@sha256:814117b0fd6d121b03e8ba3b6db1cecbe7449a354fc0fc9c4faf73a37aa221b1
     install: "helm upgrade --install external-secrets external-secrets/external-secrets --version 2.10.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/external-secrets/external-secrets/blob/279f56c84d5d4058c3bfdeeaf5b1c2febb8851c0/docs/provider/fake.md"
+    smoke: "kubectl -n \"$K6_NAMESPACE\" apply -f test/compatibility/projects/smoke/external-secrets.yml && kubectl -n \"$K6_NAMESPACE\" wait externalsecret/k6-smoke --for=condition=Ready --timeout=2m && test \"$(kubectl -n \"$K6_NAMESPACE\" get secret k6-smoke -o jsonpath={.data.value})\" = ZXhwZWN0ZWQ="
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade external-secrets external-secrets/external-secrets --version 2.10.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback external-secrets 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
+    # The controller must finish finalizing the sample before Helm removes it and its CRDs.
+    before_uninstall: >-
+      kubectl -n "$K6_NAMESPACE" delete externalsecret/k6-smoke --ignore-not-found --wait --timeout=2m
+      && kubectl -n "$K6_NAMESPACE" delete secretstore/k6-fake-store --ignore-not-found --wait --timeout=90s
     uninstall: "helm uninstall external-secrets --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
   - name: flux2
     chart: fluxcd/flux2
     chart_version: "2.19.0"
     app_version: "2.9.1"
     upstream_repository: https://github.com/fluxcd-community/helm-charts
-    source_commit: "https://github.com/fluxcd-community/helm-charts@2.9.1"
+    source_tag: "flux2-2.19.0"
+    source_commit: "https://github.com/fluxcd-community/helm-charts/commit/b2c8e7838dd7902b6f7b4925e2d611c756858fc8"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [gitops]
@@ -219,10 +294,19 @@ projects:
       - ghcr.io/fluxcd/image-automation-controller:v1.2.2@sha256:6b0b16ab21151b32d779749f96da08ad88be0ce06a7e99787338473945badeda
       - ghcr.io/fluxcd/image-reflector-controller:v1.2.2@sha256:27e6bad1dac52f21fb4404620a9d5fe41609682122696b5384bb4d76449ffd99
       - ghcr.io/fluxcd/kustomize-controller:v1.9.2@sha256:3aecec8bafdb632afbe1d7da2a9252f40049bb80567ab3564fc9546e710c95ce
+      - ghcr.io/fluxcd/notification-controller:v1.9.2@sha256:9ce503e7bcb8493fafe2aaef0c2ac4396df4f6890256acf9cd444a2dcd2a69ed
+      - ghcr.io/fluxcd/source-controller:v1.9.2@sha256:2b8d06650a1bcff5ec9a6c549cc6b9d1144c1ff1af90861441f225627b0b9e7e
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
     install: "helm upgrade --install flux2 fluxcd/flux2 --version 2.19.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://fluxcd.io/flux/components/helm/helmreleases/"
+    smoke: "bash test/compatibility/projects/smoke/flux2.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
+    scale_exclusions:
+      deployment/source-controller:
+        replicas: 1
+        reason: "The artifact server starts only on the elected leader, and the stock readiness probe calls that server."
+        source: "https://github.com/fluxcd/source-controller/blob/38cf78c3f2fc533614a0c1589db0449bc5396c90/main.go#L311-L322"
     upgrade: "helm upgrade flux2 fluxcd/flux2 --version 2.19.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback flux2 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
@@ -232,7 +316,8 @@ projects:
     chart_version: "3.23.1"
     app_version: "v3.23.1"
     upstream_repository: https://github.com/open-policy-agent/gatekeeper
-    source_commit: "https://github.com/open-policy-agent/gatekeeper@v3.23.1"
+    source_tag: "v3.23.1"
+    source_commit: "https://github.com/open-policy-agent/gatekeeper/commit/2d0b6ad97cf3a8b8436a00a1f4b07b3a56b92ca0"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [security]
@@ -244,7 +329,10 @@ projects:
       - openpolicyagent/gatekeeper:v3.23.1@sha256:dfc6fc78753f5564303429c1c1fdfe611df17be224ab22c09ce9d2a73c468a8d
     install: "helm upgrade --install gatekeeper gatekeeper/gatekeeper --version 3.23.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/open-policy-agent/gatekeeper/blob/2d0b6ad97cf3a8b8436a00a1f4b07b3a56b92ca0/website/docs/howto.md"
+    smoke: "bash test/compatibility/projects/smoke/gatekeeper.sh"
+    fixture_crds:
+      - k8srequiredlabels.constraints.gatekeeper.sh
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade gatekeeper gatekeeper/gatekeeper --version 3.23.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback gatekeeper 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -255,7 +343,8 @@ projects:
     chart_version: "10.5.15"
     app_version: "12.3.1"
     upstream_repository: https://github.com/grafana/helm-charts
-    source_commit: "https://github.com/grafana/helm-charts@12.3.1"
+    source_tag: "grafana-10.5.15"
+    source_commit: "https://github.com/grafana/helm-charts/commit/570b7560be8503a031a470cf81a7dfaf865ed5b5"
     license: "AGPL-3.0"
     categories: [helm-chart]
     domains: [observability]
@@ -266,7 +355,8 @@ projects:
       - docker.io/grafana/grafana:12.3.1@sha256:2175aaa91c96733d86d31cf270d5310b278654b03f5718c59de12a865380a31f
     install: "helm upgrade --install grafana grafana/grafana --version 10.5.15 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "grafana-10.5.15 chart Helm test"
+    smoke: "helm test grafana --namespace \"$K6_NAMESPACE\" --timeout 3m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade grafana grafana/grafana --version 10.5.15 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback grafana 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -276,8 +366,10 @@ projects:
     chart: harbor/harbor
     chart_version: "1.19.2"
     app_version: "2.15.2"
+    fixture_namespace: k6-harbor
     upstream_repository: https://github.com/goharbor/harbor-helm
-    source_commit: "https://github.com/goharbor/harbor-helm@2.15.2"
+    source_tag: "v1.19.2"
+    source_commit: "https://github.com/goharbor/harbor-helm/commit/1b95eb091f73a692634797b3ea15766a6d454d57"
     license: "Apache-2.0"
     categories: [helm-chart, statefulset-pvc]
     domains: [storage, security]
@@ -289,9 +381,20 @@ projects:
       - docker.io/goharbor/harbor-jobservice:v2.15.2@sha256:f71a4452a095bcd2a8f0683648a3ae28415432df87ccfb00ec7625f3e340a598
       - docker.io/goharbor/harbor-portal:v2.15.2@sha256:b811b67f7a7f6f1614e4bdf7478b207d13e8aa3f815ff6ad84f216a5098d213d
       - docker.io/goharbor/harbor-registryctl:v2.15.2@sha256:223d5cb49d5dbf0ba4ae022e7dd9775fa459904112dc12084d3aaa36c1408362
-    install: "helm upgrade --install harbor harbor/harbor --version 1.19.2 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - docker.io/goharbor/nginx-photon:v2.15.2@sha256:0ccc1eca228ecea120d7ad9e4386b8e86ced200212f00060a9abc753dbe7f17f
+      - docker.io/goharbor/registry-photon:v2.15.2@sha256:c4ebef61ceb50a3d8bc21d149bc280422db20a1e69df317b64b74098c3615855
+      - docker.io/goharbor/trivy-adapter-photon:v2.15.2@sha256:215c07b71c37fc7fc16e02d9185d936dcb8884a80e810817c2cd058bbd7c4e98
+      - docker.io/goharbor/valkey-photon:v2.15.2@sha256:7337783e8148f01a25b113f5c7b1d640f78b1860fcaf80a33d0dbb294f7b99d0
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+    setup: "bash test/compatibility/projects/smoke/harbor-setup.sh"
+    install: >-
+      helm upgrade --install harbor harbor/harbor --version 1.19.2 --namespace "$K6_NAMESPACE"
+      --values test/compatibility/projects/smoke/harbor-values.yml
+      --set-string "$(kubectl -n "$K6_NAMESPACE" get configmap k6-harbor-fixture -o 'jsonpath={.data.placement}')"
+      --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://goharbor.io/docs/latest/working-with-projects/working-with-oci/working-with-helm-oci-charts/"
+    smoke: "bash test/compatibility/projects/smoke/harbor.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade harbor harbor/harbor --version 1.19.2 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback harbor 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -302,18 +405,21 @@ projects:
     chart_version: "4.15.1"
     app_version: "1.15.1"
     upstream_repository: https://github.com/kubernetes/ingress-nginx
-    source_commit: "https://github.com/kubernetes/ingress-nginx@1.15.1"
+    source_tag: "controller-v1.15.1"
+    source_commit: "https://github.com/kubernetes/ingress-nginx/commit/0a5901f3c64f11e92e487799b8da3f00cca37515"
     license: "Apache-2.0"
     categories: [helm-chart]
     domains: [ingress]
     chart_package: ingress-nginx-4.15.1.tgz
     chart_sha256: 3eff0bd18151d6e6b1c441463410571443dda1ac78292cb189346628de784f0c
     images:
+      - docker.io/library/httpd:2.4-alpine@sha256:32bd0639bcc4917ef1fd9363a1d9dd2dd9c498565118b062a10d51e43a5c3a24
       - registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:594ceea76b01c592858f803f9ff4d2cb40542cae2060410b2c95f75907d659e1
       - registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:01038e7de14b78d702d2849c3aad72fd25903c4765af63cf16aa3398f5d5f2dd
     install: "helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.15.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://kubernetes.github.io/ingress-nginx/deploy/#local-testing"
+    smoke: "bash test/compatibility/projects/smoke/ingress-nginx.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade ingress-nginx ingress-nginx/ingress-nginx --version 4.15.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback ingress-nginx 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -324,18 +430,32 @@ projects:
     chart_version: "1.30.4"
     app_version: "1.30.4"
     upstream_repository: https://github.com/istio/istio
-    source_commit: "https://github.com/istio/istio@1.30.4"
+    source_tag: "1.30.4"
+    source_commit: "https://github.com/istio/istio/commit/4220640be99e4cad69652d9eb2010bc5257f6a8e"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [ingress, security]
     chart_package: istiod-1.30.4.tgz
     chart_sha256: 66ad8344e2ef16745aa425dc6609570b42536ecdf1ab5ca04a90abf1bc577344
+    prerequisite_charts:
+      - name: istio-base
+        chart: istio/base
+        chart_version: "1.30.4"
+        chart_package: base-1.30.4.tgz
+        chart_sha256: d3532767f9f2042ad1a1f7ca060c2b734762c8d1bcd57fa0244482359146a5f1
+        install: "helm upgrade --install istio-base istio/base --version 1.30.4 --namespace \"$K6_NAMESPACE\" --create-namespace --set global.istioNamespace=\"$K6_NAMESPACE\",defaultRevision=default --wait --timeout 15m"
+        uninstall: "helm uninstall istio-base --namespace \"$K6_NAMESPACE\" --wait --timeout 10m"
     images:
       - busybox:1.28@sha256:141c253bc4c3fd0a201d32dc1f493bcf3fff003b6df416dea4f41046e0f37d47
       - registry.istio.io/release/pilot:1.30.4@sha256:c236c1df5cc127fe193e5a17d8ece9cdd0dc17c5d89b4e20baf01d464f029dce
-    install: "helm upgrade --install istiod istio/istiod --version 1.30.4 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - registry.istio.io/release/proxyv2:1.30.4@sha256:43b6aeab7428470d3d0ea6b6f0bc217e5b36df2b279bba337643df48590226d9
+      - docker.io/mccutchen/go-httpbin:v2.15.0@sha256:24528cf5229d0b70065ac27e6c9e4d96f5452a84a3ce4433e56573c18d96827a
+      - docker.io/curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+    install: "helm upgrade --install istiod istio/istiod --version 1.30.4 --namespace \"$K6_NAMESPACE\" --set \"global.istioNamespace=$K6_NAMESPACE,base.validationFailurePolicy=Fail\" --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://istio.io/latest/docs/tasks/security/authentication/authn-policy/"
+    smoke: "bash test/compatibility/projects/smoke/istiod.sh"
+    before_uninstall: "kubectl -n \"$K6_NAMESPACE\" delete peerauthentication/k6-strict --ignore-not-found --wait --timeout=2m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade istiod istio/istiod --version 1.30.4 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback istiod 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -346,17 +466,35 @@ projects:
     chart_version: "2.57.0"
     app_version: "1.61.0"
     upstream_repository: https://github.com/jaegertracing/helm-charts
-    source_commit: "https://github.com/jaegertracing/helm-charts@1.61.0"
+    source_tag: "jaeger-operator-2.57.0"
+    source_commit: "https://github.com/jaegertracing/helm-charts/commit/4aab996119cfcb9bec3cf098462f66d255f5f663"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [observability]
     chart_package: jaeger-operator-2.57.0.tgz
     chart_sha256: 623409b5b32ba53a26e02b36974e2c7fe38614440ecb6623c42b484629344fc3
+    prerequisite_charts:
+      - name: cert-manager
+        chart: jetstack/cert-manager
+        chart_version: "v1.21.1"
+        chart_package: cert-manager-v1.21.1.tgz
+        chart_sha256: c27101f3f3e2349fb4a9e704316105bf7b52ad73b8c8257d3498ef7f2f6a4adc
+        install: "helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.1 --namespace \"$K6_NAMESPACE\" --create-namespace --set crds.enabled=true,crds.keep=false --wait --timeout 15m"
+        uninstall: "helm uninstall cert-manager --namespace \"$K6_NAMESPACE\" --wait --timeout 10m"
     images:
       - jaegertracing/jaeger-operator:1.61.0@sha256:3f036ec60e612088ef37e60e311396561f91863f56c35579d92e6daeae37efc0
-    install: "helm upgrade --install jaeger-operator jaegertracing/jaeger-operator --version 2.57.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - jaegertracing/all-in-one:1.61.0@sha256:85f1eb56e8ac24e53c031c6bcf7cdf6bff1dc4885b69e54605b932022054b612
+      - quay.io/jetstack/cert-manager-cainjector:v1.21.1@sha256:ccf6b919ec0500745a47a910118f834f9636d0aac1ff221245cd2557ed8c7c98
+      - quay.io/jetstack/cert-manager-controller:v1.21.1@sha256:416a2d76870d996460e62bd7f521bf14fa017be9e3e904aab92163a331fcb61a
+      - quay.io/jetstack/cert-manager-startupapicheck:v1.21.1@sha256:d8ab6416e6e7303a86fa0a8daa82c94a8001f21c9d78eb2e7db20534e5d07ae8
+      - quay.io/jetstack/cert-manager-webhook:v1.21.1@sha256:d8b3961b51c8c7320633f8208dc46bf88aa13804d0f7cbe48a096b2c523cee42
+    install: "helm upgrade --install jaeger-operator jaegertracing/jaeger-operator --version 2.57.0 --namespace \"$K6_NAMESPACE\" --create-namespace --set rbac.clusterRole=true --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "jaeger-operator-2.57.0 chart README, Creating a new Jaeger instance"
+    smoke: >-
+      kubectl -n "$K6_NAMESPACE" apply -f test/compatibility/projects/smoke/jaeger-operator.yml &&
+      kubectl -n "$K6_NAMESPACE" wait --for=create deployment/k6-smoke --timeout=2m &&
+      kubectl -n "$K6_NAMESPACE" rollout status deployment/k6-smoke --timeout=2m
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade jaeger-operator jaegertracing/jaeger-operator --version 2.57.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback jaeger-operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -367,7 +505,8 @@ projects:
     chart_version: "2.20.2"
     app_version: "2.20.2"
     upstream_repository: https://github.com/kedacore/charts
-    source_commit: "https://github.com/kedacore/charts@2.20.2"
+    source_tag: "v2.20.2"
+    source_commit: "https://github.com/kedacore/charts/commit/cbb9bb8ce0809dc9048f72302f7c09765d66ed56"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [autoscaling]
@@ -377,10 +516,18 @@ projects:
       - ghcr.io/kedacore/keda:2.20.2@sha256:fe74c7b8849586a67ad2201bcb89e7f5ac221ff90399ecaa8fd28427f1ef11e6
       - ghcr.io/kedacore/keda-admission-webhooks:2.20.2@sha256:41f74102aba7959c6e8d08b433ab8a5fd6cae7c5646c78f7fe3de40a52df3439
       - ghcr.io/kedacore/keda-metrics-apiserver:2.20.2@sha256:27286536a8a775aeeee37a7e343f8ecebb27ebf680ee1181a4f99e82eefb253b
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
     install: "helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://keda.sh/docs/2.20/scalers/cron/"
+    smoke: "bash test/compatibility/projects/smoke/keda.sh"
+    before_uninstall: "kubectl -n \"$K6_NAMESPACE\" delete scaledobject/k6-smoke --ignore-not-found --wait --timeout=2m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
+    scale_exclusions:
+      deployment/k6-smoke:
+        replicas: 2
+        reason: "The smoke Deployment has an active KEDA HorizontalPodAutoscaler, which controls its replica count."
+        source: "https://keda.sh/docs/2.20/scalers/cron/"
     upgrade: "helm upgrade keda kedacore/keda --version 2.20.2 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback keda 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
@@ -390,21 +537,27 @@ projects:
     chart_version: "90.0.0"
     app_version: "v0.93.1"
     upstream_repository: https://github.com/prometheus-community/helm-charts
-    source_commit: "https://github.com/prometheus-community/helm-charts@v0.93.1"
+    source_tag: "kube-prometheus-stack-90.0.0"
+    source_commit: "https://github.com/prometheus-community/helm-charts/commit/80e8c1f52b63ae80ca45ee5df3ab81436f29b6a7"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook, statefulset-pvc]
     domains: [observability]
     chart_package: kube-prometheus-stack-90.0.0.tgz
     chart_sha256: 04b90a3f4aab4b40572585095331259bc8f00328e40f9ec588e54cdb9aa6a55f
     images:
+      - quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1@sha256:428f088fe6fe07ab138bda92113664b04848a1dc408e4d3680a60ecdb55d1a65
+      - quay.io/prometheus/prometheus:v3.14.0-distroless@sha256:50c707e96da5ade383cb1707790576480485e93de06aa60ad8802cb5f744bd0a
       - docker.io/grafana/grafana:13.2.1-distroless@sha256:3600073f45a9895d2e2c4042da0e745819f5b78bf781266952a400c40dcd8d69
       - ghcr.io/jkroepke/kube-webhook-certgen:1.8.8@sha256:cd85a621724cd9043a5b46a784578fa159437712f920166389fce830554e1c44
       - quay.io/kiwigrid/k8s-sidecar:2.11.2@sha256:2912be006f62f9ea080194cf6d3afcd90daead8d101d0ba686a137a849f6a4f6
       - quay.io/prometheus/alertmanager:v0.34.0@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
       - quay.io/prometheus/node-exporter:v1.12.1-distroless@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
-    install: "helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 90.0.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - quay.io/prometheus-operator/prometheus-operator:v0.93.1@sha256:e52bb28fd41c98dd407c7a8cba8bdcfe7eabd7447e250afaf1fe7bb816dedbff
+      - registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+    install: "helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 90.0.0 --namespace \"$K6_NAMESPACE\" --create-namespace --set prometheus-node-exporter.hostNetwork=false --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries"
+    smoke: "bash test/compatibility/projects/smoke/kube-prometheus-stack.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 90.0.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback kube-prometheus-stack 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -414,22 +567,29 @@ projects:
     chart: kyverno/kyverno
     chart_version: "3.9.0"
     app_version: "v1.19.0"
+    fixture_namespace: kyverno
+    fixture_webhook_labels:
+      webhook.kyverno.io/managed-by: kyverno
     upstream_repository: https://github.com/kyverno/kyverno
-    source_commit: "https://github.com/kyverno/kyverno@v1.19.0"
+    source_tag: "v1.19.0"
+    source_commit: "https://github.com/kyverno/kyverno/commit/ee97ce09538b09b6f1b03853cc41a62654d6a58f"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [security]
     chart_package: kyverno-3.9.0.tgz
     chart_sha256: 9663e8d3d15b070e5925b4f26b3f9a8824872a42ac7bf27ca105c897cb5aba51
     images:
-      - ghcr.io/kyverno/readiness-checker:latest@sha256:03091f093458701a2e10063901c333d00679e917bad639f59c732fbb6d002b49
       - ghcr.io/kyverno/readiness-checker:v1.19.0@sha256:a167e4cd18c0958a2e6bac08146feb317d4dc492a86d68f709af15a51788d268
       - reg.kyverno.io/kyverno/background-controller:v1.19.0@sha256:5d9a49b0a36bb25c981bd55e57f360850ea37bfe1b4914e00ec898cc5d27cc4f
       - reg.kyverno.io/kyverno/cleanup-controller:v1.19.0@sha256:6f76c84d5305898d4db455515cdb80a8af81fbfe3ac4cecad43e39266ba13944
       - reg.kyverno.io/kyverno/kyverno-cli:v1.19.0@sha256:f40718123e3eea8dc36960023e2af7a980bcc76dec24842ad8705c82f4c9172e
-    install: "helm upgrade --install kyverno kyverno/kyverno --version 3.9.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - reg.kyverno.io/kyverno/kyverno:v1.19.0@sha256:e5bf3b96de9ad9475f5282804859e5c8f09d351d4fb988d1c1ee77f825591742
+      - reg.kyverno.io/kyverno/kyvernopre:v1.19.0@sha256:3fd1640d9c77181be107d3e3c5fb9efcab9d98494bede51b64f93bf591a20276
+      - reg.kyverno.io/kyverno/reports-controller:v1.19.0@sha256:02013e2288600f514b71f814699441007fcce7aff188f1eb9e8c5da877c6e911
+    install: "helm upgrade --install kyverno kyverno/kyverno --version 3.9.0 --namespace \"$K6_NAMESPACE\" --create-namespace --set admissionController.replicas=1,backgroundController.replicas=1,cleanupController.replicas=1,reportsController.replicas=1,test.image.tag=v1.19.0 --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://kyverno.io/policies/best-practices/require-labels/require-labels/"
+    smoke: "bash test/compatibility/projects/smoke/kyverno.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade kyverno kyverno/kyverno --version 3.9.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback kyverno 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -440,7 +600,8 @@ projects:
     chart_version: "7.3.0"
     app_version: "3.6.12"
     upstream_repository: https://github.com/grafana/loki
-    source_commit: "https://github.com/grafana/loki@3.6.12"
+    source_tag: "v3.6.12"
+    source_commit: "https://github.com/grafana/loki/commit/a25e0d91117416439be4998d3c714e48cd7e5a2b"
     license: "AGPL-3.0"
     categories: [helm-chart, statefulset-pvc]
     domains: [observability, storage]
@@ -452,32 +613,62 @@ projects:
       - docker.io/grafana/loki-helm-test:latest@sha256:2ed6447bbdbcd23019c3fdb02bce6db3fbef296d5a8f77a68d3dbc386bfa43fb
       - docker.io/kiwigrid/k8s-sidecar:2.5.0@sha256:a6b3f707f883108376514489a94d6629109a327b2978e1d826cd104c4ca436df
       - docker.io/nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
-    install: "helm upgrade --install loki grafana/loki --version 7.3.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+    # The distributed chart modes require object storage. The pinned chart
+    # documents SingleBinary with filesystem storage for small installations.
+    install: >-
+      helm upgrade --install loki grafana/loki --version 7.3.0 --namespace "$K6_NAMESPACE" --create-namespace
+      --set deploymentMode=SingleBinary,loki.useTestSchema=true,loki.auth_enabled=false,loki.storage.type=filesystem,loki.commonConfig.replication_factor=1
+      --set singleBinary.replicas=1,read.replicas=0,write.replicas=0,backend.replicas=0,chunksCache.enabled=false,resultsCache.enabled=false
+      --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://grafana.com/docs/loki/latest/reference/loki-http-api/#list-labels"
+    smoke: "kubectl get --raw \"/api/v1/namespaces/$K6_NAMESPACE/services/http:loki:3100/proxy/loki/api/v1/labels\" | ruby -rjson -e 'abort unless JSON.parse(STDIN.read)[\"status\"] == \"success\"'"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade loki grafana/loki --version 7.3.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback loki 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
     uninstall: "helm uninstall loki --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
   - name: longhorn
+    fixture_namespace: longhorn-system
     chart: longhorn/longhorn
     chart_version: "1.12.1"
     app_version: "v1.12.1"
     upstream_repository: https://github.com/longhorn/longhorn
-    source_commit: "https://github.com/longhorn/longhorn@v1.12.1"
+    source_tag: "v1.12.1"
+    source_commit: "https://github.com/longhorn/longhorn/commit/f349c091c50700cb6cb8a4df8aaa29ea214bdd48"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook, statefulset-pvc]
     domains: [storage]
     chart_package: longhorn-1.12.1.tgz
     chart_sha256: c8cf4b35a9d872cd5f7e44fd26d8e6ac7c2abaee42f4e2f2a0b0ebbc6e3a6116
     images:
+      - docker.io/longhornio/longhorn-engine:v1.12.1@sha256:9b1b720b56df6612c9589cbc156acbca6419fa61de818d05db7226b0722f2868
       - docker.io/longhornio/longhorn-manager:v1.12.1@sha256:83b79f57043fe1405e68bc0d4c7987accbc6bb512def3e0db12b31966c070801
-      - docker.io/longhornio/longhorn-share-manager:v1.12.1@sha256:efaf47aeb4e8615e312f0880df860bf2e5b9fa53006fe075f057c6dd4089f47d
       - docker.io/longhornio/longhorn-ui:v1.12.1@sha256:03a3ce6673df6e948c261fe978a695adaa8fb190d68bfe5c358af8ee3d3fbef5
-    install: "helm upgrade --install longhorn longhorn/longhorn --version 1.12.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - docker.io/longhornio/longhorn-instance-manager:v1.12.1@sha256:b255f3279dd9d830ea153e9369928646dee519fd853036388926dddb5c66094b
+      - docker.io/longhornio/longhorn-share-manager:v1.12.1@sha256:efaf47aeb4e8615e312f0880df860bf2e5b9fa53006fe075f057c6dd4089f47d
+      - docker.io/longhornio/backing-image-manager:v1.12.1@sha256:dfb9452e4190fb80e39c7976a0036ac0ca314c05328b67952f8c165cbb4dabf3
+      - docker.io/longhornio/support-bundle-kit:v0.0.92@sha256:02baa824d9a4174747ab9db2635ae000b1198d2d5ed3a4c69caf28724224e783
+      - docker.io/longhornio/csi-attacher:v4.12.0@sha256:a814aa4784197116983ea13e376fc691e000a390de9d0b9fca2bc4a2fb7c4a1f
+      - docker.io/longhornio/csi-provisioner:v5.3.0@sha256:1bbb7b11d8087130e722e3249f364d0ab49ee3545e847c2f299e87b7e1ce5c4f
+      - docker.io/longhornio/csi-node-driver-registrar:v2.17.0@sha256:29f7cfd519008fe8f8dff5e79db43f70d65c43a89c08f1bafbb199ca90df79f0
+      - docker.io/longhornio/csi-resizer:v2.2.1@sha256:63d0aef25114d4a682b25afa6d9623a3cfcc19aca910269124408476bbe2c6fd
+      - docker.io/longhornio/csi-snapshotter:v8.6.0@sha256:2bca9ac55170efa61dc50e5cc8d9550373db2e3e5161d82d3fdaac5c25150360
+      - docker.io/longhornio/livenessprobe:v2.19.0@sha256:d0cb76b565ba9d36da0dc2b38e2b6a49a0ae4fe067b03086110682f32c600318
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+    # Use the release's StorageClass for static bindings too. The manager
+    # otherwise creates longhorn-static, which its uninstaller retains.
+    install: >-
+      helm upgrade --install longhorn longhorn/longhorn --version 1.12.1 --namespace "$K6_NAMESPACE" --create-namespace
+      --set persistence.defaultClass=false,persistence.defaultClassReplicaCount=1
+      --set-string defaultSettings.defaultLonghornStaticStorageClass=longhorn
+      --set-string csi.kubeletRootDir="${K6_KUBELET_ROOT_DIR:-/var/lib/kubelet}" --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/longhorn/longhorn/blob/f349c091c50700cb6cb8a4df8aaa29ea214bdd48/examples/pod_with_pvc.yaml"
+    smoke: "bash test/compatibility/projects/smoke/longhorn.sh"
+    before_uninstall: >-
+      kubectl -n "$K6_NAMESPACE" patch settings.longhorn.io deleting-confirmation-flag
+      --type=merge -p '{"value":"true"}'
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade longhorn longhorn/longhorn --version 1.12.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback longhorn 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -488,28 +679,45 @@ projects:
     chart_version: "26.6.0"
     app_version: "26.6.0"
     upstream_repository: https://github.com/mariadb-operator/mariadb-operator
-    source_commit: "https://github.com/mariadb-operator/mariadb-operator@26.6.0"
+    source_tag: "v26.6.0"
+    source_commit: "https://github.com/mariadb-operator/mariadb-operator/commit/b2f76016ff71926414367f5347010766a7a1c257"
     license: "MIT"
     categories: [helm-chart, operator, crd-webhook, statefulset-pvc]
     domains: [database]
     chart_package: mariadb-operator-26.6.0.tgz
     chart_sha256: 7364196b5215bf3c5fc7241dfcd53dde1e995b510042fde8811e899d1c091292
+    prerequisite_charts:
+      - name: mariadb-operator-crds
+        chart: mariadb-operator/mariadb-operator-crds
+        chart_version: "26.6.0"
+        chart_package: mariadb-operator-crds-26.6.0.tgz
+        chart_sha256: 917b3c65cad4706c6fd81a162547a1c6412a5a79f31b7f62bbc133987f85c100
+        install: "helm upgrade --install mariadb-operator-crds mariadb-operator/mariadb-operator-crds --version 26.6.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+        uninstall: "helm uninstall mariadb-operator-crds --namespace \"$K6_NAMESPACE\" --wait --timeout 10m"
     images:
       - ghcr.io/mariadb-operator/mariadb-operator:26.6.0@sha256:a5e17b48f08ef02cda59a5b0ed68a18ae5e0f820129ac391fa220ea117aebd6c
-    install: "helm upgrade --install mariadb-operator mariadb-operator/mariadb-operator --version 26.6.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - mariadb:11.8.8@sha256:24e76fcec8c003a0362d0dd53f4806e7e79458d7fdeaf47437760e19496f5a9c
+    install: >-
+      helm upgrade --install mariadb-operator mariadb-operator/mariadb-operator --version 26.6.0 --namespace "$K6_NAMESPACE"
+      --set ha.enabled=true,ha.replicas=1,certController.ha.enabled=true,certController.ha.replicas=1,webhook.ha.enabled=true,webhook.ha.replicas=1
+      --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/mariadb-operator/mariadb-operator/blob/b2f76016ff71926414367f5347010766a7a1c257/docs/standalone.md"
+    smoke: "bash test/compatibility/projects/smoke/mariadb-operator.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade mariadb-operator mariadb-operator/mariadb-operator --version 26.6.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback mariadb-operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
+    # Keep the operator available until it finalizes the foreground deletion's SQL dependents.
+    before_uninstall: "kubectl -n \"$K6_NAMESPACE\" delete mariadb k6-mariadb --cascade=foreground --ignore-not-found --wait --timeout=3m"
     uninstall: "helm uninstall mariadb-operator --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
   - name: metrics-server
     chart: metrics-server/metrics-server
     chart_version: "3.14.0"
     app_version: "0.9.0"
     upstream_repository: https://github.com/kubernetes-sigs/metrics-server
-    source_commit: "https://github.com/kubernetes-sigs/metrics-server@0.9.0"
+    source_tag: "v0.9.0"
+    source_commit: "https://github.com/kubernetes-sigs/metrics-server/commit/2a7c4b2c7d46552ff47f4aeaa3a735c582587ecd"
     license: "Apache-2.0"
     categories: [helm-chart]
     domains: [autoscaling]
@@ -517,9 +725,12 @@ projects:
     chart_sha256: c2ca1185c01e6e7f53dd1b7d131f0c9b3fa50e003ed068b784563a1b5a3422a1
     images:
       - registry.k8s.io/metrics-server/metrics-server:v0.9.0@sha256:d9862115e7c7881280d3d75ca26bda8ffc0fc213315979575bf23ce9826205c0
-    install: "helm upgrade --install metrics-server metrics-server/metrics-server --version 3.14.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+    install: "helm upgrade --install metrics-server metrics-server/metrics-server --version 3.14.0 --namespace \"$K6_NAMESPACE\" --create-namespace --set 'args={--kubelet-certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt}' --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://kubernetes-sigs.github.io/metrics-server/"
+    smoke: >-
+      kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=2m &&
+      kubectl get --raw /apis/metrics.k8s.io/v1beta1/nodes | ruby -rjson -e 'abort if JSON.parse(STDIN.read).fetch("items").empty?'
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade metrics-server metrics-server/metrics-server --version 3.14.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback metrics-server 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -530,7 +741,8 @@ projects:
     chart_version: "2.14.6"
     app_version: "2.14.6"
     upstream_repository: https://github.com/nats-io/k8s
-    source_commit: "https://github.com/nats-io/k8s@2.14.6"
+    source_tag: "nats-2.14.6"
+    source_commit: "https://github.com/nats-io/k8s/commit/49c450456f2401663469a3a0429e7ff922d67505"
     license: "Apache-2.0"
     categories: [helm-chart, statefulset-pvc]
     domains: [message-queue]
@@ -542,7 +754,8 @@ projects:
       - natsio/nats-server-config-reloader:0.23.0@sha256:64cb6c858e794906d3167378e02b7e0feb83c4e14c07b371eb8d921ef8c4a60b
     install: "helm upgrade --install nats nats/nats --version 2.14.6 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "nats-2.14.6 chart request/reply Helm test"
+    smoke: "helm test nats --namespace \"$K6_NAMESPACE\" --timeout 3m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade nats nats/nats --version 2.14.6 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback nats 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -553,17 +766,32 @@ projects:
     chart_version: "0.122.0"
     app_version: "0.158.0"
     upstream_repository: https://github.com/open-telemetry/opentelemetry-helm-charts
-    source_commit: "https://github.com/open-telemetry/opentelemetry-helm-charts@0.158.0"
+    source_tag: "opentelemetry-operator-0.122.0"
+    source_commit: "https://github.com/open-telemetry/opentelemetry-helm-charts/commit/b9a6b0597a2a79131a8a065c4e7accc3b232c99a"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [observability]
     chart_package: opentelemetry-operator-0.122.0.tgz
     chart_sha256: b66f9b937ab644e75c0042395dc85bfc041eb5c51d22719b944d3e2bf32b5e4b
+    prerequisite_charts:
+      - name: cert-manager
+        chart: jetstack/cert-manager
+        chart_version: "v1.21.1"
+        chart_package: cert-manager-v1.21.1.tgz
+        chart_sha256: c27101f3f3e2349fb4a9e704316105bf7b52ad73b8c8257d3498ef7f2f6a4adc
+        install: "helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.1 --namespace \"$K6_NAMESPACE\" --create-namespace --set crds.enabled=true,crds.keep=false --wait --timeout 15m"
+        uninstall: "helm uninstall cert-manager --namespace \"$K6_NAMESPACE\" --wait --timeout 10m"
     images:
       - ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator:0.158.0@sha256:d4789a6537fdbc69929dc9227900511224b2fe8e5a0938e604cc8ca56b07336e
-    install: "helm upgrade --install opentelemetry-operator open-telemetry/opentelemetry-operator --version 0.122.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - busybox:latest@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+      - quay.io/jetstack/cert-manager-cainjector:v1.21.1@sha256:ccf6b919ec0500745a47a910118f834f9636d0aac1ff221245cd2557ed8c7c98
+      - quay.io/jetstack/cert-manager-controller:v1.21.1@sha256:416a2d76870d996460e62bd7f521bf14fa017be9e3e904aab92163a331fcb61a
+      - quay.io/jetstack/cert-manager-startupapicheck:v1.21.1@sha256:d8ab6416e6e7303a86fa0a8daa82c94a8001f21c9d78eb2e7db20534e5d07ae8
+      - quay.io/jetstack/cert-manager-webhook:v1.21.1@sha256:d8b3961b51c8c7320633f8208dc46bf88aa13804d0f7cbe48a096b2c523cee42
+    install: "helm upgrade --install opentelemetry-operator open-telemetry/opentelemetry-operator --version 0.122.0 --namespace \"$K6_NAMESPACE\" --set \"testFramework.certManager.env[0].name=CERT_MANAGER_CLUSTERIP,testFramework.certManager.env[0].value=cert-manager-webhook.$K6_NAMESPACE,testFramework.certManager.env[1].name=CERT_MANAGER_PORT\" --set-string \"testFramework.certManager.env[1].value=443\" --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "pinned opentelemetry-operator chart Helm tests"
+    smoke: "helm test opentelemetry-operator --namespace \"$K6_NAMESPACE\" --timeout 3m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade opentelemetry-operator open-telemetry/opentelemetry-operator --version 0.122.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback opentelemetry-operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -574,7 +802,8 @@ projects:
     chart_version: "7.1.1"
     app_version: "v7.1.1"
     upstream_repository: https://github.com/minio/operator
-    source_commit: "https://github.com/minio/operator@v7.1.1"
+    source_tag: "v7.1.1"
+    source_commit: "https://github.com/minio/operator/commit/6eee6a7caa70555ad009e522ce04861297e9e2be"
     license: "AGPL-3.0"
     categories: [helm-chart, operator]
     domains: [storage]
@@ -582,9 +811,15 @@ projects:
     chart_sha256: 94f8124e2ecbc62f9cdcbe0519e8980f5992073638f5f63bd2b3ecac4f0ce7ca
     images:
       - quay.io/minio/operator:v7.1.1@sha256:cd587f60c43dab75799370ad7b6c55f53cfa2188e85f4c5eda939591f8769f47
+      - quay.io/minio/operator-sidecar:v7.0.1@sha256:ccc4fb79135aed8bf9c73d6f758d8e4f4ff24f51ca1bdd6f5b8ad9a9ad841a2f
+      - cgr.dev/chainguard/minio@sha256:16b824a0016ffad3dfa8b059755f83800aa42ca68fe86f1782cabd0c5a16d322
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+      - docker.io/curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
     install: "helm upgrade --install operator minio-operator/operator --version 7.1.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/minio/operator/blob/6eee6a7caa70555ad009e522ce04861297e9e2be/docs/tenant-creation.md"
+    smoke: "bash test/compatibility/projects/smoke/minio-operator.sh"
+    after_smoke: "bash test/compatibility/projects/smoke/minio-cleanup.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade operator minio-operator/operator --version 7.1.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -595,7 +830,8 @@ projects:
     chart_version: "29.27.2"
     app_version: "v3.14.0"
     upstream_repository: https://github.com/prometheus-community/helm-charts
-    source_commit: "https://github.com/prometheus-community/helm-charts@v3.14.0"
+    source_tag: "prometheus-29.27.2"
+    source_commit: "https://github.com/prometheus-community/helm-charts/commit/2dba57759fdc373f831e8f0ba555db064c587ed6"
     license: "Apache-2.0"
     categories: [helm-chart, statefulset-pvc]
     domains: [observability]
@@ -607,10 +843,16 @@ projects:
       - quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1@sha256:428f088fe6fe07ab138bda92113664b04848a1dc408e4d3680a60ecdb55d1a65
       - quay.io/prometheus/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
       - quay.io/prometheus/pushgateway:v1.11.3@sha256:74fa117cef2d7e383112d25139ff1c2d2e309c35389a9e0554a47136a1482e48
-    install: "helm upgrade --install prometheus prometheus-community/prometheus --version 29.27.2 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+      - registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+    install: >-
+      helm upgrade --install prometheus prometheus-community/prometheus --version 29.27.2 --namespace "$K6_NAMESPACE"
+      --create-namespace --values test/compatibility/projects/smoke/prometheus-values.yml --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries"
+    smoke: "bash test/compatibility/projects/smoke/prometheus.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
+    scale_targets: [statefulset/prometheus-server, statefulset/prometheus-alertmanager, deployment/prometheus-kube-state-metrics, deployment/prometheus-prometheus-pushgateway]
     upgrade: "helm upgrade prometheus prometheus-community/prometheus --version 29.27.2 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback prometheus 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
@@ -620,17 +862,21 @@ projects:
     chart_version: "5.3.0"
     app_version: "v0.12.0"
     upstream_repository: https://github.com/prometheus-community/helm-charts
-    source_commit: "https://github.com/prometheus-community/helm-charts@v0.12.0"
+    source_tag: "prometheus-adapter-5.3.0"
+    source_commit: "https://github.com/prometheus-community/helm-charts/commit/e6e041b675fc44c3b869dfbb88d183e40b449dd2"
     license: "Apache-2.0"
     categories: [helm-chart]
     domains: [autoscaling, observability]
     chart_package: prometheus-adapter-5.3.0.tgz
     chart_sha256: aa6752b6207ed788522714c3ef7f67f27d423eb4d9512fecb52dc641b6434f31
+    setup: "bash test/compatibility/projects/smoke/prometheus-adapter-setup.sh"
     images:
       - registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0@sha256:932eae60e2bcf9c4660d6442da066ef1a79b4ea7cc232c61c7303069216ca006
-    install: "helm upgrade --install prometheus-adapter prometheus-community/prometheus-adapter --version 5.3.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - quay.io/prometheus/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    install: "helm upgrade --install prometheus-adapter prometheus-community/prometheus-adapter --version 5.3.0 --namespace \"$K6_NAMESPACE\" --values test/compatibility/projects/values/prometheus-adapter.yml --set-string \"prometheus.url=http://k6-prometheus.$K6_NAMESPACE.svc\" --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/kubernetes-sigs/prometheus-adapter/blob/v0.12.0/docs/walkthrough.md"
+    smoke: "bash test/compatibility/projects/smoke/prometheus-adapter.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade prometheus-adapter prometheus-community/prometheus-adapter --version 5.3.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback prometheus-adapter 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -641,29 +887,44 @@ projects:
     chart_version: "v1.20.7"
     app_version: "v1.20.7"
     upstream_repository: https://github.com/rook/rook
-    source_commit: "https://github.com/rook/rook@v1.20.7"
+    source_tag: "v1.20.7"
+    source_commit: "https://github.com/rook/rook/commit/95a8e2a8b61cf7f8152213939f995c88a2e72ab6"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook, statefulset-pvc]
     domains: [storage]
+    fixture_namespace: rook-ceph
     chart_package: rook-ceph-v1.20.7.tgz
     chart_sha256: a5f50067490ea2064e57a0094d33bab569c4d1cafb4eeafcc1fc0de48c65d6e1
     images:
       - docker.io/rook/ceph:v1.20.7@sha256:2f970c4256179d56fa9f7867a634701f533103908c4e2ad43cf3954c1f7e33f9
       - quay.io/cephcsi/ceph-csi-operator:v1.0.4@sha256:c62933fd4083635f969f8a61932af45dba9902d48867e2b5d98a69d8e4344eb6
+      - quay.io/ceph/ceph:v20.2.4@sha256:09ee90f6f3e0c7b9954f71d214ee05e9bbaaaea3716b1dd619603283b829f8b8
+      - quay.io/cephcsi/cephcsi:v3.17.1@sha256:e1122fc768ddb7bd5c5cdca9feab0a9eafd1d994d0edf9c204c89ef2707e2aa9
+      - registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.17.0@sha256:0fc05c749072bea889beffc97499f6836f74aebe351c78ff8d90d671c35f04da
+      - registry.k8s.io/sig-storage/csi-provisioner:v6.2.0@sha256:da2f5c41881009b963c121d3605c68ad9127490f2c209a849b4eb26074b0038b
+      - registry.k8s.io/sig-storage/csi-snapshotter:v8.5.0@sha256:f4d58334dc3c0873e544f110a188be47e224ff7e99c6400d2fd7b35de9b962eb
+      - registry.k8s.io/sig-storage/csi-attacher:v4.12.0@sha256:41dc0a91e103ee2e499df459526eb76ae57db0e8789385757df34fdac11e92d8
+      - registry.k8s.io/sig-storage/csi-resizer:v2.1.0@sha256:69e7bf7d929e5d98a5a74e753b45220e6e7b04f35163e48e8a5958bf1d819b4c
+      - quay.io/csiaddons/k8s-sidecar:v0.14.0@sha256:208b4d21b125f4ef9d0ea4082bdf5aeafc9771e0e233e7c60e50e8bf3f5cb3db
+    setup: "bash test/compatibility/projects/smoke/rook-ceph.sh preflight"
     install: "helm upgrade --install rook-ceph rook-release/rook-ceph --version v1.20.7 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
-    ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
-    scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
+    ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m"
+    smoke_reference: "https://github.com/rook/rook/blob/95a8e2a8b61cf7f8152213939f995c88a2e72ab6/Documentation/Getting-Started/quickstart.md#verify-the-cluster"
+    smoke: "bash test/compatibility/projects/smoke/rook-ceph.sh smoke"
+    scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy rook-ceph-tools --replicas=2"
+    scale_targets: [deployment/rook-ceph-tools]
     upgrade: "helm upgrade rook-ceph rook-release/rook-ceph --version v1.20.7 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback rook-ceph 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
     restart: "kubectl -n \"$K6_NAMESPACE\" rollout restart deploy --all || true"
+    before_uninstall: "bash test/compatibility/projects/smoke/rook-ceph.sh cleanup"
     uninstall: "helm uninstall rook-ceph --namespace \"$K6_NAMESPACE\" --wait --timeout 10m; kubectl delete namespace \"$K6_NAMESPACE\" --ignore-not-found --timeout=10m"
   - name: strimzi-kafka-operator
     chart: strimzi/strimzi-kafka-operator
     chart_version: "1.2.0"
     app_version: "1.2.0"
     upstream_repository: https://github.com/strimzi/strimzi-kafka-operator
-    source_commit: "https://github.com/strimzi/strimzi-kafka-operator@1.2.0"
+    source_tag: "1.2.0"
+    source_commit: "https://github.com/strimzi/strimzi-kafka-operator/commit/6c7b43c4af0db547c10463ba09d1dfa6f5e156a0"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [message-queue]
@@ -671,9 +932,12 @@ projects:
     chart_sha256: 0f8a50b2f19bd99482f9fd6e17cf42902f72f9e594a136813ac3f0b7af422efd
     images:
       - quay.io/strimzi/operator:1.2.0@sha256:77f8fa8121a67561c3418de985783d197f51b8931e9a47f793dc0437dc6bb21f
+      - quay.io/strimzi/kafka:1.2.0-kafka-4.3.1@sha256:fef34b5438e8556cc08c01f3e254e47346f061b53a4e38d4289853777e0ea7f1
     install: "helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator --version 1.2.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://strimzi.io/quickstarts/"
+    smoke: "bash test/compatibility/projects/smoke/strimzi-kafka-operator.sh"
+    before_uninstall: "kubectl -n \"$K6_NAMESPACE\" delete kafka/k6-smoke kafkanodepool/dual-role --ignore-not-found --wait --timeout=3m"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade strimzi-kafka-operator strimzi/strimzi-kafka-operator --version 1.2.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback strimzi-kafka-operator 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -684,7 +948,8 @@ projects:
     chart_version: "1.24.4"
     app_version: "2.9.0"
     upstream_repository: https://github.com/grafana/helm-charts
-    source_commit: "https://github.com/grafana/helm-charts@2.9.0"
+    source_tag: "tempo-1.24.4"
+    source_commit: "https://github.com/grafana/helm-charts/commit/5c770826e6983701844ca4af67b0e3ea90a65607"
     license: "AGPL-3.0"
     categories: [helm-chart, statefulset-pvc]
     domains: [observability]
@@ -694,7 +959,8 @@ projects:
       - docker.io/grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
     install: "helm upgrade --install tempo grafana/tempo --version 1.24.4 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://grafana.com/docs/tempo/latest/api_docs/#echo-endpoint"
+    smoke: "test \"$(kubectl get --raw \"/api/v1/namespaces/$K6_NAMESPACE/services/http:tempo:3200/proxy/api/echo\")\" = echo"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade tempo grafana/tempo --version 1.24.4 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback tempo 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -705,7 +971,8 @@ projects:
     chart_version: "41.4.0"
     app_version: "v3.7.12"
     upstream_repository: https://github.com/traefik/traefik-helm-chart
-    source_commit: "https://github.com/traefik/traefik-helm-chart@v3.7.12"
+    source_tag: "v41.4.0"
+    source_commit: "https://github.com/traefik/traefik-helm-chart/commit/6c0ad5736061ab0608b0472a6c935fe2970ca9f2"
     license: "MIT"
     categories: [helm-chart, crd-webhook]
     domains: [ingress]
@@ -713,9 +980,11 @@ projects:
     chart_sha256: 1470656b1c93e8637daaa19cdb30633c5ea691768a9aab3214da3ee822c4a9f0
     images:
       - docker.io/traefik:v3.7.12@sha256:9c2a54d87f76f5c2f5f2682c68394af92fb12c0a2686798d6462a3f84bd78eaf
+      - docker.io/traefik/whoami:v1.11.0@sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab
     install: "helm upgrade --install traefik traefik/traefik --version 41.4.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://github.com/traefik/traefik/blob/v3.7.12/docs/content/getting-started/kubernetes.md#exposing-the-application-using-an-ingressroute-crd"
+    smoke: "bash test/compatibility/projects/smoke/traefik.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade traefik traefik/traefik --version 41.4.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback traefik 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -726,7 +995,8 @@ projects:
     chart_version: "0.34.1"
     app_version: "2.0.4"
     upstream_repository: https://github.com/hashicorp/vault-helm
-    source_commit: "https://github.com/hashicorp/vault-helm@2.0.4"
+    source_tag: "v0.34.1"
+    source_commit: "https://github.com/hashicorp/vault-helm/commit/aa1c92e4adddbce9660e536dfe5222a88eda6d52"
     license: "BUSL-1.1"
     categories: [helm-chart, statefulset-pvc]
     domains: [security]
@@ -735,9 +1005,16 @@ projects:
     images:
       - hashicorp/vault:2.0.4@sha256:5be49781ecf78bfe775c5309c6a4d9f4e9e040b6c885c99eb2b12fb69855e1a2
       - hashicorp/vault-k8s:1.7.6@sha256:55e27b080c9b0469fd420dfb3631243488c6319504b779423caa46c529a95490
-    install: "helm upgrade --install vault hashicorp/vault --version 0.34.1 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+    setup: "bash test/compatibility/projects/smoke/vault-setup.sh"
+    install: >-
+      helm upgrade --install vault hashicorp/vault --version 0.34.1 --namespace "$K6_NAMESPACE"
+      --set injector.certs.secretName=k6-vault-injector-tls
+      --set-string "injector.certs.caBundle=$(kubectl --namespace "$K6_NAMESPACE" get secret k6-vault-injector-tls -o 'jsonpath={.data.ca\.crt}')"
+      --values test/compatibility/projects/smoke/vault-values.yml
+      --wait --timeout 15m
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://developer.hashicorp.com/vault/docs/platform/k8s/helm/run"
+    smoke: "bash test/compatibility/projects/smoke/vault.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade vault hashicorp/vault --version 0.34.1 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback vault 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
@@ -748,17 +1025,27 @@ projects:
     chart_version: "12.1.0"
     app_version: "1.18.1"
     upstream_repository: https://github.com/vmware-tanzu/helm-charts
-    source_commit: "https://github.com/vmware-tanzu/helm-charts@1.18.1"
+    source_tag: "velero-12.1.0"
+    source_commit: "https://github.com/vmware-tanzu/helm-charts/commit/73466ca986bbfe34dbd5c30bbf7d62d545d634a2"
     license: "Apache-2.0"
     categories: [helm-chart, operator, crd-webhook]
     domains: [storage]
     chart_package: velero-12.1.0.tgz
     chart_sha256: cd23589ad1b2d25cdd3220f6866b3f6f4c5683c4c09494e76a14700b33f81f83
+    # The upstream AWS plugin also supports S3-compatible stores. Its bucket
+    # and generated credentials remain inside the disposable test namespace.
+    setup: "bash test/compatibility/projects/smoke/velero-setup.sh"
+    fixture_sources:
+      - https://github.com/seaweedfs/seaweedfs/commit/d0b90d29eb6c3cfad1f9c0f80d671c72c4ec1d27
+      - https://github.com/vmware-tanzu/velero-plugin-for-aws/commit/2a52b1296d4e5c6deebc444430f795f960a7bd1e
     images:
       - docker.io/velero/velero:v1.18.1@sha256:11459094b1b21ec7c817b08f8067d9e89380835547915cac9c4132ff05b55b90
-    install: "helm upgrade --install velero vmware-tanzu/velero --version 12.1.0 --namespace \"$K6_NAMESPACE\" --create-namespace --wait --timeout 15m"
+      - docker.io/chrislusf/seaweedfs:4.36@sha256:800b2115c63236e8bd0e5d572dc25dd493dc2feed08b54a2a269dc0101c9d94a
+      - docker.io/velero/velero-plugin-for-aws:v1.14.0@sha256:7e82f717f44e89671212e0dfce7e061321c386ea84a33bca64a671670ca6c278
+    install: "helm upgrade --install velero vmware-tanzu/velero --version 12.1.0 --namespace \"$K6_NAMESPACE\" --values test/compatibility/projects/values/velero.yml --wait --timeout 15m"
     ready: "kubectl -n \"$K6_NAMESPACE\" wait --for=condition=Available deploy --all --timeout=15m || kubectl -n \"$K6_NAMESPACE\" rollout status statefulset --timeout=15m"
-    smoke: "kubectl -n \"$K6_NAMESPACE\" get all"
+    smoke_reference: "https://velero.io/docs/v1.18/examples/"
+    smoke: "bash test/compatibility/projects/smoke/velero.sh"
     scale: "kubectl -n \"$K6_NAMESPACE\" scale deploy --all --replicas=2 || true"
     upgrade: "helm upgrade velero vmware-tanzu/velero --version 12.1.0 --namespace \"$K6_NAMESPACE\" --reuse-values --wait --timeout 15m"
     rollback: "helm rollback velero 1 --namespace \"$K6_NAMESPACE\" --wait --timeout 15m"
