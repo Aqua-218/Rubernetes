@@ -10,7 +10,7 @@ require "json"
 require "securerandom"
 require "time"
 
-require_relative "common/strict_json"
+require_relative "common/journal_records"
 
 module Rubernetes
   module Runtime
@@ -25,23 +25,13 @@ module Rubernetes
     # write or an edited middle record observable during startup reconciliation.
     class RollbackJournal
       Record = Data.define(:sequence, :operation_id, :event, :payload, :timestamp, :previous_digest, :digest) do
-        def to_h
-          {
-            "sequence" => sequence,
-            "operation_id" => operation_id,
-            "event" => event,
-            "payload" => payload,
-            "timestamp" => timestamp,
-            "previous_digest" => previous_digest,
-            "digest" => digest
-          }
-        end
+        include JournalRecords::WireFields
       end
 
-      EMPTY_DIGEST = "0" * 64
-      DIGEST_PATTERN = /\A[0-9a-f]{64}\z/
-      MAX_RECORD_BYTES = StrictJSON::DEFAULT_MAX_BYTES
-      MAX_RECORD_DEPTH = StrictJSON::DEFAULT_MAX_DEPTH
+      include JournalRecords
+
+      JOURNAL_LABEL = "journal"
+      CORRUPTION_ERROR = JournalCorruption
 
       def initialize(path, clock: -> { Time.now.utc }, fsync: true)
         @path = File.expand_path(path)
@@ -49,41 +39,18 @@ module Rubernetes
         @fsync = fsync
         @mutex = Mutex.new
         FileUtils.mkdir_p(File.dirname(@path))
-        # Replay validation returns an immutable view; the live journal must
-        # still accept durable records after a process restart.
-        @records = load_records.dup
+        @records = load_records
       end
 
       attr_reader :path
 
       def append(operation_id:, event:, payload: {}, timestamp: nil)
-        operation_id = normalize_id(operation_id, "operation_id")
-        event = normalize_id(event, "event")
+        operation_id = identifier(operation_id, "operation_id")
+        event = identifier(event, "event")
         payload = deep_copy(payload)
         @mutex.synchronize do
-          sequence = @records.length + 1
-          previous_digest = @records.empty? ? EMPTY_DIGEST : @records.last.digest
           timestamp = (timestamp || @clock.call).utc.iso8601(6)
-          body = {
-            "sequence" => sequence,
-            "operation_id" => operation_id,
-            "event" => event,
-            "payload" => canonical(payload),
-            "timestamp" => timestamp,
-            "previous_digest" => previous_digest
-          }
-          digest = Digest::SHA256.hexdigest(JSON.generate(body))
-          record = Record.new(**body, digest: digest)
-          line = JSON.generate(record.to_h) << "\n"
-          File.open(@path, File::WRONLY | File::CREAT | File::APPEND, 0o600) do |file|
-            file.flock(File::LOCK_EX)
-            file.write(line)
-            file.flush
-            file.fsync if @fsync
-            file.flock(File::LOCK_UN)
-          end
-          @records << record
-          record
+          append_record(operation_id, event, canonical(payload), timestamp)
         end
       rescue SystemCallError => error
         raise Error, "journal append failed for #{operation_id}: #{error.message}"
@@ -150,16 +117,9 @@ module Rubernetes
           end
           previous_digest = EMPTY_DIGEST
           chain = entries.each_with_index.map do |entry, index|
-            body = {
-              "sequence" => index + 1,
-              "operation_id" => entry[:operation_id],
-              "event" => entry[:event],
-              "payload" => canonical(entry[:payload]),
-              "timestamp" => entry[:timestamp],
-              "previous_digest" => previous_digest
-            }
-            previous_digest = Digest::SHA256.hexdigest(JSON.generate(body))
-            Record.new(**body, digest: previous_digest)
+            record = signed_record(index + 1, previous_digest, entry[:operation_id], entry[:event], canonical(entry[:payload]), entry[:timestamp])
+            previous_digest = record.digest
+            record
           end
           write_records!(chain.freeze)
           dropped
@@ -173,80 +133,25 @@ module Rubernetes
       private
 
       def write_records!(records)
-        temporary = "#{@path}.tmp-#{Process.pid}-#{SecureRandom.hex(8)}"
-        File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
-          records.each { |record| file.write(JSON.generate(record.to_h) << "\n") }
-          file.flush
-          file.fsync if @fsync
-        end
-        File.rename(temporary, @path)
-        fsync_directory
+        replace_records_file(records)
         @records = records.dup
-      rescue StandardError
-        File.delete(temporary) if temporary && File.exist?(temporary)
-        raise
       end
 
-      def load_records
-        return [] unless File.exist?(@path)
-
-        records = []
-        File.open(@path, "rb") do |file|
-          file.each_line.with_index(1) do |line, line_number|
-            raise JournalCorruption, "journal line #{line_number} is not newline terminated" unless line.end_with?("\n")
-
-            begin
-              records << normalize_record(StrictJSON.parse(line, max_bytes: MAX_RECORD_BYTES, max_depth: MAX_RECORD_DEPTH,
-                                                                 require_newline: true))
-            rescue StrictJSON::Error, JSON::ParserError, KeyError, TypeError, ArgumentError => error
-              raise JournalCorruption, "journal line #{line_number} is invalid: #{error.message}"
-            end
-          end
-        end
-        validate_records!(records)
-        records
-      rescue Errno::ENOENT
-        []
+      def fsync(file)
+        file.fsync if @fsync
       end
 
       def normalize_record(value)
         hash = value.respond_to?(:to_h) ? value.to_h : value
         Record.new(
           sequence: Integer(hash.fetch("sequence")),
-          operation_id: normalize_id(hash.fetch("operation_id"), "operation_id"),
-          event: normalize_id(hash.fetch("event"), "event"),
+          operation_id: identifier(hash.fetch("operation_id"), "operation_id"),
+          event: identifier(hash.fetch("event"), "event"),
           payload: canonical(hash.fetch("payload")),
           timestamp: Time.iso8601(String(hash.fetch("timestamp"))).utc.iso8601(6),
           previous_digest: String(hash.fetch("previous_digest")),
           digest: String(hash.fetch("digest"))
         )
-      end
-
-      def validate_records!(records)
-        previous = EMPTY_DIGEST
-        records.each_with_index do |record, index|
-          expected_sequence = index + 1
-          unless record.sequence == expected_sequence
-            raise JournalCorruption,
-                  "journal sequence #{record.sequence} expected #{expected_sequence}"
-          end
-          raise JournalCorruption, "journal previous digest mismatch at #{record.sequence}" unless record.previous_digest == previous
-          raise JournalCorruption, "journal digest is invalid at #{record.sequence}" unless record.digest.match?(DIGEST_PATTERN)
-
-          body = {
-            "sequence" => record.sequence,
-            "operation_id" => record.operation_id,
-            "event" => record.event,
-            "payload" => canonical(record.payload),
-            "timestamp" => record.timestamp,
-            "previous_digest" => record.previous_digest
-          }
-          expected = Digest::SHA256.hexdigest(JSON.generate(body))
-          raise JournalCorruption, "journal hash mismatch at #{record.sequence}" unless expected == record.digest
-
-          previous = record.digest
-        end
-        records.freeze
       end
 
       def fsync_directory
@@ -260,13 +165,6 @@ module Rubernetes
         directory&.close
       end
 
-      def normalize_id(value, name)
-        value = String(value)
-        raise ArgumentError, "#{name} must not be empty" if value.empty? || value.include?("\0")
-
-        value
-      end
-
       def deep_copy(value)
         case value
         when Hash then value.to_h { |key, child| [String(key), deep_copy(child)] }
@@ -275,18 +173,7 @@ module Rubernetes
         end
       end
 
-      def canonical(value)
-        case value
-        when Hash
-          value.keys.map(&:to_s).sort.each_with_object({}) do |key, output|
-            source = value.key?(key) ? key : value.keys.find { |candidate| candidate.to_s == key }
-            output[key] = canonical(value.fetch(source))
-          end
-        when Array then value.map { |child| canonical(child) }
-        when Time then value.utc.iso8601(6)
-        else value
-        end
-      end
+      def canonical(value) = Canonical.normalize(value, prefer_string_keys: true)
     end
 
     # Durable owner ledger.  A resource can only be claimed once for a stable
