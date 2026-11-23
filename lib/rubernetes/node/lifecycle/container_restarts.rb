@@ -6,6 +6,8 @@ module Rubernetes
       # Restarting containers: the restart policy and CrashLoopBackOff for one
       # container, and RestartAllContainers for the whole Pod.
       module ContainerRestarts
+        RESTART_PROBES = {"LivenessProbe" => "liveness", "StartupProbe" => "startup"}.freeze
+
         def restart_container(pod, record = nil, entry = nil, reason: "Failure", now: nil, attempt: nil)
           object = normalize_pod(pod)
           uid = pod_uid(object)
@@ -15,32 +17,38 @@ module Rubernetes
           entry ||= record[:containers].first
           policy = container_policy(object, entry[:spec])
           restart_key = restart_identity(record, entry)
-          attempt ||= @restarts.record_exit(
-            restart_key, exit_code: 1, reason: reason, policy: policy,
-                         at: now, liveness_failure: reason.to_s == "LivenessProbe"
-          )
-          return attempt unless @restarts.should_restart?(policy: policy, exit_code: 1, reason: reason,
-                                                          liveness_failure: reason.to_s == "LivenessProbe")
+          exit_already_observed = !attempt.nil?
+          probe = RESTART_PROBES[reason.to_s]
+          failure = {liveness_failure: probe == "liveness", startup_failure: probe == "startup"}
+          attempt ||= @restarts.record_exit(restart_key, exit_code: 1, reason: reason, policy: policy, at: now) unless probe
+          restart = attempt ? attempt.restart_pending? : @restarts.should_restart?(policy: policy, exit_code: 1, reason: reason, **failure)
+          return attempt unless restart || probe
+          return @restarts.attempt(restart_key) if probe && restart && !claim_exit!(entry)
 
-          if reason.to_s == "LivenessProbe"
-            # kubelet: events.Killing "Container <name> failed liveness probe, will be restarted"
-            event(record, "container.killing", name: entry[:name], container_id: entry[:id], reason: "Killing",
-                                               message: "Container #{entry[:name]} failed liveness probe, will be restarted")
-          end
           remove_endpoints(object, uid)
-          stop_one(entry[:id], grace_seconds(object), release_process: false)
+          stopped = stop_before_restart(object, record, entry, probe, restart: restart)
+          unless stopped || exit_already_observed
+            release_exit_claim!(entry) if probe && restart
+            event(record, "container.restart_failed", name: entry[:name], message: "container did not reach a confirmed stopped state")
+            return attempt
+          end
+          return attempt unless restart
+
+          attempt ||= @restarts.record_exit(restart_key, exit_code: 1, reason: reason, policy: policy, at: now, **failure)
+          if probe
+            @probes.unregister(entry[:id])
+            entry[:restart_count_before_exit] = entry[:status]["restartCount"].to_i
+          end
           # kubelet keeps the dead container until its replacement starts: its
           # log is what `kubectl logs` serves while the restart backs off
           # (CrashLoopBackOff), and the e2e DNS specs read exactly that.
           # Removing it here answered every such request with "waiting to
           # start".  The retired container goes when the next one is created.
           entry[:retired_id] = entry[:id]
-          last_state = if entry[:status].is_a?(Hash) && entry[:status]["state"] == "terminated"
-                         {"exitCode" => Integer(entry[:status]["exitCode"] || 0), "reason" => entry[:status]["reason"].to_s}
-                       else
-                         {"exitCode" => reason.to_s == "LivenessProbe" ? 137 : 1, "reason" => "Error"}
-                       end
-          entry[:last_state] = {"terminated" => last_state}
+          termination = entry.dig(:status, "terminated")
+          termination ||= {"exitCode" => probe ? 137 : 1, "reason" => "Error", "containerID" => entry[:id],
+                           "finishedAt" => Helpers.now(@clock).iso8601(6)}
+          entry[:last_state] = {"terminated" => termination}
           if attempt.delay_seconds.positive?
             wait_out_backoff(object, uid, record, entry, attempt, restart_key)
             return attempt
@@ -49,13 +57,77 @@ module Rubernetes
           attempt
         end
 
+        def stop_before_restart(pod, record, entry, probe, restart:)
+          grace = grace_seconds(pod)
+          return stop_one(entry[:id], grace, release_process: false) if probe.nil?
+
+          message = "Container #{entry[:name]} failed #{probe} probe"
+          message += ", will be restarted" if restart
+          event(record, "container.killing", name: entry[:name], container_id: entry[:id], reason: "Killing", message: message)
+          definition = Helpers.key(entry[:spec], "#{probe}Probe", {})
+          grace = Integer(Helpers.key(definition, "terminationGracePeriodSeconds", nil) || grace)
+          began = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          begin
+            # SyncTerminatingPod keeps readiness probes running while a
+            # liveness/startup-triggered stop executes its preStop hook too.
+            # The normal Pod termination path already wraps this operation;
+            # probe failures use this narrower restart path instead.
+            with_terminating_readiness(pod, record) do
+              run_pre_stop_hooks(pod, record, budget: grace, entries: [entry])
+            end
+          rescue StandardError => error
+            event(record, "container.failed_prestop", name: entry[:name], reason: "FailedPreStopHook",
+                                                      message: "PreStop hook failed: #{Helpers.failure_message(error)}")
+          end
+          remaining = grace - (Process.clock_gettime(Process::CLOCK_MONOTONIC) - began)
+          stop_one(entry[:id], [remaining.ceil, Termination::MINIMUM_GRACE_PERIOD_SECONDS].max, release_process: false)
+        end
+
+        def replace_container_image(pod, record, entry, spec)
+          restart_with_container_spec(pod, record, entry, spec, reset_backoff: true)
+        end
+
+        def restart_with_container_spec(pod, record, entry, spec, reset_backoff: false)
+          if entry[:started]
+            return false unless claim_exit!(entry)
+
+            stop_for_container_update(pod, record, entry)
+          end
+          @probes.unregister(entry[:id])
+          check_start_cancelled!(record)
+          key = restart_identity(record, entry)
+          @restarts.reset!(key) if reset_backoff
+          count = entry[:status]["restartCount"].to_i + 1
+          @restarts.advance_restart_count(key, to: count)
+          entry[:retired_id] = entry[:id]
+          entry[:spec] = spec
+          resume_restart(pod, record, entry, count)
+          true
+        end
+
+        def stop_for_container_update(pod, record, entry)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace_seconds(pod)
+          run_termination_hook(record, entry, deadline)
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          grace = [remaining.ceil, Termination::MINIMUM_GRACE_PERIOD_SECONDS].max
+          unless stop_one(entry[:id], grace, release_process: false)
+            raise LifecycleError, "container #{entry[:name].inspect} did not reach a confirmed stopped state"
+          end
+
+          entry[:last_state] = {"terminated" => stopped_termination(entry)}
+          entry[:started] = false
+        rescue StandardError
+          release_exit_claim!(entry)
+          raise
+        end
+
         # No restart can put a container into a sandbox the runtime no longer
         # has (an agent restart found the namespace holder dead): the Pod kept
         # "restarting" into it for ever, one backoff period at a time.  kubelet:
         # pod sandbox changed -- kill the Pod and sync it from scratch.  Yields
         # the error when the sandbox is gone.
         def create_in_live_sandbox(record, entry)
-          create_container(record[:sandbox_id], entry[:spec])
+          create_container(record, entry[:spec], category: entry[:category])
         rescue StandardError => error
           raise unless sandbox_lost_error?(error) || sandbox_lost?(record)
 
@@ -81,16 +153,8 @@ module Rubernetes
           pre_start_container(record, entry)
           start_container(entry[:id])
           entry[:started] = true
-          # The retired container served the log until this moment; now the
-          # replacement has one of its own.
-          if (retired = entry.delete(:retired_id))
-            begin
-              remove_container(retired)
-            rescue StandardError => error
-              event(record, "container.remove_failed", name: entry[:name], container_id: retired,
-                                                       message: Helpers.failure_message(error))
-            end
-          end
+          remember_stop_signal(entry)
+          retire_previous_container(record, entry)
           # A restarted container can run to completion before this thread gets
           # here: the exit observer already recorded "terminated" for this very
           # container id (exit 0, 90 ms after start).  Writing "running" over it
@@ -109,14 +173,30 @@ module Rubernetes
           entry[:status] = {"state" => "running", "running" => {"startedAt" => started_at},
                             "ready" => false, "started" => true, "restartCount" => restart_count,
                             "lastState" => entry[:last_state]}
-          @probes.register(entry[:id], probes: probes_for(entry[:spec]))
+          @probes.register(entry[:id], probes: probes_for(entry[:spec]), started_at: @clock.call)
           schedule_probe_wakeup(uid, [entry], first: true)
-          entry[:status]["ready"] = @probes.ready?(entry[:id])
-          mark_ready(object, uid) if @probes.ready?(entry[:id])
+          update_probe_status(entry)
+          mark_ready(object, uid) if record[:state] == "Running" && @probes.ready?(entry[:id])
           event(record, "container.started", name: entry[:name], container_id: entry[:id],
                                              restart_count: restart_count)
+          @restarts.record_start(restart_identity(record, entry), policy: container_policy(object, entry[:spec]))
           update_status(object, record)
           persist_state!
+        end
+
+        def retire_previous_container(record, entry)
+          retired = entry.delete(:retired_id)
+          return unless retired
+
+          if runtime_supports?(:retire_container)
+            receipt = invoke(@runtime, :retire_container, retired, previous_id: entry[:previous_id], previous_log_path: entry[:previous_log_path])
+            entry[:previous_log_path] = receipt["log_path"] if receipt.is_a?(Hash)
+          else
+            remove_container(retired)
+          end
+          entry[:previous_id] = retired
+        rescue StandardError => error
+          event(record, "container.remove_failed", name: entry[:name], container_id: retired, message: Helpers.failure_message(error))
         end
 
         # A container waiting out its CrashLoopBackOff is restarted by the first
@@ -130,6 +210,8 @@ module Rubernetes
             begin
               resume_restart(pod, record, entry, entry[:restart_attempt].to_i)
             rescue StandardError => error
+              raise if record[:state] == "WorkloadStopped"
+
               # A failed re-create must not strand the container: drop the
               # pending marker so the next sync tries again rather than leaving
               # it waiting for ever.
@@ -143,16 +225,8 @@ module Rubernetes
         # kubelet: after every regular container exited, running sidecars are
         # terminated so the Pod can reach its terminal phase.
         def stop_sidecars(record)
-          record[:containers].select { |entry| entry[:category] == "sidecar" && entry[:started] }.reverse_each do |entry|
-            # A sidecar that cannot be stopped cleanly is reported from what
-            # the runtime says of it; the Pod is finishing either way.
-            best_effort { stop_one(entry[:id], grace_seconds(record[:pod])) }
-            entry[:started] = false
-            terminated = stopped_termination(entry[:id])
-            entry[:status] = {"state" => "terminated", "exitCode" => terminated.fetch("exitCode"), "reason" => terminated.fetch("reason"),
-                              "terminated" => terminated, "ready" => false, "started" => false,
-                              "restartCount" => entry[:status]["restartCount"].to_i}
-          end
+          sidecars = record[:containers].select { |entry| entry[:category] == "sidecar" && entry[:started] }
+          stop_with_sidecar_order(record, sidecars, grace_seconds(record[:pod])) unless sidecars.empty?
         end
 
         private
@@ -211,8 +285,12 @@ module Rubernetes
           object = normalize_pod(pod)
           reset_all_containers(object, record, sources)
           begin
-            start_init_containers(object, record)
-            start_application_containers(object, record)
+            if start_init_containers(object, record) == :pending
+              set_state(record, "WorkloadStopped")
+              record[:phase] = "Pending"
+            else
+              start_application_containers(object, record)
+            end
           rescue LifecycleError => error
             fail_record(record, error)
             return
@@ -269,6 +347,7 @@ module Rubernetes
           update_status(object, record)
           persist_state!
           record[:containers] = record[:containers] - resettable
+          record.delete(:next_init_index)
           record[:restarting_all] = false
         end
       end
