@@ -9,12 +9,13 @@ module Rubernetes
           # wrapper start the workload, and returns once the workload has proved
           # its identity and exec'd (or raises with why it did not).
           class Gate
-            def initialize(writer:, status_reader:, identity_reader:, hook_reply: nil, hook_handler: nil)
+            def initialize(writer:, status_reader:, identity_reader:, hook_reply: nil, hook_handler: nil, owner: nil)
               @writer = writer
               @status_reader = status_reader
               @identity_reader = identity_reader
               @hook_reply = hook_reply
               @hook_handler = hook_handler
+              @owner = owner
               @released = false
               @workload_pid = nil
               @workload_start_time = nil
@@ -23,6 +24,26 @@ module Rubernetes
             end
 
             attr_reader :workload_pid, :workload_start_time, :workload_executable_digest, :workload_security
+
+            def commit
+              return unless @owner
+
+              @owner.write(DurableProcess::COMMIT)
+              return @owner.read(1) == DurableProcess::COMMIT if @owner.wait_readable(5)
+
+              false
+            rescue Errno::EPIPE, Errno::ECONNRESET, IOError
+              false
+            ensure
+              @owner&.close
+              @owner = nil
+            end
+
+            def close
+              [@writer, @status_reader, @identity_reader, @hook_reply, @owner].compact.reject(&:closed?).each(&:close)
+            end
+
+            def closed? = @writer.closed? && @owner.nil?
 
             def release
               raise EffectError, "process gate was already released" if @released
