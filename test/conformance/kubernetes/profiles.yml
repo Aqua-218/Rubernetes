@@ -17,11 +17,14 @@ profiles:
     os: linux
     architecture: amd64
     ip_families: [ipv4]
+    isolated_worker_networks: true
   - name: linux-amd64-ipv6-native
     os: linux
     architecture: amd64
     ip_families: [ipv6]
+    isolated_worker_networks: true
   - name: linux-amd64-dualstack-native
     os: linux
     architecture: amd64
     ip_families: [ipv4, ipv6]
+    isolated_worker_networks: true
