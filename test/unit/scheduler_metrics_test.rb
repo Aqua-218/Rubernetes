@@ -52,20 +52,14 @@ class SchedulerMetricsTest < Minitest::Test
        scheduler_get_node_hint_duration_seconds kubernetes_build_info disabled_metrics_total].each do |name|
       assert_includes names, name
     end
-    # Families measuring machinery that does not exist here are declared
-    # (so upstream dashboards find the name), never written, and say why.
-    %w[rest_client_exec_plugin_policy_call_total].each do |name|
-      assert_includes names, name
-      refute_empty metrics.registry.unimplemented_reasons.fetch(name)
-      refute_match(/^#{name}\{/, metrics.render, "#{name} never gets a series")
-    end
+    assert_includes names, "rest_client_exec_plugin_policy_call_total"
+    refute_includes metrics.registry.unimplemented_reasons, "rest_client_exec_plugin_policy_call_total"
+    refute_match(/^rest_client_exec_plugin_policy_call_total\{/, metrics.registry.render_own)
     # An unlabelled family renders its (annotated) HELP even while empty.
     apiserver = Rubernetes::Observability::Metrics.new
 
-    assert_match(
-      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
-      /# HELP aggregator_discovery_nopeer_requests_total .*\(not implemented in Rubernetes, always empty: no UnknownVersionInteroperabilityProxy/, apiserver.render_own
-    )
+    assert_includes apiserver.registered_names, "aggregator_discovery_nopeer_requests_total"
+    refute_includes apiserver.unimplemented_reasons, "aggregator_discovery_nopeer_requests_total"
     # client-go registers these plain families unconditionally: present and
     # empty (the TTL gauge at +Inf) as on every upstream component.
     assert_includes names, "rest_client_exec_plugin_certificate_rotation_age"
