@@ -28,6 +28,7 @@ require_relative "status_images"
 require_relative "plugins/manager"
 require_relative "csi_plugins"
 require_relative "kubelet_metrics"
+require_relative "pods_api"
 
 require_relative "agent/api_port"
 require_relative "agent/wiring"
@@ -109,57 +110,57 @@ module Rubernetes
                      lease_renew_fraction: DEFAULT_LEASE_RENEW_FRACTION,
                      sync_period: SyncLoop::DEFAULT_RESYNC_PERIOD_SECONDS,
                      watch_timeout: 30, node_labels: {}, node_annotations: {},
-                     capacity: {}, allocatable: nil, addresses: [],
+                     capacity: {}, allocatable: nil, addresses: [], external_cloud_provider: false, provider_id: nil,
+                     register_node: true, register_with_taints: [],
                      architecture: RbConfig::CONFIG["host_cpu"],
                      operating_system: RbConfig::CONFIG["host_os"],
                      runtime_version: RUBY_VERSION,
-                     state_store: nil, runtime_class_resolver: nil,
-                     streaming_port: nil,
+                     state_store: nil, runtime_class_resolver: nil, streaming_port: nil, node_image_config: nil,
                      clock: -> { Time.now.utc }, sleeper: DEFAULT_SLEEPER,
                      error_handler: nil,
-                     pod_root: nil, resource_reader: nil, host_ip: nil, cluster_domain: "cluster.local",
+                     pod_root: nil, resource_reader: nil, host_ip: nil, host_ips: nil, cluster_domain: "cluster.local",
                      probe_connectors: nil, relist_period: DEFAULT_RELIST_PERIOD_SECONDS, pod_files: nil,
-                     detect_host_resources: false, max_pods: HostResources::DEFAULT_MAX_PODS, crash_loop_back_off_max: nil,
-                     static_pod_path: nil, device_plugin_dir: nil, pod_resources_dir: nil, image_credential_provider: nil,
+                     detect_host_resources: false, max_pods: HostResources::DEFAULT_MAX_PODS, pods_per_core: 0,
+                     node_status_max_images: StatusImages::MAX_IMAGES, crash_loop_back_off_max: nil,
+                     static_pod_path: nil, file_check_frequency: StaticPods::DEFAULT_INTERVAL, static_pod_url: nil,
+                     static_pod_url_header: {}, http_check_frequency: StaticPods::DEFAULT_INTERVAL,
+                     device_plugin_dir: nil, pod_resources_dir: nil, pods_api_directory: nil, image_credential_provider: nil,
                      allowed_unsafe_sysctls: [], event_recorder: nil, publish_events: true, lifecycle_logger: nil,
                      feature_gates: {}, runtime_features: {}, stats_provider: nil, eviction_manager: nil, eviction: {},
+                     stats_system_cgroups: {}, volume_stats_agg_period: KubeletConfigz::DEFAULT_VOLUME_STATS_AGG_PERIOD_SECONDS,
                      image_resolver: nil, image_gc: {}, dra: {}, dra_manager: nil, plugin_manager: nil, csi_plugins: nil,
                      system_reserved: {}, kube_reserved: {}, reserved_system_cpus: nil, cpu_manager: {}, memory_manager: {},
                      topology_manager: {}, container_manager: nil, shutdown: {}, shutdown_manager: nil,
                      qos_cgroups: nil, qos_cgroup_manager: nil,
-                     node_status_update_frequency: NODE_STATUS_UPDATE_FREQUENCY_SECONDS,
-                     node_status_report_frequency: NODE_STATUS_REPORT_FREQUENCY_SECONDS)
-        raise ArgumentError, "node_name must not be empty" if node_name.to_s.empty?
-
+                     node_status_update_frequency: NODE_STATUS_UPDATE_FREQUENCY_SECONDS, node_status_report_frequency: NODE_STATUS_REPORT_FREQUENCY_SECONDS)
         initialize_schedule(node_status_update_frequency, node_status_report_frequency, relist_period)
-        raise ArgumentError, "api is required" unless api
-
         initialize_ports(node_name, api, runtime || lifecycle&.runtime, clock: clock, sleeper: sleeper, error_handler: error_handler)
         initialize_lease(node_namespace, lease_duration_seconds, lease_renew_fraction)
         reserved = [system_reserved, kube_reserved, reserved_system_cpus]
-        initialize_node_resources(capacity, allocatable, reserved, eviction, host: detect_host_resources, pod_root: pod_root, max_pods: max_pods)
-        initialize_node_identity(node_labels, node_annotations, addresses, architecture, operating_system, runtime_version, streaming_port)
-        reporter = initialize_status(status, static_pod_path, reporter, endpoint_manager)
+        initialize_node_resources(capacity, allocatable, reserved, eviction, host: detect_host_resources, pod_root:, max_pods:, pods_per_core:)
+        initialize_node_identity(node_labels, node_annotations, addresses, architecture, operating_system, runtime_version, streaming_port,
+                                 provider_id:, external_cloud_provider:, register_node:, register_with_taints:)
+        static_sources = {path: static_pod_path, url: static_pod_url, url_headers: static_pod_url_header,
+                          interval: file_check_frequency, http_interval: http_check_frequency}
+        reporter = initialize_status(status, reporter, endpoint_manager, static_sources, feature_gates: feature_gates)
         initialize_admission(admission, feature_gates, runtime_features, allowed_unsafe_sysctls)
         publisher = initialize_events(event_recorder, publish_events, lifecycle_logger)
         dra = Helpers.string_keys(dra || {})
-        initialize_plugin_registry(dra, @kubelet_root, volume, dra_manager: dra_manager, plugin_manager: plugin_manager, csi_plugins: csi_plugins)
+        initialize_plugin_registry(dra, @kubelet_root, volume, dra_manager:, plugin_manager:, csi_plugins:)
         initialize_container_manager(container_manager, cpu_manager, memory_manager, topology_manager, reserved_system_cpus)
         pod_ports = {runtime: runtime, volume: volume, network: network, reporter: reporter, endpoint_manager: endpoint_manager,
                      state_store: state_store, runtime_class_resolver: runtime_class_resolver, pod_root: pod_root, pod_files: pod_files,
-                     probe_manager: build_probe_manager(probe_connectors, runtime), resource_reader: resource_reader, host_ip: host_ip,
-                     cluster_domain: cluster_domain, cdi_spec_dirs: Array(dra.fetch("cdi_spec_dirs", CDI::DEFAULT_SPEC_DIRS))}
+                     probe_manager: build_probe_manager(probe_connectors, runtime), resource_reader: resource_reader, host_ips: host_ips || host_ip,
+                     cluster_domain: cluster_domain, node_image_config: node_image_config, cdi_spec_dirs: Array(dra.fetch("cdi_spec_dirs", CDI::DEFAULT_SPEC_DIRS))}
         initialize_lifecycle(lifecycle, pod_ports, publisher: publisher, device_plugin_dir: device_plugin_dir,
                                                    crash_loop_back_off_max: crash_loop_back_off_max, image_credential_provider: image_credential_provider)
         initialize_metrics(image_resolver)
         initialize_pod_sources(qos_cgroup_manager, qos_cgroups, reserved, pod_resources_dir)
-        initialize_sync_loop(sync_loop, source, sync_period, watch_timeout)
-        initialize_stats(stats_provider, image_resolver, volume, pod_root, image_gc)
+        initialize_sync_loop(sync_loop, source, sync_period, watch_timeout, pods_api_directory)
+        initialize_stats(stats_provider, image_resolver, volume, pod_root, image_gc, system_cgroups: stats_system_cgroups,
+                                                                                     node_status_max_images:, volume_stats_agg_period:)
         initialize_eviction(eviction_manager, eviction)
-        attach_observers
-        initialize_shutdown(shutdown_manager, shutdown, feature_gates)
-        attach_metrics_registry
-        attach_admit_handlers
+        attach_runtime_handlers(shutdown_manager, shutdown, feature_gates)
       end
       attr_reader :declared_features, :stats_provider, :eviction_manager, :image_gc_manager, :dra_manager, :plugin_manager, :csi_plugins,
                   :kubelet_metrics, :container_manager, :shutdown_manager, :capacity, :allocatable, :node_name, :api, :runtime, :lifecycle, :sync_loop,
@@ -207,8 +208,8 @@ module Rubernetes
       # The node's own API adapter (APIClientAdapter: a Kubernetes client,
       # object reads, status patches, Pod deletes), as opposed to a port that
       # only registers the Node and renews its Lease.
-      def node_adapter?(api = @api)
-        api.respond_to?(:client)
+      def node_adapter?(api = @api, capability = :client)
+        api.respond_to?(capability)
       end
 
       # The node's volume manager (CSI registry, per-volume stats), as
@@ -300,5 +301,7 @@ module Rubernetes
         value.is_a?(Time) ? value.utc.iso8601(6) : Time.at(value.to_f).utc.iso8601(6)
       end
     end
+
+    NodeAgent = Agent
   end
 end
