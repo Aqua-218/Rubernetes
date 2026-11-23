@@ -189,8 +189,11 @@ module Rubernetes
       module InternalPodSpec
         LAYOUT_PATH = File.expand_path("../../../../schema/kubernetes/v1.36.2-defaults/internal_pod_spec_layout.json", __dir__)
         CORE = "k8s.io/kubernetes/pkg/apis/core."
+        OBJECT_META = "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"
         HOST_FIELDS = {"HostNetwork" => "hostNetwork", "HostPID" => "hostPID", "HostIPC" => "hostIPC",
                        "ShareProcessNamespace" => "shareProcessNamespace", "HostUsers" => "hostUsers"}.freeze
+        LEGACY_INIT_ANNOTATIONS = %w[pod.alpha.kubernetes.io/init-containers pod.beta.kubernetes.io/init-containers
+                                     pod.alpha.kubernetes.io/init-container-statuses pod.beta.kubernetes.io/init-container-statuses].freeze
 
         # An internal struct value: its fields in declaration order, each
         # [key the encoder prints, Go name, value], omitempty ones left out.
@@ -213,6 +216,14 @@ module Rubernetes
         # request body decoded from JSON keeps them (keep_empty).
         def convert(pod, keep_empty: false)
           v1 = pod.is_a?(Hash) ? (pod["spec"] || {}) : {}
+          spec = convert_spec(v1, keep_empty: keep_empty)
+          # Convert_v1_Pod_To_core_Pod; embedded templates retain this value.
+          grace = v1["terminationGracePeriodSeconds"]
+          grace.is_a?(Integer) && grace.negative? ? spec.with("TerminationGracePeriodSeconds", 1) : spec
+        end
+
+        def convert_spec(v1, keep_empty: false)
+          v1 = {} unless v1.is_a?(Hash)
           spec = convert_struct(layout.fetch("internal"), v1, keep_empty: keep_empty)
           # Convert_v1_PodSpec_To_core_PodSpec.
           spec = spec.with("ServiceAccountName", v1["serviceAccount"].to_s) if v1["serviceAccountName"].to_s.empty?
@@ -222,11 +233,19 @@ module Rubernetes
             value = value == true if %w[HostNetwork HostPID HostIPC].include?(go)
             context = context.with(go, value)
           end
-          spec = spec.with("SecurityContext", context)
-          # Convert_v1_Pod_To_core_Pod.
-          grace = v1["terminationGracePeriodSeconds"]
-          spec = spec.with("TerminationGracePeriodSeconds", 1) if grace.is_a?(Integer) && grace.negative?
-          spec
+          spec.with("SecurityContext", context)
+        end
+
+        def convert_template(template, keep_empty: false)
+          template = {} unless template.is_a?(Hash)
+          metadata = template["metadata"].is_a?(Hash) ? template["metadata"] : {}
+          annotations = metadata["annotations"]
+          metadata = metadata.merge("annotations" => annotations.except(*LEGACY_INIT_ANNOTATIONS)) if annotations.is_a?(Hash)
+          # core.PodTemplateSpec embeds ObjectMeta and gives its internal
+          # PodSpec the Go field name instead of the v1 JSON tag.
+          members = convert_struct(OBJECT_META, metadata, keep_empty: keep_empty).fields
+          spec = convert_spec(template["spec"], keep_empty: keep_empty)
+          Struct.new(type: CORE + "PodTemplateSpec", fields: members + [["Spec", "Spec", spec]])
         end
 
         def convert_value(type, value, keep_empty: false)
@@ -246,7 +265,7 @@ module Rubernetes
             value.keys.map(&:to_s).sort.to_h { |key| [key, convert_value(type["e"], value[key], keep_empty: keep_empty)] }
           when "bytes" then value.is_a?(String) && (keep_empty || !value.empty?) ? value : nil
           when "struct" then convert_struct(type["n"], value.is_a?(Hash) ? value : {}, keep_empty: keep_empty)
-          when "quantity" then value.nil? ? "0" : Quantity.from_json(value).to_s
+          when "quantity" then compact_quantity(value)
           when "intorstring" then value.is_a?(Integer) || value.is_a?(String) ? value : 0
           when "time" then value.is_a?(String) && !value.empty? ? value : nil
           when "fieldsv1" then value
@@ -254,11 +273,21 @@ module Rubernetes
           end
         end
 
+        def compact_quantity(value)
+          value.nil? ? "0" : Quantity.from_json(value).to_s
+        rescue Quantity::ParseError
+          # Validation reports malformed quantities separately. Keep their
+          # original value when an immutability diagnostic shows the spec.
+          value
+        end
+
         def convert_struct(name, v1, keep_empty: false)
           fields = layout.fetch("types").fetch(name).filter_map do |field|
-            source = field["v1"] ? v1.dig(*field["v1"]) : nil
-            value = convert_value(field["type"], source, keep_empty: keep_empty)
-            next if field["omitempty"] && empty_value?(value)
+            source = name == OBJECT_META ? v1[field["key"]] : (v1.dig(*field["v1"]) if field["v1"])
+            type = field["type"]
+            value = convert_value(type, source, keep_empty: keep_empty)
+            empty = type["k"] == "ptr" ? source.nil? : empty_value?(value)
+            next if field["omitempty"] && empty
 
             [field["key"], field["go"], value]
           end
