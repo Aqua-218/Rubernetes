@@ -28,10 +28,10 @@ class NodeContainerManagerTest < Minitest::Test
     {num_cores: 16, num_sockets: 2, topology: nodes}
   end
 
-  def manager(dir, cpu: {"policy" => "static"}, memory: {}, topology: {}, reservation: {"cpu" => "1", "memory" => "1Gi"})
+  def manager(dir, cpu: {"policy" => "static"}, memory: {}, topology: {}, reservation: {"cpu" => "1", "memory" => "1Gi"}, **)
     reserved = Rubernetes::Node::NodeAllocatable.quantities(reservation)
     Rubernetes::Node::ContainerManager.new(state_directory: dir, reservation: reserved, cpu: cpu, memory: memory, topology: topology,
-                                           machine: machine)
+                                           machine: machine, **)
   end
 
   def pod(uid, cpu:, memory: "1Gi", guaranteed: true)
@@ -106,6 +106,47 @@ class NodeContainerManagerTest < Minitest::Test
 
       assert_raises(Rubernetes::Node::ContainerManager::Error) { start(manager(dir, cpu: {"policy" => "none"}), pods) }
     end
+  end
+
+  def test_cpu_quota_exemption_follows_a_real_allocation_and_the_feature_gate
+    Dir.mktmpdir do |dir|
+      target = pod("mixed", cpu: "1")
+      dedicated = target.dig("spec", "containers").first
+      shared = pod("shared", cpu: "500m").dig("spec", "containers").first.merge("name" => "shared")
+      target.dig("spec", "containers") << shared
+      enabled = manager(dir)
+      start(enabled, [target])
+
+      refute enabled.pod_cpu_quota_exempt?(target)
+      assert_predicate enabled.admit(target), :admit?
+      assert enabled.pod_cpu_quota_exempt?(target)
+      assert enabled.container_cpu_quota_exempt?(target, dedicated)
+      refute enabled.container_cpu_quota_exempt?(target, shared)
+
+      disabled = manager(dir, feature_gates: {"DisableCPUQuotaWithExclusiveCPUs" => false})
+      start(disabled, [target])
+
+      refute_empty disabled.cpu_manager.exclusive_cpus("mixed", "app")
+      refute disabled.pod_cpu_quota_exempt?(target)
+      refute disabled.container_cpu_quota_exempt?(target, dedicated)
+    end
+  end
+
+  def test_a_shared_container_in_a_pod_cpu_pool_keeps_the_pod_quota
+    target = pod("pod-pool", cpu: "1")
+    dedicated = target.dig("spec", "containers").first
+    shared = {"name" => "shared"}
+    target.dig("spec", "containers") << shared
+    resources = {"cpu" => "2", "memory" => "2Gi"}
+    target["spec"]["resources"] = {"requests" => resources, "limits" => resources}
+    subject = manager(nil, topology: {"policy" => "best-effort", "scope" => "pod"}, pod_level_resource_managers: true)
+    start(subject, [target])
+
+    assert_predicate subject.admit(target), :admit?
+    refute_empty subject.cpu_manager.exclusive_cpus("pod-pool", "shared")
+    assert subject.container_cpu_quota_exempt?(target, dedicated)
+    refute subject.container_cpu_quota_exempt?(target, shared)
+    refute subject.pod_cpu_quota_exempt?(target)
   end
 
   def test_the_restricted_topology_policy_rejects_what_cannot_be_aligned
