@@ -41,6 +41,26 @@ module Rubernetes
         @monitor.synchronize { @compacted_revision.positive? }
       end
 
+      def storage_layout_revision(group)
+        @monitor.synchronize do
+          return [@revision, @compacted_revision] if group.empty?
+
+          changed = @resource_revisions.fetch("registry/#{group}", 0)
+          markers = @resource_revisions.fetch("rubernetes-internal/storage-keys", 0)
+          [[changed, markers].max, @compacted_revision]
+        end
+      end
+
+      # A deleted object can still appear in an exact LIST or a resumed WATCH.
+      def prefix_has_records?(prefix)
+        @monitor.synchronize do
+          each_key_with_prefix_locked(prefix) do |key|
+            return true if @live_versions.key?(key) || @deleted_versions.fetch(key).last.first > @compacted_revision
+          end
+          false
+        end
+      end
+
       private
 
       def object_revision(object)
@@ -72,37 +92,40 @@ module Rubernetes
         raise Gone.new(revision, @compacted_revision)
       end
 
+      def current_object(key)
+        @live_versions[key]&.last&.last
+      end
+
+      def versions_for(key)
+        @live_versions[key] || @deleted_versions[key]
+      end
+
       def object_at_revision(key, revision)
-        entries = @versions[key]
-        return nil if entries.nil? || entries.empty?
+        return current_object(key) if revision == @revision
 
-        entry = entries.reverse_each.find { |candidate| candidate[0] <= revision }
-        entry && entry[1]
+        entries = versions_for(key)
+        return unless entries
+        return entries.last[1] if entries.last[0] <= revision
+
+        following = entries.bsearch_index { |entry| entry[0] > revision }
+        entries[following - 1][1] if following.positive?
       end
 
-      # Every key the store has ever held, sorted, memoised until a key is
-      # added.  A list used to sort the whole key set and scan it for the
-      # prefix on every call -- O(N log N) per list over every key ever
-      # written, which put a ResourceQuota admission check at 20 ms once a
-      # conformance run had created a few thousand objects.  Updates and
-      # deletes leave the key set alone, so the sorted array survives them,
-      # and a prefix is then a binary search plus a scan of its own keys.
       def sorted_keys_locked
-        @sorted_keys ||= @known_keys.keys.sort!.freeze
+        @sorted_keys ||= @live_versions.keys.concat(@deleted_versions.keys).sort!.freeze
       end
 
-      # Keys starting with prefix, in order, all greater than `after` when given.
-      def keys_with_prefix_locked(prefix, after: nil)
-        sorted = sorted_keys_locked
+      def each_key_with_prefix_locked(prefix, after: nil)
+        keys = sorted_keys_locked
+        prefix_range(keys, prefix, after).each { |index| yield keys[index] }
+      end
+
+      def prefix_range(keys, prefix, after)
         start = after && after >= prefix ? after : prefix
-        index = sorted.bsearch_index { |key| key >= start } || sorted.length
-        index += 1 if after && index < sorted.length && sorted[index] == after
-        result = []
-        while index < sorted.length && sorted[index].start_with?(prefix)
-          result << sorted[index]
-          index += 1
-        end
-        result
+        first = keys.bsearch_index { |key| key >= start } || keys.size
+        first += 1 if after && keys[first] == after
+        last = keys.bsearch_index { |key| key > prefix && !key.start_with?(prefix) } || keys.size
+        first...last
       end
 
       # "registry/<resource>" for a key or prefix; nil when it is shorter.
