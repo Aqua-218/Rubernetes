@@ -356,6 +356,7 @@ class PVBinderUpstreamTest < Minitest::Test
   def test_a_recycled_volume_uses_a_recycler_pod
     host = {"hostPath" => {"path" => "/data"}}
     released = volume("rv", "2Gi", "uid", "gone", "Released", "Recycle", source: host)
+    released["metadata"]["uid"] = "pv-uid"
     adapter = Class.new(Controller::StoreAdapter) do
       attr_accessor :pod
 
@@ -371,7 +372,8 @@ class PVBinderUpstreamTest < Minitest::Test
     assert_equal({"name" => "vol", "hostPath" => {"path" => "/data"}}, create.object.dig("spec", "volumes", 0))
     assert_equal 60, create.object.dig("spec", "activeDeadlineSeconds")
 
-    adapter.pod = create.object.merge("status" => {"phase" => "Succeeded"})
+    adapter.pod = Controller::Support.deep_copy(create.object).merge("status" => {"phase" => "Succeeded"})
+    adapter.pod["metadata"]["uid"] = "recycler-pod-uid"
     result = controller.plan(released, store: adapter, persistent_volumes: [released], claims: [], storage_classes: [], pods: [])
 
     assert_equal(["VolumeRecycled"], result.events.map { |event| event["reason"] })
