@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "minitest/mock"
 require "rubernetes/controller"
 require "rubernetes/observability/metrics"
 
@@ -61,6 +62,53 @@ class HPAControllerUpstreamTest < Minitest::Test
 
   def condition(result, type) = result.status["conditions"].find { |entry| entry["type"] == type }.values_at("status", "reason")
 
+  def test_manager_paces_status_events_and_does_not_reuse_a_deleted_hpa_deadline
+    calls = 0
+    plan = lambda { |_resource, _context|
+      calls += 1
+      Controller::ReconcileResult.new
+    }
+    entry = Controller::BuiltinControllerCorpus.fetch("horizontal-pod-autoscaler-controller")
+    definition = Controller::ControllerDefinition.new(name: entry.name, kind: entry.descriptor,
+                                                      implementation: Controller::HorizontalPodAutoscalerController,
+                                                      reconcile_block: plan)
+    subject = Controller::DefinitionController.new(definition, store: nil)
+    resource = hpa
+    reconcile = -> { subject.reconcile(resource, apply: false, leader_guard: -> {}) }
+    now = 100.0
+
+    Process.stub(:clock_gettime, ->(*) { now }) do
+      assert_equal 15, reconcile.call.requeue_after
+      now += 14
+
+      assert_equal 1, reconcile.call.requeue_after
+      assert_equal 0, calls
+      now += 1
+      reconcile.call
+
+      assert_equal 1, calls
+
+      resource["status"]["desiredReplicas"] = 2
+
+      assert_equal 15, reconcile.call.requeue_after
+      assert_equal 1, calls
+
+      now += 10
+      subject.plan_orphans("ns/web-hpa")
+
+      assert_equal 15, reconcile.call.requeue_after
+      now += 5
+      resource["metadata"]["uid"] = "replacement"
+
+      assert_equal 15, reconcile.call.requeue_after
+      assert_equal 1, calls
+      now += 15
+      reconcile.call
+
+      assert_equal 2, calls
+    end
+  end
+
   def test_scale_up
     metrics = FakeMetrics.new("web-0" => 300, "web-1" => 500, "web-2" => 700)
     result = controller(metrics, deployment(3)).plan(hpa, pods: pods(3))
@@ -116,6 +164,36 @@ class HPAControllerUpstreamTest < Minitest::Test
 
     assert_equal 6, above.operations.find { |operation| operation.action == :update }.object.dig("spec", "replicas")
     assert_equal "New size: 6; reason: Current number of replicas above Spec.MaxReplicas", above.events.first["message"]
+  end
+
+  def test_external_metric_can_reactivate_only_a_target_previously_scaled_to_zero_by_the_hpa
+    settings = {"HPAScaleToZero" => true}
+    object = hpa(min: 0)
+    object["spec"]["metrics"] = [{"type" => "External", "external" => {"metric" => {"name" => "backlog"},
+                                                                       "target" => {"type" => "Value", "value" => "10"}}}]
+    metrics = FakeMetrics.new(0)
+    def metrics.external_metric(*) = [[levels], NOW]
+    down = controller(metrics, deployment(1), history: []).plan(object, pods: pods(1), feature_gates: settings)
+
+    assert_equal 0, down.status["desiredReplicas"]
+    assert_equal %w[True ScaledToZero], condition(down, "ScaledToZero")
+
+    metrics.levels = 25_000
+    sleeping = controller(metrics, deployment(0))
+    manual = sleeping.plan(object, pods: [], feature_gates: settings)
+
+    assert_equal 0, manual.status["desiredReplicas"]
+    assert_equal %w[False ScalingDisabled], condition(manual, "ScalingActive")
+
+    object["status"] = down.status
+    up = sleeping.plan(object, pods: [], feature_gates: settings)
+
+    assert_equal 3, up.status["desiredReplicas"]
+    assert_equal %w[False NotScaledToZero], condition(up, "ScaledToZero")
+    disabled = sleeping.plan(object, pods: [])
+
+    assert_equal 0, disabled.status["desiredReplicas"]
+    refute(disabled.status["conditions"].any? { |entry| entry["type"] == "ScaledToZero" })
   end
 
   def test_unready_pods_count_as_zero_when_scaling_up
