@@ -16,13 +16,11 @@ require "optparse"
 require "rbconfig"
 require "shellwords"
 require "time"
+require_relative "m0_source_inventory"
 
 require_relative "m1_gate"
 
 ROOT = File.expand_path("../..", __dir__)
-# Keep the temporary generator exclusion anchored to a root-level mktemp name;
-# broad prefixes would let a real source directory disappear from the input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
 REPORT_SPECS = {
   "corpus" => {filename: "corpus-coverage.json", kind: "m1_corpus_coverage"},
   "generation" => {filename: "generation-diff.json", kind: "m1_generation_diff"},
@@ -32,12 +30,7 @@ REPORT_SPECS = {
 }.freeze
 
 def source_identity
-  paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
-    next false unless File.file?(path)
-
-    relative = path.delete_prefix("#{ROOT}/")
-    !relative.match?(SOURCE_EXCLUSIONS)
-  end.sort
+  paths = M0SourceInventory.source_files(ROOT)
   entries = paths.map do |path|
     {
       "path" => path.delete_prefix("#{ROOT}/"),
@@ -94,18 +87,16 @@ def capture_command(name, command, destination_path, input)
     "RUBERNETES_M1_INPUT_SHA256" => input.fetch("sha256"),
     "RUBERNETES_M1_INPUT_FILE_COUNT" => input.fetch("file_count").to_s
   }
-  stdout, stderr, status = Open3.capture3(environment, *command, chdir: ROOT)
+  output, stderr, status = MilestoneReportOutput.capture(destination_path, environment, command, chdir: ROOT)
   finished_at = iso8601_now
-  File.binwrite(destination_path, stdout)
   command_record(
     name,
     command,
     started_at,
     finished_at,
     status.exitstatus || 1,
-    stdout: stdout,
     stderr: stderr
-  )
+  ).merge(output)
 rescue SystemCallError => error
   finished_at = iso8601_now
   command_record(
