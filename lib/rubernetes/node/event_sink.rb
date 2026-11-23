@@ -127,7 +127,11 @@ module Rubernetes
       end
 
       def write_event(event)
-        namespace = event.dig("metadata", "namespace") || "default"
+        namespace = event.dig("metadata", "namespace")
+        if namespace.to_s.empty?
+          namespace = "default"
+          event = default_namespace_event(event)
+        end
         name = event.dig("metadata", "name")
         @client.create(event, namespace: namespace, api_version: "v1")
       rescue StandardError => error
@@ -142,6 +146,16 @@ module Rubernetes
         else
           log(:debug, "events.create_failed", name: name, error: "#{error.class}: #{error.message}")
         end
+        event
+      end
+
+      # client-go records events for cluster-scoped objects in default
+      # without changing the involved object's scope.
+      def default_namespace_event(event)
+        metadata = event.fetch("metadata", {}).merge("namespace" => "default")
+        event = event.merge("metadata" => metadata)
+        reference = event["involvedObject"]
+        event["involvedObject"] = reference.except("namespace") if reference.is_a?(Hash) && reference["kind"] == "Node" && reference["namespace"] == ""
         event
       end
 
@@ -168,6 +182,7 @@ module Rubernetes
       IMAGE_ERRORS = %w[ErrImagePull ErrImageNeverPull].freeze
       REASONS = {
         "image.resolve" => ["Normal", "Pulling", ->(payload, _) { "Pulling image #{payload["reference"].to_s.inspect}" }],
+        "image.pull_backoff" => ["Normal", "BackOff", ->(payload, _) { "Back-off pulling image #{payload["reference"].to_s.inspect}" }],
         # images/image_manager.go EnsureImageExists / pullImage.
         "image.pulled" => ["Normal", "Pulled", lambda do |payload, _|
           took = Helpers.go_duration(payload["seconds"])
@@ -198,7 +213,9 @@ module Rubernetes
         "container.exited" => nil,
         "container.backoff" => ["Warning", "BackOff", ->(payload, _) { payload["message"] }],
         "probe.unhealthy" => ["Warning", "Unhealthy", ->(payload, _) { payload["message"] }],
+        "probe.warning" => ["Warning", "ProbeWarning", ->(payload, _) { payload["message"] }],
         "volume.failed" => ["Warning", "FailedMount", ->(payload, _) { payload["message"] }],
+        "volume.already_mounted" => ["Warning", "AlreadyMountedVolume", ->(payload, _) { payload["message"] }],
         "sandbox.failed" => ["Warning", "FailedCreatePodSandBox", ->(payload, _) { payload["message"] }],
         # kuberuntime startContainer: a container whose image could not be
         # had is Failed "Error: <reason>"; the pull's own error is the
@@ -236,12 +253,14 @@ module Rubernetes
         # hook did not reach its target, or why a container that exited was
         # still reported Running, could not be answered after the fact.
         log_entry(uid, entry)
+        return publish_dns_warning(uid, entry) if entry["type"] == "dns.warning"
+
         mapping = REASONS.fetch(entry["type"].to_s) { return nil }
         return nil if mapping.nil?
 
         type, reason, builder = mapping
-        record = @lifecycle.respond_to?(:record) ? @lifecycle.record(uid) : nil
-        pod = record.is_a?(Hash) ? (record[:pod] || record["pod"]) : nil
+        reason = entry["reason"] if entry["type"] == "pod.admission_failed" && !entry["reason"].to_s.empty?
+        pod = lifecycle_pod(uid)
         return nil unless pod.is_a?(Hash)
 
         message = builder.call(entry, pod).to_s
@@ -260,11 +279,39 @@ module Rubernetes
 
       LOGGED_FIELDS = %w[type state name reason exit_code exitCode message seconds error phase restart_count attempt].freeze
 
+      def publish_dns_warning(uid, entry)
+        reason = entry["reason"]
+        return unless %w[MissingClusterDNS DNSConfigForming].include?(reason)
+
+        message = entry["message"].to_s
+        return if message.empty?
+
+        reference = case entry["scope"]
+                    when "Node"
+                      return unless reason == "MissingClusterDNS" && !@node_name.to_s.empty?
+
+                      {"kind" => "Node", "apiVersion" => "v1", "name" => @node_name.to_s, "namespace" => ""}
+                    when "Pod"
+                      pod = lifecycle_pod(uid)
+                      return unless pod.is_a?(Hash)
+
+                      involved(pod)
+                    end
+        return unless reference
+
+        @recorder.record(involved_object: reference, type: "Warning", reason: reason, message: message,
+                         namespace: reference["namespace"])
+      end
+
+      def lifecycle_pod(uid)
+        record = @lifecycle.respond_to?(:record) ? @lifecycle.record(uid) : nil
+        record[:pod] || record["pod"] if record.is_a?(Hash)
+      end
+
       def log_entry(uid, entry)
         return unless @logger
 
-        record = @lifecycle.respond_to?(:record) ? @lifecycle.record(uid) : nil
-        pod = record.is_a?(Hash) ? (record[:pod] || record["pod"]) : nil
+        pod = lifecycle_pod(uid)
         metadata = pod.is_a?(Hash) ? (pod["metadata"] || {}) : {}
         fields = entry.select { |key, _| LOGGED_FIELDS.include?(key.to_s) }.transform_keys(&:to_sym)
         fields[:message] = fields[:message].to_s[0, 300] if fields.key?(:message)
