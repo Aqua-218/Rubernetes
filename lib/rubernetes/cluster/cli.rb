@@ -41,6 +41,14 @@ module Rubernetes
         command = arguments.shift
         return usage(parser, @stdout, 0) if options[:help]
         return usage(parser, @stderr, 64) unless COMMANDS.include?(command) && arguments.empty?
+        raise OptionParser::InvalidOption, "--nat64-prefix is only available for up" if options[:nat64_prefix] && command != "up"
+        raise OptionParser::InvalidOption, "--load-balancer-pool is only available for up" if options[:load_balancer_pool] && command != "up"
+        raise OptionParser::InvalidOption, "--allocate-node-cidrs is only available for up" if options[:allocate_node_cidrs] && command != "up"
+
+        if options[:default_routed_load_balancer]
+          raise OptionParser::InvalidOption, "--default-routed-load-balancer is only available for up" if command != "up"
+          raise OptionParser::InvalidOption, "--default-routed-load-balancer requires --load-balancer-pool" unless options[:load_balancer_pool]
+        end
 
         public_send(command, provisioner(options), options)
       rescue OptionParser::ParseError => error
@@ -132,7 +140,9 @@ module Rubernetes
         Provisioner.new(root: options[:root] || File.join(DEFAULT_STATE_DIR, options[:name]), name: options[:name],
                         controls: options[:controls], workers: options[:workers], ip_families: options[:ip_families],
                         identities: options[:identities], extensions: options[:extensions], storage: options[:storage],
-                        force: options[:force])
+                        force: options[:force], nat64_prefix: options[:nat64_prefix], load_balancer_pool: options[:load_balancer_pool],
+                        default_routed_load_balancer: options.fetch(:default_routed_load_balancer, false),
+                        allocate_node_cidrs: options.fetch(:allocate_node_cidrs, false))
       end
 
       def usage(parser, io, status)
@@ -148,7 +158,21 @@ module Rubernetes
           parser.on("--controls N", Integer, "up: control nodes, each an API server and a raft voter (default: 1)") { |value| options[:controls] = value }
           parser.on("--workers N", Integer, "up: worker nodes (default: 1)") { |value| options[:workers] = value }
           parser.on("--ha", "up: 3 control nodes and 3 workers") { options.merge!(controls: 3, workers: 3) }
-          parser.on("--ip-family FAMILY", IP_FAMILIES, "up: ipv4, ipv6 or dual (default: ipv4)") { |value| options[:ip_families] = value }
+          parser.on("--ip-family FAMILY", IP_FAMILIES.keys, "up: ipv4, ipv6 or dual (default: ipv4)") do |value|
+            options[:ip_families] = IP_FAMILIES.fetch(value)
+          end
+          parser.on("--allocate-node-cidrs", "up: publish each native worker's Pod subnets through NodeIPAM") do
+            options[:allocate_node_cidrs] = true
+          end
+          parser.on("--nat64-prefix CIDR", "up: enable DNS64 with the prefix of an existing NAT64 gateway") do |value|
+            options[:nat64_prefix] = value
+          end
+          parser.on("--load-balancer-pool CIDR", "up: allocate routed Service VIPs (repeat for more CIDRs)") do |value|
+            (options[:load_balancer_pool] ||= []) << value
+          end
+          parser.on("--default-routed-load-balancer", "up: also allocate routed VIPs for classless LoadBalancer Services") do
+            options[:default_routed_load_balancer] = true
+          end
           parser.on("--identities MODE", Provisioner::IDENTITY_MODES,
                     "up: admin, components or bootstrap (default: admin)") { |value| options[:identities] = value }
           parser.on("--extensions", "up: let the components load Extension objects (Ruby run inside them)") { options[:extensions] = true }
