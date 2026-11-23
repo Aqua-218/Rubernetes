@@ -20,7 +20,7 @@ module Rubernetes
       # kubelet_internal_checkpoint (upstream's layout; the checksum is our own
       # CRC32 of the data, and AllocResp holds the response as JSON).  A plugin
       # whose stream ends has its devices marked unhealthy; after
-      # endpointStopGracePeriod the resource is dropped.  Health goes to
+      # endpointStopGracePeriod the resource's capacity becomes zero. Health goes to
       # containerStatuses[].allocatedResourcesStatus (ResourceHealthStatus).
       class Manager
         class Error < StandardError; end
@@ -38,6 +38,7 @@ module Rubernetes
           @on_change = on_change
           @clock = clock
           @mutex = Mutex.new
+          @checkpoint_mutex = Mutex.new
           @endpoints = {}
           @endpoint_names = {}
           @devices = Hash.new { |hash, key| hash[key] = {} }
@@ -64,7 +65,8 @@ module Rubernetes
         def resource_names = @mutex.synchronize { (@endpoints.keys | @devices.keys).sort }
 
         # GetCapacity: [capacity, allocatable] as integer counts per resource;
-        # resources whose plugin stopped longer ago than the grace period go.
+        # resources whose plugin stopped longer ago than the grace period
+        # retain an empty inventory so the Node reports a managed zero.
         def capacity
           now = @clock.call
           dropped = false
@@ -73,7 +75,8 @@ module Rubernetes
               next unless endpoint.stopped_at && now - endpoint.stopped_at > STOP_GRACE_PERIOD
 
               @endpoints.delete(endpoint.name)
-              @devices.delete(endpoint.name)
+              @endpoint_names.delete(endpoint.name)
+              @devices[endpoint.name] = {}
               dropped = true
             end
             capacity = {}
@@ -111,6 +114,8 @@ module Rubernetes
             end
           when "devices"
             @mutex.synchronize do
+              return if from_replaced_endpoint?(event, resource)
+
               @devices[resource] = Array(event["devices"]).to_h do |device|
                 [device["ID"] || device["id"], {"health" => device["health"].to_s, "topology" => device["topology"]}]
               end
@@ -118,6 +123,8 @@ module Rubernetes
             persist
           when "disconnected"
             @mutex.synchronize do
+              return if from_replaced_endpoint?(event, resource)
+
               endpoint = @endpoints[resource]
               next unless endpoint
 
@@ -130,29 +137,17 @@ module Rubernetes
           @on_change&.call
         end
 
-        # Allocate at admission: every container of the Pod, init containers
-        # first (their devices go back to the pool for the app containers).
+        # Allocate at admission in startup order. An ordinary init container's
+        # devices can be reused, but a restartable init keeps its devices.
         # Raises Error with upstream's message when a request cannot be met.
         def allocate_pod(pod)
           uid = pod.dig("metadata", "uid").to_s
           reusable = Hash.new { |hash, key| hash[key] = Set.new }
           Array(pod.dig("spec", "initContainers")).each do |container|
-            allocate_container(uid, container, reusable)
-            next if container["restartPolicy"] == "Always"
-
-            device_requests(container).each_key do |resource|
-              reusable[resource].merge(Array(@mutex.synchronize do
-                @allocations[[uid, container["name"], resource]]
-              end&.fetch("devices", nil)))
-            end
+            allocate_pod_container(uid, container, reusable, releases_devices: container["restartPolicy"] != "Always")
           end
           Array(pod.dig("spec", "containers")).each do |container|
-            allocate_container(uid, container, reusable)
-            device_requests(container).each_key do |resource|
-              reusable[resource].subtract(Array(@mutex.synchronize do
-                @allocations[[uid, container["name"], resource]]
-              end&.fetch("devices", nil)))
-            end
+            allocate_pod_container(uid, container, reusable, releases_devices: false)
           end
           persist
           nil
@@ -221,6 +216,10 @@ module Rubernetes
 
         private
 
+        def from_replaced_endpoint?(event, resource)
+          event.key?("endpoint") && @endpoint_names[resource] != event["endpoint"]
+        end
+
         def device_requests(container)
           limits = container.dig("resources", "limits") || {}
           limits.each_with_object({}) do |(name, value), result|
@@ -228,6 +227,18 @@ module Rubernetes
 
             count = Integer(value.to_s, exception: false)
             result[name.to_s] = count if count&.positive?
+          end
+        end
+
+        def allocate_pod_container(uid, container, reusable, releases_devices:)
+          allocate_container(uid, container, reusable)
+          device_requests(container).each_key do |resource|
+            devices = @mutex.synchronize { @allocations[[uid, container["name"], resource]]&.fetch("devices") || [] }
+            if releases_devices
+              reusable[resource].merge(devices)
+            else
+              reusable[resource].subtract(devices)
+            end
           end
         end
 
@@ -317,23 +328,25 @@ module Rubernetes
         end
 
         def persist
-          data = @mutex.synchronize do
-            {"PodDeviceEntries" => @allocations.map do |(uid, container, resource), entry|
-              {"PodUID" => uid, "ContainerName" => container, "ResourceName" => resource, "DeviceIDs" => {"-1" => entry["devices"]},
-               "AllocResp" => Base64.strict_encode64(JSON.generate(entry["response"]))}
-            end,
-             "RegisteredDevices" => @devices.transform_values { |devices| devices.keys.sort }}
+          @checkpoint_mutex.synchronize do
+            data = @mutex.synchronize do
+              {"PodDeviceEntries" => @allocations.map do |(uid, container, resource), entry|
+                {"PodUID" => uid, "ContainerName" => container, "ResourceName" => resource, "DeviceIDs" => {"-1" => entry["devices"]},
+                 "AllocResp" => Base64.strict_encode64(JSON.generate(entry["response"]))}
+              end,
+               "RegisteredDevices" => @devices.transform_values { |devices| devices.keys.sort }}
+            end
+            FileUtils.mkdir_p(File.dirname(@checkpoint_path))
+            temporary = "#{@checkpoint_path}.tmp"
+            File.write(temporary, JSON.generate("Data" => data, "Checksum" => Zlib.crc32(JSON.generate(data))))
+            File.rename(temporary, @checkpoint_path)
           end
-          FileUtils.mkdir_p(File.dirname(@checkpoint_path))
-          temporary = "#{@checkpoint_path}.tmp"
-          File.write(temporary, JSON.generate("Data" => data, "Checksum" => Zlib.crc32(JSON.generate(data))))
-          File.rename(temporary, @checkpoint_path)
         rescue SystemCallError
           nil
         end
 
-        # Allocations come back; registered devices come back unhealthy until
-        # their plugin registers again (kubelet keeps them for the grace period).
+        # Restore allocations, but wait for ListAndWatch to announce devices
+        # again before advertising capacity after an agent restart.
         def restore
           return unless File.file?(@checkpoint_path)
 
@@ -351,8 +364,8 @@ module Rubernetes
             @allocations[[entry["PodUID"].to_s, entry["ContainerName"].to_s, entry["ResourceName"].to_s]] =
               {"devices" => devices, "response" => response}
           end
-          (data["RegisteredDevices"] || {}).each do |resource, ids|
-            @devices[resource] = Array(ids).to_h { |id| [id, {"health" => "Unhealthy", "topology" => nil}] }
+          (data["RegisteredDevices"] || {}).each_key do |resource|
+            @devices[resource] = {}
             @endpoints[resource] = Endpoint.new(name: resource, options: {}, stopped_at: @clock.call)
           end
         rescue JSON::ParserError, SystemCallError
