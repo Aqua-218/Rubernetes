@@ -1,0 +1,66 @@
+# The pinned Rook toolbox mounts Ceph's monitor endpoints and admin keyring.
+# https://github.com/rook/rook/blob/95a8e2a8b61cf7f8152213939f995c88a2e72ab6/deploy/examples/toolbox.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rook-ceph-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rook-ceph-tools
+  template:
+    metadata:
+      labels:
+        app: rook-ceph-tools
+    spec:
+      serviceAccountName: rook-ceph-default
+      containers:
+        - name: rook-ceph-tools
+          image: quay.io/ceph/ceph:v20.2.4
+          command:
+            - /bin/bash
+            - -eu
+            - -c
+            - |
+              umask 077
+              endpoints=$(sed -E 's/[a-z0-9_-]+=//g' /etc/rook/mon-endpoints)
+              printf '[global]\nmon_host = %s\n' "$endpoints" > /etc/ceph/ceph.conf
+              printf '[%s]\nkey = %s\n' "$ROOK_CEPH_USERNAME" "$(cat /var/lib/rook-ceph-mon/secret.keyring)" > /etc/ceph/keyring
+              exec sleep infinity
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 2016
+            runAsGroup: 2016
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: ROOK_CEPH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: rook-ceph-mon
+                  key: ceph-username
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ceph
+            - name: endpoints
+              mountPath: /etc/rook
+              readOnly: true
+            - name: admin-secret
+              mountPath: /var/lib/rook-ceph-mon
+              readOnly: true
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: endpoints
+          configMap:
+            name: rook-ceph-mon-endpoints
+            items:
+              - key: data
+                path: mon-endpoints
+        - name: admin-secret
+          secret:
+            secretName: rook-ceph-mon
+            items:
+              - key: ceph-secret
+                path: secret.keyring
