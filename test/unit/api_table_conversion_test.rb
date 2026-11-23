@@ -39,6 +39,34 @@ class APITableConversionTest < Minitest::Test
     assert_equal "PartialObjectMetadata", table["rows"].first.dig("object", "kind")
   end
 
+  def test_write_negotiates_before_storage_and_converts_the_successful_result
+    path = "/api/v1/namespaces/dev/configmaps"
+    object = {"metadata" => {"name" => "write-preview"}, "data" => {"value" => "original"}}
+
+    assert_equal 406, call("POST", path, body: object, accept: "text/plain").status
+    assert_equal 404, call("GET", "#{path}/write-preview").status
+    created = call("POST", path, body: object, accept: TABLE)
+
+    assert_equal 201, created.status
+    assert_equal "write-preview", created.body.dig("rows", 0, "cells", 0)
+    member = "#{path}/write-preview"
+    stored = call("GET", member).body
+    changed = stored.merge("data" => {"value" => "updated"})
+
+    assert_equal 406, call("PUT", member, body: changed, accept: "application/xml").status
+    assert_equal 406, call("DELETE", member, accept: "image/gif").status
+    assert_equal stored, call("GET", member).body
+    updated = call("PUT", member, body: changed, accept: "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1")
+
+    assert_equal "PartialObjectMetadata", updated.body["kind"]
+    refute updated.body.key?("data")
+    assert_equal "updated", call("GET", member).body.dig("data", "value")
+    deleted = call("DELETE", member, accept: TABLE)
+
+    assert_equal 200, deleted.status
+    assert_equal "Status", deleted.body["kind"]
+  end
+
   def test_include_object_none_and_object
     none = call("GET", "/api/v1/namespaces/dev/configmaps/one?includeObject=None", accept: TABLE).body
 
@@ -46,6 +74,17 @@ class APITableConversionTest < Minitest::Test
     object = call("GET", "/api/v1/namespaces/dev/configmaps/one?includeObject=Object", accept: TABLE).body
 
     assert_equal "ConfigMap", object["rows"].first.dig("object", "kind")
+  end
+
+  def test_namespace_finalize_rejects_an_unsupported_media_range_before_updating
+    path = "/api/v1/namespaces/dev"
+    namespace = call("GET", path).body
+    request_body = namespace.merge("spec" => {"finalizers" => []})
+    response = call("PUT", "#{path}/finalize", body: request_body, accept: "application/*")
+
+    assert_equal 406, response.status
+    assert_match(%r{Available representations: application/json}, response.body.fetch("message"))
+    assert_equal namespace, call("GET", path).body
   end
 
   def test_an_unknown_include_object_is_a_bad_request
@@ -93,6 +132,11 @@ class APITableConversionTest < Minitest::Test
   end
 
   def test_partial_object_metadata_kind_must_match_list_or_object
+    streamed = call("GET", "/api/v1/watch/namespaces/dev/configmaps?timeoutSeconds=0",
+                    accept: "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io")
+
+    assert_equal 200, streamed.status
+    assert_empty streamed.body.to_a
     list_as_object = call("GET", "/api/v1/namespaces/dev/configmaps",
                           accept: "application/json;as=PartialObjectMetadata;v=v1;g=meta.k8s.io")
 
