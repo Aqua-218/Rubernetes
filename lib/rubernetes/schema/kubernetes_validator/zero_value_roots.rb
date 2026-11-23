@@ -73,13 +73,8 @@ module Rubernetes
           [%w[spec capacity], :unsupported, "supported values: \"storage\""]
         ],
         "Pod" => [[%w[spec containers], :required, ""]],
-        "PersistentVolumeClaim" => [
-          [%w[spec accessModes], :required, "at least 1 access mode is required"],
-          [%w[spec resources [storage]], :required, ""]
-        ],
         "PriorityLevelConfiguration" => [[%w[spec type], :unsupported, "supported values: \"Exempt\", \"Limited\""]],
         "FlowSchema" => [[%w[spec priorityLevelConfiguration name], :required, "must reference a priority level"]],
-        "IPAddress" => [[%w[spec parentRef], :required, ""]],
         "Ingress" => [[%w[spec], :invalid, "either `defaultBackend` or `rules` must be specified"]],
         "IngressClass" => [[%w[spec controller], :required, ""]],
         "ServiceCIDR" => [[%w[spec cidrs], :required, "at least one CIDR required"]],
@@ -120,12 +115,6 @@ module Rubernetes
         when "ResourceSlice" then resource_slice_missing_errors
         when "PodTemplate"
           root.key?("template") ? [] : [issue(%w[template spec containers], :required, "")]
-        when "EndpointSlice"
-          # A present empty value is handled by endpoint_slice_errors; this
-          # branch covers an actually omitted root field only.
-          root.key?("addressType") ? [] : [issue(%w[addressType], :required, "")]
-        when "RuntimeClass"
-          blank?(fetch(root, "handler")) ? [issue(%w[handler], :required, "")] : []
         when "ClusterRoleBinding", "RoleBinding" then role_ref_errors(root, kind)
         when "VolumeAttributesClass" then volume_attributes_class_errors(root)
         else []
