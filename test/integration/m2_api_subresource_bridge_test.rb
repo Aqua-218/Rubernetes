@@ -268,6 +268,54 @@ class M2APISubresourceBridgeTest < Minitest::Test
     assert_equal 403, denied_response.status
   end
 
+  def test_split_log_streams_proxy_only_the_requested_stream_when_both_gates_are_enabled
+    manifest = {
+      "apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "split-logs"},
+      "spec" => {"nodeName" => "node-a", "containers" => [{"name" => "app", "image" => "x"}]}
+    }
+    pods_path = "/api/v1/namespaces/default/pods"
+
+    assert_equal "201", request("POST", pods_path, body: JSON.generate(manifest), content_type: "application/json").code
+
+    logs_path = "#{pods_path}/split-logs/log"
+    forbidden = request("GET", "#{logs_path}?stream=All")
+
+    assert_equal "422", forbidden.code
+    assert_equal "FieldValueForbidden", JSON.parse(forbidden.body).dig("details", "causes", 0, "reason")
+
+    log_service = Rubernetes::Node::LogService.new(runtime: @runtime, trusted: true)
+    lifecycle = Struct.new(:records).new({"uid" => {pod: manifest, containers: [{id: @container.id, name: "app", state: "running"}]}})
+    lifecycle.records["uid"][:pod]["metadata"]["namespace"] = "default"
+    disabled_kubelet = Rubernetes::Node::StreamingServer.new(log_service: log_service, lifecycle: lifecycle)
+    direct_log = Rubernetes::API::Request.new(path: "/containerLogs/default/split-logs/app?stream=Stdout")
+
+    assert_equal 400, disabled_kubelet.call(direct_log).first
+
+    kubelet = Rubernetes::Node::StreamingServer.new(log_service: log_service, lifecycle: lifecycle, host: "127.0.0.1", port: 0,
+                                                    split_log_streams: true).start
+    resolver_class = Rubernetes::API::NodeEndpointResolver
+    endpoint = resolver_class::Endpoint.new("http://127.0.0.1:#{kubelet.port}")
+    scoped_endpoint = resolver_class::PodScopedEndpoint.new(endpoint, manifest)
+    api = Rubernetes::API::Server.new(store: @api.store, node_resolver: {"node-a" => scoped_endpoint}, trusted_subresources: true,
+                                      identity_resolver: ->(_request) { "stream-user" },
+                                      feature_gates: {"PodLogsQuerySplitStreams" => true})
+
+    {"" => "native-log\xFF\nnative-error\xFE\n".b,
+     "?stream=Stdout" => "native-log\xFF\n".b,
+     "?stream=Stderr" => "native-error\xFE\n".b,
+     "?stream=All&tailLines=1" => "native-error\xFE\n".b}.each do |suffix, expected|
+      response = api.call(method: "GET", path: "#{logs_path}#{suffix}")
+
+      assert_equal 200, response.status, response.body.inspect
+      assert_equal expected, response.body.to_a.join.b
+    end
+    %w[?stream=stdout ?stream=Stdout&tailLines=1].each do |suffix|
+      assert_equal 422, api.call(method: "GET", path: "#{logs_path}#{suffix}").status
+    end
+  ensure
+    kubelet&.stop
+  end
+
   def test_exec_websocket_upgrade_preserves_binary_duplex_framing
     manifest = {
       "apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "bridge-pod"},
