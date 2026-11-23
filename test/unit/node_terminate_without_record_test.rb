@@ -13,9 +13,9 @@ require "rubernetes/node"
 class NodeTerminateWithoutRecordTest < Minitest::Test
   Node = Rubernetes::Node
 
-  def lifecycle(deleted)
+  def lifecycle(deleted, reporter: nil)
     Node::Lifecycle.new(
-      runtime: Object.new,
+      runtime: Object.new, reporter: reporter,
       pod_deleter: ->(namespace:, name:, uid: nil) { deleted << [namespace, name, uid] }
     )
   end
@@ -34,6 +34,15 @@ class NodeTerminateWithoutRecordTest < Minitest::Test
     lifecycle(deleted).terminate(pod)
 
     assert_equal([%w[ns never-ran pod-uid]], deleted)
+  end
+
+  def test_terminal_status_precedes_the_delete_of_an_unstarted_pod
+    reports = []
+    node = lifecycle(reports, reporter: ->(_pod, status) { reports << status.values_at("phase", "reason") })
+
+    node.terminate(pod)
+
+    assert_equal [["Failed", nil], %w[ns never-ran pod-uid]], reports
   end
 
   # Only a Pod the API server actually marked for deletion: an unknown Pod
