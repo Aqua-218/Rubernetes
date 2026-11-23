@@ -16,19 +16,18 @@ module Rubernetes
                           "alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')"
       DNS1035_LABEL_MSG = "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an " \
                           "alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')"
-      QUALIFIED_NAME_PART_MSG = "name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character " \
-                                "(e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
-      QUALIFIED_NAME_FULL_MSG = "a qualified name must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric " \
-                                "character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is " \
-                                "'([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]') with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyName')"
+      QUALIFIED_NAME_FORMAT_MSG = "must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character " \
+                                  "(e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
+      QUALIFIED_NAME_PART_MSG = "name part #{QUALIFIED_NAME_FORMAT_MSG}".freeze
       LABEL_VALUE_MSG = "a valid label must be an empty string or consist of alphanumeric characters, '-', '_' or '.', and must start and end with an " \
                         "alphanumeric character (e.g. 'MyValue',  or 'my_value',  or '12345', regex used for validation is " \
                         "'(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?')"
 
-      def dns1123_subdomain_messages(value)
+      def dns1123_subdomain_messages(value, byte_length: false)
         value = value.to_s
         messages = []
-        messages << "must be no more than 253 characters" if value.length > 253
+        length = byte_length ? value.bytesize : value.length
+        messages << "must be no more than 253 #{byte_length ? "bytes" : "characters"}" if length > 253
         messages << DNS1123_SUBDOMAIN_MSG unless value.match?(/\A[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\z/)
         messages
       end
@@ -49,7 +48,7 @@ module Rubernetes
         messages
       end
 
-      def qualified_name_messages(value)
+      def qualified_name_messages(value, label_key: false)
         value = value.to_s
         parts = value.empty? ? [""] : value.split("/", -1)
         messages = []
@@ -61,24 +60,27 @@ module Rubernetes
           if prefix.empty?
             messages << "prefix part must be non-empty"
           else
-            messages.concat(dns1123_subdomain_messages(prefix).map { |message| "prefix part #{message}" })
+            messages.concat(dns1123_subdomain_messages(prefix, byte_length: label_key).map { |message| "prefix part #{message}" })
           end
         else
-          return [QUALIFIED_NAME_FULL_MSG]
+          format = label_key ? "a valid label key" : "a qualified name"
+          return ["#{format} #{QUALIFIED_NAME_FORMAT_MSG} with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyName')"]
         end
+        length = label_key ? name.bytesize : name.length
         if name.empty?
           messages << "name part must be non-empty"
-        elsif name.length > 63
-          messages << "name part must be no more than 63 characters"
+        elsif length > 63
+          messages << "name part must be no more than 63 #{label_key ? "bytes" : "characters"}"
         end
         messages << QUALIFIED_NAME_PART_MSG unless name.match?(/\A([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z/)
         messages
       end
 
-      def label_value_messages(value)
+      def label_value_messages(value, byte_length: false)
         value = value.to_s
         messages = []
-        messages << "must be no more than 63 characters" if value.length > 63
+        length = byte_length ? value.bytesize : value.length
+        messages << "must be no more than 63 #{byte_length ? "bytes" : "characters"}" if length > 63
         messages << LABEL_VALUE_MSG unless value.match?(/\A(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?\z/)
         messages
       end
@@ -97,7 +99,7 @@ module Rubernetes
       # validation.IsValidPortName.
       def port_name_messages(port)
         messages = []
-        messages << "must be no more than 15 characters" if port.length > 15
+        messages << "must be no more than 15 characters" if port.bytesize > 15
         messages << "must contain only alpha-numeric characters (a-z, 0-9), and hyphens (-)" unless port.match?(/\A[-a-z0-9]+\z/)
         messages << "must contain at least one letter (a-z)" unless port.match?(/[a-z]/)
         messages << "must not contain consecutive hyphens" if port.include?("--")
@@ -114,27 +116,31 @@ module Rubernetes
         [issue(path, :invalid, QUALIFIED_NAME_PART_MSG)]
       end
 
-      def label_selector_errors(selector, path)
+      def label_selector_errors(selector, path, allow_invalid_expression_values: false, wire_values: false)
         return [] unless selector.is_a?(Hash)
 
         issues = []
         labels = fetch(selector, "matchLabels")
         if labels.is_a?(Hash)
           labels.each do |key, value|
-            issues.concat(invalid_messages(path + ["matchLabels"], qualified_name_messages(key)))
-            issues.concat(invalid_messages(path + ["matchLabels"], label_value_messages(value)))
+            qualified_name_messages(key, label_key: wire_values).each do |message|
+              issues << label_selector_value_issue(path + ["matchLabels"], key, message, wire_values)
+            end
+            label_value_messages(value, byte_length: wire_values).each do |message|
+              issues << label_selector_value_issue(path + ["matchLabels"], value, message, wire_values)
+            end
           end
         end
         expressions = fetch(selector, "matchExpressions")
         return issues unless expressions.is_a?(Array)
 
         expressions.each_with_index do |expression, index|
-          next unless expression.is_a?(Hash)
+          next unless expression.is_a?(Hash) || (wire_values && expression.nil?)
 
           base = path + ["matchExpressions", index.to_s]
-          issues.concat(invalid_messages(base + ["key"], qualified_name_messages(fetch(expression, "key"))))
           values = Array(fetch(expression, "values"))
-          case fetch(expression, "operator").to_s
+          operator = fetch(expression, "operator").to_s
+          case operator
           when "In", "NotIn"
             issues << issue(base + ["values"], :required, "must be specified when `operator` is 'In' or 'NotIn'") if values.empty?
           when "Exists", "DoesNotExist"
@@ -143,13 +149,32 @@ module Rubernetes
                               "may not be specified when `operator` is 'Exists' or 'DoesNotExist'")
             end
           else
-            issues << issue(base + ["operator"], :invalid, "not a valid selector operator")
+            value = wire_values ? go_value(InternalPodSpec.go_string(operator)) : operator
+            issues << valued_issue(base + ["operator"], value, "not a valid selector operator")
           end
+          key = fetch(expression, "key").to_s
+          qualified_name_messages(key, label_key: wire_values).each do |message|
+            issues << label_selector_value_issue(base + ["key"], key, message, wire_values)
+          end
+          next if allow_invalid_expression_values
+
           values.each_with_index do |value, value_index|
-            issues.concat(invalid_messages(base + ["values", value_index.to_s], label_value_messages(value)))
+            values_path = base + ["values", value_index.to_s]
+            messages = label_value_messages(value, byte_length: wire_values)
+            if wire_values
+              issues.concat(messages.map { |message| label_selector_value_issue(values_path, value, message, true) })
+            else
+              issues.concat(invalid_messages(values_path, messages))
+            end
           end
         end
         issues
+      end
+
+      def label_selector_value_issue(path, value, message, wire_values)
+        value = value.to_s
+        value = go_value(job_status_index_quote(value)) if wire_values
+        valued_issue(path, value, message)
       end
     end
   end
