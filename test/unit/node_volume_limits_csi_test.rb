@@ -36,7 +36,8 @@ class NodeVolumeLimitsCSITest < Minitest::Test
 
   def node(pods = [])
     S::Node.new({"apiVersion" => "v1", "kind" => "Node", "metadata" => {"name" => "node-a"},
-                 "status" => {"allocatable" => {"cpu" => "4", "memory" => "4Gi", "pods" => "110"}}}, pods: pods)
+                 "status" => {"allocatable" => {"cpu" => "4", "memory" => "4Gi", "pods" => "110"},
+                              "conditions" => [{"type" => "Ready", "status" => "True"}]}}, pods: pods)
   end
 
   def filter(new_pod, existing: [], limit: 2, claims: [], volumes: [], classes: [], attachments: [], csi_nodes: nil, drivers: [],
@@ -144,6 +145,29 @@ class NodeVolumeLimitsCSITest < Minitest::Test
     assert_equal "ebs.csi.aws.com CSI driver is not installed on the node", result.reason
     assert_equal true, filter(pod("new", [claim_volume("c0")]), claims: claims(1), volumes: volumes(1), drivers: [], csi_nodes: other_node,
                                                                 plugin: plugin)
+  end
+
+  def test_scheduler_feature_gate_selects_the_driver_presence_filter
+    claim = claims(1).fetch(0)
+    claim.fetch("metadata")["annotations"] = {"pv.kubernetes.io/bind-completed" => "yes"}
+    storage = {
+      "persistentVolumeClaims" => [claim], "persistentVolumes" => volumes(1),
+      "csiNodes" => [csi_node(5, driver: "other.csi")],
+      "csiDrivers" => [{"metadata" => {"name" => DRIVER}, "spec" => {"preventPodSchedulingIfMissing" => true}}]
+    }
+    workload = pod("new", [claim_volume("c0")])
+    disabled = S::Framework.new(feature_gates: {"VolumeLimitScaling" => false}, preemption: false)
+    enabled = S::Framework.new(feature_gates: {"VolumeLimitScaling" => true}, preemption: false)
+
+    assert_predicate disabled.schedule(workload, [node], volume_data: storage), :scheduled?
+    result = enabled.schedule(workload, [node], volume_data: storage)
+
+    assert_predicate result, :unschedulable?
+    assert_match(/#{Regexp.escape(DRIVER)} CSI driver is not installed on the node/o, result.reason)
+
+    storage = storage.merge("csiNodes" => [csi_node(5)])
+
+    assert_predicate enabled.schedule(workload, [node], volume_data: storage), :scheduled?
   end
 
   def test_pods_without_csi_capable_volumes_skip
