@@ -53,7 +53,7 @@ module Rubernetes
         # first failure ends the sweep, so nothing a later step depends on is
         # released under it, and the record keeps what is still owned.
         CLEANUP_STEPS = %i[
-          cleanup_containers cleanup_dynamic_resources cleanup_network cleanup_sandbox cleanup_volume release_images
+          cleanup_containers cleanup_dynamic_resources cleanup_network cleanup_sandbox cleanup_volume release_images cleanup_pod_logs
         ].freeze
 
         def cleanup_resources(record)
@@ -115,24 +115,23 @@ module Rubernetes
           return false if record[:cleanup_completed][key]
 
           event(record, "network.delete")
-          sandbox = begin
-            network_sandbox_context(record)
-          rescue SandboxGone => error
-            # The sandbox (and its namespace) no longer exists: tear down
-            # with the stored descriptor so IPAM and bridge state are
-            # released, and accept the result either way -- a Pod whose
-            # namespace is gone must not stay CleanupPending for ever
-            # (the agent refused to come up over one such Pod, 2026-09-30).
-            event(record, "network.delete.sandbox_gone", message: error.message)
-            record[:sandbox_context] || :gone
-          end
-          invoke(@network, :delete, sandbox) unless sandbox == :gone
+          delete_sandbox_network(record)
           record[:cleanup_completed][key] = true
           clear_cleanup_error(record, key)
           false
         rescue StandardError => error
           record_cleanup_error(record, key, "network cleanup failed: #{Helpers.failure_message(error)}")
           true
+        end
+
+        def delete_sandbox_network(record)
+          sandbox = network_sandbox_context(record)
+          invoke(@network, :delete, sandbox)
+        rescue SandboxGone => error
+          # A persisted holder PID and FD cannot be used after recovery.
+          # The network ledger can still release the sandbox's host resources.
+          event(record, "network.delete.sandbox_gone", message: error.message)
+          invoke(@network, :delete, record.fetch(:sandbox_id), namespace_gone: true)
         end
 
         def cleanup_sandbox(record)
@@ -163,6 +162,7 @@ module Rubernetes
 
         def cleanup_volume(record)
           return false if @volume.nil? || record[:volume].nil? || record[:cleanup_completed]["volume"]
+          return false if preserve_sandbox_volume?(record)
 
           event(record, "volume.release")
           if @pod_volumes && record[:volume].is_a?(Hash)
@@ -175,6 +175,17 @@ module Rubernetes
           false
         rescue StandardError => error
           record_cleanup_error(record, "volume", "volume cleanup failed: #{Helpers.failure_message(error)}")
+          true
+        end
+
+        def cleanup_pod_logs(record)
+          return false unless record[:source_gone] && runtime_supports?(:remove_pod_logs)
+
+          @runtime.remove_pod_logs(Helpers.string_keys(record[:pod]))
+          clear_cleanup_error(record, "pod_logs")
+          false
+        rescue StandardError => error
+          record_cleanup_error(record, "pod_logs", "Pod log cleanup failed: #{Helpers.failure_message(error)}")
           true
         end
 
@@ -191,8 +202,9 @@ module Rubernetes
           failed = false
           return if @image_resolver.nil?
 
+          volume_images = record[:volume_image_handles] unless preserve_sandbox_volume?(record)
           handles = Array(record[:images]).map { |image| ["image", image] } +
-                    Array(record[:volume_image_handles]).map { |image| ["volume-image", image] }
+                    Array(volume_images).map { |image| ["volume-image", image] }
           handles.each_with_index do |(prefix, image), index|
             key = "#{prefix}:#{index}"
             next if record[:cleanup_completed][key]
