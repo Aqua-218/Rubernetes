@@ -209,9 +209,9 @@ module M4ProxyKernelProbe
       kernel_waiver = ENV.fetch("RUBERNETES_M4_KERNEL_WAIVER_REASON", nil)
       ebpf_adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new(
         interface: [TOPOLOGY.dig("node_interfaces", "client"), TOPOLOGY.dig("node_interfaces", "backend")],
-        complete_semantics: true, kernel_waiver: kernel_waiver
+        complete_semantics: true, kernel_waiver: kernel_waiver, fragment_policy: :reject
       )
-      nft_adapter = Rubernetes::Proxy::NftablesNetlinkAdapter.new(table_name: "rubernetes")
+      nft_adapter = Rubernetes::Proxy::NftablesNetlinkAdapter.new(table_name: "rubernetes", fragment_policy: :reject)
       ebpf_backend = Rubernetes::Proxy::EBPFBackend.new(syscall_adapter: ebpf_adapter)
       nft_backend = Rubernetes::Proxy::NftablesBackend.new(netlink_adapter: nft_adapter)
 
