@@ -16,10 +16,10 @@ module Rubernetes
           object = normalize_object(request, route)
           generate_name = object["metadata"]["generateName"].to_s
           ensure_nameable!(object, route)
-          object["metadata"]["namespace"] = namespace unless %i[cluster all].include?(namespace)
           ensure_namespace_exists!(route.resource, namespace)
           unknown_mode = enforce_field_validation(route.resource, object, request,
                                                   duplicates: request_duplicate_fields(request))
+          generate = metadata_value(object, "name").to_s.empty?
           attempts = 0
           last_generated_name = nil
           loop do
@@ -27,29 +27,33 @@ module Rubernetes
             candidate = deep_copy(object)
             candidate["metadata"]["name"] = generated_name(generate_name) if candidate["metadata"]["name"].to_s.empty?
             last_generated_name = metadata_value(candidate, "name")
-            candidate = admitted_for_create(request, route, candidate, namespace, unknown_mode)
-            # ?dryRun=All runs admission and validation and returns the object
-            # that WOULD have been stored, without storing it (upstream's
-            # dryRun support in the generic registry).  Not honouring it made
-            # "[sig-cli] Kubectl client Kubectl server-side dry-run" write the
-            # object for real.
-            return json_response(dry_run_view(candidate, namespace), status: 201) if dry_run?(request)
-
             begin
-              created = @store.create(resource: route.resource, namespace: namespace, object: candidate)
-              after_commit(route.resource, created)
-              return json_response(created, status: 201)
+              with_registry_allocations(route) do |allocation|
+                candidate = admitted_for_create(request, route, candidate, namespace, unknown_mode, allocation: allocation)
+                if dry_run?(request)
+                  preview = dry_run_create(route.resource, namespace, candidate)
+                  return json_response(preview, status: 201)
+                end
+                created = @store.create(resource: route.resource, namespace: namespace, object: candidate,
+                                        **(allocation&.write_preconditions || {}))
+                allocation&.commit!
+                after_commit(route.resource, created)
+                return json_response(created, status: 201)
+              end
             rescue MemoryStore::AlreadyExists
-              raise unless !generate_name.empty? && attempts < MAX_GENERATE_NAME_ATTEMPTS
+              raise unless generate && attempts < MAX_GENERATE_NAME_ATTEMPTS
             end
-            # Keep the caller's empty name so the next attempt receives a fresh
-            # suffix rather than retrying the same colliding name.
-            object = deep_copy(object)
           end
         rescue MemoryStore::AlreadyExists
-          name = last_generated_name || metadata_value(object, "name")
-          raise Status::AlreadyExists.new("#{route.resource.resource} #{name.inspect} already exists",
-                                          details: resource_details(route, name: name))
+          raise existing_resource(route, last_generated_name)
+        end
+
+        def dry_run_create(resource, namespace, candidate)
+          @store.get(resource: resource, namespace: namespace, name: metadata_value(candidate, "name"))
+          raise MemoryStore::AlreadyExists
+        rescue MemoryStore::NotFound
+          candidate = Schema::JobSelector.decode_labels(candidate) if Schema::JobSelector.resource?(resource)
+          dry_run_view(candidate, namespace)
         end
 
         def ensure_nameable!(object, route)
@@ -61,37 +65,59 @@ module Rubernetes
             "message" => "Required value: name or generateName is required",
             "field" => "metadata.name"
           }
-          raise Status::Invalid.new(
-            "#{route.resource.kind} \"\" is invalid: metadata.name: #{cause.fetch("message")}",
-            details: {"kind" => route.resource.kind, "causes" => [cause]}
-          )
+          group = route.resource.group
+          kind = [route.resource.kind, group].reject { |part| part.to_s.empty? }.join(".")
+          details = {"kind" => route.resource.kind, "causes" => [cause]}
+          details["group"] = group unless group.to_s.empty?
+          raise Status::Invalid.new("#{kind} \"\" is invalid: metadata.name: #{cause.fetch("message")}", details: details)
         end
 
-        # The named candidate as it will be stored: defaulted, checked against
-        # its schema, passed through mutating admission, validated, passed
-        # through validating admission, and only then given the metadata the
-        # server owns and the registry's PrepareForCreate.
-        def admitted_for_create(request, route, candidate, namespace, unknown_mode)
+        # Defaulting and field ownership follow decoding. Mutating admission
+        # can repair a semantically invalid object before registry validation.
+        def admitted_for_create(request, route, candidate, namespace, unknown_mode, allocation:)
+          inherited_labels = Schema::JobSelector.inherited_labels(candidate) if Schema::JobSelector.resource?(route.resource)
           # SetDefaults_* runs at decode time upstream, i.e. before the schema
           # validator requires a ReplicationController selector.
           candidate = apply_pre_validation_defaults(route.resource, candidate)
-          candidate = apply_schema(route.resource, candidate, operation: :create,
-                                                              unknown_fields: unknown_mode)
+          candidate = default_schema_for_write(route.resource, candidate, unknown_fields: unknown_mode)
           candidate = before_mutation = with_managed_fields(candidate, record_managed_update(request, route, nil, candidate))
           candidate = admit_mutating(request, route, "CREATE", candidate, nil, namespace)
           candidate = redefault_after_mutation(route.resource, candidate, before_mutation, unknown_fields: unknown_mode)
+          finish_admitted_create(request, route, candidate, namespace, allocation: allocation, inherited_job_labels: inherited_labels)
+        end
+
+        def finish_admitted_create(request, route, candidate, namespace, allocation:, inherited_job_labels:)
+          candidate = clear_status_on_create(route.resource, candidate)
+          job = Schema::JobSelector.resource?(route.resource)
+          if job
+            candidate = prepare_created_metadata(candidate, resource: route.resource)
+            Schema::JobSelector.generate!(candidate, inherited_labels: inherited_job_labels)
+          end
+          candidate = validate_schema(route.resource, candidate, operation: :create)
+          candidate = drop_disabled_pod_fields(route.resource, candidate)
           merge_label_keys!(candidate) if pod_resource?(route.resource)
           candidate = inject_csr_requester(request, route.resource, candidate)
           validate_object!(route.resource, candidate)
+          candidate = prepare_created_metadata(candidate, resource: route.resource) unless job
+          authorize_storage_create!(request, route, metadata_value(candidate, "name"))
           admit_validating(request, route, "CREATE", candidate, nil, namespace)
-          candidate = prepare_created_metadata(candidate, resource: route.resource)
-          candidate = prepare_registry_create(route.resource, candidate)
-          # Job selectors are generated from the apiserver-assigned UID. The
-          # first schema pass necessarily precedes metadata allocation, so run
-          # the idempotent defaulting pass once more for Job roots after the
-          # UID is available.
-          candidate = apply_schema(route.resource, candidate, operation: :create) if route.resource.kind.to_s == "Job"
+          candidate = prepare_registry_create(route.resource, candidate, dry_run: dry_run?(request), allocation: allocation)
           deep_copy(candidate)
+        end
+
+        # An update or apply that inserts an object needs create permission as
+        # well. A named custom-resource POST can likewise create the body name.
+        def authorize_storage_create!(request, route, name)
+          authorizer = @security&.authorizer
+          return unless authorizer
+          return if request.method == "POST" && (!route.name || route.name == name)
+
+          attributes = request.attributes.with(verb: "create", name: name)
+          decision = authorizer.authorize(attributes)
+          return if decision.allowed?
+
+          forbidden = Security::Pipeline::Forbidden.new(decision.reason || "forbidden", decision: decision, user: attributes.user, attributes: attributes)
+          raise forbidden_status(forbidden, request, route)
         end
 
         # NamespaceLifecycle admission: a namespaced object cannot be created in
@@ -117,6 +143,8 @@ module Rubernetes
                                     "field" => "metadata.namespace"}]}
           )
         rescue MemoryStore::NotFound
+          return if admission_chain&.names&.include?("NamespaceAutoProvision")
+
           raise Status::NotFound.new("namespaces #{namespace.to_s.inspect} not found",
                                      details: {"name" => namespace.to_s, "kind" => "namespaces"})
         end
@@ -127,9 +155,7 @@ module Rubernetes
           @namespaces_resource = @registry.find_gvr(group: "", version: "v1", resource: "namespaces")
         end
 
-        # Pod strategy PrepareForCreate mutatePodAffinity /
-        # mutateTopologySpreadConstraints (MatchLabelKeysInPodAffinity,
-        # MatchLabelKeysInPodTopologySpreadSelectorMerge): each matchLabelKeys
+        # Pod strategy PrepareForCreate mutatePodAffinity: each matchLabelKeys
         # key the Pod carries becomes `key In (value)` in the term's selector,
         # each mismatchLabelKeys key `key NotIn (value)`.  A nil selector
         # matches nothing and is left alone.
@@ -165,11 +191,6 @@ module Rubernetes
                 merge.call(term, term["mismatchLabelKeys"], "NotIn")
               end
             end
-          end
-          Array(spec["topologySpreadConstraints"]).each do |constraint|
-            next unless constraint.is_a?(Hash) && constraint["labelSelector"].is_a?(Hash) && !Array(constraint["matchLabelKeys"]).empty?
-
-            merge.call(constraint, constraint["matchLabelKeys"], "In")
           end
           pod
         end
@@ -231,8 +252,13 @@ module Rubernetes
         ].freeze
 
         def clear_status_on_create(resource, object)
-          return object unless object.is_a?(Hash) && object.key?("status")
-          return object if resource.custom?
+          return object unless object.is_a?(Hash)
+          if !resource.custom? && Schema::KubernetesValidator.pdb_v1?(resource)
+            return object.merge("status" => Schema::KubernetesValidator::PDB_ZERO_STATUS.dup)
+          end
+          return object unless object.key?("status")
+          return resource.subresource("status") ? object.except("status") : object if resource.custom?
+          return object.except("status") if resource_pool_status_request_resource?(resource)
           return object unless STATUS_CLEARED_ON_CREATE.include?([resource.group.to_s, resource.resource.to_s])
 
           result = deep_copy(object)
@@ -240,15 +266,22 @@ module Rubernetes
           result
         end
 
-        # Registry strategy PrepareForCreate hooks, by kind.  For the dynamic
-        # API objects: apiextensions clears status and records the storage
-        # version, defaults the conversion strategy; kube-aggregator clears
-        # status and marks local APIServices available immediately.
-        def prepare_registry_create(resource, object)
+        def with_registry_allocations(route, &)
+          return yield(nil) unless route.subresource.nil? && @service_allocator.instance_of?(ServiceAllocator) && @service_allocator.service?(route.resource)
+
+          @service_allocator.transaction(&)
+        end
+
+        # Registry strategy PrepareForCreate hooks by kind. apiextensions clears
+        # status, records the storage version, and defaults the conversion strategy.
+        # kube-aggregator clears status and marks local APIServices available.
+        def prepare_registry_create(resource, object, dry_run:, allocation:)
           object = clear_status_on_create(resource, object)
           object = drop_stateful_set_disabled_fields(resource, object, nil)
           if crd_resource?(resource) then prepare_crd_create(object)
-          elsif @service_allocator && @service_allocator.service?(resource) then @service_allocator.prepare_create(object)
+          elsif @service_allocator && @service_allocator.service?(resource)
+            options = allocation ? {allocation: allocation} : {}
+            @service_allocator.prepare_create(object, dry_run: dry_run, **options)
           elsif replication_controller_resource?(resource) then default_replication_controller(object)
           elsif persistent_volume_resource?(resource) then prepare_persistent_volume_create(object)
           elsif persistent_volume_claim_resource?(resource) then prepare_persistent_volume_claim_create(object)
@@ -393,7 +426,7 @@ module Rubernetes
           result = deep_copy(object)
           result["metadata"] ||= {}
           result["metadata"]["uid"] = @uid_generator.call.to_s
-          result["metadata"]["creationTimestamp"] = @clock.call.utc.iso8601(6)
+          result["metadata"]["creationTimestamp"] = @clock.call.utc.iso8601(resource&.custom? ? 0 : 6)
           # Server-owned, 1 on create for the kinds whose strategy tracks it;
           # the rest never carry one (see GENERATION_TRACKED_KINDS).
           if tracks_generation?(result, resource)
@@ -401,7 +434,7 @@ module Rubernetes
           else
             result["metadata"].delete("generation")
           end
-          result
+          apply_daemonset_template_generation(resource, result)
         end
 
         def generated_name(prefix)
