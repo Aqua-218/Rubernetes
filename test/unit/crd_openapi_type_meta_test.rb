@@ -68,6 +68,19 @@ class CRDOpenAPITypeMetaTest < Minitest::Test
                  object_properties.fetch("metadata").fetch("description"))
   end
 
+  def test_collection_paths_share_common_parameters
+    paths = document.fetch("paths")
+    all_namespaces = paths.fetch("/apis/example.com/v1/foos")
+    namespaced = paths.fetch("/apis/example.com/v1/namespaces/{namespace}/foos")
+
+    refute all_namespaces.fetch("get").key?("parameters")
+    params = all_namespaces.fetch("parameters").map { |parameter| parameter.fetch("name") }
+
+    assert_includes params, "watch"
+    assert_includes params, "pretty"
+    assert_equal(%w[namespace pretty], namespaced.fetch("parameters").map { |parameter| parameter.fetch("name") })
+  end
+
   # The CRD's own descriptions are what the rest of the output is matched on,
   # so they have to survive alongside the injected ones.
   def test_the_crds_own_descriptions_survive
@@ -78,8 +91,7 @@ class CRDOpenAPITypeMetaTest < Minitest::Test
     assert_equal("Specification of Foo", object_properties.fetch("spec").fetch("description"))
   end
 
-  # A CRD that declares apiVersion itself keeps its own definition.
-  def test_a_declared_property_is_not_overwritten
+  def test_a_declared_type_meta_property_gets_the_native_definition
     crd = JSON.parse(JSON.generate(CRD))
     crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["apiVersion"] =
       {"type" => "string", "description" => "mine"}
@@ -88,7 +100,7 @@ class CRDOpenAPITypeMetaTest < Minitest::Test
     schemas = @manager.send(:openapi_document, crd, version, schema).fetch("components").fetch("schemas")
     name = schemas.keys.find { |key| key.end_with?(".Foo") }
 
-    assert_equal("mine", schemas.fetch(name).fetch("properties").fetch("apiVersion").fetch("description"))
+    assert_match(/\AAPIVersion defines/, schemas.fetch(name).dig("properties", "apiVersion", "description"))
   end
 
   # The published group/version document must resolve its own references:
