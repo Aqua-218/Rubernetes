@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "json"
 
 module Rubernetes
@@ -480,13 +482,7 @@ module Rubernetes
         end
       end
 
-      def deep_copy(value)
-        case value
-        when Hash then value.to_h { |key, item| [key, deep_copy(item)] }
-        when Array then value.map { |item| deep_copy(item) }
-        else value
-        end
-      end
+      def deep_copy(value) = ObjectTree.copy(value)
     end
   end
 end
