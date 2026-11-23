@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "json"
+require_relative "../support/bounded_json"
 
 module Rubernetes
   module Image
@@ -27,52 +27,12 @@ module Rubernetes
       module_function
 
       def parse(input, max_bytes: DEFAULT_MAX_BYTES, max_depth: DEFAULT_MAX_DEPTH)
-        raise ParseError, "JSON input must be a String" unless input.is_a?(String)
-
-        byte_limit = positive_integer(max_bytes, "max_bytes")
-        depth_limit = positive_integer(max_depth, "max_depth")
-        raise LimitError, "JSON document exceeds #{byte_limit} bytes" if input.bytesize > byte_limit
-
-        utf8 = input.dup.force_encoding(Encoding::UTF_8)
-        raise ParseError, "JSON input is not valid UTF-8" unless utf8.valid_encoding?
-
-        value = JSON.parse(
-          utf8,
-          object_class: DuplicateCheckingHash,
-          array_class: Array,
-          allow_nan: false,
-          max_nesting: depth_limit + 1
-        )
-        validate_depth!(value, depth_limit)
-      rescue Error
-        raise
-      rescue JSON::NestingError => error
-        raise LimitError, "JSON nesting exceeds #{depth_limit} levels", cause: error
-      rescue JSON::ParserError, EncodingError, TypeError => error
-        raise ParseError, "invalid JSON: #{error.message}", cause: error
+        BoundedJSON.parse(input, StrictJSON, max_bytes: max_bytes, max_depth: max_depth)
       end
 
       def validate_depth!(value, maximum, depth: 0)
-        raise LimitError, "JSON nesting exceeds #{maximum} levels" if depth > maximum
-
-        case value
-        when Array
-          value.each { |child| validate_depth!(child, maximum, depth: depth + 1) }
-        when Hash
-          value.each_value { |child| validate_depth!(child, maximum, depth: depth + 1) }
-        end
-        value
+        BoundedJSON.validate_depth!(value, maximum, LimitError, depth: depth)
       end
-
-      def positive_integer(value, name)
-        integer = Integer(value)
-        raise ArgumentError, "#{name} must be positive" unless integer.positive?
-
-        integer
-      rescue ArgumentError, TypeError => error
-        raise ParseError, "#{name} must be a positive integer: #{error.message}", cause: error
-      end
-      private_class_method :positive_integer
     end
   end
 end
