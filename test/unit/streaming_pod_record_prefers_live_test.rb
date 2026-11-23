@@ -24,11 +24,13 @@ class StreamingPodRecordPrefersLiveTest < Minitest::Test
     Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: Lifecycle.new(records))
   end
 
-  def test_the_live_record_wins_over_a_removed_one_with_the_same_name
-    records = {"old" => record("old", "Removed", "podold.container-1"), "new" => record("new", "Running", "podnew.container-1")}
+  def test_the_live_record_wins_over_a_retired_one_with_the_same_name
+    %w[Removed RollingBack CleanupPending].each do |state|
+      records = {"old" => record("old", state, "podold.container-1"), "new" => record("new", "Running", "podnew.container-1")}
 
-    assert_equal "podnew.container-1", server(records).send(:resolve_container_id, "ns", "ss2-1", "webserver")
-    assert_equal "podnew.container-1", server(records.to_a.reverse.to_h).send(:resolve_container_id, "ns", "ss2-1", "webserver")
+      assert_equal "podnew.container-1", server(records).send(:resolve_container_id, "ns", "ss2-1", "webserver"), state
+      assert_equal "podnew.container-1", server(records.to_a.reverse.to_h).send(:resolve_container_id, "ns", "ss2-1", "webserver"), state
+    end
   end
 
   def test_a_lone_stopping_record_is_still_found
