@@ -32,6 +32,16 @@ class M3IdempotencyProbeTest < Minitest::Test
     assert_equal 0, report.fetch("failure_count")
     assert_equal 0, report.fetch("difference_count")
     assert_equal 0, report.fetch("non_idempotent_count")
+    conflicts = report.fetch("cases").select { |entry| entry.fetch("queue_retry_observed") }
+
+    assert_includes conflicts.map { |entry| entry.fetch("id") }, "replicaset-controller"
+    conflicts.each do |entry|
+      attempt = entry.fetch("first_attempt")
+
+      assert_equal "Rubernetes::Storage::Conflict", attempt.fetch("step_error_class"), entry.fetch("id")
+      assert_equal 1, attempt.fetch("queue_retry_count"), entry.fetch("id")
+      assert_equal true, attempt.fetch("pending_retry"), entry.fetch("id")
+    end
     assert(report.fetch("cases").all? { |entry| entry.fetch("passed") == true })
     assert(
       report.fetch("cases").all? do |entry|
