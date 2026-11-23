@@ -61,6 +61,7 @@ module Rubernetes
 
         issues.concat(owner_reference_errors(metadata))
         issues.concat(finalizer_name_errors(metadata))
+        issues.concat(kube_finalizer_errors(definition.group, kind, metadata))
         issues.concat(object_label_errors(metadata))
         issues.concat(object_annotation_errors(metadata))
 
@@ -129,6 +130,32 @@ module Rubernetes
           qualified_name_messages(value.to_s).map do |message|
             issue(["metadata", "finalizers", index.to_s], :invalid, message)
           end
+        end
+      end
+
+      # These registries use core/validation.ValidateObjectMeta, whose legacy
+      # finalizer check is stricter than apimachinery's qualified-name check.
+      KUBE_FINALIZER_KINDS = %w[
+        CertificateSigningRequest ClusterRole ClusterRoleBinding ClusterTrustBundle ConfigMap
+        ControllerRevision CronJob CSIDriver CSINode CSIStorageCapacity DaemonSet Deployment DeviceClass
+        DeviceTaintRule EndpointSlice Endpoints FlowSchema HorizontalPodAutoscaler Ingress IngressClass
+        IPAddress Job LimitRange Namespace NetworkPolicy Node PersistentVolume PersistentVolumeClaim Pod
+        PodCertificateRequest PodGroup PodTemplate PriorityClass PriorityLevelConfiguration ReplicaSet
+        ReplicationController ResourceClaim ResourceClaimTemplate ResourcePoolStatusRequest ResourceQuota
+        ResourceSlice Role RoleBinding Scale Secret Service ServiceAccount ServiceCIDR StatefulSet
+        StorageClass StorageVersion StorageVersionMigration VolumeAttachment VolumeAttributesClass Workload
+      ].freeze
+      STANDARD_FINALIZERS = %w[kubernetes orphan foregroundDeletion].freeze
+
+      def kube_finalizer_errors(group, kind, metadata)
+        finalizers = fetch(metadata, "finalizers")
+        return [] unless finalizers.is_a?(Array) && !finalizers.empty?
+        return [] unless KUBE_FINALIZER_KINDS.include?(kind) || (kind == "Event" && group == "events.k8s.io")
+
+        finalizers.each_with_index.filter_map do |value, index|
+          next unless value.is_a?(String) && !value.include?("/") && !STANDARD_FINALIZERS.include?(value)
+
+          issue(["metadata", "finalizers", index.to_s], :invalid, "name is neither a standard finalizer name nor is it fully qualified")
         end
       end
 
