@@ -13,9 +13,8 @@ module Rubernetes
     # object computed by the leader, the precondition, the request UID and the
     # leader's wall-clock timestamp used for time-based history compaction.
     #
-    # apply/snapshot/restore are the only entry points used by the Raft node;
-    # reads go straight to #store on the serving node after the read index
-    # has been confirmed.
+    # The Raft node supplies committed commands and manages snapshots.
+    # Reads go straight to #store after the serving node confirms its read index.
     class KVStateMachine
       COMMAND_TYPES = %w[create update delete compact noop].freeze
       EFFECT_TYPES = %w[create update delete].freeze
@@ -39,10 +38,11 @@ module Rubernetes
       attr_reader :store, :applied_index, :effects, :violations
 
       def initialize(store: nil, history_revisions: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_REVISIONS,
-                     history_seconds: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_SECONDS,
+                     history_retention_policy: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_POLICY,
+                     history_seconds: Rubernetes::Storage::MemoryStore::DEFAULT_HISTORY_SECONDS_BY_POLICY[history_retention_policy],
                      logger: nil, checkpoint_interval: DEFAULT_CHECKPOINT_INTERVAL, trace: TRACE)
-        @history_revisions = history_revisions
-        @history_seconds = history_seconds
+        @history_options = {history_revisions: history_revisions, history_seconds: history_seconds,
+                            history_retention_policy: history_retention_policy}
         @clock_value = 0.0
         @store = store || build_store
         @applied_index = 0
@@ -54,6 +54,24 @@ module Rubernetes
         @digest = 0
         @since_checkpoint = 0
         @violations = 0
+      end
+
+      # The first committed leader no-op seeds the shared signing key.
+      # Snapshot metadata preserves it across elections and restores without
+      # including it in a portable datastore export.
+      def leadership_command
+        command = {"type" => "noop"}
+        command["continue_token_secret"] = SecureRandom.hex(32) unless @continue_token_secret
+        command
+      end
+
+      def apply_leadership_metadata(command)
+        secret = command["continue_token_secret"]
+        return if @continue_token_secret || !secret.is_a?(String) || !secret.match?(/\A[0-9a-f]{64}\z/)
+
+        @continue_token_secret = secret.dup.freeze
+        @store.use_continue_token_secret(@continue_token_secret)
+        nil
       end
 
       # Deterministic application.  Returns {"ok" => true, "object" => ...}
@@ -68,19 +86,22 @@ module Rubernetes
         result = begin
           case command["type"]
           when "create"
-            object = @store.create(command.fetch("key"), command.fetch("object"), request_uid: command["request_uid"])
+            key = command.fetch("key")
+            object = @store.create(key, decode_object(command.fetch("object"), key),
+                                   request_uid: command["request_uid"], related_versions: command["related_versions"])
             {"ok" => true, "object" => object}
           when "update"
             expected = command["expected_resource_version"]
-            object = @store.guaranteed_update(command.fetch("key"), prec: expected, request_uid: command["request_uid"],
-                                                                    max_retries: 0,
-                                                                    replay_precondition: command["client_precondition"]) do |_current|
-              command.fetch("object")
+            key = command.fetch("key")
+            object = apply_update(key, prec: expected, request_uid: command["request_uid"],
+                                       replay_precondition: command["client_precondition"], related_versions: command["related_versions"]) do
+              decode_object(command.fetch("object"), key)
             end
             {"ok" => true, "object" => object}
           when "delete"
             expected = command["expected_resource_version"]
-            object = @store.delete(command.fetch("key"), prec: expected, request_uid: command["request_uid"])
+            object = @store.delete(command.fetch("key"), prec: expected, request_uid: command["request_uid"],
+                                                         delete_corrupt: command["delete_corrupt"] == true, related_versions: command["related_versions"])
             {"ok" => true, "object" => object}
           when "compact"
             @store.compact!(revision: command.fetch("revision"))
@@ -107,7 +128,7 @@ module Rubernetes
       # Live objects in the store: what the invariant compares against the
       # effect counters.
       def live_objects
-        @store.list("").items.length
+        @store.is_a?(Rubernetes::Storage::MemoryStore) ? @store.live_object_count : @store.list("").items.length
       end
 
       # Checks the count invariant now and logs the checkpoint.  Returns the
@@ -144,12 +165,37 @@ module Rubernetes
       # that -- see Node#maybe_snapshot.
       def snapshot_document
         @store.export_state.merge("applied_index" => @applied_index, "clock_value" => @clock_value,
-                                  "effects" => @effects.dup, "digest" => @digest)
+                                  "effects" => @effects.dup, "digest" => @digest, "continue_token_secret" => @continue_token_secret)
       end
 
       def self.encode_snapshot(document)
-        Zlib::Deflate.deflate(Canonical.encode(document), Zlib::BEST_SPEED)
+        encoded_objects = {}.compare_by_identity
+        encoded = transform_snapshot_objects(document) do |object, _key, _revision|
+          if object.is_a?(Rubernetes::Storage::CBORRecord::Unreadable)
+            object.encoded
+          elsif object.is_a?(Rubernetes::Storage::CBORRecord::Object)
+            encoded_objects[object] ||= Rubernetes::Storage::CBORRecord.encode(object)
+          else
+            object
+          end
+        end
+        Zlib::Deflate.deflate(Canonical.encode(encoded), Zlib::BEST_SPEED)
       end
+
+      def self.transform_snapshot_objects(document)
+        versions = document.fetch("versions").to_h do |key, entries|
+          [key, entries.map { |revision, object| [revision, yield(object, key, revision)] }]
+        end
+        history = document.fetch("history").map do |entry|
+          key = entry.fetch("key")
+          entry.merge("object" => yield(entry["object"], key, entry["revision"]), "old_object" => yield(entry["old_object"], key, nil))
+        end
+        requests = document.fetch("requests").transform_values do |entry|
+          entry.merge("result" => yield(entry["result"], entry.fetch("key"), entry["revision"]))
+        end
+        document.merge("versions" => versions, "history" => history, "requests" => requests)
+      end
+      private_class_method :transform_snapshot_objects
 
       def restore(bytes)
         inflated = Zlib::Inflate.inflate(bytes)
@@ -160,6 +206,10 @@ module Rubernetes
         @clock_value = Float(document.delete("clock_value") || 0.0)
         effects = document.delete("effects")
         digest = document.delete("digest")
+        @continue_token_secret = document.delete("continue_token_secret")&.freeze
+        document = self.class.send(:transform_snapshot_objects, document) do |object, key, revision|
+          decode_object(object, key, revision: revision)
+        end
         replacement = build_store
         replacement.import_state(document)
         previous = @store
@@ -188,9 +238,21 @@ module Rubernetes
         self
       rescue Zlib::Error => error
         raise SnapshotCorruption, "snapshot state is not valid compressed data: #{error.message}"
+      rescue Schema::Codec::Error => error
+        raise SnapshotCorruption, "snapshot contains an invalid CBOR object: #{error.message}"
       end
 
       private
+
+      def apply_update(key, **, &)
+        return @store.apply_update(key, **, &) if @store.is_a?(Rubernetes::Storage::MemoryStore)
+
+        @store.guaranteed_update(key, **, max_retries: 0, &)
+      end
+
+      def decode_object(object, key, revision: nil)
+        object.is_a?(String) ? Rubernetes::Storage::CBORRecord.decode_record(object, key: key, revision: revision) : object
+      end
 
       # Counts only effects that changed the store: a request-UID replay
       # returns the remembered result without a new revision.
@@ -213,8 +275,13 @@ module Rubernetes
       end
 
       def build_store
-        Rubernetes::Storage::MemoryStore.new(history_revisions: @history_revisions, history_seconds: @history_seconds,
-                                             clock: -> { @clock_value }, sleeper: ->(_seconds) {}, token_secret: "raft-replica")
+        Rubernetes::Storage::MemoryStore.new(
+          **@history_options,
+          clock: -> { @clock_value },
+          sleeper: ->(_seconds) {},
+          token_secret: @continue_token_secret,
+          legacy_token_secret: "raft-replica"
+        )
       end
 
       def error_document(error)
