@@ -5,6 +5,7 @@ require "json"
 
 require_relative "plugins/rpc"
 require_relative "dra_health"
+require_relative "../dra/workload_claims"
 
 module Rubernetes
   module Node
@@ -52,7 +53,7 @@ module Rubernetes
                      monotonic: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, sleeper: ->(seconds) { sleep(seconds) },
                      error_handler: nil, wiping_delay: WIPING_DELAY, resource_health: false, on_health_change: nil,
                      health_stream: ->(endpoint, on_event) { DRAHealth::Stream.new(endpoint: endpoint, on_event: on_event) },
-                     health_clock: -> { Time.now.utc })
+                     health_clock: -> { Time.now.utc }, workload_claims: false)
         @client = client
         @node_name = node_name.to_s
         @state_directory = state_directory.to_s
@@ -66,9 +67,12 @@ module Rubernetes
         @pending_wipes = {}
         @claims = {}
         @mutex = Mutex.new
+        @claim_operations = Set.new
+        @claim_operations_changed = ConditionVariable.new
         @threads = []
         @stop = false
         @resource_health = resource_health == true
+        @workload_claims = workload_claims == true
         @on_health_change = on_health_change
         @health_stream = health_stream
         @health_streams = {}
@@ -192,7 +196,7 @@ module Rubernetes
                   "ResourceClaim #{namespace}/#{name} was not created for Pod #{namespace}/#{pod.dig("metadata",
                                                                                                      "name")} (Pod is not owner)"
           end
-          unless Array(claim.dig("status", "reservedFor")).any? { |entry| entry["uid"].to_s == pod_uid }
+          unless DRA::WorkloadClaims.reserved_for_pod?(pod, claim, workload_claims: @workload_claims)
             raise Error,
                   "pod #{pod.dig("metadata",
                                  "name")} (#{pod_uid}) is not allowed to use ResourceClaim #{name} (#{claim.dig("metadata", "uid")})"
@@ -206,6 +210,10 @@ module Rubernetes
           {claim: claim, drivers: drivers, plugins: plugins}
         end
 
+        with_claim_operations(infos.map { |info| claim_key(info[:claim]) }) { prepare_claims(pod_uid, infos) }
+      end
+
+      private def prepare_claims(pod_uid, infos)
         batches = Hash.new { |hash, key| hash[key] = [] }
         to_prepare = {}
         @mutex.synchronize do
@@ -536,18 +544,43 @@ module Rubernetes
       end
 
       def unprepare(pod_uid, namespace, names)
+        keys = names.map { |name| "#{namespace}/#{name}" }.uniq
+        with_claim_operations(keys) { unprepare_claims(pod_uid, keys) }
+      end
+
+      # Serialize overlapping batches through their RPCs and checkpoint updates.
+      # Disjoint claims can still be prepared and unprepared in parallel.
+      def with_claim_operations(keys)
+        acquired = false
+        @mutex.synchronize do
+          @claim_operations_changed.wait(@mutex) while keys.any? { |key| @claim_operations.include?(key) }
+          acquired = true
+          @claim_operations.merge(keys)
+        end
+        yield
+      ensure
+        if acquired
+          @mutex.synchronize do
+            @claim_operations.subtract(keys)
+            @claim_operations_changed.broadcast
+          end
+        end
+      end
+
+      def unprepare_claims(pod_uid, keys)
         batches = Hash.new { |hash, key| hash[key] = [] }
         to_delete = []
         @mutex.synchronize do
-          names.each do |name|
-            entry = @claims["#{namespace}/#{name}"]
-            next unless entry
+          keys.each do |key|
+            entry = @claims[key]
+            next unless entry && entry["pod_uids"].include?(pod_uid)
 
             if entry["pod_uids"].length > 1
               entry["pod_uids"].delete(pod_uid)
               next
             end
-            to_delete << "#{namespace}/#{name}"
+            entry["prepared"] = false
+            to_delete << key
             request = {"namespace" => entry["namespace"], "uid" => entry["claim_uid"], "name" => entry["claim_name"]}
             entry["driver_state"].each_key { |driver| batches[driver] << request }
           end
@@ -661,7 +694,10 @@ module Rubernetes
 
       def owned_by?(claim, pod)
         Array(claim.dig("metadata", "ownerReferences")).any? do |reference|
-          reference["controller"] == true && reference["uid"].to_s == pod.dig("metadata", "uid").to_s
+          next false unless reference["controller"] == true
+
+          reference["uid"].to_s == pod.dig("metadata", "uid").to_s ||
+            (@workload_claims && DRA::WorkloadClaims.group_owner_for_pod?(pod, reference))
         end
       end
 
