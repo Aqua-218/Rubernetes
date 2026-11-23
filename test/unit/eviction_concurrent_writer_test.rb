@@ -46,6 +46,21 @@ class EvictionConcurrentWriterTest < Minitest::Test
     assert_equal 404, @server.call(method: "GET", path: "/api/v1/namespaces/dev/pods/p").status
   end
 
+  def test_query_dry_run_preserves_the_pod_for_both_binding_and_eviction
+    path = "/api/v1/namespaces/dev/pods/p"
+    original = @server.call(method: "GET", path: path).body
+    binding = {"apiVersion" => "v1", "kind" => "Binding", "metadata" => {"name" => "p"}, "target" => {"kind" => "Node", "name" => "worker"}}
+    eviction = {"apiVersion" => "policy/v1", "kind" => "Eviction", "metadata" => {"name" => "p"}}
+
+    assert_equal 201, @server.call(method: "POST", path: "#{path}/binding?dryRun=All", body: binding).status
+    assert_equal original, @server.call(method: "GET", path: path).body
+    assert_equal 201, @server.call(method: "POST", path: "#{path}/eviction?dryRun=All", body: eviction).status
+    assert_equal original, @server.call(method: "GET", path: path).body
+    assert_equal 201, @server.call(method: "POST", path: "/api/v1/namespaces/dev/bindings", body: binding).status
+    assert_equal "worker", @server.call(method: "GET", path: path).body.dig("spec", "nodeName")
+    assert_equal 409, @server.call(method: "POST", path: "#{path}/binding?dryRun=All", body: binding).status
+  end
+
   def test_a_stale_caller_resource_version_is_still_a_conflict
     response = evict({"apiVersion" => "policy/v1", "kind" => "Eviction", "metadata" => {"name" => "p", "namespace" => "dev"},
                       "deleteOptions" => {"preconditions" => {"resourceVersion" => "1"}}})
