@@ -5,6 +5,8 @@
 
 require "digest"
 
+require_relative "../../support/secure_compare"
+
 module Rubernetes
   module Runtime
     class Native
@@ -162,9 +164,7 @@ module Rubernetes
           "sha256:#{digest.delete_prefix("sha256:").downcase}"
         end
 
-        def secure_compare(left, right)
-          left.bytesize == right.bytesize && left.bytes.zip(right.bytes).reduce(0) { |result, (a, b)| result | (a ^ b) } == 0
-        end
+        def secure_compare(left, right) = SecureCompare.call(left, right)
 
         def validate_identifier!(value)
           raise Error, "workspace identifier is invalid" unless value.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
