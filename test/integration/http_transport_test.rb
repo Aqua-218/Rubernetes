@@ -425,6 +425,40 @@ class HTTPTransportTest < Minitest::Test
     key_file&.unlink
   end
 
+  def test_graceful_shutdown_completes_an_already_accepted_tls_request
+    certificate, key = create_tls_material(serial: 5)
+    server = Rubernetes::Transport::HTTPServer.new(@handler, port: 0, cert_file: certificate.path, key_file: key.path)
+    accepted = Queue.new
+    resume = Queue.new
+    server.define_singleton_method(:establish_tls) do |socket|
+      accepted << true
+      resume.pop
+      super(socket)
+    end
+    server.start
+    client = Net::HTTP.new("127.0.0.1", server.port)
+    client.use_ssl = true
+    client.verify_mode = OpenSSL::SSL::VERIFY_NONE
+    client.max_retries = 0
+    response = Thread.new { client.get("/get") }
+
+    assert accepted.pop(timeout: 5), "request did not reach the TLS worker"
+
+    shutdown = Thread.new { server.stop(timeout: 5) }
+    wait_until(timeout: 2) { server.stopping? }
+    resume << true
+
+    assert_equal "200", response.value.code
+    shutdown.value
+
+    assert_predicate server, :stopped?
+  ensure
+    resume&.push(true)
+    server&.stop(graceful: false, timeout: 1)
+    certificate&.unlink
+    key&.unlink
+  end
+
   def test_tls_handshake_is_bounded_for_a_peer_that_sends_no_client_hello
     key = OpenSSL::PKey::RSA.new(2048)
     certificate = OpenSSL::X509::Certificate.new
@@ -506,12 +540,16 @@ class HTTPTransportTest < Minitest::Test
     timeout_socket, timeout_response = open_tls_watch(
       tls_server,
       "/api/v1/pods?watch=true&timeoutSeconds=1",
-      timeout: 2
+      timeout: 2, connection: "keep-alive"
     )
     wait_until(timeout: 1) do
       store_watcher_count(service.store) == 1 && tls_server.active_stream_monitors == 1
     end
-    timeout_response << read_tls_to_close(timeout_socket, timeout: 3)
+    timeout_response << tls_read_until(timeout_socket, "0\r\n\r\n", timeout: 3) unless timeout_response.include?("0\r\n\r\n")
+    tls_write(timeout_socket, "GET /version HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", timeout: 1)
+    follow_up = read_tls_to_close(timeout_socket, timeout: 3)
+
+    assert_match(%r{\AHTTP/1\.1 200 OK}, follow_up, "the completed watch must leave the connection readable for the next request")
     wait_until(timeout: 1) do
       store_watcher_count(service.store).zero? && tls_server.active_connections.zero? &&
         tls_server.active_stream_monitors.zero?
@@ -733,7 +771,7 @@ class HTTPTransportTest < Minitest::Test
     [cert_file, key_file]
   end
 
-  def open_tls_watch(server, path, timeout:)
+  def open_tls_watch(server, path, timeout:, connection: "close")
     raw_socket = TCPSocket.new("127.0.0.1", server.port)
     context = OpenSSL::SSL::SSLContext.new
     context.verify_mode = OpenSSL::SSL::VERIFY_NONE
@@ -743,7 +781,7 @@ class HTTPTransportTest < Minitest::Test
     tls_connect(socket, timeout: timeout)
     tls_write(
       socket,
-      "GET #{path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+      "GET #{path} HTTP/1.1\r\nHost: localhost\r\nConnection: #{connection}\r\n\r\n",
       timeout: timeout
     )
     [socket, tls_read_until(socket, "\r\n\r\n", timeout: timeout)]
