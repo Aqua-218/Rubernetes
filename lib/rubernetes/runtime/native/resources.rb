@@ -6,6 +6,8 @@
 # tests and recomputed by the evidence gate.
 
 require_relative "../../resource_helpers"
+require_relative "../cpu_quota"
+require_relative "../memory_qos"
 
 module Rubernetes
   module Runtime
@@ -18,11 +20,8 @@ module Rubernetes
         MAX_SHARES = 262_144
         SHARES_PER_CPU = 1024
         MILLI_CPU_TO_CPU = 1000
-        QUOTA_PERIOD = 100_000
-        MIN_QUOTA_PERIOD = 1000
-        # pkg/kubelet/kuberuntime/kuberuntime_container_linux.go (memory.high)
-        DEFAULT_PAGE_SIZE = 4096
-        DEFAULT_MEMORY_THROTTLING_FACTOR = 0.9
+        QUOTA_PERIOD = CPUQuota::DEFAULT_PERIOD
+        MIN_QUOTA_PERIOD = CPUQuota::MIN_QUOTA
         QOS_CLASSES = %w[guaranteed burstable besteffort].freeze
         QOS_RESOURCES = %w[cpu memory].freeze
 
@@ -65,14 +64,7 @@ module Rubernetes
         end
 
         # cm.MilliCPUToQuota: quota in microseconds for the given period.
-        def milli_cpu_to_quota(milli, period = QUOTA_PERIOD)
-          milli = Integer(milli)
-          return 0 if milli.zero?
-
-          quota = (milli * Integer(period)) / MILLI_CPU_TO_CPU
-          quota = MIN_QUOTA_PERIOD if quota < MIN_QUOTA_PERIOD
-          quota
-        end
+        def milli_cpu_to_quota(milli, period = QUOTA_PERIOD) = CPUQuota.from_milli_cpu(milli, period)
 
         # cm.MilliCPUToShares.
         def milli_cpu_to_shares(milli)
@@ -189,7 +181,8 @@ module Rubernetes
         # +pod+: the Pod the container belongs to.  kuberuntime getCPULimit /
         # getMemoryLimit: with pod-level resources set, a container that sets
         # no CPU (memory) limit of its own is limited by the Pod's.
-        def container_cgroup_limits(container, qos:, memory_qos: false, pids_limit: nil, cpu_period: QUOTA_PERIOD, pod: nil)
+        def container_cgroup_limits(container, qos:, memory_qos: false, pids_limit: nil, cpu_period: QUOTA_PERIOD, cpu_cfs_quota: true,
+                                    quota_exempt: false, single_process_oom_kill: nil, pod: nil)
           requirements = effective_requirements(container)
           requests = requirements.fetch("requests")
           limits = requirements.fetch("limits")
@@ -206,30 +199,22 @@ module Rubernetes
           end
           shares_source = cpu_request.nil? && cpu_limit ? cpu_limit : cpu_request.to_i
           result = {"cpu.weight" => cpu_weight(shares_source).to_s}
-          result["cpu.max"] = cpu_limit ? "#{milli_cpu_to_quota(cpu_limit, cpu_period)} #{cpu_period}" : "max #{cpu_period}"
+          period = cpu_cfs_quota ? cpu_period : QUOTA_PERIOD
+          result["cpu.max"] = CPUQuota.cgroup_limit(cpu_limit.to_i, period: period, enabled: cpu_cfs_quota && !quota_exempt)
           result["memory.max"] = memory_limit.to_s if memory_limit.positive?
           # cgroup v2 default singleProcessOOMKill=false: the whole cgroup is
           # killed on OOM so a partially killed container never lingers.
-          result["memory.oom.group"] = "1"
+          result["memory.oom.group"] = "1" unless single_process_oom_kill == true
           if memory_qos
-            if memory_request.positive?
-              result[String(qos) == "guaranteed" ? "memory.min" : "memory.low"] = memory_request.to_s
-            else
-              result["memory.min"] = "0"
-              result["memory.low"] = "0"
-            end
-            # memory.high reads the container's own limit, not the Pod's.
-            if memory_request != own_memory_limit && own_memory_limit.positive?
-              high = ((memory_request + ((own_memory_limit - memory_request) * DEFAULT_MEMORY_THROTTLING_FACTOR)) / DEFAULT_PAGE_SIZE).floor * DEFAULT_PAGE_SIZE
-              result["memory.high"] = high.to_s if high.positive? && high > memory_request
-            end
+            options = memory_qos.is_a?(Hash) ? memory_qos : {}
+            result.merge!(MemoryQoS.container(request: memory_request, limit: own_memory_limit, qos: qos, **options))
           end
           result["pids.max"] = Integer(pids_limit).to_s if pids_limit && Integer(pids_limit).positive?
           result
         end
 
         # Pod cgroup files (cm.ResourceConfigForPod).
-        def pod_cgroup_limits(pod_spec, qos: qos_class(pod_spec), memory_qos: false, pids_limit: nil, cpu_period: QUOTA_PERIOD)
+        def pod_cgroup_limits(pod_spec, qos: qos_class(pod_spec), memory_qos: false, pids_limit: nil, cpu_period: QUOTA_PERIOD, cpu_cfs_quota: true)
           helpers = Rubernetes::ResourceHelpers
           pod = defaulted_pod(pod_spec)
           requests = helpers.pod_requests(pod).transform_values(&:value)
@@ -247,23 +232,22 @@ module Rubernetes
           cpu_limits = limits.key?("cpu") ? (limits["cpu"] * MILLI_CPU_TO_CPU).ceil : 0
           memory_limits = limits.key?("memory") ? limits["memory"].ceil : 0
           shares = milli_cpu_to_shares(cpu_requests)
-          quota = milli_cpu_to_quota(cpu_limits, cpu_period)
+          quota = CPUQuota.cgroup_limit(cpu_limits, period: cpu_period, enabled: cpu_cfs_quota)
           result = {}
           case String(qos)
           when "guaranteed"
             result["cpu.weight"] = shares_to_weight(shares).to_s
-            result["cpu.max"] = "#{quota.positive? ? quota : "max"} #{cpu_period}"
+            result["cpu.max"] = quota
             result["memory.max"] = memory_limits.to_s if memory_limits.positive?
           when "burstable"
             result["cpu.weight"] = shares_to_weight(shares).to_s
-            result["cpu.max"] = "#{quota.positive? ? quota : "max"} #{cpu_period}" if declared["cpu"]
+            result["cpu.max"] = quota if declared["cpu"]
             result["memory.max"] = memory_limits.to_s if declared["memory"] && memory_limits.positive?
           else
             result["cpu.weight"] = shares_to_weight(MIN_SHARES).to_s
           end
-          if memory_qos && requests.key?("memory") && requests["memory"].positive?
-            result[String(qos) == "guaranteed" ? "memory.min" : "memory.low"] = requests["memory"].ceil.to_s
-          end
+          policy = memory_qos.is_a?(Hash) ? memory_qos.fetch(:policy, "None") : "None"
+          result.merge!(MemoryQoS.reservation(requests.fetch("memory", 0).ceil, qos: qos, policy: policy)) if memory_qos
           result["pids.max"] = Integer(pids_limit).to_s if pids_limit && Integer(pids_limit).positive?
           result
         end
