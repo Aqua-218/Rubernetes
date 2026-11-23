@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "rubernetes/api"
 require "rubernetes/storage/memory_store"
 
 # A client that reads its informer cache right after a write (the e2e CRUD
@@ -52,5 +53,17 @@ class StorageWatchDeliveryTest < Minitest::Test
     assert store.await_watch_delivery(revision_of(created), timeout: 0.5)
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.1
     refute_nil backlogged
+  end
+
+  def test_watch_timeout_limits_the_subscription_even_with_events_waiting
+    [Rubernetes::API::MemoryStore.new, store].each do |backend|
+      watcher = backend.watch("/registry/pods/ns", timeout_seconds: 0.05)
+      backend.create("/registry/pods/ns/a", object("a"))
+      sleep 0.06
+
+      assert_nil watcher.next(timeout: 1)
+    ensure
+      watcher&.close
+    end
   end
 end
