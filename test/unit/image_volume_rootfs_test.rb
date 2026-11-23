@@ -4,6 +4,7 @@ require_relative "../test_helper"
 require "tmpdir"
 require "rubernetes/node/pod_volumes"
 require "rubernetes/volume/backends"
+require "rubernetes/api"
 
 # kubelet mounts an image volume as the pulled image's filesystem, read-only.
 # The node pins the reference (digest + unpacked rootfs) and the volume backend
@@ -63,5 +64,38 @@ class ImageVolumeRootfsTest < Minitest::Test
                                                      spec: {"backend" => "image", "image" => "registry.k8s.io/e2e-test-images/kitten:1.7"})
       assert_raises(Rubernetes::Volume::ValidationError) { backend.provision }
     end
+  end
+
+  def test_status_updates_drop_disabled_image_volume_status_and_preserve_existing_use
+    api = Rubernetes::API::Server.new
+    pods = "/api/v1/namespaces/default/pods"
+    pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "volume-pod"},
+           "spec" => {"containers" => [{"name" => "app", "image" => "x"}]}}
+
+    assert_equal 201, api.call(method: "POST", path: pods, body: JSON.generate(pod), headers: {"content-type" => "application/json"}).status
+    path = "#{pods}/volume-pod/status"
+    headers = {"content-type" => "application/merge-patch+json"}
+    mount_path = %w[status containerStatuses] + [0, "volumeMounts", 0, "volumeStatus", "image", "imageRef"]
+    mount = {"name" => "data", "mountPath" => "/data", "volumeStatus" => {"image" => {"imageRef" => DIGEST}}}
+    status = {"status" => {"containerStatuses" => [{"name" => "app", "image" => "x", "imageID" => "", "ready" => true,
+                                                    "restartCount" => 0, "volumeMounts" => [mount]}]}}
+    payload = JSON.generate(status)
+    disabled = api.call(method: "PATCH", path: path, body: payload, headers: headers)
+
+    assert_equal 200, disabled.status, disabled.body.inspect
+    assert_nil disabled.body.dig(*mount_path)
+
+    enabled = Rubernetes::API::Server.new(store: api.store, feature_gates: {"ImageVolumeWithDigest" => true})
+    persisted = enabled.call(method: "PATCH", path: path, body: payload, headers: headers)
+
+    assert_equal 200, persisted.status, persisted.body.inspect
+    assert_equal DIGEST, persisted.body.dig(*mount_path)
+    assert_equal DIGEST, api.call(method: "PATCH", path: path, body: payload, headers: headers).body.dig(*mount_path)
+
+    mount["volumeStatus"]["image"]["imageRef"] = ""
+    invalid = enabled.call(method: "PATCH", path: path, body: JSON.generate(status), headers: headers)
+
+    assert_equal 422, invalid.status
+    assert_equal "FieldValueRequired", invalid.body.dig("details", "causes", 0, "reason")
   end
 end
