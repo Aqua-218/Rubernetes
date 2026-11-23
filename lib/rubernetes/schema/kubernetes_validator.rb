@@ -55,7 +55,7 @@ module Rubernetes
 
       module_function
 
-      def errors(definition, value, operation: :create, old: nil, strategy_prepare: false, subresource: nil)
+      def errors(definition, value, operation: :create, old: nil, strategy_prepare: false, subresource: nil, declarative_options: [])
         # metav1.DeleteOptions carries no ObjectMeta; ValidateDeleteOptions
         # (apimachinery/pkg/apis/meta/v1/validation) runs in the delete handler.
         return delete_options_errors(plain_object(value)) if definition.kind == "DeleteOptions" && object_like?(value)
@@ -66,7 +66,20 @@ module Rubernetes
         kind = definition.kind
         issues = []
         issues.concat(metadata_errors(definition, root, kind, operation))
-        issues.concat(cross_field_errors(root, kind, operation, old, strategy_prepare: strategy_prepare, definition: definition, subresource: subresource))
+        return issues.concat(pvc_status_update_errors(root)) if kind == "PersistentVolumeClaim" && operation == :update && subresource.to_s == "status"
+
+        if operation == :update && subresource.to_s == "status"
+          return issues.concat(JobStatusUpdate.new(root, old).errors) if kind == "Job"
+          return issues if kind == "CronJob"
+          return issues.concat(pod_disruption_budget_status_errors(root)) if pdb_v1?(definition)
+        end
+
+        if SCHEDULING_DECLARATIVE_KINDS.include?(kind)
+          return issues.concat(declarative_scheduling_errors(root, old, kind, operation, declarative_options, subresource))
+        end
+
+        issues.concat(cross_field_errors(root, kind, operation, old, strategy_prepare: strategy_prepare, definition: definition,
+                                                                     subresource: subresource, declarative_options: declarative_options))
         issues
       end
 
@@ -99,7 +112,7 @@ module Rubernetes
       # order upstream appends to its field.ErrorList; that order is
       # observable (the Go oracle compares it), so a rule may not move to
       # another step.
-      def cross_field_errors(root, kind, operation, old, strategy_prepare: false, definition: nil, subresource: nil)
+      def cross_field_errors(root, kind, operation, old, strategy_prepare: false, definition: nil, subresource: nil, declarative_options: [])
         return handler_request_errors(root, kind) if HANDLER_REQUEST_KINDS.include?(kind)
 
         # The tree walkers below find Pod templates wherever an owner embeds
@@ -113,49 +126,77 @@ module Rubernetes
         walk_old = schema_free_root(old, kind)
         stateful_set_update = kind == "StatefulSet" && operation == :update
 
-        issues = missing_root_errors(root, kind)
+        issues = kind == "Job" ? generated_job_selector_errors(root, old) : []
+        job_spec_start = issues.length
+        issues.concat(missing_root_errors(root, kind))
         issues << issue([], :internal, "could not find requestInfo in context") if internal_request_context_strategy?(kind)
-        issues.concat(kind_errors_before_pod_template(root, kind, operation, old))
-        issues.concat(pod_template_errors(root, walk_root, walk_old, kind, operation))
+        issues.concat(kind_errors_before_pod_template(root, kind, operation, old, declarative_options))
+        issues.concat(cronjob_schedule_errors(walk_root, walk_old)) if kind == "CronJob"
+        issues.concat(selector_errors(walk_root, kind, old: walk_old))
+        template_start = issues.length
+        issues.concat(pod_projection_errors(root, old, kind)) if !stateful_set_update && validates_pod_projections?(kind, subresource)
+        issues.concat(pod_template_errors(root, walk_root, walk_old, kind, operation, subresource: subresource))
+        spread = subresource.to_s.empty? ? topology_spread_errors(walk_root, walk_old, kind, declarative_options) : []
+        issues.concat(spread) unless stateful_set_update
+        issues.concat(pod_hostname_override_errors(root, kind)) if subresource.to_s.empty?
+        issues.concat(taint_comparison_errors(root, old, kind, declarative_options)) if subresource.to_s.empty?
+        issues.concat(pod_user_namespace_errors(root, old, kind, declarative_options)) if subresource.to_s.empty?
         # ValidateStatefulSetUpdate skips pod-template validation when the
         # retained old template is already invalid.  The zero-value semantic
         # fixture exercises that compatibility path; selector/template
         # metadata rules still run below.
         drop_stateful_set_template_issues!(issues) if stateful_set_update
-        issues.concat(workload_template_errors(walk_root, kind, operation))
+        if %w[Job CronJob].include?(kind)
+          template_issues = issues.slice!(template_start..)
+          issues.concat(job_family_errors(walk_root, kind, old: walk_old, template_issues: template_issues))
+        end
+        issues.concat(cronjob_history_and_name_errors(walk_root, operation)) if kind == "CronJob"
         issues.concat(pod_change_errors(root, walk_root, walk_old, kind, operation, old: old, subresource: subresource))
         issues.concat(kind_errors_after_pod_template(root, kind, operation, old, definition: definition, subresource: subresource))
+        if kind == "Job" && operation == :update
+          repeat_job_spec_issues!(issues, job_spec_start)
+          issues.concat(job_update_errors(root, old))
+        end
         issues.concat(job_strategy_prepare_errors(root, operation)) if kind == "Job" && strategy_prepare
-        repeat_single_pass_job_spec_issues!(issues) if kind == "Job" && operation == :update
+        issues.reject! { |candidate| candidate.path[0, 2] == WORKLOAD_TEMPLATE_PATH } if skip_app_template_validation?(kind, issues)
         # StatefulSet update validation deliberately skips the retained pod
         # template.  Keep this as a final guard because helpers below the
         # strategy family can discover template fields after the main
         # compatibility branch has run.
-        drop_stateful_set_template_issues!(issues) if stateful_set_update
+        if stateful_set_update
+          drop_stateful_set_template_issues!(issues)
+          issues.concat(stateful_set_rechecked_template_errors(root, old, definition, spread, declarative_options)) if subresource.to_s.empty?
+        end
         issues
       end
 
       # Kind rules upstream reports before it descends into a Pod template.
-      def kind_errors_before_pod_template(root, kind, operation, old)
+      def kind_errors_before_pod_template(root, kind, operation, old, declarative_options)
         issues = []
         issues.concat(webhook_errors(root, kind, operation)) if WEBHOOK_KINDS.include?(kind)
         issues.concat(policy_binding_errors(root)) if kind == "ValidatingAdmissionPolicyBinding"
         issues.concat(resource_slice_errors(root, operation)) if kind == "ResourceSlice"
         issues.concat(certificate_signing_request_errors(root, operation)) if kind == "CertificateSigningRequest"
-        issues.concat(cluster_trust_bundle_errors(root, operation)) if kind == "ClusterTrustBundle"
-        issues.concat(lease_candidate_errors(root)) if kind == "LeaseCandidate"
+        issues.concat(cluster_trust_bundle_errors(root, operation, old)) if kind == "ClusterTrustBundle"
+        issues.concat(lease_candidate_errors(root, old)) if kind == "LeaseCandidate"
+        issues.concat(lease_errors(root)) if kind == "Lease"
+        issues.concat(runtime_class_handler_errors(root, old, operation)) if kind == "RuntimeClass"
         issues.concat(node_errors(root, operation)) if kind == "Node"
         issues.concat(node_update_errors(root, old, operation)) if kind == "Node"
-        issues.concat(persistent_volume_update_errors(root, old, operation)) if kind == "PersistentVolume"
+        if kind == "PersistentVolume"
+          issues.concat(persistent_volume_update_errors(root, old, operation,
+                                                        mutable_node_affinity: declarative_options.include?("MutablePVNodeAffinity")))
+        end
         issues.concat(stateful_set_update_errors(root, old, operation)) if kind == "StatefulSet"
-        issues.concat(job_completions_update_errors(root, old, operation)) if kind == "Job"
-        issues.concat(job_template_update_errors(root, old, operation)) if kind == "Job"
-        issues.concat(ingress_class_errors(root)) if kind == "IngressClass"
-        issues.concat(hpa_errors(root, operation)) if kind == "HorizontalPodAutoscaler"
+        issues.concat(ingress_class_errors(root, old, operation)) if kind == "IngressClass"
+        issues.concat(ip_address_errors(root, old, operation)) if kind == "IPAddress"
+        issues.concat(hpa_errors(root, operation, declarative_options)) if kind == "HorizontalPodAutoscaler"
         issues.concat(flow_schema_errors(root, operation)) if kind == "FlowSchema"
         issues.concat(priority_level_errors(root, operation)) if kind == "PriorityLevelConfiguration"
-        issues.concat(endpoint_slice_errors(root, operation)) if kind == "EndpointSlice"
+        issues.concat(endpoint_slice_errors(root, operation, old)) if kind == "EndpointSlice"
         issues.concat(endpoints_errors(root, operation)) if kind == "Endpoints"
+        issues.concat(replication_controller_count_errors(root)) if kind == "ReplicationController"
+        issues.concat(deployment_replica_errors(root)) if kind == "Deployment"
         issues.concat(device_class_errors(root)) if kind == "DeviceClass"
         issues.concat(storage_version_migration_errors(root)) if kind == "StorageVersionMigration"
         issues.concat(data_key_errors(root, kind)) if %w[Secret ConfigMap].include?(kind)
@@ -164,22 +205,11 @@ module Rubernetes
       end
 
       # PodSpec rules, for a Pod and for every kind that embeds a template.
-      def pod_template_errors(root, walk_root, walk_old, kind, operation)
-        issues = probe_errors(walk_root)
+      def pod_template_errors(root, walk_root, walk_old, kind, operation, subresource:)
+        issues = subresource.to_s.empty? ? probe_errors(walk_root, kind) : []
         issues.concat(common_pod_errors(walk_root, operation, walk_old))
         issues.concat(pod_resources_errors(walk_root))
         issues.concat(pod_nested_errors(root, operation)) if kind == "Pod"
-        issues
-      end
-
-      # Selector, pod failure policy and Job/CronJob rules of the controllers
-      # that own a Pod template.
-      def workload_template_errors(walk_root, kind, operation)
-        issues = selector_errors(walk_root, kind)
-        issues.concat(enum_and_one_of_errors(walk_root, kind))
-        issues.concat(job_family_errors(walk_root, kind))
-        issues.concat(job_restart_policy_errors(walk_root, kind))
-        issues.concat(job_update_errors(walk_root, kind, operation))
         issues
       end
 
@@ -197,9 +227,13 @@ module Rubernetes
       def kind_errors_after_pod_template(root, kind, operation, old, definition:, subresource:)
         issues = []
         issues.concat(ingress_errors(root)) if kind == "Ingress"
-        issues.concat(service_errors(root)) if kind == "Service"
+        issues.concat(service_errors(root)) if kind == "Service" && subresource.to_s.empty?
+        issues.concat(service_traffic_errors(root, old)) if kind == "Service" && subresource.to_s.empty?
+        issues.concat(service_load_balancer_errors(root, old, operation)) if kind == "Service" && subresource.to_s.empty?
+        issues.concat(service_distribution_errors(root)) if kind == "Service" && subresource.to_s.empty?
         issues.concat(service_update_errors(root, old, operation)) if kind == "Service"
-        issues.concat(pvc_errors(root, operation)) if kind == "PersistentVolumeClaim"
+        issues.concat(claim_template_errors(root)) if kind == "StatefulSet" && operation == :create
+        issues.concat(pvc_errors(root, operation, old: old)) if kind == "PersistentVolumeClaim"
         issues.concat(pvc_update_errors(root, old, operation)) if kind == "PersistentVolumeClaim"
         issues.concat(immutable_field_errors(root, old, kind, operation))
         issues.concat(immutable_data_errors(root, old, kind, operation))
@@ -208,30 +242,29 @@ module Rubernetes
         issues.concat(validating_admission_policy_errors(root)) if kind == "ValidatingAdmissionPolicy"
         issues.concat(mutating_policy_binding_errors(root)) if kind == "MutatingAdmissionPolicyBinding"
         issues.concat(custom_resource_definition_errors(root, operation)) if kind == "CustomResourceDefinition"
-        issues.concat(pod_group_errors(root)) if kind == "PodGroup"
-        issues.concat(pod_disruption_budget_errors(root)) if kind == "PodDisruptionBudget"
-        issues.concat(resource_pool_status_request_errors(root)) if kind == "ResourcePoolStatusRequest"
+        issues.concat(pod_disruption_budget_errors(root, old)) if kind == "PodDisruptionBudget"
+        issues.concat(resource_pool_status_request_errors(root, old, operation, subresource)) if kind == "ResourcePoolStatusRequest"
         # ValidateResourceClaimUpdate / ValidateResourceClaimTemplateUpdate only
         # validate ObjectMeta and the immutable spec; the spec is validated on create.
         issues.concat(resource_claim_errors(root, %w[spec])) if kind == "ResourceClaim" && operation == :create
         issues.concat(indexed_job_hostname_errors(root)) if kind == "Job"
         issues.concat(pod_container_set_errors(root, operation)) if kind == "Pod"
         issues.concat(resource_claim_errors(root, %w[spec spec])) if kind == "ResourceClaimTemplate" && operation == :create
-        issues.concat(workload_errors(root)) if kind == "Workload"
         issues.concat(pod_certificate_request_errors(root)) if kind == "PodCertificateRequest" && operation == :create
         issues.concat(device_taint_rule_errors(root, old)) if kind == "DeviceTaintRule"
         issues.concat(storage_version_errors(root)) if kind == "StorageVersion"
         issues.concat(service_cidr_errors(root, operation)) if kind == "ServiceCIDR"
-        issues.concat(volume_attachment_errors(root)) if kind == "VolumeAttachment"
-        issues.concat(volume_errors(root, kind, operation)) if %w[PersistentVolume VolumeAttachment].include?(kind)
+        issues.concat(volume_attachment_errors(root, old, operation)) if kind == "VolumeAttachment"
+        issues.concat(volume_errors(root, kind, operation, old: old)) if %w[PersistentVolume VolumeAttachment].include?(kind)
         issues.concat(limit_range_errors(root)) if kind == "LimitRange"
-        issues.concat(storage_class_errors(root, operation)) if kind == "StorageClass"
+        issues.concat(storage_class_errors(root, operation, old)) if kind == "StorageClass"
         issues.concat(csi_storage_capacity_errors(root)) if kind == "CSIStorageCapacity"
         issues.concat(network_policy_errors(root, operation, old)) if kind == "NetworkPolicy"
         issues.concat(resource_quota_errors(root, operation, old, subresource)) if kind == "ResourceQuota"
-        issues.concat(label_keys_errors(root, kind, operation, old)) unless subresource.to_s == "status"
+        issues.concat(label_keys_errors(root, kind)) unless subresource.to_s == "status"
         issues.concat(ip_field_errors(root, kind, old))
         issues.concat(resource_claim_status_errors(root, old)) if kind == "ResourceClaim" && subresource.to_s == "status"
+        issues.concat(dra_node_allocatable_status_errors(root)) if kind == "Pod" && subresource.to_s == "status"
         issues.concat(rbac_errors(root, kind)) if %w[ClusterRole ClusterRoleBinding Role RoleBinding].include?(kind)
         issues.concat(api_service_errors(root)) if kind == "APIService"
         issues.concat(csi_node_errors(root)) if kind == "CSINode"
@@ -275,7 +308,7 @@ module Rubernetes
         end
       end
 
-      private_class_method :kind_errors_before_pod_template, :pod_template_errors, :workload_template_errors, :pod_change_errors,
+      private_class_method :kind_errors_before_pod_template, :pod_template_errors, :pod_change_errors,
                            :kind_errors_after_pod_template
     end
   end
@@ -289,14 +322,23 @@ require_relative "kubernetes_validator/handler_requests"
 require_relative "kubernetes_validator/zero_value_roots"
 require_relative "kubernetes_validator/config_data"
 require_relative "kubernetes_validator/nodes"
+require_relative "kubernetes_validator/runtime_class"
 require_relative "kubernetes_validator/events"
 require_relative "kubernetes_validator/limit_range"
 require_relative "kubernetes_validator/networking"
 require_relative "kubernetes_validator/storage"
+require_relative "kubernetes_validator/persistent_volume_claim_update"
+require_relative "kubernetes_validator/persistent_volume_claim_status"
 require_relative "kubernetes_validator/pod_spec"
 require_relative "kubernetes_validator/pod_nested"
+require_relative "kubernetes_validator/pod_projections"
+require_relative "kubernetes_validator/taint_comparisons"
+require_relative "kubernetes_validator/pod_user_namespaces"
 require_relative "kubernetes_validator/workloads"
+require_relative "kubernetes_validator/pod_disruption_budget"
 require_relative "kubernetes_validator/jobs"
+require_relative "kubernetes_validator/cron_jobs"
+require_relative "kubernetes_validator/job_status_update"
 require_relative "kubernetes_validator/autoscaling"
 require_relative "kubernetes_validator/flowcontrol"
 require_relative "kubernetes_validator/admission_webhooks"
@@ -306,6 +348,7 @@ require_relative "kubernetes_validator/custom_resource_definition"
 require_relative "kubernetes_validator/rbac"
 require_relative "kubernetes_validator/certificates"
 require_relative "kubernetes_validator/dynamic_resources"
+require_relative "kubernetes_validator/dra_node_allocatable"
 require_relative "kubernetes_validator/resource_claim_spec"
 require_relative "kubernetes_validator/scheduling"
 require_relative "kubernetes_validator/control_plane"
@@ -315,5 +358,8 @@ require_relative "kubernetes_validator/pod_update"
 require_relative "kubernetes_validator/admission_policy_cel"
 require_relative "kubernetes_validator/resource_quota"
 require_relative "kubernetes_validator/label_keys"
+require_relative "kubernetes_validator/topology_spread"
 require_relative "kubernetes_validator/ip_fields"
 require_relative "kubernetes_validator/resource_claim_status"
+require_relative "kubernetes_validator/resource_pool_status_request"
+require_relative "declarative_rules"
