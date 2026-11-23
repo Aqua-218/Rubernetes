@@ -61,6 +61,23 @@ class NetworkWorkerTest < Minitest::Test
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.9
   end
 
+  def test_a_worker_retains_each_frame_when_threads_start_late
+    frames = [[1, :add, ["first"], {}], [2, :add, ["second"], {}]]
+    jobs = []
+    replies = []
+    start_later = ->(*arguments, &job) { jobs << [job, arguments] }
+    Network::Worker.stub(:read_frame, ->(_socket) { frames.shift }) do
+      Network::Worker.stub(:write_frame, ->(_socket, reply) { replies << reply }) do
+        Thread.stub(:new, start_later) { Network::Worker.serve(FakeInterface.new, Object.new) }
+        jobs.each { |job, arguments| job.call(*arguments) }
+      end
+    end
+
+    observed = replies.map { |id, status, body| [id, status, body.fetch("sandbox")] }
+
+    assert_equal [[1, :ok, "first"], [2, :ok, "second"]], observed
+  end
+
   def test_a_gone_worker_fails_calls_instead_of_hanging
     Process.kill("KILL", @remote.pid)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
