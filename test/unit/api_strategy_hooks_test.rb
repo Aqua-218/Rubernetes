@@ -34,6 +34,42 @@ class APIStrategyHooksTest < Minitest::Test
     assert server.send(:allow_create_on_update?, descriptor("events.k8s.io", "v1", "events"))
   end
 
+  def test_put_can_acquire_a_new_lease_but_replacing_it_requires_its_version
+    registry = Rubernetes::API::Registry.new
+    registry.register(Rubernetes::API::Resource.new(group: "coordination.k8s.io", version: "v1", resource: "leases", kind: "Lease", scope: :namespaced))
+    api = Server.new(registry: registry)
+    object = {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {"name" => "worker"}, "spec" => {"holderIdentity" => "first"}}
+    path = "/apis/coordination.k8s.io/v1/namespaces/default/leases/worker"
+    request = ->(body) { api.call(method: "PUT", path: path, body: body, headers: {"content-type" => "application/json"}) }
+    previous = object.merge("metadata" => {"name" => "worker", "uid" => "previous"})
+    apply = api.call(method: "PATCH", path: path, body: previous, query: {"fieldManager" => "test"},
+                     headers: {"Content-Type" => "application/apply-patch+yaml"})
+    stale_put = request.call(previous)
+
+    assert_equal 409, apply.status
+    assert_includes apply.body.fetch("message"), "no existing object was found"
+    assert_equal 409, stale_put.status
+    assert_includes stale_put.body.fetch("message"), "/leases/default/worker"
+    assert_equal 404, api.call(method: "GET", path: path).status
+    first = request.call(object)
+
+    assert_equal 201, first.status
+    refute_empty first.body.dig("metadata", "resourceVersion")
+    change = object.merge("spec" => {"holderIdentity" => "second"})
+    refused = request.call(change.merge("metadata" => {"name" => "worker", "resourceVersion" => "0"}))
+
+    assert_equal 422, refused.status
+    assert_equal "metadata.resourceVersion", refused.body.dig("details", "causes", 0, "field")
+    updated = request.call(change.merge("metadata" => first.body.fetch("metadata")))
+
+    assert_equal 200, updated.status
+    assert_equal "second", updated.body.dig("spec", "holderIdentity")
+    stale = request.call(change.merge("metadata" => first.body.fetch("metadata")))
+
+    assert_equal 409, stale.status
+    assert_equal "leases", stale.body.dig("details", "kind")
+  end
+
   def test_other_kinds_are_not_creatable_through_update
     %w[pods configmaps secrets deployments].each do |resource|
       group = resource == "deployments" ? "apps" : ""
