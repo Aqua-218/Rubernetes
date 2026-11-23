@@ -58,6 +58,15 @@ class SchedulerNodeDeclaredFeaturesTest < Minitest::Test
     result = Scheduler.new.schedule(spec_pod, [node("n", declared: %w[RestartAllContainersOnContainerExits])])
 
     refute_predicate result, :scheduled?
+
+    declaring = node("new", declared: %w[UserNamespacesHostNetworkSupport])
+
+    assert_equal "new", Scheduler.new.schedule(spec_pod, [node("old", declared: nil), declaring]).node_name
+
+    isolated = pod("userns-isolated", rules: nil)
+    isolated["spec"]["hostUsers"] = false
+
+    assert_equal "old", Scheduler.new.schedule(isolated, [node("old", declared: nil)]).node_name
   end
 
   private
