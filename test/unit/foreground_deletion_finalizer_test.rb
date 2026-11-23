@@ -31,8 +31,8 @@ class ForegroundDeletionFinalizerTest < Minitest::Test
     add_pod("p0")
   end
 
-  def call(method, path, body = nil)
-    @server.call(method: method, path: path, body: body, query: nil, headers: {})
+  def call(method, path, body = nil, headers: {})
+    @server.call(method: method, path: path, body: body, query: nil, headers: headers)
   end
 
   def add_pod(name)
@@ -73,6 +73,34 @@ class ForegroundDeletionFinalizerTest < Minitest::Test
 
     call("PUT", "/api/v1/namespaces/dev/replicationcontrollers/rc", current)
 
+    assert_equal 404, rc.status
+  end
+
+  def test_an_update_to_the_owner_after_the_sweep_does_not_block_finalization
+    delete_rc("Foreground")
+    path = "/api/v1/namespaces/dev/replicationcontrollers/rc"
+    cached = rc.body
+    changed = Marshal.load(Marshal.dump(cached))
+    changed["metadata"]["annotations"] = {"example.com/progress" => "observed"}
+
+    assert_equal 200, call("PUT", path, changed).status
+
+    stale_removal = Marshal.load(Marshal.dump(cached))
+    stale_removal["metadata"]["finalizers"] = []
+
+    assert_equal 409, call("PUT", path, stale_removal).status
+
+    collector = Rubernetes::Controller::GarbageCollectorController.new
+    now = Time.iso8601(cached.dig("metadata", "deletionTimestamp")) + 60
+    operations = collector.send(:gc_finalizer_operations, [cached], now, live: ->(_object) { rc.body })
+
+    assert_equal [:json_patch], operations.map(&:action)
+
+    changed = Marshal.load(Marshal.dump(rc.body))
+    changed["metadata"]["annotations"]["example.com/progress"] = "updated again"
+
+    assert_equal 200, call("PUT", path, changed).status
+    assert_equal 200, call("PATCH", path, operations.first.patch, headers: {"Content-Type" => "application/json-patch+json"}).status
     assert_equal 404, rc.status
   end
 
@@ -118,20 +146,48 @@ class ForegroundGarbageCollectorTest < Minitest::Test
   def pod(name, owners: [%w[ReplicationController rc rc-uid]], deleting: false)
     metadata = {"name" => name, "namespace" => "dev", "uid" => "#{name}-uid", "resourceVersion" => "7",
                 "ownerReferences" => owners.map do |kind, owner_name, uid|
-                  {"apiVersion" => "v1", "kind" => kind, "name" => owner_name, "uid" => uid}
+                  {"apiVersion" => "v1", "kind" => kind, "name" => owner_name, "uid" => uid, "blockOwnerDeletion" => true}
                 end}
     metadata["deletionTimestamp"] = "2026-01-01T00:00:30Z" if deleting
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata}
   end
 
   def operations(objects, now: NOW)
-    GC.new.send(:foreground_operations, objects, now)
+    GC.new.send(:gc_finalizer_operations, objects, now)
+  end
+
+  def patched_owner(operation)
+    Rubernetes::API::Patch.apply(operation.object, operation.patch, type: :json)
   end
 
   def test_a_dependent_created_after_the_cascade_is_deleted
     ops = operations([owner, pod("late")])
 
     assert_equal([[:delete, "late"]], ops.map { |operation| [operation.action, Support.name(operation.object)] })
+  end
+
+  def test_nonblocking_reference_does_not_hold_the_foreground_owner
+    child = pod("late")
+    child.dig("metadata", "ownerReferences").first.delete("blockOwnerDeletion")
+
+    ops = operations([owner, child])
+
+    assert_equal [:json_patch], ops.map(&:action)
+    assert_equal "rc", ops.first.object.dig("metadata", "name")
+    assert_empty patched_owner(ops.first).dig("metadata", "finalizers")
+  end
+
+  def test_orphaning_releases_only_the_matching_reference_even_from_a_terminating_child
+    marked = owner
+    marked["metadata"]["finalizers"] = ["example.com/hold", "orphan"]
+    child = pod("going", owners: [%w[ReplicationController rc rc-uid], %w[ReplicationController other other-uid]], deleting: true)
+    release = operations([marked, child])
+
+    assert_equal [:update], release.map(&:action)
+    assert_equal(["other-uid"], release.first.object.dig("metadata", "ownerReferences").map { |reference| reference["uid"] })
+    finish = operations([marked, release.first.object])
+
+    assert_equal ["example.com/hold"], patched_owner(finish.first).dig("metadata", "finalizers")
   end
 
   def test_the_owner_waits_for_a_terminating_dependent
@@ -141,8 +197,54 @@ class ForegroundGarbageCollectorTest < Minitest::Test
   def test_the_finalizer_is_removed_once_no_dependent_is_left
     ops = operations([owner])
 
-    assert_equal [:update], ops.map(&:action)
-    assert_empty Array(ops.first.object.dig("metadata", "finalizers"))
+    assert_equal [:json_patch], ops.map(&:action)
+    assert_empty patched_owner(ops.first).dig("metadata", "finalizers")
+  end
+
+  def test_finalizer_removal_uses_the_live_owner_version_and_preserves_other_changes
+    cached = owner
+    current = owner
+    current["metadata"]["resourceVersion"] = "12"
+    current["metadata"]["finalizers"] << "operator.example/hold"
+    current["status"] = {"phase" => "Terminating"}
+
+    ops = GC.new.send(:gc_finalizer_operations, [cached], NOW, live: ->(_object) { current })
+
+    assert_equal [:json_patch], ops.map(&:action)
+    updated = patched_owner(ops.first)
+
+    assert_equal "12", updated.dig("metadata", "resourceVersion")
+    assert_equal ["operator.example/hold"], updated.dig("metadata", "finalizers")
+    assert_equal({"phase" => "Terminating"}, updated.fetch("status"))
+  end
+
+  def test_finalizer_removal_requires_the_same_finalizer_list_at_commit
+    cached = owner
+    cached["metadata"]["finalizers"] << "operator.example/hold"
+    plan = operations([cached]).first
+    live = owner
+    live["metadata"]["resourceVersion"] = "11"
+
+    assert_raises(Rubernetes::API::Patch::Error) do
+      Rubernetes::API::Patch.apply(live, plan.patch, type: :json)
+    end
+  end
+
+  def test_finalizer_removal_ignores_a_same_name_replacement
+    replacement = owner
+    replacement["metadata"]["uid"] = "other-uid"
+
+    ops = GC.new.send(:gc_finalizer_operations, [owner], NOW, live: ->(_object) { replacement })
+
+    assert_empty ops
+  end
+
+  def test_an_owner_read_failure_aborts_the_sweep
+    live = ->(_object) { raise IOError, "owner read failed" }
+
+    error = assert_raises(IOError) { GC.new.send(:gc_finalizer_operations, [owner], NOW, live: live) }
+
+    assert_equal "owner read failed", error.message
   end
 
   def test_an_owner_marked_moments_ago_is_not_released_yet
@@ -170,7 +272,7 @@ class ForegroundGarbageCollectorTest < Minitest::Test
     gone = pod("gone")
     live = ->(object) { Support.name(object) == "shared" ? fresh : nil }
 
-    ops = GC.new.send(:foreground_operations, [owner, other, stale, gone], NOW, live: live)
+    ops = GC.new.send(:gc_finalizer_operations, [owner, other, stale, gone], NOW, live: live)
 
     assert_equal [:update], ops.map(&:action)
     assert_equal(["stay-uid"], ops.first.object.dig("metadata", "ownerReferences").map { |reference| reference["uid"] })
@@ -180,7 +282,7 @@ class ForegroundGarbageCollectorTest < Minitest::Test
     stale = pod("only")
     live = ->(object) { object }
 
-    ops = GC.new.send(:foreground_operations, [owner, stale], NOW, live: live)
+    ops = GC.new.send(:gc_finalizer_operations, [owner, stale], NOW, live: live)
 
     assert_equal([[:delete, "only"]], ops.map { |operation| [operation.action, Support.name(operation.object)] })
   end
@@ -190,7 +292,7 @@ class ForegroundGarbageCollectorTest < Minitest::Test
   def test_a_failed_live_read_falls_back_to_the_cached_dependent
     live = ->(_object) { raise IOError, "connection dropped" }
 
-    ops = GC.new.send(:foreground_operations, [owner, pod("only")], NOW, live: live)
+    ops = GC.new.send(:gc_finalizer_operations, [owner, pod("only")], NOW, live: live)
 
     assert_equal([[:delete, "only"]], ops.map { |operation| [operation.action, Support.name(operation.object)] })
   end
@@ -202,12 +304,13 @@ class ForegroundGarbageCollectorTest < Minitest::Test
              "metadata" => {"name" => "stay", "namespace" => "dev", "uid" => "stay-uid"}}
     cached = pod("shared", owners: [%w[ReplicationController rc rc-uid], %w[ReplicationController stay stay-uid]])
     released = pod("shared", owners: [%w[ReplicationController stay stay-uid]])
+    live = ->(object) { Support.kind(object) == "Pod" ? released : object }
 
-    ops = GC.new.send(:foreground_operations, [owner, other, cached], NOW, live: ->(_object) { released })
+    ops = GC.new.send(:gc_finalizer_operations, [owner, other, cached], NOW, live: live)
 
-    assert_equal [:update], ops.map(&:action)
+    assert_equal [:json_patch], ops.map(&:action)
     assert_equal "rc", Support.name(ops.first.object), "the owner's finalizer is removed"
-    assert_empty Array(ops.first.object.dig("metadata", "finalizers"))
+    assert_empty patched_owner(ops.first).dig("metadata", "finalizers")
   end
 
   Support = Rubernetes::Controller::Support
