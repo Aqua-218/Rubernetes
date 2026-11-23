@@ -82,6 +82,10 @@ VXLANの既定値は次のとおりである。
 - selectorから得たidentityの集合を、eBPFマップまたはnftablesのsetに反映する。反映はリビジョン単位で、atomicに入れ替える。
 - default-denyを更新するときに、一時的にすべての通信を許可する時間を作ってはならない。
 
+内蔵ネットワークは、起動時にPod、Namespace、NetworkPolicyを取得し、以降は各リソースの `resourceVersion` から変更を監視する。異なるノードのPodは通信相手の選択に使い、各ワーカーは自身が管理するPodへルールを適用する。
+
+`rubectl cluster` はコンポーネント認証を使うクラスタに専用の読み取り資格情報を設定する。ノードを個別に構成する場合は、`network.policy_kubeconfig` に読み取り用kubeconfigの絶対パスを指定する。認証主体には [NetworkPolicy用のClusterRole](../../config/addons/network-policy-rbac.yml) と同じ `list`、`watch` の権限が必要になる。省略した場合はノードエージェントのAPIクライアントを使用する。
+
 <a id="sec-5-9-7"></a>
 ## 5.9.7 DNS
 
@@ -118,9 +122,29 @@ network:
 - `portMappings`のcapabilityを宣言したプラグインには、PodのhostPortを`runtimeConfig`で渡す。
 - `hostNetwork`のPodには、プラグインを実行しない。
 
-CNIを使う場合、Podのアドレス、経路、ノードのbridge、NetworkPolicyは、プラグインが受け持つ。[5.9.3](network.md#sec-5-9-3)から[5.9.6](network.md#sec-5-9-6)の内蔵の実装は動かない。クラスタDNSの待ち受けアドレスは、設定で明示する。
+CNIを使う場合、Podのアドレス、経路、ノードのbridge、NetworkPolicyは、プラグインが受け持つ。[5.9.3](network.md#sec-5-9-3)から[5.9.6](network.md#sec-5-9-6)の内蔵の実装は動かない。Podが問い合わせるクラスタDNSのアドレスは`dns.cluster_dns`に指定する。内蔵のDNSサーバーを起動する場合は、`dns.bind_addresses`にノード側の待ち受けアドレスを指定する。既存のクラスタDNSを使う場合は、`dns.enabled: false`で内蔵のDNSサーバーを無効にできる。
 
 この構成は、既存の環境へ組み込むための接続口である。互換性を検証する構成には含めない。
+
+<a id="sec-5-9-9"></a>
+## 5.9.9 IPv6専用Podからの送信
+
+IPv6専用Podから名前でIPv4の宛先に接続する場合は、既存のNAT64ゲートウェイとノードのDNS64を組み合わせる。クラスタを作成するときは、ゲートウェイの変換プレフィックスを指定する。
+
+```sh
+rubectl cluster up --ip-family ipv6 --nat64-prefix 64:ff9b:1::/96
+```
+
+個別のノードを構成する場合は、エージェントの設定に同じ値を指定する。
+
+```yaml
+dns:
+  nat64_prefix: 64:ff9b:1::/96
+```
+
+各ノードのIPv6経路で、そのプレフィックスをNAT64ゲートウェイへ向ける。ゲートウェイにはIPv4宛先への到達性と、送信元IPv6アドレスへの戻り経路が必要である。内蔵bridgeのPodは既存のIPv6デフォルト経路を使う。プレフィックスにはPodやServiceのCIDRと重複しないものを選ぶ。RFC 6052の`64:ff9b::/96`はグローバルなIPv4宛先専用である。プライベートなIPv4宛先へ接続するには、ゲートウェイでサイト専用プレフィックスを設定する。
+
+外部名へのAAAA問い合わせが`NOERROR`で、応答にAAAAがなければ、クラスタDNSはAを問い合わせ、ゲートウェイのプレフィックスでAAAAを合成する。既存のAAAAやクラスタ内のアドレスはそのまま返す。DNSSECフラグ付きの問い合わせは通常どおり転送する。IPv4リテラルへの接続に必要なCLATは別途構成する。
 
 ## 関連
 
