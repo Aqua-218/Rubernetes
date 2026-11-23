@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "volume_secrets"
+
 module Rubernetes
   module Security
     module Authorization
@@ -71,7 +73,7 @@ module Rubernetes
           NodeGraph.timed("AddPV") do
             pv_name = name(pv)
             claim = value(pv, "spec", "claimRef")
-            secrets = pv_secret_references(pv)
+            secrets = VolumeSecrets.node_references(pv).to_set
             @mutex.synchronize do
               if (old_claim = @volume_claim[pv_name])
                 @claim_volume.delete(old_claim)
@@ -215,18 +217,6 @@ module Rubernetes
           end
           resource_claim_names(pod).each { |claim| references << [:resourceclaims, ns, claim] }
           references
-        end
-
-        def pv_secret_references(pv)
-          csi = value(pv, "spec", "csi")
-          return Set.new unless csi.is_a?(Hash)
-
-          %w[nodePublishSecretRef nodeStageSecretRef nodeExpandSecretRef].each_with_object(Set.new) do |field, set|
-            ref = csi[field]
-            next unless ref.is_a?(Hash) && !value(ref, "name").to_s.empty?
-
-            set << [:secrets, value(ref, "namespace").to_s, value(ref, "name").to_s]
-          end
         end
 
         def each_container(pod, &)
