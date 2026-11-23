@@ -6,7 +6,7 @@ require_relative "runtime"
 require_relative "support"
 require_relative "types"
 require_relative "secondary_support"
-require_relative "apply_failures"
+require_relative "replica_failure_status"
 require_relative "pod_deletion_ranking"
 
 module Rubernetes
@@ -21,6 +21,7 @@ module Rubernetes
       POD_CAP = 500
 
       include SecondarySupport
+      include ReplicaFailureStatus
 
       # PodControllerRefManager canAdoptFunc / RecheckDeletionTimestamp: a
       # controller adopts only after a fresh read shows the same object, not
@@ -44,38 +45,29 @@ module Rubernetes
         namespace = Support.namespace(replication_controller)
         pods ||= list_for(adapter, POD, namespace: namespace)
         selector = selector_for(replication_controller)
+        matches = Support.selector_predicate(selector)
         owned_pods = Array(pods).select do |pod|
           namespace_matches?(replication_controller, pod) &&
             owner_matches?(replication_controller, pod, controller: true)
         end
         adoptable = Array(pods).select do |pod|
           namespace_matches?(replication_controller, pod) &&
-            Support.selector_matches?(selector, pod) &&
+            matches.call(pod) &&
             !controller_owner_reference?(pod)
         end
-        operations = []
         # ReleasePod: an owned Pod whose labels no longer match the selector
         # loses this controller's owner reference and stops counting.
-        released = owned_pods.reject do |pod|
-          Support.selector_matches?(selector, pod) || !Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil?
+        owned_pods, released = owned_pods.partition do |pod|
+          matches.call(pod) || !Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil?
         end
-        owned_pods -= released
-        released.each do |pod|
-          candidate = Support.deep_copy(pod)
-          candidate["metadata"] ||= {}
-          candidate["metadata"]["ownerReferences"] = Support.owner_references(pod).map do |reference|
-            Support.deep_copy(reference)
-          end.reject do |reference|
-            Support.value(reference, "uid", nil).to_s == Support.uid(replication_controller).to_s
-          end
-          update = operation_update(pod, candidate, descriptor: POD, reason: "replicationcontroller pod release")
-          operations << update if update
+        operations = released.map do |pod|
+          operation_owner_reference(pod, replication_controller, descriptor: POD,
+                                                                 reason: "replicationcontroller pod release", adopt: false)
         end
         adoptable = [] unless adoptable.empty? || adoption_allowed?(adapter, replication_controller, REPLICATION_CONTROLLER)
-        adoptable.each do |pod|
-          candidate = ensure_owner_reference(pod, replication_controller)
-          update = operation_update(pod, candidate, descriptor: POD, reason: "replicationcontroller pod adoption")
-          operations << update if update
+        operations += adoptable.map do |pod|
+          operation_owner_reference(pod, replication_controller, descriptor: POD,
+                                                                 reason: "replicationcontroller pod adoption", adopt: true)
         end
         managed = (owned_pods + adoptable).uniq { |pod| [Support.name(pod), Support.uid(pod)] }
         alive = managed.reject { |pod| terminal_pod?(pod) || !Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil? }
@@ -90,8 +82,7 @@ module Rubernetes
         elsif alive.length > desired
           operations.concat(delete_pods(alive, alive.length - desired))
         end
-        deleted_names = operations.select(&:delete?).map { |operation| Support.name(operation.object) }
-        surviving = alive.reject { |pod| deleted_names.include?(Support.name(pod)) }
+        surviving = surviving_pods(alive, operations)
         status = Support.deep_copy(Support.status(replication_controller))
         # replica_set_utils.go calculateStatus counts the Pods this sync
         # OBSERVED, never the ones it is about to create: creates go out in
@@ -100,7 +91,7 @@ module Rubernetes
         # machinery] Garbage collector should orphan pods created by rc if
         # delete options say so" waits for status.replicas == 100 before
         # deleting the rc, read 100 two seconds in, and found 60 Pods.
-        observed_fully_labeled = alive.count { |pod| Support.selector_matches?(selector, pod) }
+        observed_fully_labeled = alive.count(&matches)
         status["replicas"] = alive.length
         status["fullyLabeledReplicas"] = observed_fully_labeled
         # replica_set_utils.go calculateStatus also publishes readiness and the
@@ -136,7 +127,7 @@ module Rubernetes
                      "message" => "ReplicationController #{Support.name(replication_controller)} deleted excess Pods"}
         end
         observed = result_for(replication_controller, operations, status: status, events: events, status_first: true)
-        settle_status_after_changes(replication_controller, observed, operations, status, alive, selector)
+        settle_status_after_changes(replication_controller, observed, operations, status, alive, matches, surviving: surviving)
       end
 
       # The status above counts only what this sync OBSERVED, and goes out
@@ -146,19 +137,16 @@ module Rubernetes
       # final batch -- one that runs only if every change before it
       # succeeded.  A single pass therefore still reaches a fixed point, and
       # the count is never ahead of the Pods that exist.
-      def settle_status_after_changes(replication_controller, observed, operations, status, alive, selector)
+      def settle_status_after_changes(replication_controller, observed, operations, status, alive, selector, surviving: surviving_pods(alive, operations))
         creates = operations.select(&:create?)
-        deletes = operations.select(&:delete?)
-        return observed if creates.empty? && deletes.empty?
+        return observed if creates.empty? && operations.none?(&:delete?)
 
-        deleted_names = deletes.map { |operation| Support.name(operation.object) }
-        remaining = alive.reject { |pod| deleted_names.include?(Support.name(pod)) }
         settled = Support.deep_copy(status)
-        settled["replicas"] = remaining.length + creates.length
-        fully_labeled = remaining.count { |pod| Support.selector_matches?(selector, pod) } +
-                        creates.count { |operation| Support.selector_matches?(selector, operation.object) }
+        settled["replicas"] = surviving.length + creates.length
+        matches = Support.selector_predicate(selector)
+        fully_labeled = surviving.count(&matches) +
+                        creates.count { |operation| matches.call(operation.object) }
         fully_labeled.zero? ? settled.delete("fullyLabeledReplicas") : settled["fullyLabeledReplicas"] = fully_labeled
-        apply_replica_failure_condition(settled, replication_controller, settled["replicas"] - replica_count(replication_controller))
         final = operation_status(replication_controller, settled, descriptor: REPLICATION_CONTROLLER,
                                                                   reason: "controller status after replica changes", force: true)
         batches = Array(observed.batches) + [[final]]
@@ -189,38 +177,6 @@ module Rubernetes
       end
 
       private
-
-      # replica_set_utils.go calculateStatus: the condition is added when the
-      # last attempt to reach the desired count failed and is removed as soon
-      # as one succeeds.  An existing condition is left alone rather than
-      # restamped, so its lastTransitionTime keeps meaning what it says.
-      def apply_replica_failure_condition(status, replication_controller, diff)
-        conditions = Array(Support.value(status, "conditions", [])).map { |condition| Support.deep_copy(condition) }
-        existing = conditions.find { |condition| Support.value(condition, "type", "").to_s == "ReplicaFailure" }
-        message = ApplyFailures[name, object_key_for(replication_controller)]
-        if message.nil? || message.to_s.empty?
-          return if existing.nil?
-
-          status["conditions"] = conditions.reject do |condition|
-            Support.value(condition, "type", "").to_s == "ReplicaFailure"
-          end
-          status.delete("conditions") if status["conditions"].empty?
-          return
-        end
-        return if existing
-
-        reason = if diff.negative?
-                   "FailedCreate"
-                 elsif diff.positive?
-                   "FailedDelete"
-                 else
-                   ""
-                 end
-        stamp = Time.now.utc.iso8601(0)
-        conditions << {"type" => "ReplicaFailure", "status" => "True", "lastTransitionTime" => stamp,
-                       "reason" => reason, "message" => message.to_s}
-        status["conditions"] = conditions
-      end
 
       def min_ready_seconds(replication_controller)
         Integer(Support.value(Support.spec(replication_controller), "minReadySeconds", 0) || 0)
@@ -256,17 +212,20 @@ module Rubernetes
       end
 
       def selector_for(replication_controller)
-        selector = Support.value(Support.spec(replication_controller), "selector", nil)
-        selector = Support.value(selector, "matchLabels", selector) if selector.is_a?(Hash) && Support.value(selector, "matchLabels", nil)
+        selector = Support.unwrap_match_labels(Support.value(Support.spec(replication_controller), "selector"))
         selector = Support.labels(replication_controller) if selector.nil? || selector == {}
         selector || {}
       end
 
       def controller_owner_reference?(pod)
-        Support.owner_references(pod).any? do |reference|
-          value = Support.value(reference, "controller", false)
-          value == true || value.to_s.casecmp("true").zero?
-        end
+        !Support.controller_owner_reference(pod).nil?
+      end
+
+      def surviving_pods(pods, operations)
+        deleted_names = operations.select(&:delete?).to_set { |operation| Support.name(operation.object) }
+        return pods if deleted_names.empty?
+
+        pods.reject { |pod| deleted_names.include?(Support.name(pod)) }
       end
 
       def replica_count(resource)
@@ -277,33 +236,23 @@ module Rubernetes
       end
 
       def create_pods(owner, existing_pods, count, selector)
-        names = Array(existing_pods).map { |pod| Support.name(pod) }
+        prefix = Support.name(owner)
+        names = Array(existing_pods).to_set { |pod| Support.name(pod) }
         template = Support.value(Support.spec(owner), "template", {})
-        operations = []
-        Integer(count).times do
-          # GenerateName semantics: a random 5-character suffix, never a
-          # counter -- "<rc>-0" collided with Pods the controller does not own.
-          name = nil
-          loop do
-            name = "#{Support.name(owner)}-#{Support.random_suffix}"
-            break unless names.include?(name)
-          end
-          names << name
+        Array.new([0, Integer(count)].max) do
+          name = Support.unique_pod_name(prefix, names)
           metadata = Support.deep_copy(Support.value(template, "metadata", {}))
           metadata = {} unless metadata.is_a?(Hash)
           metadata["name"] = name
           metadata["namespace"] ||= Support.namespace(owner)
-          labels = Support.deep_copy(Support.value(metadata, "labels", {}))
+          labels = Support.value(metadata, "labels", {})
           labels = {} unless labels.is_a?(Hash)
           metadata["labels"] = labels.merge(selector || {})
           spec = Support.deep_copy(Support.value(template, "spec", {}))
           spec = {} unless spec.is_a?(Hash)
           pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata, "spec" => spec}
-          operations << operation_create(pod, owner: owner, descriptor: POD,
-                                              reason: "replicationcontroller scale up")
-          names << name
+          operation_create(pod, owner: owner, descriptor: POD, reason: "replicationcontroller scale up")
         end
-        operations
       end
 
       # getPodsToDelete (the ReplicationManager is the ReplicaSet
