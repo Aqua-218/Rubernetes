@@ -60,6 +60,11 @@ module Rubernetes
           @authenticators.each do |authenticator|
             result = authenticator.authenticate(context)
             results << result if result
+          rescue AuthenticationError
+            # A request-header proxy presents a cert from its own CA. An
+            # X509 rejection from the separate client CA is expected once
+            # that certificate has authenticated through request headers.
+            raise unless authenticator.is_a?(X509) && results.any? { |result| result.authenticator == RequestHeader::NAME }
           end
           if results.length > 1
             distinct = results.map(&:user).uniq
