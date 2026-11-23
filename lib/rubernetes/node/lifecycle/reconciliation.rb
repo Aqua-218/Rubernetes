@@ -119,7 +119,13 @@ module Rubernetes
             # is longer than the client watching the Pod will allow.
             if config_digest(existing.fetch(:pod)) == config_digest(object) &&
                metadata_digest(existing.fetch(:pod)) == metadata_digest(object)
-              return result_for(existing) if start_retry_pending?(uid)
+              if start_retry_pending?(uid)
+                if mark_image_pull_backoff(existing)
+                  update_status(object, existing)
+                  persist_state!
+                end
+                return result_for(existing)
+              end
             else
               clear_start_retry(uid)
             end
@@ -130,6 +136,13 @@ module Rubernetes
 
         # The sync of a Pod whose record is Running.
         def sync_running(object, existing, request_id)
+          return result_for(existing) if existing[:sidecars_stopping]
+
+          if runtime_sandbox_stopped?(existing)
+            lose_sandbox!(object, existing)
+            return result_for(existing)
+          end
+
           config_changed = config_digest(existing.fetch(:pod)) != config_digest(object)
 
           # An ephemeral container is ADDED to a running Pod; upstream starts it
@@ -164,13 +177,16 @@ module Rubernetes
           config_changed ? apply_changed_config(object, existing, request_id) : refresh_running(object, existing)
         end
 
-        # The running Pod's configuration changed: resized in place when only
-        # resources differ, otherwise replaced.
+        # In-place resize and image updates preserve the Pod's state and other
+        # containers; replacing the sandbox handles the remaining changes.
         def apply_changed_config(object, existing, request_id)
           if existing[:state] == "Running" && resize_only_change?(existing.fetch(:pod), object)
             resize_pod(existing, object)
             persist_state!
             return result_for(existing)
+          end
+          if existing[:state] == "Running" && (updates = image_only_updates(existing, object))
+            return apply_running_image_updates(object, existing, updates)
           end
 
           # kubelet's status manager acknowledges the new spec generation on
@@ -192,23 +208,45 @@ module Rubernetes
         def refresh_running(object, existing)
           previous_generation = Helpers.key(Helpers.key(existing[:pod] || {}, "metadata", {}), "generation", nil)
           previous_projected = projected_metadata(existing[:pod])
+          gates_changed = readiness_gates_changed?(object, existing[:pod])
           existing[:pod] = object
           mark_dirty(existing)
           observe_exits(existing, object)
+          return result_for(existing) if existing[:sidecar_shutdown_pending] || pod_finished?(object, existing, existing[:uid])
+
+          refresh_recovered_init_statuses(existing) if existing[:state] == "Running"
+
           # A new generation is answered with a status carrying its
           # observedGeneration right away (kubelet syncs on the update event;
           # e2e waits 20 s for it), not on the next periodic status pass.
           current_generation = Helpers.key(Helpers.key(object, "metadata", {}), "generation", nil)
-          update_status(object, existing) if current_generation != previous_generation
+          runtime_ips_changed = existing[:state] == "Running" && refresh_runtime_pod_ips(existing)
+          update_status(object, existing) if current_generation != previous_generation || gates_changed || runtime_ips_changed
           resume_backoff_restarts(existing, object) if existing[:state] == "Running"
           probe_running_containers(existing, object) if existing[:state] == "Running"
           # Labels and annotations are what downward API volumes project;
           # kubelet re-syncs the Pod on the update event, so a change reaches
           # the files at once instead of on the next periodic volume sync.
-          metadata_changed = projected_metadata(object) != previous_projected
+          metadata_changed = runtime_ips_changed || projected_metadata(object) != previous_projected
           sync_volumes(existing, object) if existing[:state] == "Running" && (metadata_changed || volume_sync_due?(existing))
           persist_state!
           result_for(existing)
+        end
+
+        # A controller's readiness-gate update changes status without
+        # changing the Pod generation or any container probe result.
+        def readiness_gates_changed?(pod, previous)
+          types = Array(pod.dig("spec", "readinessGates")).map { |gate| gate["conditionType"] }
+          return false if types.empty?
+
+          readiness_gate_values(pod, types) != readiness_gate_values(previous, types)
+        end
+
+        def readiness_gate_values(pod, types)
+          Array(pod&.dig("status", "conditions")).filter_map do |condition|
+            type = condition["type"]
+            [type, condition["status"]] if types.include?(type)
+          end.to_h
         end
 
         # A Pod is finished when a terminal phase was reached and its restart
