@@ -177,6 +177,12 @@ class M3JobControllerTest < Minitest::Test
     reasons = result.status.fetch("conditions").map { |condition| condition.fetch("reason") }
 
     assert_includes reasons, "MaxFailedIndexesExceeded"
+
+    failed_second = pod("batch-1-a", job, phase: "Failed", finalizer: true, index: 1, finished_at: NOW - 30,
+                                          annotations: {"batch.kubernetes.io/job-index-failure-count" => "1"})
+    paired = controller.plan(job, pods: [failed_once, failed_second], now: NOW)
+
+    assert_equal "0,1", paired.status.fetch("failedIndexes")
   end
 
   def test_backoff_limit_per_index_replacement_carries_failure_count_annotation
@@ -230,6 +236,38 @@ class M3JobControllerTest < Minitest::Test
     assert_equal "SuccessPolicy", met.fetch("reason")
     assert_equal "Matched rules at index 0", met.fetch("message")
     assert_equal 0, result.status.fetch("failed"), "running pods deleted after SuccessCriteriaMet are not failures"
+    assert_equal(["SuccessCriteriaMet"], result.status.fetch("conditions").map { |condition| condition.fetch("type") })
+
+    synced = controller.plan(job.merge("status" => result.status), pods: [strip_finalizer(pods.first)], now: NOW + 1)
+    complete = synced.status.fetch("conditions").last
+
+    assert_equal %w[Complete SuccessPolicy], complete.values_at("type", "reason")
+    assert_equal "Matched rules at index 0", complete.fetch("message")
+    assert_equal 0, synced.status.fetch("terminating")
+  end
+
+  def test_success_policy_counts_only_matching_indexes_and_chooses_first_matching_rule
+    policy = {"rules" => [{"succeededIndexes" => "0-2", "succeededCount" => 2}, {"succeededCount" => 3}]}
+    job = job(completions: 6, parallelism: 6, completion_mode: "Indexed", success_policy: policy)
+      .merge("status" => {"completedIndexes" => "0", "succeeded" => 1})
+    succeeded = pod("batch-4", job, phase: "Succeeded", finalizer: true, index: 4)
+    running = pod("batch-3", job, phase: "Running", finalizer: true, index: 3)
+
+    waiting = controller.plan(job, pods: [succeeded, running], now: NOW)
+
+    refute waiting.status.key?("conditions")
+    assert_empty waiting.deletes
+
+    [[5, 1], [1, 0]].each do |succeeded_index, matching_rule|
+      finished = pod("batch-#{succeeded_index}", job, phase: "Succeeded", finalizer: true, index: succeeded_index)
+      result = controller.plan(job, pods: [succeeded, running, finished], now: NOW)
+      condition = result.status.fetch("conditions").first
+
+      assert_equal %w[SuccessCriteriaMet SuccessPolicy], condition.values_at("type", "reason")
+      assert_equal "Matched rules at index #{matching_rule}", condition.fetch("message")
+      assert_equal(["batch-3"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
+      assert_empty result.creates
+    end
   end
 
   def test_suspend_deletes_active_pods_and_resume_resets_start_time
@@ -298,6 +336,30 @@ class M3JobControllerTest < Minitest::Test
 
     assert_equal(["batch-unsched"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty result.creates
+  end
+
+  def test_pods_deleted_by_scale_down_or_suspension_are_not_counted_as_failures
+    [{"parallelism" => 0}, {"suspend" => true}].each do |changes|
+      job = job(completions: 2, parallelism: 1, backoff_limit: 0)
+      job.fetch("spec").merge!(changes)
+      running = pod("batch-run", job, phase: "Running", finalizer: true)
+      running.fetch("metadata").fetch("finalizers") << "example.com/cleanup"
+      result = controller.plan(job, pods: [running], now: NOW)
+      pod_operations = result.operations.select { |operation| operation.resource.kind == "Pod" }
+
+      assert_equal %i[update delete], pod_operations.map(&:action)
+      updated_pod = pod_operations.first.object
+
+      assert_equal ["example.com/cleanup"], updated_pod.dig("metadata", "finalizers")
+
+      # The remaining finalizer can keep the Pod visible after DELETE.
+      terminating = updated_pod.merge("metadata" => updated_pod.fetch("metadata").merge("deletionTimestamp" => NOW.iso8601(6)))
+      next_sync = controller.plan(job.merge("status" => result.status), pods: [terminating], now: NOW + 1)
+
+      assert_equal 0, next_sync.status.fetch("failed")
+      assert_equal 1, next_sync.status.fetch("terminating")
+      refute(Array(next_sync.status["conditions"]).any? { |condition| condition.fetch("type") == "FailureTarget" })
+    end
   end
 
   # job/metrics: syncs by action, Pod creations by reason, finished Pods and
