@@ -5,6 +5,7 @@ require_relative "batch"
 require_relative "metrics"
 
 require_relative "queueing_hints"
+require_relative "pod_group_scheduling"
 
 module Rubernetes
   module Scheduler
@@ -12,7 +13,10 @@ module Rubernetes
     # blocks receive only Pod/Node snapshots; the context is intentionally not
     # exposed as mutable plugin state.
     class CycleContext
-      attr_reader :nodes, :pods, :namespace_data, :volume_data, :workload_selectors, :cycle_state, :pod_groups
+      NO_ANTI_AFFINITY_DOMAINS = {}.freeze
+
+      attr_reader :taint_comparisons, :nodes, :pods, :namespace_data, :volume_data, :workload_selectors,
+                  :cycle_state, :pod_groups, :affinity_placements
 
       # +workload_selectors+: {"services" => [{namespace, selector}], "controllers" =>
       # {"<Kind>/<namespace>/<name>" => selector}} -- what PodTopologySpread's
@@ -23,11 +27,19 @@ module Rubernetes
       # there); shared by the contexts #with derives, as upstream's Clone of
       # stateData shares the same data.
       # +pod_groups+: {"namespace/name" => PodGroup object} (GenericWorkload).
-      def initialize(nodes:, pods:, namespace_data: {}, volume_data: {}, workload_selectors: nil, cycle_state: nil, pod_groups: nil)
+      def initialize(nodes:, pods:, namespace_data: {}, volume_data: {}, workload_selectors: nil, cycle_state: nil, pod_groups: nil,
+                     taint_comparisons: false)
+        @taint_comparisons = taint_comparisons
         @cycle_state = cycle_state || {}
         @nodes = Array(nodes).freeze
         @pods = Array(pods).freeze
         @namespace_data = Support.snapshot(namespace_data || {})
+        typed_nodes = @nodes.map { |node| node.is_a?(Node) ? node : Node.new(node) }
+        @nodes_by_name = typed_nodes.to_h { |node| [node.name, node] }.freeze
+        @affinity_placements = Filters::Helpers.affinity_placements(@nodes_by_name, @pods)
+        @anti_affinity_owners = Filters::Helpers.required_anti_affinity_owners(@affinity_placements)
+        @anti_affinity_domains = {}.compare_by_identity
+        @topology_spread = {}.compare_by_identity
         @volume_data = Support.snapshot(volume_data || {})
         @workload_selectors = workload_selectors.nil? ? nil : Support.snapshot(workload_selectors)
         @pod_groups = pod_groups.nil? ? nil : Support.snapshot(pod_groups)
@@ -43,12 +55,31 @@ module Rubernetes
       end
 
       def node_for_pod(pod)
-        @nodes.find { |node| node.name == pod.node_name }
+        @nodes_by_name[pod.node_name]
+      end
+
+      def node_snapshot?(node)
+        @nodes_by_name[node.name].equal?(node)
+      end
+
+      def forbidden_anti_affinity_domains(pod)
+        return NO_ANTI_AFFINITY_DOMAINS if @anti_affinity_owners.empty?
+
+        # A trial context made for nominations or preemption has a fresh
+        # placement index and cache, even though it shares the cycle state.
+        @anti_affinity_domains[pod] ||= Filters::Helpers.forbidden_anti_affinity_domains(@anti_affinity_owners, pod, self)
+      end
+
+      # Counts belong to this placement snapshot. A preemption trial built
+      # with #with sees its own remaining Pods, even with shared cycle_state.
+      def topology_spread_for(pod)
+        @topology_spread[pod] ||= yield
       end
 
       def with(nodes: @nodes, pods: @pods, volume_data: @volume_data)
         self.class.new(nodes: nodes, pods: pods, namespace_data: @namespace_data, volume_data: volume_data,
-                       workload_selectors: @workload_selectors, cycle_state: @cycle_state, pod_groups: @pod_groups)
+                       workload_selectors: @workload_selectors, cycle_state: @cycle_state, pod_groups: @pod_groups,
+                       taint_comparisons: @taint_comparisons)
       end
     end
 
@@ -163,13 +194,14 @@ module Rubernetes
     end
 
     class ReservationToken
-      attr_reader :key, :pod, :node, :external
+      attr_reader :key, :pod, :node, :external, :context
 
-      def initialize(key:, pod:, node:, external: nil)
+      def initialize(key:, pod:, node:, external: nil, context: nil)
         @key = key.freeze
         @pod = pod
         @node = node
         @external = external
+        @context = context
         freeze
       end
 
@@ -249,34 +281,7 @@ module Rubernetes
     end
 
     class Framework
-      # Ordered MultiPoint inventory copied from Kubernetes v1.36.2's
-      # getDefaultPlugins.  Only entries with a complete implementation in
-      # this pipeline are materialized in #default_registry below; the
-      # remainder stays visible as an explicit unsupported boundary.
-      KUBERNETES_V1_36_2_DEFAULT_PLUGINS = [
-        {name: "SchedulingGates", phase: :multi_point, weight: 1},
-        {name: "PrioritySort", phase: :multi_point, weight: 1},
-        {name: "NodeUnschedulable", phase: :multi_point, weight: 1},
-        {name: "NodeName", phase: :multi_point, weight: 1},
-        {name: "TaintToleration", phase: :multi_point, weight: 3},
-        {name: "NodeAffinity", phase: :multi_point, weight: 2},
-        {name: "NodePorts", phase: :multi_point, weight: 1},
-        {name: "NodeResourcesFit", phase: :multi_point, weight: 1},
-        {name: "VolumeRestrictions", phase: :multi_point, weight: 1},
-        {name: "NodeVolumeLimits", phase: :multi_point, weight: 1},
-        {name: "VolumeBinding", phase: :multi_point, weight: 1},
-        {name: "VolumeZone", phase: :multi_point, weight: 1},
-        {name: "PodTopologySpread", phase: :multi_point, weight: 2},
-        {name: "InterPodAffinity", phase: :multi_point, weight: 2},
-        # applyDynamicResources: before DefaultPreemption, weight 2.
-        {name: "DynamicResources", phase: :multi_point, weight: 2},
-        {name: "DefaultPreemption", phase: :multi_point, weight: 1},
-        {name: "NodeResourcesBalancedAllocation", phase: :multi_point, weight: 1},
-        {name: "ImageLocality", phase: :multi_point, weight: 1},
-        {name: "DefaultBinder", phase: :multi_point, weight: 1},
-        # applyFeatureGates: NodeDeclaredFeatures (Beta, default on in 1.36).
-        {name: "NodeDeclaredFeatures", phase: :multi_point, weight: 1}
-      ].map(&:freeze).freeze
+      include PodGroupScheduling
 
       # A single registry entry represents each pinned MultiPoint plugin.  The
       # supported phase list is expanded by PluginRegistry, so a plugin which
@@ -303,7 +308,7 @@ module Rubernetes
         {name: "NodeVolumeLimits", phase: :filter, phases: %i[filter], weight: 1,
          implementation: Filters::NodeVolumeLimits.new},
         # Stateful (assumed bindings, the API): one per Framework.
-        {name: "VolumeBinding", phase: :filter, phases: %i[filter reserve unreserve pre_bind], weight: 1,
+        {name: "VolumeBinding", phase: :filter, phases: %i[filter score reserve unreserve pre_bind], weight: 1,
          factory: -> { VolumeBinding.new }},
         {name: "VolumeZone", phase: :filter, phases: %i[filter], weight: 1,
          implementation: Filters::VolumeZone.new},
@@ -330,39 +335,34 @@ module Rubernetes
          implementation: Filters::GangScheduling.new, gate: "GangScheduling"}
       ].map(&:freeze).freeze
 
+      # Keep the upstream profile independent so a missing implementation is detectable.
+      KUBERNETES_V1_36_2_DEFAULT_PLUGINS = {
+        "SchedulingGates" => 1, "PrioritySort" => 1, "NodeUnschedulable" => 1, "NodeName" => 1,
+        "TaintToleration" => 3, "NodeAffinity" => 2, "NodePorts" => 1, "NodeResourcesFit" => 1,
+        "VolumeRestrictions" => 1, "NodeVolumeLimits" => 1, "VolumeBinding" => 1, "VolumeZone" => 1,
+        "PodTopologySpread" => 2, "InterPodAffinity" => 2, "DynamicResources" => 2, "DefaultPreemption" => 1,
+        "NodeResourcesBalancedAllocation" => 1, "ImageLocality" => 1, "DefaultBinder" => 1, "NodeDeclaredFeatures" => 1
+      }.map { |name, weight| {name: name, phase: :multi_point, weight: weight}.freeze }.freeze
       DEFAULT_PLUGIN_NAMES = KUBERNETES_V1_36_2_DEFAULT_PLUGINS.map { |plugin| plugin.fetch(:name) }.freeze
       IMPLEMENTED_DEFAULT_PLUGIN_NAMES = DEFAULT_PLUGIN_SPECS.map { |plugin| plugin.fetch(:name) }.freeze
       UNIMPLEMENTED_DEFAULT_PLUGIN_NAMES = (DEFAULT_PLUGIN_NAMES - IMPLEMENTED_DEFAULT_PLUGIN_NAMES).freeze
 
-      STANDARD_FILTERS = [
-        ["SchedulingGates", Filters::SchedulingGates.new, 1],
-        ["NodeUnschedulable", Filters::NodeUnschedulable.new, 1],
-        ["NodeName", Filters::NodeName.new, 1],
-        ["TaintToleration", Filters::TaintToleration.new, 3],
-        ["NodeAffinity", Filters::NodeAffinity.new, 2],
-        ["NodePorts", Filters::NodePorts.new, 1],
-        ["NodeResourcesFit", Filters::NodeResourcesFit.new, 1],
-        ["VolumeRestrictions", Filters::VolumeRestrictions.new, 1],
-        ["NodeVolumeLimits", Filters::NodeVolumeLimits.new, 1],
-        ["VolumeBinding", Filters::VolumeBinding.new, 1],
-        ["VolumeZone", Filters::VolumeZone.new, 1],
-        ["PodTopologySpread", Filters::PodTopologySpread.new, 2],
-        ["InterPodAffinity", Filters::InterPodAffinity.new, 2],
-        ["NodeDeclaredFeatures", Filters::NodeDeclaredFeatures.new, 1]
-      ].freeze
-      STANDARD_SCORES = [
-        ["TaintToleration", 3, Scores::TaintToleration.new],
-        ["NodeAffinity", 2, Scores::NodeAffinity.new],
-        ["NodeResourcesFit", 1, Scores::LeastAllocated.new],
-        ["PodTopologySpread", 2, Scores::TopologySpread.new],
-        ["InterPodAffinity", 2, Scores::InterPodAffinity.new],
-        ["NodeResourcesBalancedAllocation", 1, Scores::NodeResourcesBalancedAllocation.new],
-        ["ImageLocality", 1, Scores::ImageLocality.new]
-      ].freeze
+      STANDARD_FILTERS = DEFAULT_PLUGIN_SPECS.filter_map do |spec|
+        next if spec[:gate] || !%i[filter pre_enqueue].include?(spec[:phase])
+
+        klass = spec[:name] == "VolumeBinding" ? Filters::VolumeBinding : spec[:implementation]&.class
+        [spec[:name], klass.new, spec[:weight]] if klass
+      end.freeze
+      STANDARD_SCORES = DEFAULT_PLUGIN_SPECS.filter_map do |spec|
+        scorer = spec[:score_implementation] || (spec[:implementation] if spec[:phase] == :score)
+        [spec[:name], spec[:weight], scorer.class.new] if scorer
+      end.freeze
 
       # +overrides+: plugin name => implementation, for the stateful plugins
       # built per Framework (DynamicResources).
       def self.default_registry(overrides = {}, feature_gates: {})
+        volume_limits = Filters::NodeVolumeLimits.new(volume_limit_scaling: feature_gates&.fetch("VolumeLimitScaling", false) == true)
+        overrides = {"NodeVolumeLimits" => volume_limits}.merge(overrides)
         registry = PluginRegistry.new
         DEFAULT_PLUGIN_SPECS.each do |spec|
           next if spec[:gate] && (feature_gates || {})[spec[:gate]] != true
@@ -372,17 +372,17 @@ module Rubernetes
           block = lambda do |pod, node|
             phase = Thread.current[:rubernetes_scheduler_plugin_phase]
             active = phase == :score ? (score_implementation || implementation) : implementation
-            if phase == :pre_enqueue && active.respond_to?(:pre_enqueue)
-              active.pre_enqueue(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
+            context = Thread.current[:rubernetes_scheduler_plugin_context]
+            if %i[pre_enqueue reserve unreserve pre_bind].include?(phase) && active.respond_to?(phase)
+              active.public_send(phase, pod, node, context)
             elsif phase == :post_filter && active.respond_to?(:post_filter)
-              active.post_filter(pod, Thread.current[:rubernetes_scheduler_plugin_context])
+              active.post_filter(pod, context)
             elsif phase == :queue_sort
               raise PluginError, "default queue sort #{spec.fetch(:name)} has no comparator" unless active.respond_to?(:compare)
 
               active.compare(pod, node)
             elsif phase == :post_filter
               evaluator = Thread.current[:rubernetes_scheduler_preemption] || active
-              context = Thread.current[:rubernetes_scheduler_plugin_context]
               raise PreemptionError, "default preemption requires a scheduling context" unless evaluator && context
 
               filter = Thread.current[:rubernetes_scheduler_filter]
@@ -394,16 +394,8 @@ module Rubernetes
               else
                 raise PreemptionError, "default preemption evaluator has no #call or #find"
               end
-            elsif phase == :bind
-              active.call(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
-            elsif phase == :reserve && active.respond_to?(:reserve)
-              active.reserve(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
-            elsif phase == :unreserve && active.respond_to?(:unreserve)
-              active.unreserve(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
-            elsif phase == :pre_bind && active.respond_to?(:pre_bind)
-              active.pre_bind(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
-            elsif active.respond_to?(:call)
-              active.call(pod, node, Thread.current[:rubernetes_scheduler_plugin_context])
+            elsif phase == :bind || active.respond_to?(:call)
+              active.call(pod, node, context)
             else
               raise PluginError, "default plugin #{spec.fetch(:name)} has no implementation for #{phase}"
             end
@@ -421,14 +413,21 @@ module Rubernetes
                      restore_pod: nil, preemption: nil, namespace_labels: {}, random: nil, dynamic_resources: nil,
                      volume_binding: nil, nominate: nil, clear_nomination: nil, async_preemption: true,
                      preemption_observer: nil, opportunistic_batching: true, metrics: nil, feature_gates: {},
-                     pod_group_status: nil, **_options)
+                     pod_group_status: nil, pod_group_unschedulable: nil, **_options)
         custom = normalize_plugins(plugins, filters: filters, scores: scores)
         @metrics = metrics || NullMetrics.new
         @feature_gates = (feature_gates || {}).transform_keys(&:to_s)
         # GenericWorkload / GangScheduling: PodGroup-aware scheduling cycles.
         @pod_group_status_handler = pod_group_status
-        @dynamic_resources = dynamic_resources || DynamicResources.new
+        @pod_group_unschedulable_handler = pod_group_unschedulable
+        @use_dra_node_allocatable = @feature_gates["DRANodeAllocatableResources"] == true
+        @dynamic_resources = dynamic_resources || DynamicResources.new(
+          features: DynamicResources::Allocator::Features.defaults.with(list_type_attributes: @feature_gates["DRAListTypeAttributes"] == true),
+          node_allocatable: @use_dra_node_allocatable,
+          workload_claims: @feature_gates["DRAWorkloadResourceClaims"] == true
+        )
         @volume_binding = volume_binding || VolumeBinding.new
+        @volume_binding.capacity_scoring = @feature_gates["StorageCapacityScoring"] == true
         @configured_plugins = if standard_plugins
                                 self.class.default_registry({"DynamicResources" => @dynamic_resources, "VolumeBinding" => @volume_binding},
                                                             feature_gates: @feature_gates).merge(custom)
@@ -559,7 +558,7 @@ module Rubernetes
       # +assume_only+: stop after Reserve (a pod-group cycle binds, or rolls
       # back, all members together); +pod_groups+: the PodGroup objects.
       def schedule(pod, nodes = nil, pods: nil, namespace_labels: nil, volume_data: nil, enqueue: false,
-                   trace: nil, workload_selectors: nil, pod_groups: nil, assume_only: false, **keywords)
+                   trace: nil, workload_selectors: nil, pod_groups: nil, assume_only: false, planned_node: nil, **keywords)
         nodes ||= keywords.delete(:nodes)
         raise ArgumentError, "nodes are required" if nodes.nil?
         raise ArgumentError, "unknown scheduler options: #{keywords.keys.inspect}" unless keywords.empty?
@@ -571,6 +570,7 @@ module Rubernetes
           node_objects = normalize_nodes(nodes)
           existing_pods = normalize_pods(pods, node_objects)
           context = build_context(node_objects, existing_pods, namespace_labels, volume_data, workload_selectors, pod_groups)
+          candidate_nodes = planned_node.nil? ? context.nodes : context.nodes.select { |node| node.name == planned_node }
           queue.enqueue(typed_pod) if enqueue && !queue.include?(typed_pod)
           trace ||= Trace.new
 
@@ -597,7 +597,7 @@ module Rubernetes
 
           algorithm_started = monotonic
           cycle = (@cycle += 1)
-          signature = @batch&.sign(typed_pod)
+          signature = @batch&.sign(typed_pod) if planned_node.nil?
           nominated = nominated_pods_index(context)
           hint = if @batch && signature
                    @batch.node_hint(signature, cycle, fits_last: lambda { |name|
@@ -613,7 +613,7 @@ module Rubernetes
           nominated_status = nil
           nominated_name = nominated_node_for(typed_pod)
           [nominated_name, hint].compact.reject(&:empty?).uniq.each do |name|
-            preferred = context.nodes.find { |item| item.name == name }
+            preferred = candidate_nodes.find { |item| item.name == name }
             next unless preferred
 
             result = run_filters_with_nominated(typed_pod, preferred, context, nominated, trace: trace)
@@ -625,11 +625,10 @@ module Rubernetes
             nominated_status = result if name == nominated_name
           end
           filter_started = monotonic
-          candidates, filtered = filter_nodes(typed_pod, context.nodes, context, trace: trace, nominated: nominated) if candidates.nil?
+          candidates, filtered = filter_nodes(typed_pod, candidate_nodes, context, trace: trace, nominated: nominated) if candidates.nil?
           @metrics.extension_point(:filter, candidates.empty? ? Metrics::STATUS_UNSCHEDULABLE : Metrics::STATUS_SUCCESS,
                                    monotonic - filter_started)
-
-          if candidates.empty? && @preemption
+          if candidates.empty? && @preemption && planned_node.nil?
             eligible = eligible_to_preempt?(typed_pod, context, nominated_name, nominated_status)
             preemption = nil
             if eligible
@@ -697,15 +696,15 @@ module Rubernetes
           @metrics.extension_point(:score, Metrics::STATUS_SUCCESS, monotonic - score_started)
           selected = select_host(breakdowns)
           @metrics.algorithm(monotonic - algorithm_started)
-          if @batch
+          if @batch && planned_node.nil?
             ranked = breakdowns.reject { |breakdown| breakdown.equal?(selected) }
               .sort_by { |breakdown| [-breakdown.total, breakdown.node.name] }
               .map { |breakdown| breakdown.node.name }
             @batch.store(signature, hint, selected.node.name, ranked, cycle)
           end
-
           reservation = nil
           begin
+            typed_pod = @dynamic_resources.pod_with_node_allocatable_status(typed_pod, selected.node, context) if @use_dra_node_allocatable
             reserve_started = monotonic
             begin
               reservation = reserve!(typed_pod, selected.node, context: context, trace: trace)
@@ -839,139 +838,22 @@ module Rubernetes
         schedule(item.pod, nodes, pods: pods, namespace_labels: namespace_labels, volume_data: volume_data,
                                   workload_selectors: workload_selectors, trace: trace, pod_groups: pod_groups)
       rescue StandardError => error
-        requeue_after_failure(item.pod, error) if item
-        raise
+        raise unless item
+
+        status = requeue_after_failure(item.pod, error)
+        raise unless error.is_a?(FilterError)
+
+        ScheduleResult.new(status: status, pod: item.pod, trace: trace, error: error)
       ensure
         queue.done(item.pod) if item
         record_in_flight_events
-      end
-
-      # -- GenericWorkload / GangScheduling ----------------------------------------
-
-      def gang_scheduled?(pod, pod_groups)
-        return false unless @feature_gates["GangScheduling"] == true && pod.respond_to?(:scheduling_group)
-
-        group_name = pod.scheduling_group
-        return false if group_name.nil? || pod_groups.nil?
-
-        group = pod_groups["#{pod.namespace}/#{group_name}"]
-        !group.nil? && !Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil).nil?
-      end
-
-      # scheduleOnePodGroup: the Pod's whole gang is scheduled in one cycle.
-      # Every member is reserved in turn against the nodes as the earlier
-      # members filled them; all bind when all fit, none otherwise
-      # (scheduler_podgroup_schedule_attempts_total{profile,result}).
-      def schedule_pod_group(pod, nodes:, pods: nil, namespace_labels: nil, volume_data: nil, workload_selectors: nil, pod_groups: nil)
-        started = monotonic
-        group_name = pod.scheduling_group
-        profile = pod.scheduler_name
-        node_objects = normalize_nodes(nodes)
-        existing = normalize_pods(pods, node_objects)
-        members = [pod] + existing.select do |candidate|
-          candidate.namespace == pod.namespace && candidate.scheduling_group == group_name && candidate.node_name.empty? &&
-            candidate.uid != pod.uid && queue.pop_specific(candidate)
-        end
-        members.sort_by! do |member|
-          [-member.priority.to_i,
-           queue.respond_to?(:seconds_since_first_attempt) ? -(queue.seconds_since_first_attempt(member) || 0.0) : 0.0]
-        end
-        assumed = []
-        results = []
-        failure = nil
-        algorithm_started = monotonic
-        members.each do |member|
-          placed = assumed.map { |entry| entry.pod.with("spec" => entry.pod.spec.to_h.merge("nodeName" => entry.node.name)) }
-          result = schedule(member, node_objects, pods: existing.reject do |candidate|
-            placed.any? do |item|
-              item.uid == candidate.uid
-            end
-          end + placed,
-                                                  namespace_labels: namespace_labels, volume_data: volume_data, workload_selectors: workload_selectors,
-                                                  pod_groups: pod_groups, assume_only: true)
-          results << result
-          unless result.assumed?
-            failure = result
-            break
-          end
-          assumed << result
-        end
-        @metrics.pod_group_algorithm(monotonic - algorithm_started)
-        outcome = if failure.nil? then "scheduled"
-                  elsif failure.error then "error"
-                  else "unschedulable"
-                  end
-        if failure.nil?
-          assumed.each_with_index do |result, index|
-            bound = bind_assumed(result, original: members[index])
-            results[index] = bound
-          end
-        else
-          assumed.each { |result| rollback_assumed(result, PodGroupUnschedulable.new("pod group is unschedulable")) }
-          reason = failure.reason || "pod group is unschedulable"
-          members.each do |member|
-            next if member.equal?(failure.pod) && !failure.assumed? && failure.unschedulable? # already parked by schedule
-
-            queue.delete(member)
-            queue.enqueue_unschedulable(member, reason: reason, plugins: ["GangScheduling"])
-          end
-        end
-        @metrics.pod_group_attempt(profile, outcome, monotonic - started)
-        note_pod_group_condition(pod.namespace, group_name, outcome, failure)
-        results.first
-      end
-
-      def bind_assumed(result, original:)
-        typed_pod = result.pod
-        node = result.node
-        context = build_context(normalize_nodes([node]), [], nil)
-        begin
-          run_permit(typed_pod, node, context, result.trace)
-          bound_pod = bind!(original, typed_pod, node, context: context, trace: result.trace)
-          commit_reservation!(result.reservation)
-          forget_nomination(typed_pod)
-          record_pod_scheduled(typed_pod)
-          queue.delete(typed_pod)
-          queue.forget(typed_pod)
-          ScheduleResult.new(status: :scheduled, pod: bound_pod, node: node, filtered: result.filtered, scores: result.scores,
-                             victims: result.victims, trace: result.trace, reservation: result.reservation)
-        rescue StandardError => error
-          rollback!(result.reservation, typed_pod, node, error, context: context, trace: result.trace)
-          status = requeue_after_failure(typed_pod, error)
-          ScheduleResult.new(status: status, pod: typed_pod, node: node, filtered: result.filtered, scores: result.scores,
-                             victims: result.victims, trace: result.trace, error: error, reason: "bind or reserve failed")
-        end
-      end
-
-      def rollback_assumed(result, error)
-        context = build_context(normalize_nodes([result.node]), [], nil)
-        rollback!(result.reservation, result.pod, result.node, error, context: context, trace: result.trace)
-      rescue StandardError
-        nil
-      end
-
-      class PodGroupUnschedulable < StandardError; end
-
-      # The PodGroupScheduled condition (updatePodGroupCondition).
-      def note_pod_group_condition(namespace, name, outcome, failure)
-        return unless @pod_group_status_handler
-
-        condition = case outcome
-                    when "scheduled" then {"type" => "PodGroupScheduled", "status" => "True", "reason" => "Scheduled", "message" => ""}
-                    when "unschedulable" then {"type" => "PodGroupScheduled", "status" => "False", "reason" => "Unschedulable",
-                                               "message" => failure&.reason.to_s}
-                    else {"type" => "PodGroupScheduled", "status" => "False", "reason" => "SchedulerError",
-                          "message" => failure&.error&.message.to_s}
-                    end
-        @pod_group_status_handler.call(namespace, name, condition)
-      rescue StandardError
-        nil
       end
 
       # SchedulerQueueingHints: the queue asks this before moving an
       # unschedulable Pod on a cluster event.
       def queueing_strategy(pod, rejecting_plugins, event, old_object, new_object)
         QueueingHints.strategy(pod, rejecting_plugins, event, old_object, new_object,
+                               taint_comparisons: @feature_gates[::Rubernetes::TaintToleration::GATE] == true,
                                observer: ->(plugin, label, hint, seconds) { @metrics.queueing_hint(plugin, label, hint, seconds) })
       end
 
@@ -1057,17 +939,37 @@ module Rubernetes
 
       def normalize_pods(pods, nodes)
         values = Array(pods).map { |pod| pod.is_a?(Pod) ? pod : Pod.new(pod) }
-        nodes.each { |node| values.concat(node.pods) }
-        deduplicate_pods(values)
+        embedded = {}
+        nodes.each do |node|
+          values.concat(node.pods)
+          node.pods.each do |pod|
+            next unless pod.node_name.to_s.empty?
+
+            key = pod_lock_key(pod)
+            existing = embedded[key]
+            raise ValidationError, "pod #{key.inspect} is attached to multiple nodes" if existing && existing != node.name
+
+            embedded[key] = node.name
+          end
+        end
+        unique = deduplicate_pods(values)
+        return unique if embedded.empty?
+
+        unique.map do |pod|
+          node_name = embedded[pod_lock_key(pod)]
+          node_name ? pod.with("spec" => pod.spec.merge("nodeName" => node_name)) : pod
+        end
       end
 
       def build_context(nodes, pods, namespace_labels, volume_data = nil, workload_selectors = nil, pod_groups = nil)
+        assigned_pods = pods.group_by(&:node_name)
         node_objects = nodes.map do |node|
-          assigned = pods.select { |pod| pod.node_name == node.name }
-          node.with_pods(assigned, preserve_requested: assigned.empty?)
+          assigned = assigned_pods.fetch(node.name, [])
+          node.with_pods(assigned, preserve_requested: assigned.empty?, use_dra_node_allocatable: @use_dra_node_allocatable)
         end
         CycleContext.new(nodes: node_objects, pods: pods, namespace_data: namespace_labels || @namespace_labels,
-                         volume_data: volume_data || {}, workload_selectors: workload_selectors, pod_groups: pod_groups)
+                         volume_data: volume_data || {}, workload_selectors: workload_selectors, pod_groups: pod_groups,
+                         taint_comparisons: @feature_gates[::Rubernetes::TaintToleration::GATE] == true)
       end
 
       def run_pre_enqueue(pod, context, trace)
@@ -1079,11 +981,6 @@ module Rubernetes
           return result.to_h.merge("plugin" => plugin.name) unless result.accepted?
         end
         true
-      end
-
-      def plugin_weight(name)
-        plugin = plugins.find(name)
-        plugin ? plugin.weight : 1
       end
 
       def filter_nodes(pod, nodes, context, trace:, nominated: nil)
@@ -1174,25 +1071,28 @@ module Rubernetes
       # with SchedulerAsyncPreemption, the Pod gated meanwhile -- and clear
       # the nominations of lower-priority Pods nominated to the same node.
       def start_preemption!(result, pod, _context, nominated)
-        raise PreemptionError, "preemption requires a delete handler" unless @delete_pod_handler
-
-        # A victim already being deleted needs no second call; with none left
-        # there is nothing to wait for (prepareCandidateAsync returns here).
-        victims = result.victims.reject(&:terminating?)
-        return true if victims.empty?
-
         node_name = result.node.name
         lower = Array(nominated && nominated[node_name]).select do |candidate|
           !same_pod?(candidate, pod) && candidate.priority < pod.priority
         end
+        evict_preempted_pods!(result.victims, lower, [pod])
+      end
+
+      def evict_preempted_pods!(victims, lower, preemptors)
+        raise PreemptionError, "preemption requires a delete handler" unless @delete_pod_handler
+
+        # Existing graceful deletions still free these resources once complete.
+        victims = victims.reject(&:terminating?)
+        return true if victims.empty?
+
         unless @async_preemption
           evict_victims!(victims)
           clear_lower_nominations(lower)
           return true
         end
 
-        key = pod_lock_key(pod)
-        @mutex.synchronize { @preempting[key] = true }
+        keys = preemptors.map { |pod| pod_lock_key(pod) }
+        @mutex.synchronize { keys.each { |key| @preempting[key] = true } }
         thread = Thread.new do
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           outcome = "success"
@@ -1203,14 +1103,14 @@ module Rubernetes
             outcome = "error"
           ensure
             @mutex.synchronize do
-              @preempting.delete(key)
+              keys.each { |key| @preempting.delete(key) }
               @preemption_threads.delete(Thread.current)
             end
             # Upstream activates only after an error and otherwise waits for
             # the victims' delete events; activating always costs one extra
             # cycle that waits on the terminating victims, and can never
             # strand the Pod.
-            queue.activate(pod)
+            preemptors.each { |pod| queue.activate(pod) }
             observe_preemption(outcome, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           end
         end
@@ -1536,7 +1436,7 @@ module Rubernetes
 
                      result
                    end
-        token = ReservationToken.new(key: key, pod: pod, node: node, external: external)
+        token = ReservationToken.new(key: key, pod: pod, node: node, external: external, context: context)
         @mutex.synchronize { @reservations[key] = token }
         token
       rescue StandardError => error
