@@ -61,4 +61,35 @@ class APITokenReviewUserTest < Minitest::Test
   def test_an_empty_identity_is_an_empty_user
     assert_empty user_info(nil)
   end
+
+  def test_token_review_authenticates_the_requested_audience_only
+    authentication = Rubernetes::Security::Authentication::ServiceAccount
+    lookup = authentication::Lookup.new(service_account: ->(_namespace, _name) { {"metadata" => {"uid" => "sa-uid"}} })
+    issuer = authentication.new(issuer: "https://kubernetes.example.test", api_audiences: ["api"], lookup: lookup,
+                                signing_key: OpenSSL::PKey::EC.generate("prime256v1"))
+    registry = Rubernetes::API::Registry.new
+    registry.register(group: "authentication.k8s.io", resource: "tokenreviews", kind: "TokenReview", verbs: ["create"])
+    server = Server.new(registry: registry, api_audiences: ["api"], security: Rubernetes::Security::Pipeline.new(authenticator: issuer))
+    token, = issuer.issue(namespace: "ns", service_account_name: "mysa", service_account_uid: "sa-uid", audiences: ["istio-ca"])
+
+    accepted = review(server, token, %w[other istio-ca])
+
+    assert_equal true, accepted["authenticated"]
+    assert_equal ["istio-ca"], accepted["audiences"]
+    assert_equal "system:serviceaccount:ns:mysa", accepted.dig("user", "username")
+    assert_nil review(server, token, ["other"])["authenticated"]
+    assert_nil review(server, token, [])["authenticated"]
+    assert_equal 401, server.call(method: "GET", path: "/api", headers: {"authorization" => "Bearer #{token}"}).status
+  end
+
+  private
+
+  def review(server, token, audiences)
+    body = {"apiVersion" => "authentication.k8s.io/v1", "kind" => "TokenReview", "spec" => {"token" => token, "audiences" => audiences}}
+    response = server.call(method: "POST", path: "/apis/authentication.k8s.io/v1/tokenreviews", body: body,
+                           identity: {"username" => "reviewer", "groups" => ["system:masters"]})
+
+    assert_equal 201, response.status
+    response.body.fetch("status")
+  end
 end
