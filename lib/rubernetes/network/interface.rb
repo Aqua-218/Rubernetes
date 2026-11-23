@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "durable_state"
+require_relative "interface/add_rollback"
 require_relative "errors"
 require_relative "ipam"
 require_relative "support"
@@ -63,6 +64,11 @@ module Rubernetes
     end
 
     class Interface
+      include StatePersistence
+
+      JOURNAL_OPERATION = "network:interface"
+      include AddRollback
+
       Operation = Struct.new(:id, :request_id, :sandbox_id, :owner, :config_digest,
                              :state, :result, :error, :resources, :plan, :created_at,
                              keyword_init: true) do
@@ -85,6 +91,8 @@ module Rubernetes
 
       ACTIVE_STATES = %w[preparing applying committed deleting unknown].freeze
 
+      DEFAULT_READBACK_TIMEOUT = 3.0
+
       def initialize(ipam: nil, topology: nil, netlink: nil, adapter: nil, ledger: nil,
                      state_path: nil, path: nil, state_store: nil, store: nil,
                      journal: nil, observer: nil, kernel_observer: nil,
@@ -93,7 +101,7 @@ module Rubernetes
                      sysctl_manager: nil,
                      bridge_name: Topology::DEFAULT_BRIDGE, mtu: 1500,
                      clock: -> { Time.now.utc }, fsync: true, require_observer: false,
-                     readback_timeout: 3.0, readback_interval: 0.02,
+                     readback_timeout: nil, readback_interval: 0.02,
                      cluster_cidrs: nil, host_forward: nil, logger: nil, **options)
         @clock = clock
         @mutex = Mutex.new
@@ -104,10 +112,13 @@ module Rubernetes
         @adapter = adapter
         @observer = kernel_observer || observer
         @require_observer = require_observer == true
-        @readback_timeout = Float(readback_timeout)
+        # An explicit operator timeout stays fixed. The default can follow a
+        # measured DAD configuration only for a continuously tentative address.
+        @use_ipv6_dad_window = readback_timeout.nil?
+        @readback_timeout = @use_ipv6_dad_window ? DEFAULT_READBACK_TIMEOUT : Float(readback_timeout)
         @readback_interval = Float(readback_interval)
-        raise ValidationError, "network readback timeout must be positive" unless @readback_timeout.positive?
-        raise ValidationError, "network readback interval must be positive" unless @readback_interval.positive?
+        raise ValidationError, "network readback timeout must be finite and positive" unless @readback_timeout.finite? && @readback_timeout.positive?
+        raise ValidationError, "network readback interval must be finite and positive" unless @readback_interval.finite? && @readback_interval.positive?
         if @require_observer && (@observer.nil? || !@observer.respond_to?(:external_observer?) || !@observer.external_observer?)
           raise OwnershipError, "native network interface requires an external kernel observer"
         end
@@ -193,10 +204,14 @@ module Rubernetes
         owner = "network:#{sandbox_id}"
         @mutex.synchronize do
           existing = find_operation(request_id: request_id, sandbox_id: sandbox_id)
-          if existing
+          if existing && (existing.fetch("request_id") == request_id || !existing["rollback_verified"])
             ensure_intent!(existing, digest: digest, sandbox_id: sandbox_id)
+            raise_failed_add(existing) if existing["rollback_verified"]
+
             return operation_result(existing)
           end
+          raise OperationConflict, "network operation ID is already in use" if @state["operations"].key?(operation_id)
+
           record = operation_record(operation_id: operation_id, request_id: request_id, sandbox_id: sandbox_id,
                                     owner: owner, config_digest: digest, state: "preparing")
           @state["operations"][operation_id] = record
@@ -207,7 +222,7 @@ module Rubernetes
         leases = nil
         plan = nil
         resources = []
-        apply_started = false
+        topology_applied = false
         bridge_acquired = false
         sysctl_acquired = false
         namespace_lease = nil
@@ -244,11 +259,11 @@ module Rubernetes
           # that prepared plan. A crash during apply can then roll back from
           # durable evidence instead of guessing the old MTU/master/up state.
           plan = @topology.respond_to?(:prepare) ? @topology.prepare(desired_plan) : desired_plan
-          update_operation(operation_id, "state" => "applying", "plan" => plan.to_h,
+          host_inode = File.stat(Netlink::THREAD_NAMESPACE_PATH).ino if @require_observer
+          update_operation(operation_id, "state" => "applying", "plan" => plan.to_h, "host_netns_inode" => host_inode,
                                          "effect_cursor" => nil, "applied_count" => 0)
           ledger_operation_id = begin_resource_operation(operation_id, digest: digest, owner: owner,
                                                                        request_id: request_id, sandbox_id: sandbox_id)
-          apply_started = true
           if @topology.respond_to?(:acquire_bridge)
             @topology.acquire_bridge(plan, owner: sandbox_id)
             bridge_acquired = true unless Support.fetch(plan.metadata, "host_network", default: false)
@@ -293,6 +308,7 @@ module Rubernetes
               update_operation(operation_id, "resources" => resources, "applied_count" => index + 1)
             end
           )
+          topology_applied = true
           # A host-network Pod reserved no addresses, so there is no IPAM
           # operation to bind or commit: asking for one failed the Pod with
           # "unknown IPAM operation".
@@ -308,41 +324,11 @@ module Rubernetes
                                          "effect_intent" => nil, "result" => result)
           result
         rescue StandardError => error
-          rollback_errors = []
-          begin
-            rollback_plan = if apply_started && plan && error.respond_to?(:applied) && error.applied
-                              plan_with_operations(plan, error.applied)
-                            elsif apply_started
-                              plan
-                            end
-            @topology.rollback(rollback_plan, operation_id: operation_id) if rollback_plan
-          rescue StandardError => rollback_error
-            rollback_errors << "#{rollback_error.class}: #{rollback_error.message}"
-          end
-          begin
-            @ipam&.release(leases, operation_id: operation_id, stopped: true)
-          rescue StandardError => release_error
-            rollback_errors << "#{release_error.class}: #{release_error.message}"
-          end
-          begin
-            @topology.release_bridge(plan, owner: sandbox_id) if bridge_acquired && @topology.respond_to?(:release_bridge)
-          rescue StandardError => bridge_error
-            rollback_errors << "#{bridge_error.class}: #{bridge_error.message}"
-          end
-          begin
-            @sysctl_manager&.release(owner: sandbox_id) if sysctl_acquired
-          rescue StandardError => sysctl_error
-            rollback_errors << "#{sysctl_error.class}: #{sysctl_error.message}"
-          end
-          release_resources({"id" => operation_id, "resources" => resources}, force: true, errors: rollback_errors)
-          failure = {"class" => error.class.name, "message" => error.message, "rollback_errors" => rollback_errors}
-          update_operation(operation_id, "state" => "unknown", "resources" => resources, "error" => failure)
-          # A rollback that itself failed is why the *next* attempt collides with
-          # a resource this one left claimed, so it has to travel with the
-          # error rather than only into the operation record.
-          detail = rollback_errors.empty? ? "" : " (rollback: #{rollback_errors.join("; ")})"
-          raise EffectError.new("network add failed for sandbox #{sandbox_id}: #{error.message}#{detail}",
-                                operation: operation_id, cause_error: error)
+          rollback_plan = plan if topology_applied
+          rollback_plan = plan_with_operations(plan, error.applied) if plan && error.respond_to?(:applied) && error.applied
+          bridge_plan = plan if bridge_acquired && @topology.respond_to?(:release_bridge)
+          rollback_failed_add(operation_id, error, resources: resources, leases: leases, namespace_lease: namespace_lease,
+                                                   rollback_plan: rollback_plan, bridge_plan: bridge_plan, sysctl_acquired: sysctl_acquired)
         ensure
           namespace_lease&.close
         end
@@ -359,7 +345,7 @@ module Rubernetes
       end
 
       def delete_transaction(sandbox, config = nil, stopped: nil, process_stopped: nil,
-                             confirm_stopped: nil, force: false, **options)
+                             confirm_stopped: nil, force: false, namespace_gone: false, **options)
         sandbox_hash, config_hash = normalize_request(sandbox, config, options)
         sandbox_id = sandbox_hash.fetch("sandbox_id")
         confirmed = [stopped, process_stopped, confirm_stopped].compact.any?(true)
@@ -372,7 +358,7 @@ module Rubernetes
 
           operation.fetch("id")
         end
-        namespace_lease, = bind_namespace_request(sandbox_hash, config_hash)
+        namespace_lease, = bind_namespace_request(sandbox_hash, config_hash) unless namespace_gone
         update_operation(operation_id, state: "deleting")
         operation = operation_for_id(operation_id)
         errors = []
@@ -380,7 +366,7 @@ module Rubernetes
         begin
           plan = plan_from_record(operation.fetch("plan"))
           plan = @topology.bind_namespace(plan, namespace_lease) if namespace_lease
-          @topology.rollback(plan, operation_id: operation.fetch("id")) unless plan.empty?
+          @topology.rollback(plan, operation_id: operation.fetch("id"), namespace_gone: namespace_gone) unless plan.empty?
           flush_pod_neighbours(Support.fetch(plan.metadata, "bridge"), plan_addresses(plan)) unless plan.empty?
           @topology.release_bridge(plan, owner: sandbox_id) if @topology.respond_to?(:release_bridge)
           topology_released = true
@@ -439,10 +425,16 @@ module Rubernetes
 
       alias exists? check
 
-      def recover(observer: nil, kernel_observer: nil, **options)
+      def recover(**)
+        @transaction_mutex.synchronize(:recovery) { recover_transaction(**) }
+      end
+
+      private def recover_transaction(observer: nil, kernel_observer: nil, **options)
         @sysctl_manager&.recover
         source = observer || kernel_observer || @observer
         records = @mutex.synchronize { Support.copy(@state.fetch("operations").values) }
+        unverified = unverified_add_rollbacks(records)
+        records = records.reject { |record| unverified.include?(record.fetch("id")) }
         plan_operations = records.select { |operation| ACTIVE_STATES.include?(operation.fetch("state")) }
           .flat_map { |operation| plan_from_record(operation.fetch("plan")).operations }
         observed = normalize_observed(source, operations: plan_operations)
@@ -457,7 +449,7 @@ module Rubernetes
           records, observed, source, candidates: kernel_only_before_recovery
         )
         reconciled_observed = observed.reject { |identity, _resource| compensated.include?(identity) }
-        ipam_report = @ipam ? @ipam.recover(observer: -> { reconciled_observed.values }) : nil
+        ipam_report = @ipam&.recover(observer: -> { reconciled_observed.values }, **retained_add_allocations(unverified))
         @mutex.synchronize do
           expected_identities = @state.fetch("operations").values.select do |operation|
             ACTIVE_STATES.include?(operation.fetch("state"))
@@ -467,10 +459,10 @@ module Rubernetes
           kernel_only = (reconciled_observed.keys - expected_identities).sort
           ledger_only = []
           identity_mismatch = []
-          errors = compensation_errors
+          errors = compensation_errors + unverified.map { |id| failed_add_recovery_error(id) }
           audit = compensation_audit
           @state.fetch("operations").each_value do |operation|
-            next unless ACTIVE_STATES.include?(operation.fetch("state"))
+            next unless ACTIVE_STATES.include?(operation.fetch("state")) && !unverified.include?(operation.fetch("id"))
 
             expected = operation.fetch("resources", []).map { |resource| resource.fetch("identity") }
             missing = expected - reconciled_observed.keys
@@ -847,29 +839,11 @@ module Rubernetes
 
       def resources_from_operation(operation, owner:, sandbox_id: nil)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        deadline = started + @readback_timeout
-        attempts = 0
-        proofs = []
-        loop do
-          attempts += 1
-          proofs = if @observer.respond_to?(:resources_for)
-                     Array(@observer.resources_for(operation))
-                   else
-                     []
-                   end
-          # resources_for carries the complete kernel tuple used by IPAM and
-          # recovery. Never downgrade to identity_for merely because a
-          # resources_for read raced DAD/rtnetlink propagation.
-          if proofs.empty? && !@observer.respond_to?(:resources_for) && @observer.respond_to?(:identity_for)
-            identity = @observer.identity_for(operation)
-            proofs = [{"identity" => identity}] if identity
-          end
-          break unless @require_observer && proofs.empty?
-          break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-
-          sleep(@readback_interval)
-        end
-        raise OwnershipError, "kernel observer did not read back #{operation.resource}" if @require_observer && proofs.empty?
+        ipv6 = if @require_observer && @observer.is_a?(NativeObserver)
+                 @observer.wait_for_ipv6_address(operation, started: started, timeout: @readback_timeout,
+                                                            interval: @readback_interval, adaptive: @use_ipv6_dad_window)
+               end
+        proofs, attempts = ipv6 || poll_operation_readback(operation, started)
 
         # A readback that needed more than one look is the node waiting on the
         # kernel, and it is the most expensive part of attaching a Pod.  Only
@@ -895,6 +869,31 @@ module Rubernetes
            "state" => "owned", "sandbox_id" => sandbox_id || operation.parameters["sandbox_id"],
            "metadata" => Support.copy(metadata)}
         end
+      end
+
+      def poll_operation_readback(operation, started)
+        deadline = started + @readback_timeout
+        attempts = 0
+        loop do
+          attempts += 1
+          proofs = observer_proofs(operation)
+          return [proofs, attempts] unless @require_observer && proofs.empty?
+
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          break unless remaining.positive?
+
+          sleep([@readback_interval, remaining].min)
+        end
+        raise OwnershipError, "kernel observer did not read back #{operation.resource}"
+      end
+
+      def observer_proofs(operation)
+        # A resources_for proof carries the complete kernel tuple used by
+        # IPAM and recovery. An empty result must never fall back to identity_for.
+        return Array(@observer.resources_for(operation)) if @observer.respond_to?(:resources_for)
+
+        identity = @observer.identity_for(operation) if @observer.respond_to?(:identity_for)
+        identity ? [{"identity" => identity}] : []
       end
 
       # A crash may occur after a kernel effect and before its durable claim.
@@ -1073,39 +1072,6 @@ module Rubernetes
           hash = value.respond_to?(:to_h) ? value.to_h : value
           identity = Support.fetch(hash, "identity", "stable_identity", "id", default: nil)
           result[String(identity)] = Support.copy(hash) if identity
-        end
-      end
-
-      def persist!(event, payload)
-        previous = @durable_state
-        durable = false
-        begin
-          # #replace already hands back a canonical copy of what it wrote;
-          # copying the state again here was a second JSON round trip of the
-          # whole node's network state, on every one of the ~20 persists a
-          # Pod attach performs.
-          written = @store&.replace(@state)
-          durable = !@store.nil?
-          @durable_state = written.is_a?(Hash) ? written : Support.copy(@state)
-          # Keep working on the sealed records themselves (they are replaced,
-          # never edited), so the next write re-encodes only what changes.
-          @state = Support.working_copy(written) if written.is_a?(Hash)
-          append_journal(event, payload)
-        rescue StandardError
-          @state = Support.copy(previous) unless durable
-          raise
-        end
-      end
-
-      def append_journal(event, payload)
-        return unless @journal
-
-        parameters = @journal.method(:append).parameters
-        requires_operation = parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :operation_id }
-        if requires_operation
-          @journal.append(operation_id: "network:interface", event: event, payload: payload)
-        else
-          @journal.append(event: event, payload: payload)
         end
       end
     end
