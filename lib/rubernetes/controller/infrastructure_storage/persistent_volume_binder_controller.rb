@@ -58,23 +58,14 @@ module Rubernetes
         super(*, **)
         # hostPathProvisioner.Provision: os.MkdirAll(path, 0750).
         @host_path_provisioner = host_path_provisioner || ->(path) { FileUtils.mkdir_p(path, mode: 0o750) }
-        # hostPathDeleter.Delete: only under /tmp (anchored here, which the
-        # upstream regexp is not: this controller runs as root on the host).
-        @host_path_deleter = host_path_deleter || lambda do |path|
-          unless path.to_s.match?(%r{\A/tmp/.+})
-            raise ArgumentError,
-                  "host_path deleter only supports /tmp/.+ but received provided #{path}"
-          end
-
-          FileUtils.rm_rf(path)
-        end
+        @host_path_deleter = host_path_deleter
       end
 
       def plan(object, store: nil, persistent_volumes: nil, volumes: nil, claims: nil, pods: nil, storage_classes: nil,
-               enable_hostpath_provisioner: false, **_options)
-        adapter = adapter_for_storage(store)
+               enable_hostpath_provisioner: false, hostpath_provisioner_root: HOST_PATH_BASE, **_options)
+        adapter = adapter_for(store)
         context = {
-          adapter: adapter, hostpath_provisioner: enable_hostpath_provisioner,
+          adapter: adapter, hostpath_provisioner: enable_hostpath_provisioner, hostpath_root: File.expand_path(hostpath_provisioner_root),
           volumes: persistent_volumes || volumes || list_storage_objects(adapter, PV, namespace: :all),
           claims: claims,
           pods: pods,
@@ -193,8 +184,8 @@ module Rubernetes
 
       def pods_using(claim, context) = pods_by_claim(context, Support.namespace(claim), Support.name(claim))
 
-      def pods_by_claim(context, namespace, claim_name)
-        pods = context[:pods] || list_storage_objects(context[:adapter], POD, namespace: namespace)
+      def pods_by_claim(context, namespace, claim_name, fresh: false)
+        pods = context[:pods] || context[:adapter]&.list(POD, namespace: namespace, fresh: fresh)
         Array(pods).select do |pod|
           Support.namespace(pod).to_s == namespace.to_s &&
             Array(Support.value(Support.spec(pod), "volumes", [])).any? do |volume|
@@ -217,3 +208,9 @@ module Rubernetes
     end
   end
 end
+
+require_relative "persistent_volume_binder/claims"
+require_relative "persistent_volume_binder/provisioning"
+require_relative "persistent_volume_binder/binding"
+require_relative "persistent_volume_binder/volumes"
+require_relative "persistent_volume_binder/recycling"
