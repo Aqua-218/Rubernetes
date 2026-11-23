@@ -10,6 +10,9 @@ require_relative "status"
 require_relative "field_ref"
 require_relative "pod_hostname"
 require_relative "env_file"
+require_relative "volume_groups"
+require_relative "../runtime/app_armor"
+require_relative "../platform/linux/swap_controller"
 
 module Rubernetes
   module Node
@@ -45,8 +48,9 @@ module Rubernetes
                            keyword_init: true)
 
       def initialize(reader: nil, node_name: nil, node_allocatable: nil, cluster_domain: "cluster.local",
-                     pod_volumes: nil, memory_capacity: nil)
+                     pod_volumes: nil, memory_capacity: nil, swap_controller: Platform::Linux::SwapController.available?)
         @memory_capacity = memory_capacity
+        @swap_controller = swap_controller
         @reader = reader
         @node_name = node_name.to_s
         @node_allocatable = node_allocatable || {}
@@ -58,7 +62,7 @@ module Rubernetes
       # `pod_files` maps container paths (/etc/hosts ...) to prepared host
       # files.  `resolved_image` carries the image config (User, Env, ...).
       def build(pod:, container:, category:, resolved_image: nil, volumes: nil, pod_files: {}, pod_ips: [],
-                host_ip: nil, pod_directory: nil, index: 0)
+                host_ip: nil, pod_directory: nil, index: 0, default_home: true, resolve_image_command: true)
         object = Helpers.string_keys(pod)
         definition = Helpers.deep_copy(Helpers.string_keys(container))
         image = resolved_image ? Helpers.string_keys(resolved_image) : {}
@@ -68,38 +72,38 @@ module Rubernetes
                               cluster_domain: @cluster_domain,
                               enable_service_links: Helpers.key(Helpers.key(object, "spec", {}), "enableServiceLinks", true) != false)
 
-        environment = build_environment(definition, context, image_env: Helpers.key(image, "env", {}))
+        environment, command_vars = build_environment(definition, context, image_env: Helpers.key(image, "env", {}))
         mapping = environment.to_h { |entry| [entry.fetch("name"), entry.fetch("value")] }
-        command, args = build_command(definition, image, mapping)
+        command, args = build_command(definition, image, command_vars, resolve_image_command: resolve_image_command)
         definition["command"] = command unless command.nil?
         definition["args"] = args unless args.nil?
         definition["env"] = environment
         definition["cwd"] = expand(Helpers.key(definition, "workingDir", nil), mapping) if Helpers.key(definition, "workingDir", nil)
-        definition["security_context"] = effective_security_context(object, definition, image)
-        definition["env"] = with_home(definition["env"], definition["security_context"], image)
+        definition["security_context"] = effective_security_context(object, definition, image, volumes: context.volumes)
+        self.class.ensure_home!(definition, image) if default_home
         definition["mounts"] = build_mounts(definition, context, category: category, index: index, mapping: mapping)
         definition["termination_message"] = termination_message(definition, context)
         definition["mounts"] << termination_mount(definition["termination_message"]) if definition["termination_message"]["host_path"]
         definition["hostname"] = pod_hostname(object)
         definition["category"] = category.to_s
+        definition["limits"] = {Platform::Linux::SwapController::LIMIT => "0"}.merge(definition["limits"] || {}) if @swap_controller
         capacity = memory_capacity
         definition["oom_score_adj"] = OOMScore.container_adjust(object, definition, memory_capacity: capacity) if capacity
         definition
       end
 
-      # runc libcontainer setupUser: a process whose environment carries no
-      # HOME (or an empty one) gets the /etc/passwd home directory of its
-      # user, "/" when the user has no entry.  Neither the image nor the Pod
-      # sets HOME for GitLab's toolbox; its entrypoint copied into
-      # "$HOME/.s3cfg" -> "/.s3cfg" and died with EACCES as uid 1000.
-      def with_home(environment, security_context, image)
-        return environment if environment.any? { |entry| entry["name"] == "HOME" && !entry["value"].to_s.empty? }
+      # runc libcontainer prepareEnv appends a default after all OCI edits.
+      # HOME from the image, Pod or a device takes precedence when nonempty.
+      def self.ensure_home!(definition, image)
+        environment = Array(definition["env"])
+        return definition if environment.any? { |entry| entry["name"] == "HOME" && !entry["value"].to_s.empty? }
 
-        home = passwd_home(Helpers.key(security_context, "runAsUser", nil), Helpers.key(image, "rootfs", nil))
-        environment.reject { |entry| entry["name"] == "HOME" } + [{"name" => "HOME", "value" => home}]
+        home = passwd_home(Helpers.key(definition["security_context"], "runAsUser", nil), Helpers.key(image, "rootfs", nil))
+        definition["env"] = environment.reject { |entry| entry["name"] == "HOME" } + [{"name" => "HOME", "value" => home}]
+        definition
       end
 
-      def passwd_home(uid, rootfs)
+      private_class_method def self.passwd_home(uid, rootfs)
         uid = Integer(uid.nil? ? 0 : uid)
         path = rootfs.nil? ? nil : File.join(rootfs, "etc", "passwd")
         if path && File.file?(path)
@@ -172,10 +176,11 @@ module Rubernetes
           tmp_env[name] = value
         end
 
-        # Image ENV is the base layer; anything from the Pod overrides it.
+        # Kubelet expands Pod argv before the runtime adds image ENV and the
+        # sandbox hostname. Those values still belong in the process env.
+        command_vars = service_env.merge(tmp_env)
         result = image_env.to_h.each_with_object({}) { |(key, value), env| env[key.to_s] = value.to_s }
-        service_env.each { |key, value| result[key] = value }
-        tmp_env.each { |key, value| result[key] = value }
+        result.merge!(command_vars)
         # containerd CRI (container_create.go buildLinuxSpec): HOSTNAME is
         # appended last, set to the sandbox hostname, for every container.
         # Gitaly's config template reads .Env.HOSTNAME and failed without it.
@@ -183,7 +188,7 @@ module Rubernetes
         total = result.sum { |key, value| key.bytesize + value.bytesize + 2 }
         raise ConfigError, "container environment exceeds #{MAX_ENV_BYTES} bytes" if total > MAX_ENV_BYTES
 
-        result.map { |key, value| {"name" => key, "value" => value} }
+        [result.map { |key, value| {"name" => key, "value" => value} }, command_vars]
       end
 
       def resolve_value_from(value_from, definition, context, namespace)
@@ -203,7 +208,7 @@ module Rubernetes
           raise ConfigError, "resourceFieldRef container #{container_name.inspect} not found" if target.nil?
 
           FieldRef.resolve_resource(Helpers.key(resource, "resource").to_s, target, divisor: Helpers.key(resource, "divisor", "1"),
-                                                                                    node_allocatable: context.node_allocatable)
+                                                                                    node_allocatable: context.node_allocatable, pod: context.pod)
         elsif (reference = Helpers.key(source, "configMapKeyRef", nil))
           optional = Helpers.key(reference, "optional", false) == true
           object = read_optional(context, "configmaps", Helpers.key(reference, "name"), namespace, optional: optional)
@@ -355,25 +360,29 @@ module Rubernetes
 
       # ---------------------------------------------------------------- command
 
-      def build_command(definition, image, mapping)
-        command = definition["command"]
-        args = definition["args"]
+      def build_command(definition, image, mapping, resolve_image_command: true)
+        command = expand_command_parts(definition["command"], mapping)
+        args = expand_command_parts(definition["args"], mapping)
+        unless resolve_image_command
+          # CRI gets the two Pod overrides separately. Its runtime applies OCI
+          # Entrypoint and Cmd defaults for values the Pod leaves unspecified.
+          return [command, args]
+        end
+
         entrypoint = Array(Helpers.key(image, "entrypoint", []))
-        image_cmd = Array(Helpers.key(image, "cmd", []))
-        resolved_command = if command.nil? || Array(command).empty?
-                             entrypoint
-                           else
-                             Array(command).map { |value| expand(value.to_s, mapping) }
-                           end
-        resolved_args = if args.nil?
-                          command.nil? || Array(command).empty? ? image_cmd : []
-                        else
-                          Array(args).map { |value| expand(value.to_s, mapping) }
-                        end
-        full = resolved_command + resolved_args
+        entrypoint = [] if entrypoint == [""]
+        if command.empty?
+          args = Array(Helpers.key(image, "cmd", [])) if args.empty?
+          command = entrypoint
+        end
+        full = command + args
         raise ConfigError, "container has no command: neither the Pod nor the image config provides one" if full.empty? && !image.empty?
 
         [full.empty? ? nil : full, nil]
+      end
+
+      def expand_command_parts(value, mapping)
+        Array(value).map { |part| expand(part.to_s, mapping) }
       end
 
       # ---------------------------------------------------------------- security
@@ -381,14 +390,17 @@ module Rubernetes
       # securitycontext.DetermineEffectiveSecurityContext: container fields
       # win; Pod-only fields (fsGroup, supplementalGroups, sysctls) come from
       # the Pod; the image USER applies when no runAsUser is set.
-      def effective_security_context(pod, definition, image)
+      def effective_security_context(pod, definition, image, volumes: [])
         pod_context = Helpers.key(Helpers.key(pod, "spec", {}), "securityContext", {}) || {}
+        pod_context = VolumeGroups.apply(pod_context, volumes)
         container_context = Helpers.key(definition, "securityContext", {}) || {}
         merged = {}
-        %w[runAsUser runAsGroup runAsNonRoot seLinuxOptions seccompProfile appArmorProfile windowsOptions].each do |field|
+        %w[runAsUser runAsGroup runAsNonRoot seLinuxOptions seccompProfile windowsOptions].each do |field|
           value = container_context.key?(field) ? container_context[field] : pod_context[field]
           merged[field] = value unless value.nil?
         end
+        apparmor = Runtime::AppArmor.profile(pod, definition)
+        merged["appArmorProfile"] = apparmor if apparmor
         %w[fsGroup supplementalGroups sysctls fsGroupChangePolicy supplementalGroupsPolicy].each do |field|
           merged[field] = pod_context[field] unless pod_context[field].nil?
         end
@@ -396,7 +408,6 @@ module Rubernetes
           merged[field] = container_context[field] unless container_context[field].nil?
         end
         merged["privileged"] = false unless merged.key?("privileged")
-        merged["allowPrivilegeEscalation"] = merged["privileged"] == true unless merged.key?("allowPrivilegeEscalation")
         merged["capabilities"] ||= {}
         merged["capabilities"] =
           {"add" => Array(Helpers.key(merged["capabilities"], "add", [])), "drop" => Array(Helpers.key(merged["capabilities"], "drop", []))}
@@ -405,13 +416,18 @@ module Rubernetes
         image_user = Helpers.key(Helpers.key(image, "config", {}) || {}, "config", {}) || {}
         image_user = Helpers.key(image_user, "User", nil)
         image_user = Helpers.key(image, "user", nil) if image_user.nil? || image_user.to_s.empty?
+        rootfs = Helpers.key(image, "rootfs", nil)
         if merged["runAsUser"].nil? && image_user && !image_user.to_s.empty?
-          uid, gid = resolve_image_user(image_user.to_s, Helpers.key(image, "rootfs", nil))
+          uid, gid = resolve_image_user(image_user.to_s, rootfs)
           merged["runAsUser"] = uid unless uid.nil?
           merged["runAsGroup"] = gid if merged["runAsGroup"].nil? && !gid.nil?
           merged["imageUser"] = image_user.to_s
         end
-        merge_image_groups!(merged, image_user, Helpers.key(image, "rootfs", nil))
+        if merged["runAsGroup"].nil? && merged["runAsUser"]
+          gid = passwd_primary_group(merged["runAsUser"].to_s, rootfs)
+          merged["runAsGroup"] = gid unless gid.nil?
+        end
+        merge_image_groups!(merged, image_user, rootfs)
         if merged["runAsNonRoot"] == true
           if merged["runAsUser"].nil?
             if image_user && !image_user.to_s.match?(/\A\d+/)
@@ -507,12 +523,15 @@ module Rubernetes
       end
 
       def passwd_primary_group(user, rootfs)
+        return nil if rootfs.nil?
+
+        key = user.match?(/\A\d+\z/) ? 2 : 0
         path = File.join(rootfs, "etc", "passwd")
         return nil unless File.file?(path)
 
         File.foreach(path) do |line|
           fields = line.chomp.split(":")
-          return Integer(fields[3]) if fields[0] == user && fields[3].to_s.match?(/\A\d+\z/)
+          return Integer(fields[3]) if fields[key] == user && fields[3].to_s.match?(/\A\d+\z/)
         end
         nil
       rescue SystemCallError
@@ -530,11 +549,13 @@ module Rubernetes
           name = Helpers.key(mount, "name", "").to_s
           volume = Helpers.key(volumes, name, nil)
           raise ConfigError, "volume #{name.inspect} is not defined in the Pod" if volume.nil?
+          raise ConfigError, "block volume #{name.inspect} must be used through volumeDevices" if volume["volumeMode"] == "Block"
 
           destination = Helpers.key(mount, "mountPath", "").to_s
           raise ConfigError, "volumeMount #{name.inspect} has no mountPath" if destination.empty?
 
           readonly = Helpers.key(mount, "readOnly", false) == true || Helpers.key(volume, "readonly", false) == true
+          propagation = Helpers.key(mount, "mountPropagation", "None").to_s
           sub_path = Helpers.key(mount, "subPath", nil)
           sub_path_expr = Helpers.key(mount, "subPathExpr", nil)
           sub_path = expand(sub_path_expr, mapping) if sub_path.nil? && sub_path_expr
@@ -551,10 +572,15 @@ module Rubernetes
             "source" => source,
             "destination" => destination,
             "readonly" => readonly,
-            "propagation" => Helpers.key(mount, "mountPropagation", "None").to_s,
+            "propagation" => propagation,
+            "sandbox_shared_volume" => (true if propagation == "Bidirectional" && volume["backend"] == "emptyDir" && sub_path.to_s.empty?),
+            "host_path_source" => (@pod_volumes&.host_path_mount_source(volume) if volume["backend"] == "hostPath" && sub_path.to_s.empty?),
+            "userns_idmap" => (true if context.pod.dig("spec", "hostUsers") == false &&
+                                     %w[configMap secret downwardAPI projected].include?(volume["backend"])),
             "recursive_readonly" => Helpers.key(mount, "recursiveReadOnly", nil)
           }.compact
         end
+        build_block_devices(definition, volumes, mounts)
         # Pod-level files come last so a volume mounted over /etc does not
         # hide the managed hosts/resolv.conf the way kubelet orders them.
         (context.pod_files || {}).each do |destination, host_path|
@@ -564,6 +590,30 @@ module Rubernetes
                      "readonly" => false, "propagation" => "None"}
         end
         mounts
+      end
+
+      def build_block_devices(definition, volumes, mounts)
+        Array(Helpers.key(definition, "volumeDevices", [])).each do |entry|
+          name = Helpers.key(entry, "name", "").to_s
+          destination = Helpers.key(entry, "devicePath", "").to_s
+          unless destination.start_with?("/") && destination != "/" && !destination.include?("\0") && !destination.split("/").include?("..")
+            raise ConfigError, "volumeDevice #{name.inspect} requires an absolute devicePath"
+          end
+
+          destination = File.expand_path(destination)
+          volume = Helpers.key(volumes, name, {})
+          raise ConfigError, "block volume #{name.inspect} is not prepared" unless volume["volumeMode"] == "Block"
+          if mounts.any? { |mount| mount["destination"] == destination }
+            raise ConfigError, "volumeDevice #{name.inspect} conflicts with a mount at #{destination.inspect}"
+          end
+
+          source = volume.fetch("path")
+          raise ConfigError, "block volume #{name.inspect} has no device node" unless File.blockdev?(source)
+
+          readonly = volume["readonly"] == true
+          mounts << {"name" => name, "source" => source, "destination" => destination, "readonly" => readonly,
+                     "propagation" => "None", "device" => true, "permissions" => readonly ? "r" : "mrw"}
+        end
       end
 
       # ---------------------------------------------------------------- termination message
