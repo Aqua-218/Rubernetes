@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "digest"
 require "ipaddr"
 require "json"
@@ -151,18 +153,7 @@ module Rubernetes
       # without paying for another: DurableState hands back what it wrote,
       # and a JSON round trip of the whole state per write is what the node's
       # concurrent Pod starts were queueing behind.
-      def freeze_deeply(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            freeze_deeply(key)
-            freeze_deeply(child)
-          end
-        when Array
-          value.each { |child| freeze_deeply(child) }
-        end
-        value.freeze
-      end
+      def freeze_deeply(value) = ObjectTree.deep_freeze(value)
 
       def digest(value)
         Digest::SHA256.hexdigest(JSON.generate(canonical(value)))
