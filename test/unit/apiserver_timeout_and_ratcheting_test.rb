@@ -58,6 +58,18 @@ class ApiserverTimeoutAndRatchetingTest < Minitest::Test
     assert_in_delta 1.5, server.send(:parse_go_duration_seconds, "1m30s") / 60.0, 0.001
   end
 
+  def test_request_timeout_validates_the_full_go_duration_on_non_resource_paths
+    %w[invalid 3 1sbad].each do |timeout|
+      error = server.call(method: "GET", path: "/version?timeout=#{timeout}", headers: {})
+
+      assert_equal 400, error.status
+      assert_includes error.body.fetch("message"), "invalid timeout specified in the request URL"
+    end
+    %w[0s 3m .5s].each do |timeout|
+      assert_equal 200, server.call(method: "GET", path: "/version?timeout=#{timeout}", headers: {}).status
+    end
+  end
+
   def test_an_update_ratchets_errors_in_unchanged_subtrees
     schema = {"type" => "object", "properties" => {
       "spec" => {"type" => "object", "properties" => {
