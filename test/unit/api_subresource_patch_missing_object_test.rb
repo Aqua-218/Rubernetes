@@ -15,7 +15,9 @@ class APISubresourcePatchMissingObjectTest < Minitest::Test
 
   def setup
     @store = API::MemoryStore.new(clock: -> { Time.utc(2026, 1, 1) })
-    @server = API::Server.new(registry: API::Registry.new, store: @store, namespace_lifecycle: true)
+    registry = API::Registry.new
+    registry.register(resource: "services", kind: "Service", scope: :namespaced, subresources: ["status"])
+    @server = API::Server.new(registry: registry, store: @store, namespace_lifecycle: true)
     call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "dev"}})
   end
 
@@ -59,5 +61,30 @@ class APISubresourcePatchMissingObjectTest < Minitest::Test
                     headers: {"Content-Type" => "application/merge-patch+json"})
 
     assert_equal 404, response.status
+  end
+
+  def test_service_status_strategic_patch_preserves_other_finalizers_and_can_remove_the_last_one
+    path = "/api/v1/namespaces/dev/services/with-finalizers"
+    service = {"metadata" => {"name" => "with-finalizers", "finalizers" => ["example.test/hold"]},
+               "spec" => {"ports" => [{"port" => 80}]}}
+
+    assert_equal 201, call("POST", "/api/v1/namespaces/dev/services", service).status
+
+    cloud = "service.kubernetes.io/load-balancer-cleanup"
+    strategic = {"Content-Type" => "application/strategic-merge-patch+json"}
+    added = call("PATCH", "#{path}/status", {"metadata" => {"finalizers" => [cloud]}}, headers: strategic)
+
+    assert_equal 200, added.status
+    assert_equal ["example.test/hold", cloud].sort, added.body.dig("metadata", "finalizers").sort
+    call("DELETE", path)
+
+    update = call("PATCH", "#{path}/status", {"metadata" => {"$deleteFromPrimitiveList/finalizers" => [cloud]}}, headers: strategic)
+
+    assert_equal 200, update.status
+    assert_equal ["example.test/hold"], update.body.dig("metadata", "finalizers")
+    assert_equal 200, call("GET", path).status
+
+    assert_equal 200, call("PATCH", "#{path}/status", {"metadata" => {"finalizers" => nil}}, headers: strategic).status
+    assert_equal 404, call("GET", path).status
   end
 end
