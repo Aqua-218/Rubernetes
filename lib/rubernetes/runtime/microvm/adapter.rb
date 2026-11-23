@@ -89,7 +89,7 @@ module Rubernetes
           @mutex.synchronize { @sessions[sandbox_id] = session }
           transactional(session) do
             images = Array(config["resolved_images"]).map { |image| {"digest" => image["digest"], "rootfs" => image["rootfs"]} }.uniq
-            session.allocate_workspace(images: images, workspace_mib: config["workspace_mib"])
+            session.allocate_workspace(images: images, workspace_mib: config["workspace_mib"], block_volumes: config["block_volumes"])
             @broker.bind(vm_id: identity.vm_id, identity: identity.fields, policy: broker_policy(config))
             {"resources" => session.resources.select { |resource| %w[workspace identity].include?(resource["kind"]) }}
           end
@@ -98,7 +98,7 @@ module Rubernetes
         def create_isolation(sandbox_id:, config:, runtime_class:, gate:)
           session = session!(sandbox_id)
           transactional(session) do
-            base = @use_base_snapshot ? @pool.latest(runtime_class) : nil
+            base = @pool.latest(runtime_class, artifact_digest: @artifacts.digest) if @use_base_snapshot && !session.block_volumes?
             # A corrupt base is refused before any jail or VMM exists.
             @pool.verify!(base, artifact_digest: @artifacts.digest) if base
             session.create_isolation(base: base)
@@ -191,6 +191,10 @@ module Rubernetes
           raise Error, "microVM for container #{id} is not running" unless session.alive?
 
           session.container_status(id)
+        end
+
+        def wait_container(id:, timeout:)
+          session_for_container!(id).container_wait(id, timeout: timeout)
         end
 
         # Crash-recovery reconciliation for a sandbox whose VM is dead, hung
@@ -377,6 +381,7 @@ module Rubernetes
           input["id"] = sandbox_id
           input.delete("injected_files")
           input.delete("broker_policy")
+          input.delete("block_volumes")
           input
         end
 
