@@ -18,10 +18,6 @@ module Rubernetes
           adapter.list(descriptor, namespace: namespace || :all)
         end
 
-        def owner_pods(resource, adapter)
-          owned(resource, list_children(adapter, POD, Support.namespace(resource)))
-        end
-
         def template(resource)
           candidate = Support.value(Support.spec(resource), "template", {})
           candidate.is_a?(Hash) ? Support.deep_copy(candidate) : {}
@@ -37,29 +33,17 @@ module Rubernetes
         end
 
         def pod_for(owner, name:, template_value: nil, labels: nil, node_name: nil, ordinal: nil)
-          source = Support.deep_copy(template_value || template(owner))
-          metadata = Support.value(source, "metadata", {})
-          metadata = {} unless metadata.is_a?(Hash)
-          spec = Support.value(source, "spec", {})
-          spec = {} unless spec.is_a?(Hash)
+          source = template_value ? Support.deep_copy(template_value) : template(owner)
+          metadata = Support.metadata(source)
+          spec = Support.spec(source)
           metadata["name"] = name
           metadata["namespace"] ||= Support.namespace(owner) if Support.namespace(owner)
           merged_labels = Support.value(metadata, "labels", {})
           merged_labels = {} unless merged_labels.is_a?(Hash)
           merged_labels = merged_labels.merge(labels || {})
           metadata["labels"] = merged_labels unless merged_labels.empty?
-          source_annotations = Support.value(source, "metadata", {})["annotations"] if Support.value(source, "metadata", {}).is_a?(Hash)
-          metadata["annotations"] = Support.deep_copy(source_annotations) if source_annotations.is_a?(Hash) && !source_annotations.empty?
-          object = {
-            "apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata,
-            "spec" => spec
-          }
-          object["spec"]["nodeName"] = node_name if node_name
-          object
-        end
-
-        def available_count(objects)
-          Array(objects).count { |object| Support.ready?(object) || Support.integer(Support.status(object)["readyReplicas"], 0).positive? }
+          spec["nodeName"] = node_name if node_name
+          {"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata, "spec" => spec}
         end
 
         def pod_alive?(pod)
@@ -67,17 +51,16 @@ module Rubernetes
           !Support.value(Support.metadata(pod), "deletionTimestamp", nil) && !%w[Succeeded Failed].include?(phase)
         end
 
-        def status_candidate(resource, status)
-          candidate = Support.deep_copy(resource)
-          candidate["status"] = status
-          candidate
-        end
-
-        def result(resource, operations, status: nil, events: [], batches: nil, force_status: false)
+        def result(resource, operations, status: nil, events: [], batches: nil, force_status: false, status_first: false)
           status ||= Support.status(resource)
           status_operation = operation_status(resource, status, descriptor: descriptor_for(resource), force: force_status)
           operations = Array(operations).compact
-          operations << status_operation if status_operation
+          if status_operation && status_first
+            operations.unshift(status_operation)
+            batches = [[status_operation], *batches] if batches
+          elsif status_operation
+            operations << status_operation
+          end
           ReconcileResult.new(operations: operations, status: status,
                               batches: batches, events: events, controller: name,
                               key: [Support.namespace(resource), Support.name(resource)].compact.join("/"))
