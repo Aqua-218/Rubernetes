@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../version_priority"
+
 module Rubernetes
   module API
     class Server
@@ -7,37 +9,7 @@ module Rubernetes
       # per-group and per-version documents, aggregated discovery, and the
       # runtime-config and feature-gate rules that decide which resources are on.
       module Discovery
-        # Kubernetes publishes APIGroup versions in an upstream-defined order.
-        # Do not derive preferredVersion from lexical sorting: v1beta1 would win
-        # over v1 on a lexical comparison even though it is not the preferred
-        # served version.  This table is pinned to the v1.36.2 corpus shipped by
-        # this project; unknown/added versions remain deterministic after the
-        # pinned entries.
-        PINNED_VERSION_PRIORITY = {
-          "admissionregistration.k8s.io" => %w[v1 v1beta1 v1alpha1],
-          "apps" => %w[v1],
-          "authentication.k8s.io" => %w[v1 v1beta1 v1alpha1],
-          "authorization.k8s.io" => %w[v1 v1beta1 v1alpha1],
-          "autoscaling" => %w[v2 v1],
-          "batch" => %w[v1 v1beta1],
-          "certificates.k8s.io" => %w[v1 v1beta1 v1alpha1],
-          "coordination.k8s.io" => %w[v1 v1beta1 v1alpha2],
-          "discovery.k8s.io" => %w[v1 v1beta1],
-          "events.k8s.io" => %w[v1 v1beta1],
-          "flowcontrol.apiserver.k8s.io" => %w[v1 v1beta3 v1beta2 v1beta1],
-          "networking.k8s.io" => %w[v1 v1beta1],
-          "node.k8s.io" => %w[v1 v1alpha1],
-          "policy" => %w[v1 v1beta1],
-          "rbac.authorization.k8s.io" => %w[v1 v1beta1],
-          "resource.k8s.io" => %w[v1 v1beta2 v1beta1 v1alpha3],
-          "scheduling.k8s.io" => %w[v1 v1alpha2],
-          "storage.k8s.io" => %w[v1 v1beta1],
-          "storagemigration.k8s.io" => %w[v1beta1],
-          "internal.apiserver.k8s.io" => %w[v1alpha1],
-          "apiregistration.k8s.io" => %w[v1 v1beta1],
-          "auditregistration.k8s.io" => %w[v1alpha1],
-          "metrics.k8s.io" => %w[v1beta1]
-        }.transform_values(&:freeze).freeze
+        PINNED_VERSION_PRIORITY = API::PINNED_VERSION_PRIORITY
 
         # The resources a feature gate guards (DEFAULT_FEATURE_GATES and the
         # pinned corpus say which gates are on).
@@ -146,7 +118,7 @@ module Rubernetes
             "shortNames" => resource.short_names,
             "categories" => resource.categories
           }.tap do |payload|
-            payload["storageVersionHash"] = resource.storage_version_hash if resource.storage_version_hash
+            payload["storageVersionHash"] = resource.storage_version_hash if resource.storage_version_hash && feature_gate_enabled?("StorageVersionHash")
           end
         end
 
@@ -175,18 +147,28 @@ module Rubernetes
 
         AGGREGATED_DISCOVERY_KIND = "APIGroupDiscoveryList"
 
-        def aggregated_discovery?(request)
-          # An Accept header that cannot be parsed asks for nothing special.
-          best_effort do
-            Negotiation.parse_accept(request.header("accept")).any? do |clause|
-              params = clause.params || {}
-              params["as"] == AGGREGATED_DISCOVERY_KIND && params["g"] == AGGREGATED_DISCOVERY_GROUP &&
-                params["v"] == AGGREGATED_DISCOVERY_VERSION
-            end
-          end || false
+        def discovery_response(request, core_only:)
+          clause = Negotiation.parse_accept(request.header("accept")).find do |candidate|
+            candidate.quality.positive? && Negotiation::STANDARD_TYPES.any? { |media_type| candidate.matches?(media_type) } &&
+              (candidate.params["as"].nil? || aggregated_discovery_clause?(candidate))
+          end
+          unless clause && aggregated_discovery_clause?(clause)
+            return json_response(core_only ? api_versions_payload : api_groups_payload)
+          end
+
+          no_peer = clause.params["profile"] == "nopeer"
+          @metrics&.increment("aggregator_discovery_nopeer_requests_total") if no_peer && feature_gate_enabled?("UnknownVersionInteroperabilityProxy")
+          media_type = Negotiation::STANDARD_TYPES.find { |type| clause.matches?(type) }
+          aggregated_discovery_response(request, core_only: core_only, include_peers: !no_peer, media_type: media_type)
         end
 
-        def aggregated_discovery_response(core_only:)
+        def aggregated_discovery_clause?(clause)
+          params = clause.params
+          params["as"] == AGGREGATED_DISCOVERY_KIND && params["g"] == AGGREGATED_DISCOVERY_GROUP &&
+            params["v"] == AGGREGATED_DISCOVERY_VERSION
+        end
+
+        def aggregated_discovery_response(request, core_only:, include_peers:, media_type:)
           selected = enabled_resources.select { |resource| core_only ? resource.group.empty? : !resource.group.empty? }
           items = selected.group_by(&:group).sort_by { |group, _| group }.map do |group, resources|
             versions = ordered_group_versions(group, resources.map(&:version)).map do |version|
@@ -206,13 +188,20 @@ module Rubernetes
           # backend, not in enabled_resources, so they must be appended here or
           # the v2 discovery the 1.36 dynamic client reads omits them entirely.
           items += @aggregator.discovery_items if !core_only && @aggregator
+          items = @peer_proxy.aggregate(items) if !core_only && include_peers && @peer_proxy
           body = {"kind" => AGGREGATED_DISCOVERY_KIND,
                   "apiVersion" => "#{AGGREGATED_DISCOVERY_GROUP}/#{AGGREGATED_DISCOVERY_VERSION}",
                   "metadata" => {}, "items" => items}
-          content_type = "application/json;g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}"
-          Response.new(status: 200,
-                       headers: {"content-type" => content_type, "cache-control" => "no-cache, private"},
-                       body: body)
+          content_type = "#{media_type};g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}"
+          etag = %("#{Digest::SHA512.hexdigest(JSON.generate(body)).upcase}")
+          headers = {"content-type" => content_type, "cache-control" => "public", "vary" => "Accept", "etag" => etag}
+          return Response.new(status: 304, headers: headers.except("content-type")) if request.header("if-none-match") == etag
+
+          encoded = case media_type
+                    when Negotiation::PROTOBUF_TYPE then protobuf_codec.encode(body)
+                    when Negotiation::YAML_TYPE then Negotiation.dump_yaml(body)
+                    end
+          Response.new(status: 200, headers: headers, body: body, encoded_body: encoded)
         end
 
         def aggregated_discovery_resource(resource)
@@ -329,7 +318,7 @@ module Rubernetes
         end
 
         def feature_gate_enabled?(gate)
-          return @feature_gates.fetch(gate) == true if @feature_gates.key?(gate)
+          return @feature_gates.fetch(gate) == true if @feature_gates&.key?(gate)
           return CORPUS_FEATURE_GATES.fetch(gate, false) == true if CORPUS_FEATURE_GATES
 
           DEFAULT_FEATURE_GATES.fetch(gate, false) == true
