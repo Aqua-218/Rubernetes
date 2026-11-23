@@ -13,6 +13,8 @@ require_relative "../version"
 require_relative "errors"
 require_relative "rate_limiter"
 require_relative "rest_client_metrics"
+require_relative "http_client/credential_cache"
+require_relative "http_client/proxy_environment"
 
 module Rubernetes
   module Client
@@ -29,6 +31,8 @@ module Rubernetes
                                  :close_error, keyword_init: true)
 
       Response = Struct.new(:status, :headers, :body, keyword_init: true) do
+        attr_accessor :sanitized_detail
+
         def success?
           (200..299).cover?(status)
         end
@@ -97,12 +101,13 @@ module Rubernetes
         max_retries: DEFAULT_MAX_RETRIES,
         qps: nil,
         burst: nil,
+        rate_limiter: nil,
         retry_sleeper: ->(seconds) { sleep(seconds) }
       )
         @user_agent = (user_agent || self.class.default_user_agent).to_s
         @max_retries = Integer(max_retries)
         @retry_sleeper = retry_sleeper
-        @rate_limiter = build_rate_limiter(qps, burst)
+        @rate_limiter = rate_limiter || build_rate_limiter(qps, burst)
         @context = context || {
           server: server,
           bearer_token: token,
@@ -117,17 +122,14 @@ module Rubernetes
         }
         @http_factory = http_factory || build_factory(http, http_class)
         @transport = transport
-        @stream_mutex = Mutex.new
-        @stream_condition = ConditionVariable.new
-        @active_streams = {}.compare_by_identity
-        @pool = {}
-        @pool_mutex = Mutex.new
-        @closed = false
+        initialize_connections
         @open_timeout = Integer(open_timeout)
         @read_timeout = Integer(read_timeout)
         @write_timeout = Integer(write_timeout)
         validate_timeouts!
         @base_uri = parse_base_uri(context_value(:server))
+        @exec_credential = context_value(:exec_credential)
+        @client_certificate_store = context_value(:client_certificate_store)
         validate_bearer_token!
         validate_server_credential_transport!
         RestClientMetrics.transport_created(tls_cache_key) unless @transport
@@ -163,11 +165,14 @@ module Rubernetes
           loop do
             retry_attempt = attempts.positive?
             throttle(normalized_method, uri)
+            credentials = nil
             response = begin
+              credentials, generation = exec_credentials(request_headers)
+              attempt_headers = exec_headers(request_headers, credentials)
               if @transport
-                call_transport(normalized_method, uri, request_body, request_headers)
+                call_transport(normalized_method, uri, request_body, attempt_headers)
               else
-                call_http(normalized_method, uri, request_body, request_headers)
+                call_http(normalized_method, uri, request_body, attempt_headers, credentials, generation)
               end
             rescue StandardError => error
               RestClientMetrics.attempt(normalized_method, uri, "<error>", request_body.to_s.bytesize, retry_attempt)
@@ -178,7 +183,8 @@ module Rubernetes
               @retry_sleeper.call(wait)
               next
             end
-            normalized = normalize_response(response)
+            normalized = sanitize_exec_response(normalize_response(response), credentials&.bearer_token)
+            @exec_credential.refresh_after_unauthorized(credentials) if normalized.status == 401 && credentials
             RestClientMetrics.attempt(normalized_method, uri, normalized.status, request_body.to_s.bytesize, retry_attempt)
             wait = retry_after_wait(normalized, attempts)
             break if wait.nil?
@@ -203,18 +209,21 @@ module Rubernetes
       # Streams response body chunks without buffering a long-running Kubernetes watch in
       # memory. The returned response contains status and headers; successful body bytes are
       # delivered only to the block. Error responses are bounded and raised as APIError.
-      def stream(method, path, body: nil, headers: {}, query: nil, &block)
-        return enum_for(__method__, method, path, body: body, headers: headers, query: query) unless block
+      def stream(method, path, body: nil, headers: {}, query: nil, read_timeout: @read_timeout, &block)
+        return enum_for(__method__, method, path, body: body, headers: headers, query: query, read_timeout: read_timeout) unless block
 
         normalized_method = normalize_method(method)
         uri = build_uri(path, query)
         request_headers = build_headers(headers, body)
         request_body = encode_body(body, request_headers)
+        credentials, generation = exec_credentials(request_headers)
+        request_headers = exec_headers(request_headers, credentials)
 
         if @transport
-          session = register_stream(@transport)
+          session = register_stream(@transport, generation)
           begin
             response = normalize_response(call_transport(normalized_method, uri, request_body, request_headers))
+            response = sanitize_exec_response(response, credentials&.bearer_token)
             raise_for_status!(response, normalized_method, path) unless response.success?
             each_stream_body_chunk(response.body, &block)
             Response.new(status: response.status, headers: response.headers, body: "")
@@ -232,7 +241,7 @@ module Rubernetes
                                      request_body.to_s.bytesize, nil)
           end
           begin
-            call_http_stream(normalized_method, uri, request_body, request_headers) do |chunk|
+            call_http_stream(normalized_method, uri, request_body, request_headers, credentials, generation, read_timeout: read_timeout) do |chunk|
               counted.call(200)
               yield(chunk)
             end
@@ -246,7 +255,10 @@ module Rubernetes
             counted.call(200)
           end
         end
-      rescue APIError, ConfigurationError, Error
+      rescue APIError => error
+        @exec_credential.refresh_after_unauthorized(credentials) if error.status == 401 && credentials
+        raise
+      rescue ConfigurationError, Error
         raise
       rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse,
              IOError, SocketError, SystemCallError, OpenSSL::SSL::SSLError => error
@@ -268,7 +280,8 @@ module Rubernetes
 
       # One token per attempt, as client-go's tryThrottle.
       def throttle(method, uri)
-        RestClientMetrics.rate_limiter(method, uri, @rate_limiter ? @rate_limiter.wait : 0.0)
+        delay = @rate_limiter&.wait(uri.path.delete_prefix(@base_uri.path.to_s)) || 0.0
+        RestClientMetrics.rate_limiter(method, uri, delay)
       end
 
       def tls_cache_key
@@ -285,7 +298,7 @@ module Rubernetes
           read.call(context_value(:ca_file) || context_value(:certificate_authority_file)),
          context_value(:client_certificate_data) || read.call(context_value(:client_certificate_file)),
          context_value(:client_key_data) || read.call(context_value(:client_key_file)),
-         context_value(:insecure_skip_tls_verify) == true].hash
+         context_value(:insecure_skip_tls_verify) == true, @exec_credential&.object_id, @client_certificate_store&.current_path].hash
       end
       private :tls_cache_key
 
@@ -395,7 +408,8 @@ module Rubernetes
         status_object = parse_status(response.body)
         detail = status_object.is_a?(Hash) ? status_object["message"] : nil
         detail = detail.to_s unless detail.nil?
-        detail = redact_bearer_token(detail) unless detail.nil?
+        sanitized = response.sanitized_detail if response.is_a?(Response)
+        detail = sanitized || redact_bearer_token(detail) unless detail.nil?
         operation = [method, path].compact.join(" ")
         message = "Kubernetes API request#{" #{operation}" unless operation.empty?} failed with HTTP #{response.status}"
         message = "#{message}: #{detail}" unless detail.nil? || detail.empty?
@@ -404,8 +418,18 @@ module Rubernetes
 
       private
 
+      def initialize_connections
+        @stream_mutex = Mutex.new
+        @stream_condition = ConditionVariable.new
+        @active_streams = {}.compare_by_identity
+        @pool = {}
+        @pool_mutex = Mutex.new
+        @closed = false
+      end
+
       def build_factory(http, http_class)
         return ->(_uri) { http } if http
+        return ProxyEnvironment.method(:http) if http_class.equal?(Net::HTTP)
         return ->(uri) { http_class.new(uri.hostname, uri.port) } if http_class
 
         raise ArgumentError, "http_class or http must be provided"
@@ -426,15 +450,13 @@ module Rubernetes
         raise ConfigurationError, "Kubernetes bearer token must contain only printable ASCII without whitespace"
       end
 
-      def redact_bearer_token(value)
-        token = context_value(:bearer_token) || context_value(:token)
+      def redact_bearer_token(value, token = context_value(:bearer_token) || context_value(:token))
         return value.to_s if token.nil? || token.to_s.empty?
 
         value.to_s.b.gsub(token.to_s.b, "[REDACTED]".b).force_encoding(value.to_s.encoding)
       end
 
-      def validate_server_credential_transport!
-        token = context_value(:bearer_token) || context_value(:token)
+      def validate_server_credential_transport!(token = context_value(:bearer_token) || context_value(:token))
         return if token.nil? || @base_uri.scheme == "https" || loopback_host?(@base_uri.host)
 
         raise ConfigurationError, "Kubernetes bearer tokens require https for non-loopback API servers"
@@ -450,6 +472,10 @@ module Rubernetes
       end
 
       def context_value(key)
+        # The request uses one snapshot of the exec credential for both the
+        # bearer header and the TLS handshake.
+        return nil if @exec_credential && %i[bearer_token token client_certificate_data client_key_data].include?(key)
+
         if @context.respond_to?(key)
           @context.public_send(key)
         elsif @context.is_a?(Hash)
@@ -576,6 +602,32 @@ module Rubernetes
         raise UsageError.new("request body cannot be encoded as JSON: #{error.message}", cause: error), cause: error
       end
 
+      def exec_credentials(headers)
+        return unless @exec_credential
+        return if headers.any? { |name, value| name.casecmp?("Authorization") && !value.empty? }
+
+        @exec_credential.credentials(client: self) do |credential|
+          validate_server_credential_transport!(credential.bearer_token)
+          [credential, connection_generation]
+        end
+      end
+
+      def exec_headers(headers, credentials)
+        return headers unless credentials&.bearer_token
+
+        headers.reject { |name, _| name.casecmp?("Authorization") }.merge("Authorization" => "Bearer #{credentials.bearer_token}")
+      end
+
+      def sanitize_exec_response(response, token)
+        return response if response.success? || token.nil?
+
+        status = parse_status(response.body)
+        detail = status["message"] if status.is_a?(Hash)
+        return response if detail.nil?
+
+        response.dup.tap { |safe| safe.sanitized_detail = redact_bearer_token(detail.to_s, token) }
+      end
+
       def call_transport(method, uri, body, headers)
         result = @transport.call(method, uri, body: body, headers: headers, context: @context)
         return result if result.is_a?(Response)
@@ -585,15 +637,9 @@ module Rubernetes
         raise TransportError.new("injected HTTP transport rejected request: #{error.message}", cause: error), cause: error
       end
 
-      # One TLS connection per API call cost every controller write a full
-      # handshake -- on both ends; the API server spent its CPU on RSA for
-      # clients that then sent one request and hung up.  A ReplicationController
-      # needed 19 s to create 100 Pods that the server itself handles in about
-      # 30 ms each.  Plain requests now reuse a started Net::HTTP per thread
-      # and server (the API server keeps connections alive); a connection the
-      # server closed in the meantime is dropped and the request retried once.
-      # Streams keep their own connection, as before, and an injected adapter
-      # (tests) is used exactly as given.
+      # Reuse TLS sessions for plain requests to avoid a handshake per write.
+      # A stale connection is dropped and the request retried once. Streams
+      # use a separate connection, and injected adapters are used as supplied.
       SESSIONS_KEY = :rubernetes_http_sessions
       # Below the API server's 30 s idle read timeout, so Net::HTTP reopens a
       # connection that sat idle longer instead of writing into one the
@@ -602,12 +648,12 @@ module Rubernetes
       CONNECTION_ERRORS = [IOError, EOFError, Errno::ECONNRESET, Errno::EPIPE, Errno::ECONNREFUSED,
                            Net::HTTPBadResponse, OpenSSL::SSL::SSLError].freeze
 
-      def call_http(method, uri, body, headers)
+      def call_http(method, uri, body, headers, credentials, generation)
         http = @http_factory.call(uri)
         request = build_request(method, uri, body, headers)
-        return persistent_request(http, uri, request) if http.is_a?(Net::HTTP) && !http.started?
+        return persistent_request(http, uri, request, credentials, generation) if http.is_a?(Net::HTTP) && !http.started?
 
-        configure_http(http, uri)
+        configure_http(http, uri, credentials)
         if http.respond_to?(:request)
           http.request(request)
         elsif http.respond_to?(:start)
@@ -628,18 +674,20 @@ module Rubernetes
       # rotation) is finished instead of reused.
       POOL_MAX_IDLE_PER_SERVER = 8
 
-      def persistent_request(fresh, uri, request)
-        generation = connection_generation
-        key = "#{generation}|#{uri.scheme}://#{uri.hostname}:#{uri.port}"
-        session = checkout_connection(key, generation) || start_session(fresh, uri)
+      def persistent_request(fresh, uri, request, credentials, generation)
+        generation ||= connection_generation
+        key = [generation, uri.scheme, uri.hostname, uri.port, credentials&.certificate_identity]
+        session = checkout_connection(key, generation) || start_session(fresh, uri, credentials)
         response = nil
         begin
-          response = session.request(request)
+          response = request_on_connection(session, request, credentials, generation)
         rescue *CONNECTION_ERRORS
           finish_connection(session)
-          session = start_session(@http_factory.call(uri), uri)
+          raise if credentials && generation != connection_generation
+
+          session = start_session(@http_factory.call(uri), uri, credentials)
           begin
-            response = session.request(request)
+            response = request_on_connection(session, request, credentials, generation)
           rescue StandardError
             finish_connection(session)
             raise
@@ -652,10 +700,21 @@ module Rubernetes
         response
       end
 
+      def request_on_connection(session, request, credentials, generation)
+        # Exec certificate rotation also interrupts requests that checked
+        # their connection out of the idle pool before the rotation started.
+        active = register_stream(session, generation) if credentials
+        session.request(request)
+      ensure
+        unregister_stream(active) if active
+      end
+
       def checkout_connection(key, generation)
         @pool_mutex.synchronize do
+          return unless generation == connection_generation
+
           # Idle connections of an earlier generation are finished, not reused.
-          stale = @pool.keys.reject { |existing| existing.start_with?("#{generation}|") }
+          stale = @pool.keys.reject { |existing| existing.first == generation }
           stale.each { |existing| @pool.delete(existing).each { |old| finish_connection(old) } }
           idle = @pool[key]
           while idle && !idle.empty?
@@ -667,15 +726,15 @@ module Rubernetes
       end
 
       def checkin_connection(key, generation, session, response)
-        clean = session.started? && response_fully_read?(response) && generation == connection_generation && !@closed
+        clean = session.started? && response_fully_read?(response)
         return finish_connection(session) unless clean
 
         @pool_mutex.synchronize do
-          idle = (@pool[key] ||= [])
-          if idle.length >= POOL_MAX_IDLE_PER_SERVER
+          if generation != connection_generation || @closed
             finish_connection(session)
           else
-            idle << session
+            idle = (@pool[key] ||= [])
+            idle.length >= POOL_MAX_IDLE_PER_SERVER ? finish_connection(session) : idle << session
           end
         end
       end
@@ -705,8 +764,8 @@ module Rubernetes
         idle.each { |session| finish_connection(session) }
       end
 
-      def start_session(http, uri)
-        configure_http(http, uri)
+      def start_session(http, uri, credentials)
+        configure_http(http, uri, credentials)
         http.keep_alive_timeout = KEEP_ALIVE_TIMEOUT_SECONDS if http.respond_to?(:keep_alive_timeout=)
         resolve_address(http, uri)
         http.start
@@ -732,18 +791,18 @@ module Rubernetes
         nil
       end
 
-      def call_http_stream(method, uri, body, headers, &)
+      def call_http_stream(method, uri, body, headers, credentials, generation, read_timeout:, &)
         http = nil
         session = nil
-        http, session = open_http_stream(uri)
+        http, session = open_http_stream(uri, generation)
         ensure_open_stream!(session)
-        configure_http(http, uri)
+        configure_http(http, uri, credentials, read_timeout: read_timeout)
         request = build_request(method, uri, body, headers)
         streamed_response = nil
         yielded_response = false
         consume = lambda do |raw_response|
           yielded_response = true
-          streamed_response = consume_http_stream(raw_response, method, uri.request_uri, &)
+          streamed_response = consume_http_stream(raw_response, method, uri.request_uri, credentials, &)
         end
 
         raw_response = if http.respond_to?(:request)
@@ -755,16 +814,16 @@ module Rubernetes
                        end
         return streamed_response if yielded_response
 
-        consume_http_stream(raw_response, method, uri.request_uri, &)
+        consume_http_stream(raw_response, method, uri.request_uri, credentials, &)
       ensure
         unregister_stream(session) if session
       end
 
-      def register_stream(resource)
+      def register_stream(resource, generation = nil)
         session = StreamSession.new(resource: resource, close_requested: false, close_in_progress: false,
                                     close_succeeded: false, close_error: nil)
         @stream_mutex.synchronize do
-          raise TransportError, "HTTP client is closed" if @closed
+          ensure_stream_generation!(generation)
 
           @active_streams[session] = session
         end
@@ -775,9 +834,9 @@ module Rubernetes
       # mutex. This closes the factory/close TOCTOU window: a concurrent close
       # cannot snapshot an empty registry and return while a new socket is
       # still being initialized.
-      def open_http_stream(uri)
+      def open_http_stream(uri, generation)
         @stream_mutex.synchronize do
-          raise TransportError, "HTTP client is closed" if @closed
+          ensure_stream_generation!(generation)
 
           resource = @http_factory.call(uri)
           session = StreamSession.new(resource: resource, close_requested: false, close_in_progress: false,
@@ -785,6 +844,13 @@ module Rubernetes
           @active_streams[session] = session
           [resource, session]
         end
+      end
+
+      def ensure_stream_generation!(generation)
+        raise TransportError, "HTTP client is closed" if @closed
+        return if generation.nil? || generation == connection_generation
+
+        raise TransportError, "client certificate rotated while opening a stream"
       end
 
       def unregister_stream(session)
@@ -875,7 +941,7 @@ module Rubernetes
         nil
       end
 
-      def consume_http_stream(raw_response, method, path, &)
+      def consume_http_stream(raw_response, method, path, credentials, &)
         status = response_status(raw_response)
         headers = response_headers(raw_response)
         response = Response.new(status: status, headers: headers.freeze, body: "")
@@ -886,7 +952,7 @@ module Rubernetes
             raise TransportError, "HTTP error response exceeds #{MAX_STREAM_ERROR_BODY_BYTES} bytes" if error_body.bytesize > MAX_STREAM_ERROR_BODY_BYTES
           end
           response.body = error_body
-          raise_for_status!(response, method, path)
+          raise_for_status!(sanitize_exec_response(response, credentials&.bearer_token), method, path)
         end
 
         each_raw_response_chunk(raw_response, &)
@@ -922,7 +988,7 @@ module Rubernetes
         match ? Integer(match[1]) : nil
       end
 
-      def configure_http(http, uri)
+      def configure_http(http, uri, credentials = nil, read_timeout: @read_timeout)
         return http unless http.respond_to?(:use_ssl=)
 
         http.use_ssl = uri.scheme == "https"
@@ -932,7 +998,7 @@ module Rubernetes
             # Net::HTTP 3.4 treats zero as an immediate timeout. The client
             # contract uses zero to mean an unbounded read, so pass nil to
             # Net::HTTP's BufferedIO instead of the literal zero.
-            http.read_timeout = @read_timeout.zero? ? nil : @read_timeout
+            http.read_timeout = read_timeout.zero? ? nil : read_timeout
             # A watch stream stays silent for as long as the cluster does; its
             # read timeout must outlive the server-side timeoutSeconds or an
             # idle watch is torn down and re-listed every read_timeout.
@@ -944,15 +1010,15 @@ module Rubernetes
         ssl_enabled = http.respond_to?(:use_ssl?) ? http.use_ssl? : uri.scheme == "https"
         ca_file = context_value(:ca_file) || context_value(:certificate_authority_file)
         ca_data = context_value(:ca_data) || context_value(:certificate_authority_data)
-        client_certificate = context_value(:client_certificate_data) || context_value(:client_certificate_file)
-        client_key = context_value(:client_key_data) || context_value(:client_key_file)
+        client_certificate = credentials&.client_certificate_data || context_value(:client_certificate_data) || context_value(:client_certificate_file)
+        client_key = credentials&.client_key_data || context_value(:client_key_data) || context_value(:client_key_file)
         insecure_value = context_value(:insecure_skip_tls_verify)
         unless insecure_value.nil? || insecure_value == true || insecure_value == false
           raise ConfigurationError, "insecure TLS verification setting must be a boolean"
         end
 
         unless ssl_enabled
-          if insecure_value == true || ca_file || ca_data || client_certificate || client_key
+          if insecure_value == true || ca_file || ca_data || client_certificate || client_key || @client_certificate_store
             raise ConfigurationError, "TLS credentials and options require an https Kubernetes API server"
           end
 
@@ -968,7 +1034,7 @@ module Rubernetes
         elsif ca_file
           configure_ca_store(http, read_credential_file(ca_file, "certificate authority"))
         end
-        configure_client_certificate(http)
+        configure_client_certificate(http, credentials)
         http
       rescue OpenSSL::OpenSSLError, ArgumentError, TypeError, Errno::ENOENT, Errno::EACCES, Errno::EISDIR, Errno::ELOOP => error
         raise ConfigurationError.new("cannot configure Kubernetes TLS credentials: #{error.message}", cause: error), cause: error
@@ -986,97 +1052,16 @@ module Rubernetes
         http.cert_store = store if http.respond_to?(:cert_store=)
       end
 
-      def configure_client_certificate(http)
-        certificate = context_value(:client_certificate_data)
-        certificate = read_credential_file(context_value(:client_certificate_file), "client certificate") if certificate.nil?
-        key = context_value(:client_key_data)
-        key = read_credential_file(context_value(:client_key_file), "client key", sensitive: true) if key.nil?
-        return if certificate.nil? && key.nil?
-        raise ConfigurationError, "client certificate and client key must be supplied together" if certificate.nil? || key.nil?
-
-        pair = tls_cache(:client_pair, [certificate, key]) do
-          parsed_certificate = OpenSSL::X509::Certificate.new(certificate)
-          parsed_key = OpenSSL::PKey.read(key)
-          raise ConfigurationError, "client certificate does not match client private key" unless parsed_certificate.check_private_key(parsed_key)
-
-          [parsed_certificate, parsed_key]
-        end
-        http.cert = pair[0] if http.respond_to?(:cert=)
-        http.key = pair[1] if http.respond_to?(:key=)
-      end
-
-      # Parsing an X.509 certificate and a private key, and proving they match,
-      # costs real CPU -- doing it on every API request turns a control loop
-      # into a key-parsing benchmark.  The result is memoised against the
-      # exact bytes it was derived from, so rotated credentials are still
-      # picked up the moment their content changes.
-      def tls_cache(slot, material)
-        @tls_cache ||= {}
-        digest = Digest::SHA256.hexdigest(Array(material).join("\x00"))
-        cached = @tls_cache[slot]
-        return cached[:value] if cached && cached[:digest] == digest
-
-        value = yield
-        @tls_cache[slot] = {digest: digest, value: value}
-        value
-      end
-
-      # Credential files are re-read only when they change on disk; the
-      # symlink audit and the permission checks run on that same path.
-      def read_credential_file(path, label, sensitive: false)
-        return nil if path.nil?
-
-        stat = begin
-          File.stat(path)
-        rescue SystemCallError
-          nil
-        end
-        token = stat && [stat.ino, stat.size, stat.mtime.to_f, stat.mode]
-        @credential_files ||= {}
-        cached = @credential_files[path]
-        return cached[:content] if cached && token && cached[:token] == token
-
-        content = read_file(path, label, sensitive: sensitive)
-        @credential_files[path] = {token: token, content: content} if token
-        content
-      end
-
-      def read_file(path, label, sensitive: false)
-        return nil if path.nil?
-
-        reject_symlink_components(path, label)
-
-        flags = File::RDONLY
-        flags |= File::NOFOLLOW if File.const_defined?(:NOFOLLOW)
-        File.open(path, flags) do |file|
-          file.binmode
-          stat = file.stat
-          raise ConfigurationError, "#{label} file must be a regular file: #{path}" unless stat.file?
-          raise ConfigurationError, "#{label} file has no read permission: #{path}" if stat.mode.nobits?(0o444)
-          raise ConfigurationError, "#{label} file must not grant permissions to group or other users: #{path}" if sensitive && stat.mode.anybits?(0o077)
-
-          content = file.read(MAX_CREDENTIAL_FILE_BYTES + 1)
-          if content.bytesize > MAX_CREDENTIAL_FILE_BYTES
-            raise ConfigurationError,
-                  "#{label} file exceeds #{MAX_CREDENTIAL_FILE_BYTES} bytes: #{path}"
-          end
-          raise ConfigurationError, "#{label} file is empty: #{path}" if content.empty?
-
-          content
-        end
-      rescue ConfigurationError
-        raise
-      rescue Errno::ENOENT, Errno::EACCES, Errno::EISDIR, Errno::ELOOP => error
-        raise ConfigurationError.new("cannot read #{label} file #{path}: #{error.message}", cause: error), cause: error
-      end
-
-      def reject_symlink_components(path, label)
-        current = File::SEPARATOR
-        File.expand_path(path).split(File::SEPARATOR).each do |component|
-          next if component.empty?
-
-          current = File.join(current, component)
-          raise ConfigurationError, "#{label} file must not contain symlinks: #{path}" if File.symlink?(current)
+      def configure_client_certificate(http, credentials)
+        fields = if credentials&.certificate_chain
+                   {cert: credentials.certificate_chain.first, key: credentials.private_key,
+                    extra_chain_cert: credentials.certificate_chain.drop(1)}
+                 else
+                   static_client_certificate
+                 end
+        fields.each do |name, value|
+          setter = :"#{name}="
+          http.public_send(setter, value) if http.respond_to?(setter)
         end
       end
 
