@@ -49,6 +49,7 @@ module Rubernetes
         resource_slice_taint_errors(advanced_device, path, issues) unless operation == :update
         resource_slice_attribute_errors(advanced_device, path, issues)
         resource_slice_capacity_errors(device, advanced_device, path, issues)
+        issues.concat(dra_node_allocatable_mapping_errors(advanced_device, path))
       end
 
       def resource_slice_taint_errors(advanced_device, path, issues)
@@ -70,15 +71,24 @@ module Rubernetes
         attributes = fetch(advanced_device, "attributes")
         return unless attributes.is_a?(Hash)
 
+        count = 0
         attributes.each do |name, attribute|
           next unless attribute.is_a?(Hash)
 
-          value_fields = %w[bool int string version boolValue intValue stringValue versionValue]
-          next if value_fields.any? { |field| !fetch(attribute, field).nil? }
+          attribute_path = path + ["attributes", "[#{name}]"]
+          list_values = DRAFeatureFields::LIST_ATTRIBUTES.filter_map do |field|
+            value = fetch(attribute, field)
+            issues << issue(attribute_path + [field], :invalid, "must not be empty if specified") if value == []
+            value
+          end
+          value_fields = [%w[bool boolValue], %w[int intValue], %w[string stringValue], %w[version versionValue]]
+          scalars = value_fields.count { |names| names.any? { |field| !fetch(attribute, field).nil? } }
+          count += [1, list_values.sum { |value| Array(value).length }].max
+          next if scalars + list_values.length == 1
 
-          issues << issue(path + ["attributes", "[#{name}]"], :invalid,
-                          "exactly one value must be specified")
+          issues << issue(attribute_path, :invalid, "exactly one value must be specified")
         end
+        issues << issue(path, :invalid, "the total number of attribute values must not exceed 48") if count > 48
       end
 
       # v1/v1beta2 expose capacity directly; v1beta1 nests it under
@@ -234,29 +244,6 @@ module Rubernetes
         return [issue(path, :too_long, "may not be more than 253 bytes")] if name.length > 253
 
         name.split("/", -1).flat_map { |part| invalid_messages(path, dns1123_subdomain_messages(part)) }
-      end
-
-      # staging/src/k8s.io/api/resource/v1alpha3/types.go ResourcePoolStatusRequestSpec (declarative)
-      def resource_pool_status_request_errors(root)
-        spec = fetch(root, "spec")
-        spec = {} unless spec.is_a?(Hash)
-        issues = []
-        driver = fetch(spec, "driver").to_s
-        if driver.empty?
-          issues << issue(%w[spec driver], :required, "")
-        else
-          issues.concat(invalid_messages(%w[spec driver], dns1123_subdomain_messages(driver)))
-        end
-        pool = fetch(spec, "poolName")
-        issues.concat(pool_name_errors(pool, %w[spec poolName])) unless pool.nil?
-        limit = fetch(spec, "limit")
-        if limit.is_a?(Integer)
-          issues << issue(%w[spec limit], :invalid, "must be greater than or equal to 1") if limit < 1
-          issues << issue(%w[spec limit], :invalid, "must be less than or equal to 1000") if limit > 1000
-        end
-        count = fetch(spec, "poolCount")
-        issues << issue(%w[spec poolCount], :invalid, "must be greater than or equal to 0") if count.is_a?(Integer) && count.negative?
-        issues
       end
 
       private_class_method :resource_slice_pool_errors, :resource_slice_device_errors, :resource_slice_taint_errors, :resource_slice_attribute_errors,
