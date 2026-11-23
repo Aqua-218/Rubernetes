@@ -27,6 +27,7 @@ class NodeContainerManagerLifecycleTest < Minitest::Test
     end
 
     def start_container(id) = @calls << [:start, id]
+    def wait_container(_id) = 0
     def container_status(id) = (@stopped ||= {}).key?(id) ? {"state" => "exited", "exit_code" => 0} : {"state" => "running"}
     def stop_container(id, timeout:) = ((@stopped ||= {})[id] = true)
     def remove_container(id) = @calls << [:remove, id]
@@ -78,5 +79,50 @@ class NodeContainerManagerLifecycleTest < Minitest::Test
 
     assert removed, "the container is removed"
     assert_operator runtime.calls.index([:post_stop, "c1"]), :<, removed, "PostStopContainer runs as it is removed"
+  end
+
+  def test_static_cpu_assignments_survive_admission_for_all_containers
+    runtime = Runtime.new
+    manager = static_cpu_manager
+    admission = Rubernetes::Node::Admission.new(node_name: "n1", capacity: {"cpu" => "4", "memory" => "1Gi", "pods" => "10"})
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, sleeper: ->(_) {}, container_spec: Spec.new,
+                                                container_manager: manager, admission: admission)
+    manager.start(active_pods: -> { lifecycle.admitted_pods(include_allocating: true) })
+    admission.allocation_admit_handler = lambda do |value|
+      result = manager.admit(value)
+
+      assert_empty lifecycle.admitted_pods
+      manager.cpu_manager.reconcile_state
+      result
+    end
+    pod = {"metadata" => {"name" => "p", "namespace" => "ns", "uid" => "uid-p"},
+           "spec" => {"restartPolicy" => "Never", "containers" => [guaranteed_container("app")],
+                      "initContainers" => [guaranteed_container("init"), guaranteed_container("sidecar").merge("restartPolicy" => "Always")]}}
+    lifecycle.start(pod)
+
+    cpu_pins = %w[init sidecar app].map { |name| runtime.specs.fetch(name).dig("limits", "cpuset.cpus") }
+
+    assert_equal %w[1 1 2], cpu_pins
+
+    lifecycle.terminate(pod)
+    manager.cpu_manager.reconcile_state
+
+    assert_empty manager.cpu_manager.state.assignments
+  end
+
+  private
+
+  def static_cpu_manager
+    cores = Array.new(4) { |id| {id: id, socket_id: 0, threads: [id], uncore_caches: []} }
+    machine = {num_cores: 4, num_sockets: 1, topology: [{id: 0, cores: cores, memory: 1024**3, hugepages: [], distances: [10]}]}
+    Rubernetes::Node::ContainerManager.new(
+      state_directory: nil, reservation: {"cpu" => "1"},
+      cpu: {"policy" => "static"}, reserved_system_cpus: "0", machine: machine
+    )
+  end
+
+  def guaranteed_container(name)
+    resources = {"cpu" => "1", "memory" => "100Mi"}
+    {"name" => name, "image" => "x", "resources" => {"requests" => resources, "limits" => resources}}
   end
 end
