@@ -6,6 +6,7 @@ require "json"
 require "socket"
 require "time"
 require_relative "model"
+require_relative "nftables_netlink/service_availability"
 
 module Rubernetes
   module Proxy
@@ -26,10 +27,12 @@ module Rubernetes
     #
     # The adapter emits a complete Service datapath graph. Endpoint sets are
     # kept as explicit kernel objects for atomic membership updates, while
-    # service rules use a deterministic Jenkins hash over the source address
-    # to select one backend. ClientIP affinity uses a timeout map populated by
-    # dynset at first packet and read back as part of the owned object graph.
+    # service rules use a deterministic Jenkins hash of the source address and
+    # port to select one backend. ClientIP affinity uses a timeout map that
+    # dynset inserts or refreshes on the first packet of each connection.
     class NftablesNetlinkAdapter
+      include ServiceAvailability
+
       AF_UNSPEC = 0
       NFPROTO_INET = 1
       NFPROTO_IPV4 = 2
@@ -193,10 +196,7 @@ module Rubernetes
       NFTA_NG_MODULUS = 2
       NFTA_NG_TYPE = 3
       NFTA_NG_OFFSET = 4
-      # A ClientIP miss inserts the first mapping.  UPDATE is rejected by
-      # kernels when the source key is not already present; the hit rule
-      # handles existing entries, so ADD is the correct first-packet op.
-      NFT_DYNSET_OP_ADD = 0
+      NFT_DYNSET_OP_UPDATE = 1
       NFT_SET_MAP = 0x8
       NFT_SET_TIMEOUT = 0x10
       NFT_SET_EVAL = 0x20
@@ -214,14 +214,11 @@ module Rubernetes
       MAX_MESSAGE_BYTES = 1_048_576
       MAGIC = "rubernetes\0".b.freeze
       BASE_CHAIN_SPECS = {
-        # TC/eBPF cannot reassemble at ingress.  nftables therefore rejects
-        # fragments in a pre-defragmentation guard so both backends fail
-        # closed with the same explicit contract.
-        "fragment_guard" => {hook: NF_INET_PRE_ROUTING, priority: -450, type: "filter"},
         "prerouting" => {hook: NF_INET_PRE_ROUTING, priority: -100, type: "nat"},
         "output" => {hook: NF_INET_LOCAL_OUT, priority: -100, type: "nat"},
         "postrouting" => {hook: NF_INET_POST_ROUTING, priority: 100, type: "nat"}
       }.freeze
+      FRAGMENT_GUARD = {"fragment_guard" => {hook: NF_INET_PRE_ROUTING, priority: -450, type: "filter"}}.freeze
 
       SERVICE_SEMANTIC_MATRIX = {
         "multipleEndpointSelection" => true,
@@ -233,7 +230,7 @@ module Rubernetes
         "nodePortExternalIPLoadBalancer" => true,
         "topologyHints" => true,
         "healthCheckNodePort" => true,
-        "fragmentFailClosed" => true,
+        "fragmentHandling" => true,
         "tcpUdpSctp" => true,
         "ipv4Ipv6DualStack" => true
       }.freeze
@@ -251,12 +248,15 @@ module Rubernetes
         end
       end
 
-      attr_reader :table_name, :last_readback, :last_transaction, :missing_service_contract,
+      attr_reader :table_name, :last_readback, :last_transaction, :missing_service_contract, :fragment_policy,
                   :service_semantic_matrix, :production_capability_error_detail
 
       def initialize(table_name: "rubernetes", timeout: 2.0, socket_factory: nil, transport: nil,
-                     semantic_probe: nil)
+                     semantic_probe: nil, fragment_policy: :reassemble)
         @table_name = validate_name(table_name, "table name")
+        @fragment_policy = fragment_policy
+        raise ArgumentError, "fragment_policy must be :reassemble or :reject" unless %i[reassemble reject].include?(fragment_policy)
+
         @timeout = Float(timeout)
         raise ArgumentError, "nftables netlink timeout must be positive and finite" unless @timeout.positive? && @timeout.finite?
 
@@ -394,6 +394,7 @@ module Rubernetes
 
         table = @last_readback.fetch("table")
         {
+          "fragmentPolicy" => fragment_policy.to_s,
           "table" => table.slice("name", "marker"),
           "chains" => @last_readback.fetch("chains").map { |entry| entry.slice("name", "marker", "handle") },
           "sets" => @last_readback.fetch("sets").map { |entry| entry.slice("name", "marker", "handle", "key_len", "data_len") },
@@ -587,22 +588,20 @@ module Rubernetes
       end
 
       def desired_objects(rules)
-        base_chains = BASE_CHAIN_SPECS.map do |name, spec|
-          {
-            "name" => name,
-            "marker" => marker("chain", "base:#{name}"),
-            "base" => true,
-            "message" => new_chain_message(name: name, marker: marker("chain", "base:#{name}"), hook: spec)
-          }
-        end
         service_chains = []
         sets = []
         set_elements = []
         service_rules = []
+        filter_rules = []
         jump_rules = []
         next_set_id = 1
 
         rules.each do |rule|
+          routes = endpoint_routes(rule)
+          routes.each { |route| filter_rules.concat(unavailable_service_rules(rule, route)) if route.verdict }
+          routes.reject! { |route| route.endpoints.empty? && !rule.health_check }
+          next if routes.empty?
+
           chain_name = service_chain_name(rule)
           chain_marker = marker("chain", "service:#{rule_identity(rule)}")
           service_chains << {
@@ -611,9 +610,7 @@ module Rubernetes
             "base" => false,
             "message" => new_chain_message(name: chain_name, marker: chain_marker)
           }
-          endpoint_values = endpoints_for(rule)
-          snat_endpoints = snat_endpoints_for(rule, endpoint_values)
-          snat_chain = if snat_endpoints.empty?
+          snat_chain = if routes.none? { |route| route.host_only || !snat_endpoints_for(rule, route.endpoints).empty? }
                          nil
                        else
                          snat_name = snat_chain_name(rule)
@@ -626,9 +623,9 @@ module Rubernetes
                          }
                          snat_name
                        end
-          families = endpoint_families(rule, endpoint_values)
-          families.each do |family|
-            family_endpoints = endpoint_values.select { |endpoint| family_for_address(endpoint.fetch("address")) == family }
+          routes.each do |route|
+            family = route.family
+            family_endpoints = route.endpoints
             set_name = endpoint_set_name(rule, family)
             set_marker = marker("set", "#{rule_identity(rule)}:#{family}")
             set_id = next_set_id
@@ -691,14 +688,12 @@ module Rubernetes
             destination_addresses.each do |destination_address|
               service_rules.concat(service_rule_objects(rule, chain_name, family, family_endpoints,
                                                         affinity_set: affinity_set,
-                                                        destination_address: destination_address))
+                                                        destination_address: destination_address, host_only: route.host_only))
               next unless snat_chain
 
-              family_snat_endpoints = snat_endpoints.select do |endpoint|
-                family_for_address(endpoint.fetch("address")) == family
-              end
+              family_snat_endpoints = snat_endpoints_for(rule, family_endpoints)
               snat_rule_objects(rule, snat_chain, family, family_snat_endpoints,
-                                destination_address: destination_address).each do |object|
+                                destination_address: destination_address, host_only: route.host_only).each do |object|
                 service_rules << object unless service_rules.any? { |existing| existing["marker"] == object["marker"] }
               end
             end
@@ -721,15 +716,27 @@ module Rubernetes
           }
         end
 
-        fragment_rules = fragment_guard_rule_objects
+        fragment_rules = @fragment_policy == :reject ? fragment_guard_rule_objects : []
+        filter_chains, filter_jumps = availability_chains_and_jumps(filter_rules)
         {
           "table" => {"name" => @table_name, "marker" => marker("table", @table_name),
                       "message" => new_table_message},
-          "chains" => (base_chains + service_chains).freeze,
+          "chains" => (base_chains + filter_chains + service_chains).freeze,
           "sets" => sets.freeze,
           "set_elements" => set_elements.freeze,
-          "rules" => (fragment_rules + service_rules + jump_rules).freeze
+          "rules" => (fragment_rules + service_rules + jump_rules + filter_rules + filter_jumps).freeze
         }.freeze
+      end
+
+      def base_chains
+        # Ordinary Linux conntrack defrag runs before NAT.  The explicit
+        # reject profile instead filters fragments before reassembly.
+        chain_specs = @fragment_policy == :reject ? FRAGMENT_GUARD.merge(BASE_CHAIN_SPECS) : BASE_CHAIN_SPECS
+        chain_specs.map do |name, spec|
+          chain_marker = marker("chain", "base:#{name}")
+          {"name" => name, "marker" => chain_marker, "base" => true,
+           "message" => new_chain_message(name: name, marker: chain_marker, hook: spec)}
+        end
       end
 
       def lifecycle_messages(current, desired)
@@ -853,92 +860,66 @@ module Rubernetes
                                           attribute(NFTA_LIST_ELEM, element, nested: true), nested: true))}
       end
 
-      def new_jump_rule_message(chain_name, target_chain, marker)
+      def new_jump_rule_message(chain_name, target_chain, marker, prefix: [])
         verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_JUMP)),
                              attribute(NFTA_VERDICT_CHAIN, cstring(target_chain)))
         immediate_data = attribute(NFTA_DATA_VERDICT, verdict, nested: true)
         immediate = expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
                                                        attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
-        new_rule_message(chain_name: chain_name, marker: marker, expressions: [immediate])
+        new_rule_message(chain_name: chain_name, marker: marker, expressions: prefix + [immediate])
       end
 
-      def service_rule_objects(rule, chain_name, family, endpoints, affinity_set:, destination_address:)
+      def service_rule_objects(rule, chain_name, family, endpoints, affinity_set:, destination_address:, host_only:)
         return [health_check_rule_object(rule, chain_name, family, endpoints, destination_address)] if rule.health_check
         return [] if endpoints.empty?
 
         objects = []
-        source_ranges_for(rule, family).each do |source_range|
-          endpoints.each_with_index do |backend, index|
-            source_range_id = source_range ? source_range_identity(source_range) : nil
+        # A host short circuit already sourced from an advertised node IP
+        # can keep that IP. Masquerade would pick the egress link's address,
+        # which may be a transit address rather than the node's IP.
+        node_sources = host_only ? node_addresses_for(rule, family) : []
+        source_ranges_for(rule, family).product(node_sources + [nil]).each do |source_range, node_source|
+          match = service_match_expressions(rule, family: family, destination_address: destination_address, source_range: source_range)
+          match += local_source_expressions if host_only
+          match += source_address_expression(family, address: node_source) if node_source
+          source = match + source_address_expression(family)
+          selection = source + source_port_expression(family) + source_hash_expression(family, endpoints.length)
+          source_range_id = source_range ? source_range_identity(source_range) : nil
+          hits = []
+          lookup = source + lookup_expressions(affinity_set.fetch("name"), affinity_set.fetch("id")) if affinity_set
+          refresh = affinity_set ? dynset_expression(affinity_set.fetch("name"), affinity_set.fetch("id")) : []
+          misses = endpoints.each_with_index.map do |backend, index|
             endpoint_identity = "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:" \
                                 "#{backend.fetch("address")}:#{backend.fetch("port")}"
+            endpoint_identity += ":host:#{node_source || "masquerade"}" if host_only
             endpoint_marker = marker("rule", endpoint_identity, rule_digest(rule))
-            if hairpin_for?(rule, backend)
-              hairpin_marker = marker("rule",
-                                      "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}",
-                                      rule_digest(rule))
-              hairpin_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                                    source_range: source_range) +
-                                    source_address_expression(family, address: backend.fetch("address")) +
-                                    nat_expressions(rule, backend)
-              objects << {
-                "chain" => chain_name,
-                "marker" => hairpin_marker,
-                "message" => new_rule_message(chain_name: chain_name, marker: hairpin_marker,
-                                              expressions: hairpin_expressions)
-              }
-            end
+            nat = nat_expressions(rule, backend, host_only: host_only && node_source.nil?)
+            redirect = [compare_expression(1, index)] + refresh + nat
             if affinity_set
-              hit_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                                source_range: source_range) +
-                                source_address_expression(family) +
-                                lookup_expressions(affinity_set.fetch("name"), affinity_set.fetch("id")) +
-                                [compare_expression(1, index)] + nat_expressions(rule, backend)
-              hit_marker = marker("rule", "affinity-hit:#{endpoint_marker}", rule_digest(rule))
-              objects << {
-                "chain" => chain_name,
-                "marker" => hit_marker,
-                "message" => new_rule_message(chain_name: chain_name, marker: hit_marker,
-                                              expressions: hit_expressions)
-              }
-              miss_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                                 source_range: source_range) +
-                                 source_address_expression(family) +
-                                 source_hash_expression(family, endpoints.length, rule) +
-                                 [compare_expression(1, index)] +
-                                 dynset_expression(affinity_set.fetch("name"), rule.session_affinity_timeout_seconds,
-                                                   affinity_set.fetch("id")) +
-                                 nat_expressions(rule, backend)
-              miss_marker = marker("rule", "affinity-miss:#{endpoint_marker}", rule_digest(rule))
-              objects << {
-                "chain" => chain_name,
-                "marker" => miss_marker,
-                "message" => new_rule_message(chain_name: chain_name, marker: miss_marker,
-                                              expressions: miss_expressions)
-              }
-            else
-              expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                            source_range: source_range) +
-                            source_address_expression(family) + source_port_expression(family) +
-                            source_hash_expression(family, endpoints.length, rule, include_port: true) +
-                            [compare_expression(1, index)] +
-                            nat_expressions(rule, backend)
-              objects << {
-                "chain" => chain_name,
-                "marker" => endpoint_marker,
-                "message" => new_rule_message(chain_name: chain_name, marker: endpoint_marker, expressions: expressions)
-              }
+              # Replace pre-refresh rules without changing the live map's identity.
+              hit_marker = marker("rule", "affinity-refresh:#{endpoint_marker}", rule_digest(rule))
+              hits << endpoint_rule_object(chain_name, hit_marker, lookup + redirect)
+              endpoint_marker = marker("rule", "affinity-select:#{endpoint_marker}", rule_digest(rule))
             end
+            endpoint_rule_object(chain_name, endpoint_marker, selection + redirect)
           end
+          # A cached endpoint may be later in the list than the new hash's
+          # choice, so every hit must run before any new mapping is selected.
+          objects.concat(hits, misses)
         end
         objects
+      end
+
+      def endpoint_rule_object(chain_name, marker_value, expressions)
+        {"chain" => chain_name, "marker" => marker_value,
+         "message" => new_rule_message(chain_name: chain_name, marker: marker_value, expressions: expressions)}
       end
 
       def health_check_rule_object(rule, chain_name, family, _endpoints, destination_address)
         marker_value = marker("rule", "health:#{rule_identity(rule)}:#{family}:#{destination_address}", rule_digest(rule))
         # The healthCheckNodePort belongs to the node-local responder.  Keep
         # the packet local; a health rule must never DNAT it to a Pod.
-        expressions = service_match_expressions(rule, family: family, destination_address: destination_address) + [accept_expression]
+        expressions = service_match_expressions(rule, family: family, destination_address: destination_address) + [verdict_expression(NFT_ACCEPT)]
         {"chain" => chain_name, "marker" => marker_value, "action" => "node_local_responder", "dnat" => false,
          "message" => new_rule_message(chain_name: chain_name, marker: marker_value, expressions: expressions)}
       end
@@ -1000,15 +981,15 @@ module Rubernetes
            compare_expression(1, "\x01".b)]
       end
 
-      def accept_expression
-        verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_ACCEPT)))
+      def verdict_expression(code)
+        verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(code)))
         immediate_data = attribute(NFTA_DATA_VERDICT, verdict, nested: true)
         expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
                                            attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
       end
 
-      def snat_rule_objects(rule, chain_name, family, endpoints, destination_address:)
-        if masquerade_for?(rule)
+      def snat_rule_objects(rule, chain_name, family, endpoints, destination_address:, host_only:)
+        if host_only || masquerade_for?(rule)
           # External traffic policy Cluster: the Service chain marked the
           # conntrack entry at DNAT time; masquerade exactly those flows.
           marker_value = marker("rule", "snat:#{rule_identity(rule)}:#{family}:ctmark", rule_digest(rule))
@@ -1072,27 +1053,10 @@ module Rubernetes
         expressions
       end
 
-      # How one backend is chosen out of several.
-      #
-      # The graph has one rule per endpoint and every rule re-evaluates the
-      # selector, so the selector must give the SAME answer to every rule for a
-      # given connection -- `numgen random` does not (measured: almost a third
-      # of packets matched no rule and every ClusterIP became intermittently
-      # unreachable).
-      #
-      # It must also NOT give the same answer to every connection from one
-      # client unless the Service asked for that.  Hashing the source address
-      # alone did exactly that: every Service behaved as `sessionAffinity:
-      # ClientIP`, and "[sig-network] Services should be able to switch session
-      # affinity" -- which turns affinity off and requires requests to spread --
-      # failed with "Affinity shouldn't hold but did".  Hashing the source
-      # address AND source port is constant within a connection (a NAT rule only
-      # ever sees its first packet) and differs between connections, which is
-      # the spread kube-proxy gets from `numgen random` in its vmap.  ClientIP
-      # affinity keeps the address-only hash alongside its timeout set.
-      def source_hash_expression(family, modulus, _rule, include_port: false)
-        length = family == NFPROTO_IPV6 ? 16 : 4
-        length += 4 if include_port
+      # Candidate rules need the same choice for one flow. The source port
+      # lets a new flow choose another endpoint when its affinity entry expires.
+      def source_hash_expression(family, modulus)
+        length = family == NFPROTO_IPV6 ? 20 : 8
         seed = 0
         [expression("hash", attributes(attribute(NFTA_HASH_SREG, u32(2)), attribute(NFTA_HASH_DREG, u32(1)),
                                        attribute(NFTA_HASH_LEN, u32(length)), attribute(NFTA_HASH_MODULUS, u32(modulus)),
@@ -1123,9 +1087,9 @@ module Rubernetes
         [expression("lookup", attributes(*values))]
       end
 
-      def dynset_expression(set_name, _timeout_seconds, set_id = nil)
+      def dynset_expression(set_name, set_id = nil)
         values = [attribute(NFTA_DYNSET_SET_NAME, cstring(set_name)),
-                  attribute(NFTA_DYNSET_OP, u32(NFT_DYNSET_OP_ADD)),
+                  attribute(NFTA_DYNSET_OP, u32(NFT_DYNSET_OP_UPDATE)),
                   attribute(NFTA_DYNSET_SREG_KEY, u32(2)),
                   attribute(NFTA_DYNSET_SREG_DATA, u32(1))]
         values.insert(1, attribute(NFTA_DYNSET_SET_ID, u32(set_id))) if set_id
@@ -1138,8 +1102,8 @@ module Rubernetes
         expression("masq", nil)
       end
 
-      def reject_expression
-        expression("reject", attributes(attribute(1, u32(2)), attribute(2, u8(0))))
+      def reject_expression(code = 0)
+        expression("reject", attributes(attribute(1, u32(2)), attribute(2, u8(code))))
       end
 
       def delete_rule_message(item)
@@ -1237,8 +1201,8 @@ module Rubernetes
         "#{range}/#{range.prefix}"
       end
 
-      def nat_expressions(rule, backend)
-        masquerade_for?(rule) ? ct_mark_set_expressions + dnat_expressions(backend) : dnat_expressions(backend)
+      def nat_expressions(rule, backend, host_only:)
+        host_only || masquerade_for?(rule) ? ct_mark_set_expressions + dnat_expressions(backend) : dnat_expressions(backend)
       end
 
       def ct_mark_set_expressions
@@ -1305,11 +1269,9 @@ module Rubernetes
         ip = IPAddr.new(address.to_s)
         normalized_port = normalize_port(port, "endpoint port")
         local_node = rule && rule.metadata.is_a?(Hash) ? rule.metadata["node"] || rule.metadata[:node] : nil
-        endpoint_hints = if backend.respond_to?(:hints)
-                           Array(backend.hints).map(&:to_s)
-                         else
-                           Array(backend.is_a?(Hash) && (backend["hints"] || backend[:hints])).map(&:to_s)
-                         end
+        hints = ModelSupport.key(backend, "hints")
+        zone_hints = backend.respond_to?(:hints) ? backend.hints : TopologyHints.names(hints, "forZones", "for_zones")
+        node_hints = backend.is_a?(Endpoint) ? backend.node_hints : TopologyHints.names(hints, "forNodes", "for_nodes")
         node_name = if backend.respond_to?(:node_name)
                       backend.node_name
                     elsif backend.is_a?(Hash)
@@ -1321,7 +1283,7 @@ module Rubernetes
         {"address" => ip.to_s, "port" => normalized_port, "packed_address" => ip.hton,
          "node" => node_name.to_s, "local" => !local_node.to_s.empty? && node_name.to_s == local_node.to_s,
          "healthy" => healthy, "serving" => serving, "terminating" => terminating,
-         "hints" => endpoint_hints.freeze}
+         "hints" => zone_hints, "node_hints" => node_hints}
       rescue ArgumentError, TypeError => error
         raise NftablesNetlinkError, "invalid nftables backend endpoint #{address.inspect}:#{port.inspect}: #{error.message}"
       end
@@ -1339,35 +1301,17 @@ module Rubernetes
         raise NftablesNetlinkError, "#{label} is invalid: #{error.message}"
       end
 
-      def endpoints_for(rule)
-        endpoints = Array(rule.backends).map do |backend|
+      def normalized_endpoints(rule)
+        rule.backends.map do |backend|
           address = backend.respond_to?(:address) ? backend.address : backend.to_h.fetch("address")
           port = backend.respond_to?(:port) ? backend.port : backend.to_h.fetch("port")
           desired_endpoint(address, port, backend: backend, rule: rule)
         end.sort_by { |endpoint| [endpoint.fetch("address"), endpoint.fetch("port")] }
-        endpoints = if rule.health_check
-                      local_node = rule.metadata.is_a?(Hash) ? (rule.metadata["node"] || rule.metadata[:node]) : nil
-                      candidates = local_node.to_s.empty? ? endpoints : endpoints.select { |endpoint| endpoint.fetch("local") }
-                      candidates.select { |endpoint| endpoint.fetch("healthy") }
-                    else
-                      apply_policy_and_health(rule, endpoints)
-                    end
-        apply_topology_hints(rule, endpoints)
       end
 
-      def apply_policy_and_health(rule, endpoints)
-        policy = external_rule?(rule) ? rule.external_traffic_policy : rule.internal_traffic_policy
-        local_node = rule.metadata.is_a?(Hash) ? (rule.metadata["node"] || rule.metadata[:node]) : nil
-        endpoints = endpoints.select { |endpoint| endpoint.fetch("local") } if policy.to_s == "Local" && !local_node.to_s.empty?
-        metadata = rule.metadata.is_a?(Hash) ? rule.metadata : {}
-        if metadata["publishNotReadyAddresses"]
-          non_terminating = endpoints.reject { |endpoint| endpoint.fetch("terminating") }
-          return non_terminating unless non_terminating.empty?
-
-          return endpoints.select { |endpoint| endpoint.fetch("terminating") && endpoint.fetch("serving") }
-        end
-
+      def available_endpoints(endpoints)
         healthy = endpoints.select { |endpoint| endpoint.fetch("healthy") }
+        healthy = yield healthy if block_given? && !healthy.empty?
         return healthy unless healthy.empty?
 
         endpoints.select { |endpoint| endpoint.fetch("terminating") && endpoint.fetch("serving") }
@@ -1377,12 +1321,9 @@ module Rubernetes
         metadata = rule.metadata.is_a?(Hash) ? rule.metadata : {}
         return endpoints if metadata.key?("topologyAwareHints") && !metadata["topologyAwareHints"]
 
-        zone = metadata["zone"] || metadata[:zone]
-        return endpoints if zone.to_s.empty? || rule.internal_traffic_policy.to_s == "Local"
-        return endpoints unless endpoints.all? { |endpoint| !endpoint.fetch("hints").empty? }
-
-        hinted = endpoints.select { |endpoint| endpoint.fetch("hints").include?(zone.to_s) }
-        hinted.empty? ? endpoints : hinted
+        TopologyHints.preferred(endpoints, node: ModelSupport.key(metadata, "node"), zone: ModelSupport.key(metadata, "zone")) do |endpoint, field|
+          endpoint.fetch(field.to_s)
+        end
       end
 
       def external_rule?(rule)
@@ -1398,35 +1339,36 @@ module Rubernetes
       end
 
       def snat_endpoints_for(rule, endpoints)
-        endpoints.select { |endpoint| masquerade_for?(rule) || hairpin_for?(rule, endpoint) }
+        return endpoints if rule.virtual_ip || masquerade_for?(rule)
+
+        []
       end
 
-      def hairpin_for?(rule, endpoint)
-        return false unless rule.virtual_ip
-        return false unless endpoint.fetch("local")
-
-        true
-      end
-
-      def endpoint_families(rule, endpoints)
+      def endpoint_families(rule, backend_families)
         return [family_for_address(rule.virtual_ip)] if rule.virtual_ip
 
-        families = endpoints.map { |endpoint| family_for_address(endpoint.fetch("address")) }.uniq
+        family_numbers = {"IPv4" => NFPROTO_IPV4, "IPv6" => NFPROTO_IPV6}
+        families = Array(rule.metadata["serviceFamilies"]).filter_map { |family| family_numbers[family] }
+        families = backend_families if families.empty?
         families.empty? ? [NFPROTO_IPV4] : families.sort
       end
 
       def destination_addresses_for(rule, family)
         return [rule.virtual_ip] if rule.virtual_ip
 
+        addresses = node_addresses_for(rule, family)
+        addresses.empty? ? [nil] : addresses
+      end
+
+      def node_addresses_for(rule, family)
         metadata = rule.metadata.is_a?(Hash) ? rule.metadata : {}
-        addresses = Array(metadata["nodeAddresses"] || metadata[:nodeAddresses] || metadata["node_addresses"] || metadata[:node_addresses])
+        Array(metadata["nodeAddresses"] || metadata[:nodeAddresses] || metadata["node_addresses"] || metadata[:node_addresses])
           .filter_map do |address|
             canonical = IPAddr.new(address.to_s).to_s
             family_for_address(canonical) == family ? canonical : nil
         rescue ArgumentError
           nil
           end.uniq
-        addresses.empty? ? [nil] : addresses
       end
 
       def family_for_address(address)
