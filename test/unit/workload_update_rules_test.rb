@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "rubernetes/bootstrap"
 require "rubernetes/schema"
 
 # ValidateDaemonSetSpecUpdate / ValidateDeploymentUpdate /
@@ -41,6 +42,67 @@ class WorkloadUpdateRulesTest < Minitest::Test
     changed = {"apiVersion" => "apps/v1", "kind" => "ControllerRevision", "data" => {"a" => 2}, "revision" => 1}
 
     refute_empty immutable_errors(changed, old, "ControllerRevision")
+  end
+
+  def test_daemonset_template_generation_is_managed_by_the_api
+    key = "deprecated.daemonset.template.generation"
+    path = "/apis/apps/v1/namespaces/ns/daemonsets"
+    daemon = workload("DaemonSet", selector_spec.except("replicas"))
+    registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
+    server = Rubernetes::API::Server.new(registry: registry)
+    created = workload_request(server, "POST", path, daemon)
+
+    assert_equal 201, created.status, created.body.inspect
+    assert_equal [1, "1"], daemonset_generations(created.body, key)
+
+    metadata_patch = {"metadata" => {"annotations" => {key => "99"}}, "spec" => {"minReadySeconds" => 1}}
+    changed = workload_request(server, "PATCH", "#{path}/w", metadata_patch)
+
+    assert_equal 200, changed.status, changed.body.inspect
+    assert_equal [2, "1"], daemonset_generations(changed.body, key)
+
+    template = {"spec" => {"containers" => [{"name" => "c", "image" => "img:2"}]}}
+    updated = workload_request(server, "PATCH", "#{path}/w", {"spec" => {"template" => template}})
+
+    assert_equal 200, updated.status, updated.body.inspect
+    assert_equal [3, "2"], daemonset_generations(updated.body, key)
+  end
+
+  def test_pod_resize_rejects_a_strategic_order_only_patch
+    path = "/api/v1/namespaces/ns/pods"
+    containers = %w[one two].map do |name|
+      {"name" => name, "image" => "busybox", "resources" => {"requests" => {"cpu" => "100m"}}}
+    end
+    registry = Rubernetes::Bootstrap::APIServerService.allocate.send(:build_registry, Rubernetes::Schema::Catalog.default)
+    server = Rubernetes::API::Server.new(registry: registry)
+    pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "resizable"}, "spec" => {"containers" => containers}}
+    created = workload_request(server, "POST", path, pod)
+
+    assert_equal 201, created.status, created.body.inspect
+
+    order = [{"name" => "two"}, {"name" => "one"}]
+    result = workload_request(server, "PATCH", "#{path}/resizable/resize", {"spec" => {"$setElementOrder/containers" => order}})
+
+    assert_equal 422, result.status, result.body.inspect
+
+    fields = result.body.dig("details", "causes").map { |cause| cause.fetch("field") }
+
+    assert_equal %w[spec.containers[0].name spec.containers[1].name], fields
+    assert_equal created.body, workload_request(server, "GET", "#{path}/resizable", nil).body
+  end
+
+  def workload_request(server, method, path, body)
+    content_type = method == "PATCH" ? "application/strategic-merge-patch+json" : "application/json"
+    identity = {"username" => "admin", "groups" => ["system:masters"]}
+    request = Rubernetes::API::Request.new(
+      method: method, path: path, headers: {"content-type" => content_type},
+      identity: identity, body: JSON.generate(body)
+    )
+    server.call(request)
+  end
+
+  def daemonset_generations(object, key)
+    [object.dig("metadata", "generation"), object.dig("metadata", "annotations", key)]
   end
 
   def stateful_errors(new_object, old_object, operation: :update)
