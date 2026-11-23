@@ -44,6 +44,29 @@ class AgentRestartRecoveryTest < Minitest::Test
     refute entry.dig("metadata", "identity_mismatch"), "the same executable, whatever the digest's prefix"
   end
 
+  # A shell entrypoint that ends in `exec tini ...` is recorded with the
+  # script's digest and runs tini from then on.  The pid and start time still
+  # name the same process; calling it pid reuse discarded every GitLab Pod on
+  # an agent restart (found on the demo VM, 2026-11-23).
+  def test_a_workload_that_exec_ed_into_another_program_is_still_the_same_process
+    claim = {"kind" => "process", "id" => "sb:c", "identity" => "process:sb:c", "owner" => "op",
+             "metadata" => {"workload_pid" => Process.pid, "workload_start_time" => start_time(Process.pid),
+                            "workload_executable_digest" => "sha256:#{"0" * 64}"}}
+    entry = observe(claim).fetch(0)
+
+    assert_equal true, entry.dig("metadata", "live")
+    refute entry.dig("metadata", "identity_mismatch")
+    assert_equal claim.fetch("identity"), entry.fetch("identity")
+  end
+
+  def test_a_reused_pid_is_still_reported_as_reuse
+    claim = {"kind" => "process", "id" => "sb:c", "identity" => "process:sb:c", "owner" => "op",
+             "metadata" => {"workload_pid" => Process.pid, "workload_start_time" => (start_time(Process.pid).to_i + 1).to_s,
+                            "workload_executable_digest" => "sha256:#{"0" * 64}"}}
+
+    assert_equal true, observe(claim).fetch(0).dig("metadata", "identity_mismatch")
+  end
+
   def test_namespace_evidence_is_read_from_the_kernel_identity
     links = %w[net uts].to_h { |name| [name, File.readlink("/proc/self/ns/#{name}")] }
     claim = {"kind" => "namespace", "id" => "sb", "identity" => "namespace:sb", "owner" => "op",
