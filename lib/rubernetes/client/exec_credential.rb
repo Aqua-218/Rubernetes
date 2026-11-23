@@ -3,6 +3,7 @@
 require "base64"
 require "json"
 require "openssl"
+require "pathname"
 require "time"
 
 require_relative "errors"
@@ -22,7 +23,8 @@ module Rubernetes
       MAX_OUTPUT_BYTES = 1_048_576
       DEFAULT_TIMEOUT = 120
 
-      Result = Struct.new(:bearer_token, :client_certificate_data, :client_key_data, :expires_at, keyword_init: true) do
+      Result = Struct.new(:bearer_token, :client_certificate_data, :client_key_data, :expires_at, :certificate_chain, :private_key,
+                          :certificate_identity, keyword_init: true) do
         def expired?(now = Time.now)
           !expires_at.nil? && expires_at <= now
         end
@@ -30,34 +32,76 @@ module Rubernetes
 
       @cache = {}
       @cache_mutex = Mutex.new
+      @expiry_mutex = Mutex.new
+      @certificate_expirations = {}
       @observer = nil
 
       class << self
-        # Told about every plugin run as (call_status, exit code, seconds the
-        # returned client certificate is still valid); the REST client's
-        # metrics listen here.
-        attr_accessor :observer
+        attr_accessor :observer, :policy_observer, :rotation_observer
 
         # One plugin run per configuration for as long as the credential says
         # it is valid (a credential without an expiry lives as long as the
         # process, as in client-go).
         def fetch(config, **)
-          plugin = new(config, **)
-          @cache_mutex.synchronize do
-            cached = @cache[plugin.cache_key]
-            return cached if cached && !cached.expired?
+          provider(config, **).credentials
+        end
 
-            @cache[plugin.cache_key] = plugin.call
+        def provider(config, **)
+          plugin = new(config, **)
+          @cache_mutex.synchronize { @cache[plugin.cache_key] ||= plugin }
+        end
+
+        def certificate_expiry(provider, expiry)
+          @expiry_mutex.synchronize do
+            expiry ? @certificate_expirations[provider] = expiry : @certificate_expirations.delete(provider)
+          end
+        end
+
+        def certificate_ttl
+          @expiry_mutex.synchronize do
+            earliest = @certificate_expirations.values.min
+            earliest ? earliest - Time.now : Float::INFINITY
           end
         end
 
         def reset_cache!
-          @cache_mutex.synchronize { @cache.clear }
+          @cache_mutex.synchronize do
+            @cache.clear
+            @expiry_mutex.synchronize { @certificate_expirations.clear }
+          end
+        end
+
+        def normalize_policy(policy)
+          return if policy.nil?
+          raise ConfigurationError, "exec plugin policy must be a mapping" unless policy.is_a?(Hash)
+          raise ConfigurationError, "unknown exec plugin policy field" unless (policy.keys - %w[type allowlist]).empty?
+
+          type = policy["type"]
+          entries = policy["allowlist"]
+          case type
+          when nil, "", "AllowAll", "DenyAll"
+            raise ConfigurationError, "exec plugin allowlist requires Allowlist policy" unless entries.nil?
+          when "Allowlist"
+            unless entries.is_a?(Array) && !entries.empty? && entries.all? { |entry| valid_allowlist_entry?(entry) }
+              raise ConfigurationError, "exec plugin Allowlist policy requires normalized command entries"
+            end
+          else
+            raise ConfigurationError, "unknown exec plugin policy #{type.inspect}"
+          end
+          return if type.nil? || type == ""
+
+          {"type" => type.dup.freeze, "allowlist" => entries&.map { |entry| entry.dup.freeze }&.freeze}.freeze
+        end
+
+        private
+
+        def valid_allowlist_entry?(entry)
+          entry.is_a?(String) && !entry.empty? && !entry.include?("\0") && Pathname.new(entry).cleanpath.to_s == entry
         end
       end
 
       def initialize(config, cluster: {}, base_directory: Dir.pwd, env: ENV, stdin: $stdin, stderr: $stderr,
-                     timeout: DEFAULT_TIMEOUT)
+                     timeout: DEFAULT_TIMEOUT, policy: nil)
         @config = config
         @cluster = cluster
         @base_directory = base_directory
@@ -65,20 +109,95 @@ module Rubernetes
         @stdin = stdin
         @stderr = stderr
         @timeout = timeout
+        @policy = self.class.normalize_policy(policy)
+        @mutex = Mutex.new
+        @clients = ObjectSpace::WeakMap.new
         validate_config!
       end
 
+      def inspect = "#<#{self.class.name}>"
+
       def cache_key
-        [@config, @cluster, @base_directory].hash
+        [@config, @cluster, @base_directory, @policy, @env, @stdin, @stderr, @timeout]
+      end
+
+      def credentials(client: nil)
+        @mutex.synchronize do
+          @clients[client] = true if client
+          refresh_locked if @cached.nil? || @cached.expired?
+          block_given? ? yield(@cached) : @cached
+        end
+      end
+
+      def refresh_after_unauthorized(used)
+        @mutex.synchronize { refresh_locked if @cached.equal?(used) }
+      rescue UnsupportedCredentialError
+        # Preserve the HTTP 401 and retain the cached credentials.
+        nil
       end
 
       def call
-        result = parse(run_plugin)
-        observe("no_error", 0, certificate_ttl(result))
-        result
+        parse(run_plugin)
       end
 
       private
+
+      def refresh_locked
+        previous = @cached
+        @cached = call
+        leaf = @cached.certificate_chain&.first
+        self.class.certificate_expiry(self, leaf&.not_after)
+        return unless previous && previous.certificate_identity != @cached.certificate_identity
+
+        previous_leaf = previous.certificate_chain&.first
+        self.class.rotation_observer&.call(Time.now - previous_leaf.not_before) if previous_leaf
+        @clients.each_key(&:reset_connections!)
+      end
+
+      def authorized_executable
+        program = executable
+        case @policy&.fetch("type", nil)
+        when "DenyAll"
+          denied!("policy set to DenyAll")
+        when "Allowlist"
+          resolved = find_executable(program)
+          allowed = @policy.fetch("allowlist").any? do |entry|
+            entry == program || (resolved && (entry == resolved || find_executable(entry) == resolved))
+          end
+          denied!("command is not permitted by the credential plugin allowlist") unless allowed
+
+          program = resolved
+        end
+        self.class.policy_observer&.call(true)
+        raise Errno::ENOENT, command unless program
+
+        program
+      end
+
+      def denied!(reason)
+        self.class.policy_observer&.call(false)
+        raise UnsupportedCredentialError, "exec plugin #{command.inspect} not allowed: #{reason}"
+      end
+
+      def find_executable(program)
+        if program.include?(File::SEPARATOR)
+          path = File.expand_path(program)
+          return path if File.file?(path) && File.executable?(path)
+
+          return
+        end
+
+        path = @env.fetch("PATH") { ENV.fetch("PATH", "") }
+        path.split(File::PATH_SEPARATOR, -1).each do |directory|
+          candidate = File.join(directory.empty? ? "." : directory, program)
+          next unless File.file?(candidate) && File.executable?(candidate)
+
+          # Like exec.LookPath, stop if a bare command would come from a
+          # relative PATH entry instead of running it from the working directory.
+          return File.absolute_path?(candidate) ? File.expand_path(candidate) : nil
+        end
+        nil
+      end
 
       def validate_config!
         fail_config("exec must be a mapping") unless @config.is_a?(Hash)
@@ -154,8 +273,9 @@ module Rubernetes
         interactive = interactive?
         child_env = environment.to_h { |entry| [entry["name"], entry["value"]] }
         child_env["KUBERNETES_EXEC_INFO"] = exec_info(interactive)
+        program = authorized_executable
         reader, writer = IO.pipe
-        pid = Process.spawn(child_env, [executable, executable], *arguments,
+        pid = Process.spawn(child_env, [program, program], *arguments,
                             in: interactive ? @stdin : File::NULL, out: writer, err: @stderr, close_others: true)
         writer.close
         collect(pid, reader)
@@ -163,6 +283,9 @@ module Rubernetes
         observe("plugin_not_found_error", 1)
         raise UnsupportedCredentialError, ["exec plugin #{command.inspect} cannot be started: #{error.message}",
                                            @config["installHint"]].compact.join("\n")
+      rescue SystemCallError, IOError => error
+        observe("client_internal_error", 1)
+        raise UnsupportedCredentialError, "exec plugin #{command.inspect} failed to run: #{error.message}"
       ensure
         writer&.close unless writer&.closed?
         reader&.close
@@ -181,28 +304,35 @@ module Rubernetes
           output << chunk
           abort_plugin(pid, "printed more than #{MAX_OUTPUT_BYTES} bytes") if output.bytesize > MAX_OUTPUT_BYTES
         end
-        _, status = Process.wait2(pid)
-        return output if status.success?
+        status = wait_for_exit(pid, deadline)
+        if status.success?
+          observe("no_error", 0)
+          return output
+        end
 
-        observe("plugin_execution_error", status.exitstatus || 1)
+        observe("plugin_execution_error", status.exitstatus || -1)
         raise UnsupportedCredentialError, "exec plugin #{command.inspect} failed with #{status.to_s.sub(/\Apid \d+ /, "")}"
       end
 
-      def observe(status, code, ttl = nil)
-        self.class.observer&.call(status, code, ttl)
+      def wait_for_exit(pid, deadline)
+        loop do
+          result = Process.wait2(pid, Process::WNOHANG)
+          return result.last if result
+
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          abort_plugin(pid, "did not answer within #{@timeout} s") unless remaining.positive?
+          sleep([0.01, remaining].min)
+        end
       end
 
-      def certificate_ttl(result)
-        return Float::INFINITY unless result.client_certificate_data
-
-        OpenSSL::X509::Certificate.new(result.client_certificate_data).not_after - Time.now
-      rescue OpenSSL::X509::CertificateError
-        fail_output("returned a client certificate that is not PEM")
+      def observe(status, code)
+        self.class.observer&.call(status, code)
       end
 
       def abort_plugin(pid, reason)
         Process.kill("KILL", pid)
         Process.wait(pid)
+        observe("plugin_execution_error", -1)
         raise UnsupportedCredentialError, "exec plugin #{command.inspect} #{reason}"
       end
 
@@ -224,16 +354,36 @@ module Rubernetes
         token = status["token"]
         certificate = status["clientCertificateData"]
         key = status["clientKeyData"]
+        unless [token, certificate, key].all? { |field| field.nil? || field.is_a?(String) }
+          fail_output("returned a token, client certificate or private key that is not a string")
+        end
+        token = nil if token == ""
+        certificate = nil if certificate == ""
+        key = nil if key == ""
         fail_output("returned neither a token nor a client certificate") if token.nil? && certificate.nil? && key.nil?
         fail_output("returned a client certificate without its key (or the reverse)") if certificate.nil? != key.nil?
+        fail_output("returned an invalid bearer token") if token && !(token.bytesize <= MAX_OUTPUT_BYTES && token.b.match?(/\A[!-~]+\z/n))
 
-        Result.new(bearer_token: token, client_certificate_data: certificate, client_key_data: key,
-                   expires_at: expiry(status["expirationTimestamp"])).freeze
+        chain, private_key = parse_certificate_pair(certificate, key) if certificate
+
+        Result.new(bearer_token: token&.freeze, client_certificate_data: certificate&.freeze, client_key_data: key&.freeze,
+                   expires_at: expiry(status["expirationTimestamp"]), certificate_chain: chain, private_key: private_key,
+                   certificate_identity: chain&.map { |cert| cert.to_der.freeze }&.freeze).freeze
+      end
+
+      def parse_certificate_pair(certificate, key)
+        chain = OpenSSL::X509::Certificate.load(certificate)
+        private_key = OpenSSL::PKey.read(key, "")
+        fail_output("returned a client certificate that does not match its private key") unless chain.first&.check_private_key(private_key)
+
+        [chain.freeze, private_key]
+      rescue OpenSSL::OpenSSLError, TypeError
+        fail_output("returned an invalid client certificate or private key")
       end
 
       def expiry(value)
         value && Time.iso8601(value)
-      rescue ArgumentError
+      rescue ArgumentError, TypeError
         fail_output("returned an invalid expirationTimestamp #{value.inspect}")
       end
 
