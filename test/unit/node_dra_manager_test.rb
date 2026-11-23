@@ -96,6 +96,20 @@ class NodeDRAManagerTest < Minitest::Test
 
   def log_entries(log) = File.exist?(log) ? File.readlines(log).map { |line| JSON.parse(line) } : []
 
+  def test_plugin_manager_creates_the_registration_directory_before_polling
+    Dir.mktmpdir("plugin-manager") do |dir|
+      registry = File.join(dir, "plugins_registry")
+      plugins = Rubernetes::Node::Plugins::Manager.new(directory: registry)
+
+      plugins.start(interval: 0.01)
+
+      assert_path_exists registry
+      assert_predicate File.stat(registry), :directory?
+    ensure
+      plugins&.stop
+    end
+  end
+
   def test_registration_prepare_cdi_devices_and_unprepare
     with_driver do |dir, registry, log|
       now = 0.0
@@ -169,15 +183,35 @@ class NodeDRAManagerTest < Minitest::Test
     end
   end
 
-  def test_a_shared_claim_is_unprepared_by_its_last_pod
+  def test_a_shared_claim_is_prepared_once_and_unprepared_by_its_last_pod
     with_driver do |dir, registry, log|
       shared = claim("c1")
       shared["status"]["reservedFor"] << {"resource" => "pods", "name" => "q", "uid" => "other-uid"}
       client = Client.new("ns/c1" => shared)
-      dra = Rubernetes::Node::DRAManager.new(client: client, node_name: "node-1", state_directory: File.join(dir, "state"))
+      started = Queue.new
+      proceed = Queue.new
+      rpc = Object.new
+      rpc.define_singleton_method(:call) do |**options|
+        if options[:method] == "NodePrepareResources"
+          started << true
+          proceed.pop
+        end
+        RPC.call(**options)
+      end
+      dra = Rubernetes::Node::DRAManager.new(client: client, node_name: "node-1", state_directory: File.join(dir, "state"), rpc: rpc)
       Rubernetes::Node::Plugins::Manager.new(directory: registry, handlers: {"DRAPlugin" => dra}).reconcile
-      dra.prepare_resources(pod)
-      dra.prepare_resources(pod(uid: "other-uid"))
+
+      first = Thread.new { dra.prepare_resources(pod) }
+      Timeout.timeout(5) { started.pop }
+      other_pod = pod(uid: "other-uid")
+      second = Thread.new { dra.prepare_resources(other_pod) }
+      Timeout.timeout(5) { sleep 0.001 until second.status == "sleep" }
+      2.times { proceed << true }
+      Timeout.timeout(5) { [first, second].each { |worker| assert worker.value } }
+
+      assert_equal([{"prepare" => ["c1"]}], log_entries(log).select { |entry| entry["prepare"] })
+      assert_equal ["#{DRIVER}/gpu=gpu-0"], dra.container_cdi_devices(other_pod, other_pod.dig("spec", "containers", 0))
+      dra.unprepare_resources(pod)
       dra.unprepare_resources(pod)
 
       assert_empty(log_entries(log).select { |entry| entry["unprepare"] })
@@ -185,6 +219,9 @@ class NodeDRAManagerTest < Minitest::Test
       dra.reconcile
 
       assert_equal([{"unprepare" => ["c1"]}], log_entries(log).select { |entry| entry["unprepare"] })
+    ensure
+      2.times { proceed << true } if proceed
+      [first, second].compact.each { |worker| worker.join(5) }
     end
   end
 
