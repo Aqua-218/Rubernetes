@@ -82,4 +82,26 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
 
     assert_equal [0.005], sleeps
   end
+
+  def test_filter_failure_reports_scheduler_error_for_pending_pod_once
+    error = Rubernetes::Scheduler::FilterError.new("CEL runtime error: no such key: exists", plugin: "DynamicResources", phase: :filter)
+    result = Rubernetes::Scheduler::ScheduleResult.new(status: :requeued, pod: POD, trace: Rubernetes::Scheduler::Trace.new, error: error)
+    service = build_service(results: [result, result], sleeps: [])
+    service.instance_variable_set(:@pods, {[POD.namespace, POD.name, POD.uid] => POD})
+    client = Object.new
+    writes = []
+    client.define_singleton_method(:patch) { |resource, patch, **options| writes << [resource, patch, options] }
+    service.instance_variable_set(:@client, client)
+
+    service.send(:run_loop)
+
+    assert_equal 1, writes.length
+    resource, patch, options = writes.first
+
+    assert_equal "pods", resource
+    assert_equal({type: :strategic, namespace: "ns", api_version: "v1", name: "p", subresource: "status"}, options)
+    condition = patch.dig("status", "conditions", 0)
+
+    assert_equal ["PodScheduled", "False", "SchedulerError", error.message], condition.values_at("type", "status", "reason", "message")
+  end
 end
