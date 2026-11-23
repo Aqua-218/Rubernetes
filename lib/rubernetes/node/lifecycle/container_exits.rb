@@ -102,6 +102,21 @@ module Rubernetes
           Helpers.failure_message(error).include?("unknown sandbox")
         end
 
+        # Marks the Pod in `sandbox_id` for the same treatment as a sandbox
+        # the runtime lost: the next sync kills it and the restart policy
+        # brings it back in a new sandbox.  For a sandbox that is running but
+        # can no longer be trusted (its network attachment could not be
+        # confirmed after an agent restart).
+        def replace_sandbox(sandbox_id, message:)
+          @mutex.synchronize do
+            record = @records.values.find { |candidate| candidate[:sandbox_id].to_s == sandbox_id.to_s }
+            next false unless record
+
+            record[:sandbox_replacement] = message
+            true
+          end
+        end
+
         def runtime_sandbox_stopped?(record)
           sandbox = record[:sandbox_id]
           return false unless sandbox && runtime_supports?(:sandbox_state)
