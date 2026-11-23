@@ -71,6 +71,21 @@ class SchedulerOpportunisticBatchTest < Minitest::Test
     assert_nil batch.node_hint(signature, 31, fits_last: ->(_name) { false }), "state older than 500 ms is dropped"
   end
 
+  def test_flushing_a_batch_only_increments_the_batch_cache_counter
+    metrics = Scheduler::Metrics.new
+    batch = Scheduler::OpportunisticBatch.new(plugin_names: PLUGINS, system_default_constraints: false)
+    batch.metrics = metrics
+    signature = batch.sign(pod("a"))
+    batch.store(signature, nil, "n1", ["n2"], 1)
+    batch.failed(2)
+    batch.store(signature, nil, "n2", [], 3)
+
+    ordinary = metrics.render
+
+    assert_includes ordinary, %(scheduler_batch_cache_flushed_total{profile="default-scheduler",reason="cycle_failed"} 1)
+    assert_match(/^scheduler_pod_scheduled_after_flush_total 0$/, ordinary)
+  end
+
   # End to end through Framework#schedule: one Pod per node, the second
   # identical Pod goes to the hinted node without scoring every node.
   def test_consecutive_identical_pods_use_the_hint
