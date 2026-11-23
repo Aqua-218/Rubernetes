@@ -53,6 +53,23 @@ class NodeResizePolicyTest < Minitest::Test
                         {"requests" => {"cpu" => "200m"}})
   end
 
+  def test_pod_level_limit_change_requires_a_restart_only_for_containers_using_it
+    policy = definition("cpu" => "RestartContainer")
+    before = {"spec" => {"resources" => {"limits" => {"cpu" => "500m"}}}}
+    after = {"spec" => {"resources" => {"limits" => {"cpu" => "700m"}}}}
+    explicit = {"limits" => {"cpu" => "200m"}}
+
+    assert subject.send(:resize_requires_restart?, policy, entry({}), {}, current_pod: before, desired_pod: after)
+    refute subject.send(:resize_requires_restart?, policy, entry(explicit), explicit, current_pod: before, desired_pod: after)
+  end
+
+  def test_equivalent_quantities_do_not_require_a_restart
+    policy = definition("cpu" => "RestartContainer")
+
+    refute subject.send(:resize_requires_restart?, policy,
+                        entry("limits" => {"cpu" => "1"}), {"limits" => {"cpu" => "1000m"}})
+  end
+
   def test_no_policy_never_restarts
     refute subject.send(:resize_requires_restart?,
                         {"name" => "c", "image" => "img"},
