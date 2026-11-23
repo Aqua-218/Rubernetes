@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "validator/wire_types"
 
 module Rubernetes
   module Schema
@@ -8,13 +9,15 @@ module Rubernetes
     class ValidationIssue
       attr_reader :path, :code, :message, :value, :expected, :kubernetes_type
 
-      def initialize(path:, code:, message:, value: nil, expected: nil, kubernetes_type: nil)
+      def initialize(path:, code:, message:, value: nil, expected: nil, kubernetes_type: nil, use_object_value: true, omit_value: false)
         @path = Array(path).map(&:to_s).freeze
         @code = code.to_sym
         @message = message.to_s.freeze
         @value = value
         @expected = expected
         @kubernetes_type = kubernetes_type&.to_s&.freeze
+        @omit_value = omit_value
+        @use_object_value = use_object_value
         freeze
       end
 
@@ -76,10 +79,11 @@ module Rubernetes
       def to_cause(object = nil)
         reason = CAUSE_REASONS.fetch(code, "FieldValueInvalid")
         type = kubernetes_error_type
-        rendered = if VALUELESS_REASONS.include?(reason)
+        rendered = if @omit_value || VALUELESS_REASONS.include?(reason)
                      type
                    else
-                     "#{type}: #{self.class.render_value(value.nil? ? self.class.value_at(object, path) : value)}"
+                     bad_value = value.nil? && @use_object_value ? self.class.value_at(object, path) : value
+                     "#{type}: #{self.class.render_value(bad_value)}"
                    end
         rendered = "#{rendered}: #{message}" unless message.to_s.empty?
         {"field" => kubernetes_field, "reason" => reason, "message" => rendered}
@@ -108,6 +112,7 @@ module Rubernetes
       def to_h
         result = {path: path, code: code, message: message}
         result[:value] = value unless value.nil?
+        result[:omit_value] = true if @omit_value
         result[:expected] = expected unless expected.nil?
         result.freeze
       end
@@ -140,6 +145,8 @@ module Rubernetes
 
     # Validates a schema definition without mutating the supplied object.
     class Validator
+      include WireTypes
+
       UNKNOWN_MODES = %i[reject preserve prune].freeze
 
       attr_reader :definition, :unknown_fields
@@ -161,7 +168,7 @@ module Rubernetes
       end
 
       def errors(value = nil, path: [], unknown_fields: @unknown_fields, unknown: nil,
-                 operation: nil, old: nil, strategy_prepare: false, subresource: nil, **keyword_value)
+                 operation: nil, old: nil, strategy_prepare: false, subresource: nil, declarative_options: [], **keyword_value)
         value = keyword_value if value.nil? && !keyword_value.empty?
         mode = (unknown || unknown_fields).to_sym
         raise ArgumentError, "unknown_fields must be :reject, :preserve, or :prune" unless UNKNOWN_MODES.include?(mode)
@@ -183,6 +190,9 @@ module Rubernetes
         # sees the whole object and the old one.)
         prior = operation == :update && old.is_a?(Hash) ? old : nil
         issues = validate_object(value, definition, Array(path).map(&:to_s), mode, prior)
+        if Array(path).empty? && defined?(KubernetesValidator) && KubernetesValidator.pdb_v1?(definition)
+          issues.concat(KubernetesValidator.pod_disruption_budget_wire_errors(value))
+        end
         # Kubernetes strategy validation is intentionally attached only to
         # the root object.  Nested references remain pure schema validation;
         # their REST rules are evaluated when their owning resource is
@@ -192,20 +202,17 @@ module Rubernetes
           # serialization.  It is therefore not a REST type error merely
           # because the in-memory Ruby fixture materialized the reference.
           issues.reject! { |existing| existing.code == :type && existing.value.nil? }
-          # Normal create/update strategies validate the desired object, not
-          # its server-populated status.  The OpenAPI schema still contains
-          # required status fields, so remove those structural errors before
-          # merging strategy observations.  Status subresources have their
-          # own strategies and are not represented by this operation pair.
-          issues.reject! { |existing| existing.path.first == "status" }
+          discard_strategy_schema_issues!(issues, subresource)
           kubernetes_issues = KubernetesValidator.errors(
             definition,
             value,
             operation: operation,
             old: old,
             strategy_prepare: strategy_prepare,
-            subresource: subresource
+            subresource: subresource,
+            declarative_options: declarative_options
           )
+          discard_workload_template_schema_issues!(issues, kubernetes_issues)
           if KubernetesValidator.respond_to?(:internal_request_context_strategy?) &&
              KubernetesValidator.internal_request_context_strategy?(definition.kind)
             # Workload's pinned REST strategy requires requestInfo from the
@@ -306,6 +313,36 @@ module Rubernetes
           issues.concat(kubernetes_issues)
         end
         issues
+      end
+
+      private def discard_workload_template_schema_issues!(issues, kubernetes_issues)
+        return unless KubernetesValidator::WORKLOAD_SELECTOR_NAMES.key?(definition.kind)
+
+        template_path = KubernetesValidator::WORKLOAD_TEMPLATE_PATH
+        skip_template = KubernetesValidator.skip_app_template_validation?(definition.kind, kubernetes_issues)
+        issues.reject! do |existing|
+          # apps embeds a value-typed template. Its missing value is handled
+          # by strategy validation of the zero value, as is an explicit {}.
+          (existing.path == template_path && existing.code == :required) ||
+            (skip_template && existing.path[0, 2] == template_path && !%i[type unknown].include?(existing.code))
+        end
+      end
+
+      private def discard_strategy_schema_issues!(issues, subresource)
+        # Ordinary strategies leave status validation to the status subresource.
+        status_update = subresource.to_s == "status"
+        if status_update && %w[Job CronJob PodDisruptionBudget].include?(definition.kind)
+          # These status strategies restore the stored spec before validation.
+          issues.reject! { |existing| existing.path.first == "spec" }
+        end
+        typed_status = status_update && %w[ResourcePoolStatusRequest Job CronJob PodDisruptionBudget].include?(definition.kind)
+        issues.reject! { |existing| existing.path.first == "status" && !(typed_status && existing.code == :type) }
+        return unless issues.any? && KubernetesValidator.validates_pod_projections?(definition.kind, subresource)
+
+        issues.reject! do |existing|
+          existing.code == :required &&
+            KubernetesValidator.projection_strategy_required_field?(definition.kind, existing.path)
+        end
       end
 
       def validate(value = nil, **)
@@ -479,7 +516,7 @@ module Rubernetes
 
         issues.concat(validate_additional_properties(field, value, path, mode)) if value.is_a?(Hash) && !field.additional_properties.nil?
 
-        nested = nested_definition(field)
+        nested = definition.nested_definition_for(field)
         issues.concat(validate_object(value, nested, path, mode, old)) if nested && (value.is_a?(ValueObject) || value.is_a?(Hash))
         issues
       end
@@ -552,23 +589,6 @@ module Rubernetes
         value.definition.gvk == object_definition.gvk || value.definition.fields == object_definition.fields
       end
 
-      def nested_definition(field)
-        return field.type if field.type.is_a?(Definition)
-        return field.type.resolve if field.type.is_a?(Reference)
-        return nil unless field.object? && !field.properties.empty?
-
-        Definition.new(
-          name: "#{definition.kind}#{field.name.capitalize}",
-          group: definition.group,
-          version: definition.version,
-          kind: "#{definition.kind}#{field.name.capitalize}",
-          resource: "#{definition.resource}-#{field.name}",
-          scope: definition.scope,
-          fields: field.properties,
-          preserve_unknown_fields: field.preserve_unknown_fields
-        )
-      end
-
       def type_matches?(field, value)
         return true if field.type == :any
         return value.is_a?(String) || value.is_a?(Integer) if field.metadata[:format] == "int-or-string"
@@ -605,7 +625,11 @@ module Rubernetes
       end
 
       def expected_type(field)
-        return :int_or_string if field.is_a?(Field) && field.metadata[:format] == "int-or-string"
+        if field.is_a?(Field) && field.metadata[:format] == "int-or-string"
+          return :int32 if defined?(KubernetesValidator) && KubernetesValidator.pdb_v1?(definition)
+
+          return :int_or_string
+        end
 
         type = field.is_a?(Field) ? field.type : field
         case type
