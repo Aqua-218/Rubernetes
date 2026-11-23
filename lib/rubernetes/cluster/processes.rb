@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "io/wait"
+require_relative "../platform/linux/pidfd"
+
 module Rubernetes
   module Cluster
     # What a remembered pid still means.  Stateless: `rubectl cluster down`
@@ -11,16 +14,34 @@ module Rubernetes
       def terminate(pid, name, marker)
         return nil unless owned?(pid, marker)
 
-        Process.kill("TERM", pid)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 15
-        sleep(0.05) while alive?(pid) && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-        Process.kill("KILL", pid) if alive?(pid)
-        begin
-          Process.waitpid(pid, Process::WNOHANG)
-        rescue Errno::ECHILD, Errno::ESRCH
-          nil
+        stopped = {"name" => name, "pid" => pid}
+        resource = "cluster-process:#{name}:#{pid}"
+        probe = Platform::Linux::Pidfd.new
+        descriptor = probe.open(pid: pid, resource_id: resource)
+        watcher = IO.for_fd(descriptor)
+        return stopped unless owned?(pid, marker)
+
+        # Bind both signals to the process we identified. Another process can
+        # acquire the same numeric PID while this command waits out TERM.
+        probe.send_signal(pidfd: descriptor, signal: Signal.list.fetch("TERM"), resource_id: resource)
+        unless watcher.wait_readable(15)
+          probe.send_signal(pidfd: descriptor, signal: Signal.list.fetch("KILL"), resource_id: resource)
+          raise Error, "could not confirm exit of #{resource}" unless watcher.wait_readable(5)
         end
-        {"name" => name, "pid" => pid}
+        reap(probe, descriptor, resource)
+        stopped
+      rescue Platform::Linux::Error => error
+        raise unless error.errno == Errno::ESRCH::Errno
+
+        stopped
+      ensure
+        watcher&.close
+      end
+
+      def reap(probe, descriptor, resource)
+        probe.wait(pidfd: descriptor, timeout: 0, resource_id: resource)
+      rescue Platform::Linux::Error => error
+        raise unless error.errno == Errno::ECHILD::Errno
       end
 
       # A child this process has not reaped yet still answers kill(0); it
