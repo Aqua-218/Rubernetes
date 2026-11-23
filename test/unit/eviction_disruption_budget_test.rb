@@ -3,12 +3,8 @@
 require_relative "../test_helper"
 require "rubernetes/api"
 
-# An Eviction is checked against every PodDisruptionBudget that selects the Pod:
-# a budget with no disruptions left refuses it with 429
-# (pkg/registry/core/pod/storage/eviction.go:418-457) and a successful eviction
-# spends one disruption.  None of it existed -- eviction was an unconditional
-# delete -- so "[sig-apps] DisruptionController should block an eviction until
-# the PDB is updated to allow it" could never pass.
+# A protected Pod spends one disruption. Unready Pods exempted by the
+# budget's unhealthy eviction policy can leave the budget unchanged.
 class EvictionDisruptionBudgetTest < Minitest::Test
   Server = Rubernetes::API::Server
 
@@ -42,7 +38,8 @@ class EvictionDisruptionBudgetTest < Minitest::Test
 
   def pod(labels = {"app" => "demo"})
     {"apiVersion" => "v1", "kind" => "Pod",
-     "metadata" => {"name" => "p", "namespace" => "ns", "labels" => labels}}
+     "metadata" => {"name" => "p", "namespace" => "ns", "labels" => labels},
+     "status" => {"phase" => "Running", "conditions" => [{"type" => "Ready", "status" => "True"}]}}
   end
 
   def server_for(store)
@@ -69,6 +66,29 @@ class EvictionDisruptionBudgetTest < Minitest::Test
     end
 
     assert_includes error.message, "Cannot evict pod as it would violate the pod's disruption budget."
+    assert_empty store.updates
+  end
+
+  def test_unready_pod_can_bypass_an_exhausted_budget_under_the_unhealthy_policy
+    always_allow = budget(allowed: 0, healthy: 0, desired: 3)
+    always_allow["spec"]["unhealthyPodEvictionPolicy"] = "AlwaysAllow"
+    store = Store.new([always_allow])
+    server = server_for(store)
+    ready = pod
+    unready = pod
+    unready["status"]["conditions"].first["status"] = "False"
+
+    assert_raises(Rubernetes::API::Status::TooManyRequests) { server.send(:check_disruption_budgets!, "ns", ready) }
+    assert_equal "pdb", server.send(:check_disruption_budgets!, "ns", unready)
+    assert_empty store.updates
+  end
+
+  def test_default_policy_lets_an_unready_pod_leave_an_adequately_healthy_budget
+    unready = pod
+    unready["status"]["conditions"].first["status"] = "False"
+    store = Store.new([budget(allowed: 0, healthy: 2, desired: 2)])
+
+    assert_equal "pdb", server_for(store).send(:check_disruption_budgets!, "ns", unready)
     assert_empty store.updates
   end
 
