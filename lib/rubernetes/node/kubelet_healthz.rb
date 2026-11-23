@@ -17,17 +17,64 @@ module Rubernetes
         false
       end
 
-      def initialize(host:, port:, ready:, logger: nil)
+      # kubelet serves /healthz from a loop (cmd/kubelet/app/server.go): a
+      # port that cannot be bound is logged and tried again five seconds
+      # later, and never stops the kubelet.
+      RETRY_SECONDS = 5
+
+      def initialize(host:, port:, ready:, logger: nil, retry_seconds: RETRY_SECONDS)
         raise ArgumentError, "kubelet healthz requires a loopback IP address" unless self.class.loopback_address?(host)
 
         @ready = ready
-        @server = Transport::HTTPServer.new(method(:call), host: host, port: port, logger: logger, max_connections: 32)
+        @host = host
+        @port = port
+        @logger = logger
+        @retry_seconds = retry_seconds
+        @mutex = Mutex.new
+        @stopped = false
       end
 
-      def start = @server.start(background: true)
-      def stop = @server.stop
+      def start
+        @retry = Thread.new { listen_until_bound } unless listen
+        self
+      end
+
+      def stop
+        server = @mutex.synchronize do
+          @stopped = true
+          @server
+        end
+        @retry&.join
+        server&.stop
+      end
+
+      def listening? = @mutex.synchronize { !@server.nil? }
 
       private
+
+      def listen
+        server = Transport::HTTPServer.new(method(:call), host: @host, port: @port, logger: @logger, max_connections: 32)
+        server.start(background: true)
+        keep = @mutex.synchronize { @stopped ? false : (@server = server) }
+        server.stop unless keep
+        true
+      rescue Transport::ConfigurationError => error
+        @logger&.error("Failed to start healthz server", error: error.class.name, message: error.message)
+        false
+      end
+
+      def listen_until_bound
+        loop do
+          slept = 0.0
+          while slept < @retry_seconds
+            return if @mutex.synchronize { @stopped }
+
+            sleep([0.05, @retry_seconds - slept].min)
+            slept += 0.05
+          end
+          return if @mutex.synchronize { @stopped } || listen
+        end
+      end
 
       def call(request)
         return [404, HEADERS, ["404 page not found\n"]] unless request.path == "/healthz"
