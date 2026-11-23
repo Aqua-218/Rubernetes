@@ -12,11 +12,13 @@ module Rubernetes
           # A successful mount(2) return only proves that the syscall was
           # accepted.  Read the target namespace's mount table and require an
           # OverlayFS entry for the exact target before recording ownership.
-          def mount_readback(namespace_handle, target)
+          def mount_readback(namespace_handle, target, allow_absent: false)
             pid = namespace_handle.pid
             raise EffectError, "overlay mount readback requires a namespace holder pid" unless pid
 
-            line = mountinfo_for(pid, target)
+            line = mountinfo_for(pid, target, require_empty: allow_absent)
+            return nil if line.nil? && allow_absent
+
             raise EffectError, "overlay mount was not observed at #{target}" unless line
 
             separator = line.split(" - ", 2)
@@ -45,11 +47,17 @@ module Rubernetes
             false
           end
 
-          def mountinfo_for(pid, target)
-            escaped = String(target).gsub("\\", "\\134").gsub(" ", "\\040").gsub("\t", "\\011")
-            File.readlines("/proc/#{Integer(pid)}/mountinfo", chomp: true).find do |line|
-              line.split.fetch(4, nil) == escaped
+          def mountinfo_for(pid, target, require_empty: false)
+            escaped = String(target).gsub(/[\\ \t\n]/) { |character| format("\\%03o", character.ord) }
+            lines = File.readlines("/proc/#{Integer(pid)}/mountinfo", chomp: true)
+            observed = lines.select { |line| line.split.fetch(4, nil) == escaped }
+            raise EffectError, "multiple mounts were observed at #{target}" if observed.length > 1
+
+            if observed.empty? && require_empty && lines.any? { |line| line.split.fetch(4, "").start_with?("#{escaped}/") }
+              raise EffectError, "workspace #{target} still contains mounts"
             end
+
+            observed.first
           end
 
           def unescape_mountinfo(value)
