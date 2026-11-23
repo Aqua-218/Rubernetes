@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../support/object_tree"
+
 require "digest"
 require "json"
 require "time"
@@ -28,6 +30,20 @@ module Rubernetes
         !value.nil? && !(value.respond_to?(:empty?) && value.empty?)
       end
 
+      # pkg/volume/util.IsLocalEphemeralVolume: kubelet-managed local disk.
+      def local_ephemeral_volume?(spec)
+        return false unless spec
+
+        empty_dir = key(spec, "emptyDir")
+        !!(key(spec, "configMap") || key(spec, "gitRepo") || (empty_dir && key(empty_dir, "medium").to_s.empty?))
+      end
+
+      # Linux appends this literal marker to the root of a mount whose bound
+      # dentry was deleted. Callers must still verify every other mount field.
+      def deleted_mount_root?(expected, observed)
+        present?(expected) && observed == "#{expected}//deleted"
+      end
+
       def deep_copy(value)
         case value
         when Hash
@@ -44,18 +60,7 @@ module Rubernetes
       # Freeze the complete object graph returned from a durable store.  A
       # shallow freeze is insufficient here because callers could otherwise
       # mutate nested attachment or specification hashes behind the ledger.
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each do |key, child|
-            deep_freeze(key)
-            deep_freeze(child)
-          end
-        when Array
-          value.each { |child| deep_freeze(child) }
-        end
-        value.freeze
-      end
+      def deep_freeze(value) = ObjectTree.deep_freeze(value)
 
       def canonical(value)
         case value
@@ -171,6 +176,22 @@ module Rubernetes
         text.freeze
       rescue TypeError
         raise ValidationError, "#{field} must be a string"
+      end
+
+      # A CSI driver interprets its handles. They may include cloud resource
+      # paths and are never used as local record IDs, tokens, or filesystem paths.
+      def csi_handle(value, field = "CSI volume handle", optional: false)
+        return "" if optional && (value.nil? || value == "")
+
+        raise ValidationError, "#{field} must be a string" unless value.is_a?(String)
+        raise ValidationError, "#{field} must not be empty" if value.empty?
+        raise ValidationError, "#{field} contains invalid text" unless value.valid_encoding? && !value.match?(/[[:cntrl:]]/)
+
+        value.dup.freeze
+      end
+
+      def csi_mount_source(handle)
+        "csi://sha256:#{Digest::SHA256.hexdigest(handle)}"
       end
     end
 
